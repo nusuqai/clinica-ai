@@ -17,6 +17,8 @@ export interface PatientAppointment {
 
 export interface AdminAppointment {
   id: string;
+  doctorId: string;
+  patientId: string;
   status: AppointmentStatus;
   patientNotes: string | null;
   doctorNotes: string | null;

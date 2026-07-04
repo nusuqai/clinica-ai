@@ -8,6 +8,7 @@ import type { Doctor, Profile, DayOfWeek, AppointmentStatus } from "@prisma/clie
 
 export type DoctorWithProfile = Doctor & {
   profile: Pick<Profile, "fullName" | "phone" | "avatarUrl" | "createdAt">;
+  email?: string;
   _count: { appointments: number };
 };
 
@@ -96,26 +97,35 @@ export async function getAvailableSlotsForBooking(
 }
 
 export async function listDoctors(): Promise<DoctorWithProfile[]> {
-  return prisma.doctor.findMany({
-    include: {
-      profile: {
-        select: {
-          fullName: true,
-          phone: true,
-          avatarUrl: true,
-          createdAt: true,
+  const [doctors, { data: authList }] = await Promise.all([
+    prisma.doctor.findMany({
+      include: {
+        profile: {
+          select: {
+            fullName: true,
+            phone: true,
+            avatarUrl: true,
+            createdAt: true,
+          },
         },
+        _count: { select: { appointments: true } },
       },
-      _count: { select: { appointments: true } },
-    },
-    orderBy: { profile: { fullName: "asc" } },
-  });
+      orderBy: { profile: { fullName: "asc" } },
+    }),
+    createAdminClient().auth.admin.listUsers({ perPage: 1000 }),
+  ]);
+
+  const emailMap = new Map<string, string>(
+    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""])
+  );
+
+  return doctors.map((d) => ({ ...d, email: emailMap.get(d.id) ?? "" }));
 }
 
 export async function getDoctor(
   doctorId: string,
 ): Promise<DoctorWithProfile | null> {
-  return prisma.doctor.findUnique({
+  const doctor = await prisma.doctor.findUnique({
     where: { id: doctorId },
     include: {
       profile: {
@@ -129,6 +139,10 @@ export async function getDoctor(
       _count: { select: { appointments: true } },
     },
   });
+  if (!doctor) return null;
+
+  const { data: authUser } = await createAdminClient().auth.admin.getUserById(doctorId);
+  return { ...doctor, email: authUser?.user?.email ?? "" };
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────

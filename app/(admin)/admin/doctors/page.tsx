@@ -23,6 +23,7 @@ export default async function AdminDoctorsPage() {
             <thead>
               <tr className="border-b border-border bg-muted/40">
                 <th className="text-start px-4 py-3 font-medium text-muted-foreground">الاسم</th>
+                <th className="text-start px-4 py-3 font-medium text-muted-foreground">البريد الإلكتروني</th>
                 <th className="text-start px-4 py-3 font-medium text-muted-foreground">التخصص</th>
                 <th className="text-start px-4 py-3 font-medium text-muted-foreground">الهاتف</th>
                 <th className="text-start px-4 py-3 font-medium text-muted-foreground">رسوم الاستشارة</th>
@@ -34,7 +35,7 @@ export default async function AdminDoctorsPage() {
             <tbody className="divide-y divide-border">
               {doctors.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={8} className="text-center py-12 text-muted-foreground">
                     لا يوجد أطباء. أضف طبيباً جديداً لتبدأ.
                   </td>
                 </tr>
@@ -42,6 +43,7 @@ export default async function AdminDoctorsPage() {
               {doctors.map((doctor) => (
                 <tr key={doctor.id} className="hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3 font-medium text-foreground">{doctor.profile.fullName}</td>
+                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">{doctor.email || "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">{doctor.specialty}</td>
                   <td className="px-4 py-3 text-muted-foreground" dir="ltr">{doctor.profile.phone ?? "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground" dir="ltr">

@@ -16,6 +16,14 @@ export default function ChatBubble() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
 
   // Load the active session's history the first time the panel is opened.
   useEffect(() => {
@@ -189,6 +197,7 @@ export default function ChatBubble() {
           <div className="px-3 py-3 border-t border-border flex-shrink-0">
             <div className="flex items-end gap-2">
               <textarea
+                ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -201,7 +210,7 @@ export default function ChatBubble() {
                 rows={1}
                 disabled={streaming}
                 dir="rtl"
-                className="flex-1 resize-none rounded-xl border border-border bg-card px-3 py-2 text-sm font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+                className="flex-1 resize-none rounded-xl border border-border bg-card px-3 py-2 text-sm font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50 max-h-40 overflow-y-auto leading-relaxed"
               />
               <button
                 onClick={send}

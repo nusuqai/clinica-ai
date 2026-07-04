@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Phone, Calendar, Activity, Stethoscope } from "lucide-react";
+import { ArrowRight, Phone, Mail, Calendar, Activity, Stethoscope } from "lucide-react";
 import { getDoctor, listDoctorRules, listDoctorSlots } from "@/server/services/doctors";
 import { listAppointments } from "@/server/services/appointments";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
@@ -72,6 +72,15 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
             </div>
             <p className="text-muted-foreground font-sans">{doctor.specialty}</p>
             <div className="flex flex-wrap items-center gap-4 mt-2">
+              {doctor.email && (
+                <span
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground font-sans"
+                  dir="ltr"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  {doctor.email}
+                </span>
+              )}
               {doctor.profile.phone && (
                 <span
                   className="flex items-center gap-1.5 text-sm text-muted-foreground font-sans"
