@@ -168,6 +168,141 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
     ),
     jsonTool(
       {
+        name: "list_doctor_rules",
+        description: "اعرض قواعد التوفر الأسبوعية لطبيب معيّن.",
+        schema: z.object({ doctorId: z.string() }),
+      },
+      async ({ doctorId }) => {
+        const rules = await DoctorService.listDoctorRules(doctorId);
+        return {
+          rules: rules.map((r) => ({
+            id: r.id,
+            dayOfWeek: r.dayOfWeek,
+            startTime: r.startTime,
+            endTime: r.endTime,
+            slotDurationMin: r.slotDurationMin,
+            isActive: r.isActive,
+          })),
+        };
+      },
+    ),
+    jsonTool(
+      {
+        name: "create_availability_rule",
+        description:
+          "أنشئ قاعدة توفر أسبوعية لطبيب معيّن وولّد الفترات لها تلقائياً.",
+        schema: z.object({
+          doctorId: z.string(),
+          dayOfWeek: z.enum(["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]),
+          startTime: z
+            .string()
+            .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),
+          endTime: z
+            .string()
+            .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),
+          slotDurationMin: z.number().nullable(),
+        }),
+      },
+      async ({ doctorId, dayOfWeek, startTime, endTime, slotDurationMin }) => {
+        const res = await DoctorService.createRule({
+          doctorId,
+          dayOfWeek,
+          startTime,
+          endTime,
+          slotDurationMin: slotDurationMin ?? undefined,
+        });
+        if (!res.ok) return { error: res.error };
+        return { ruleId: res.data.id, doctorId, dayOfWeek, startTime, endTime };
+      },
+    ),
+    jsonTool(
+      {
+        name: "delete_availability_rule",
+        description:
+          "احذف قاعدة توفر (يحذف أيضاً فتراتها المستقبلية غير المحجوزة).",
+        schema: z.object({ ruleId: z.string() }),
+      },
+      async ({ ruleId }) => {
+        const res = await DoctorService.deleteRule(ruleId);
+        return res.ok ? { deleted: true, ruleId } : { error: res.error };
+      },
+    ),
+    jsonTool(
+      {
+        name: "toggle_rule_active",
+        description: "فعّل أو عطّل قاعدة توفر.",
+        schema: z.object({ ruleId: z.string(), isActive: z.boolean() }),
+      },
+      async ({ ruleId, isActive }) => {
+        const res = await DoctorService.toggleRuleActive(ruleId, isActive);
+        return res.ok ? { ruleId, isActive } : { error: res.error };
+      },
+    ),
+    jsonTool(
+      {
+        name: "generate_slots",
+        description: "ولّد فترات زمنية إضافية لقاعدة توفر معيّنة.",
+        schema: z.object({
+          ruleId: z.string(),
+          daysAhead: z.number().nullable(),
+        }),
+      },
+      async ({ ruleId, daysAhead }) => {
+        const res = await DoctorService.generateSlotsForRule(
+          ruleId,
+          daysAhead ?? undefined,
+        );
+        if (!res.ok) return { error: res.error };
+        return { ruleId, generated: res.data.count };
+      },
+    ),
+    jsonTool(
+      {
+        name: "list_doctor_slots",
+        description:
+          "اعرض فترات طبيب معيّن ضمن نطاق تاريخ (YYYY-MM-DD)، اختياري.",
+        schema: z.object({
+          doctorId: z.string(),
+          from: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
+            .nullable(),
+          to: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
+            .nullable(),
+        }),
+      },
+      async ({ doctorId, from, to }) => {
+        const slots = await DoctorService.listDoctorSlots(doctorId, {
+          from: from ? new Date(from) : undefined,
+          to: to ? new Date(to) : undefined,
+        });
+        return {
+          slots: slots.map((s) => ({
+            id: s.id,
+            date: dateStr(s.date),
+            time: timeStr(s.startTime),
+            isBlocked: s.isBlocked,
+            booked: !!s.appointment,
+            patientName: s.appointment?.patient.fullName ?? null,
+          })),
+        };
+      },
+    ),
+    jsonTool(
+      {
+        name: "toggle_slot_blocked",
+        description: "عطّل أو أعد تفعيل فترة زمنية غير محجوزة.",
+        schema: z.object({ slotId: z.string() }),
+      },
+      async ({ slotId }) => {
+        const res = await DoctorService.toggleSlotBlocked(slotId);
+        return res.ok ? { slotId, toggled: true } : { error: res.error };
+      },
+    ),
+    jsonTool(
+      {
         name: "send_message_to_conversation",
         description:
           "أرسل رسالة إلى محادثة موجودة (تصل عبر واتساب إن كانت القناة واتساب).",

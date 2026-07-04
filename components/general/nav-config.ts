@@ -19,7 +19,7 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
     { href: "/dashboard", label: "الرئيسية", icon: LayoutDashboard },
     { href: "/dashboard/appointments", label: "مواعيدي", icon: CalendarDays },
     { href: "/dashboard/book", label: "احجز موعد", icon: CalendarPlus },
-    { href: "/dashboard/chat", label: "المساعد الذكي", icon: MessageCircle },
+    // { href: "/dashboard/chat", label: "المساعد الذكي", icon: MessageCircle },
     { href: "/dashboard/profile", label: "الملف الشخصي", icon: UserCircle },
     { href: "/", label: "الموقع الرئيسي", icon: Globe },
   ],
@@ -36,7 +36,7 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
     { href: "/admin/doctors", label: "الأطباء", icon: Stethoscope },
     { href: "/admin/appointments", label: "المواعيد", icon: CalendarDays },
     { href: "/admin/messages", label: "الرسائل", icon: MessageSquare },
-    { href: "/admin/whatsapp", label: "واتساب", icon: Smartphone },
+    // { href: "/admin/whatsapp", label: "واتساب", icon: Smartphone },
     { href: "/admin/reports", label: "التقارير", icon: BarChart3 },
   ],
 };
