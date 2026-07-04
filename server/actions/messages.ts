@@ -1,0 +1,49 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { prisma } from "@/lib/prisma";
+import { sendTextMessage } from "@/lib/evolution";
+
+export async function sendAdminReply(
+  conversationId: string,
+  content: string,
+): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const profile = await prisma.profile.findUnique({
+    where: { id: user.id },
+    select: { role: true },
+  });
+  if (profile?.role !== "ADMIN") throw new Error("Forbidden");
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+  });
+  if (!conversation) throw new Error("Conversation not found");
+
+  await prisma.message.create({
+    data: {
+      conversationId,
+      senderType: "ADMIN",
+      senderId: user.id,
+      content,
+      isRead: true,
+    },
+  });
+
+  if (conversation.channel === "WHATSAPP" && conversation.whatsappPhone) {
+    await sendTextMessage(conversation.whatsappPhone, content);
+  }
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { updatedAt: new Date() },
+  });
+
+  revalidatePath("/admin/messages");
+}
