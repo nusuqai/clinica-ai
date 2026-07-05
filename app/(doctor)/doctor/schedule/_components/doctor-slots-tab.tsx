@@ -7,6 +7,7 @@ import { toggleMySlotBlockedAction } from "@/server/actions/doctor";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import type { DoctorSlot } from "@/server/services/doctors";
 import type { AppointmentStatus } from "@prisma/client";
+import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
 type FilterStatus = "all" | "available" | "blocked" | "booked";
 
@@ -130,12 +131,11 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="text-sm font-medium text-foreground font-sans">
-                      {date.toLocaleDateString("ar-EG", {
+                      {formatSlotDate(date, {
                         weekday: "long",
                         day: "numeric",
                         month: "long",
                         year: "numeric",
-                        timeZone: "UTC",
                       })}
                     </span>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -166,8 +166,6 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                 {isOpen && (
                   <div className="divide-y divide-border">
                     {filteredSlots.map((slot) => {
-                      const start = new Date(slot.startTime);
-                      const end = new Date(slot.endTime);
                       const isBooked = !!slot.appointment;
                       const isBlocked = slot.isBlocked;
 
@@ -181,15 +179,9 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                               className="text-sm font-sans text-foreground"
                               dir="ltr"
                             >
-                              {start.toLocaleTimeString("ar-EG", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
+                              {formatSlotTime(slot.startTime)}
                               {" – "}
-                              {end.toLocaleTimeString("ar-EG", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
+                              {formatSlotTime(slot.endTime)}
                             </span>
                             {isBooked && (
                               <div className="flex items-center gap-2 min-w-0">

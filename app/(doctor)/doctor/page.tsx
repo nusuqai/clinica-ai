@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { getDoctorStats } from "@/server/services/doctors";
 import { getDoctorAppointments } from "@/server/services/appointments";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
+import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
 export default async function DoctorDashboardPage() {
   const supabase = await createClient();
@@ -107,9 +108,6 @@ export default async function DoctorDashboardPage() {
         ) : (
           <ul className="divide-y divide-border">
             {upcoming.map((appt) => {
-              const date = new Date(appt.slot.date);
-              const start = new Date(appt.slot.startTime);
-              const end = new Date(appt.slot.endTime);
               return (
                 <li
                   key={appt.id}
@@ -126,21 +124,12 @@ export default async function DoctorDashboardPage() {
                         {appt.patient.fullName}
                       </p>
                       <p className="text-xs text-muted-foreground font-sans">
-                        {date.toLocaleDateString("ar-EG", {
-                          day: "numeric",
-                          month: "short",
-                        })}
+                        {formatSlotDate(appt.slot.date, { day: "numeric", month: "short" })}
                         {" · "}
                         <span dir="ltr" className="inline">
-                          {start.toLocaleTimeString("ar-EG", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {formatSlotTime(appt.slot.startTime)}
                           {" – "}
-                          {end.toLocaleTimeString("ar-EG", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {formatSlotTime(appt.slot.endTime)}
                         </span>
                       </p>
                     </div>

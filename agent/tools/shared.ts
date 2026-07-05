@@ -2,6 +2,7 @@ import "server-only";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
+import { formatSlotTime } from "@/lib/slot-time";
 
 export type R = Record<string, unknown>;
 
@@ -17,9 +18,5 @@ export function jsonTool<S extends z.ZodTypeAny>(
 }
 
 export const money = (v: unknown) => (v == null ? null : Number(v));
-export const timeStr = (d: Date) =>
-  new Date(d).toLocaleTimeString("ar-EG", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+export const timeStr = (d: Date) => formatSlotTime(d);
 export const dateStr = (d: Date) => new Date(d).toISOString().slice(0, 10);

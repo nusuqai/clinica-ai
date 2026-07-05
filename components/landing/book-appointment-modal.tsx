@@ -8,6 +8,7 @@ import {
   getAvailableDaysAction,
   getAvailableSlotsAction,
 } from "@/server/actions/patient";
+import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
 interface Doctor {
   id: string;
@@ -30,19 +31,14 @@ interface Props {
 }
 
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("ar-EG", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
+  return formatSlotTime(iso, { hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
 function formatDayChip(dateStr: string) {
-  const d = new Date(dateStr);
   return {
-    weekday: d.toLocaleDateString("ar-EG", { weekday: "short" }),
-    day: d.toLocaleDateString("ar-EG", { day: "numeric" }),
-    month: d.toLocaleDateString("ar-EG", { month: "short" }),
+    weekday: formatSlotDate(dateStr, { weekday: "short" }),
+    day: formatSlotDate(dateStr, { day: "numeric" }),
+    month: formatSlotDate(dateStr, { month: "short" }),
   };
 }
 
@@ -343,7 +339,7 @@ export function BookAppointmentModal({
                       التاريخ
                     </span>
                     <span className="font-sans text-sm font-medium text-text">
-                      {new Date(selectedDate).toLocaleDateString("ar-EG", {
+                      {formatSlotDate(selectedDate, {
                         weekday: "long",
                         year: "numeric",
                         month: "long",

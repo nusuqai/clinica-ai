@@ -96,7 +96,13 @@ export async function listAppointments(filters?: {
       ...(filters?.patientId && { patientId: filters.patientId }),
     },
     include: {
-      slot: { select: { date: true, startTime: true, endTime: true } },
+      slot: {
+        select: {
+          date: true,
+          startTime: true,
+          endTime: true,
+        },
+      },
       patient: { select: { fullName: true } },
       doctor: {
         select: {

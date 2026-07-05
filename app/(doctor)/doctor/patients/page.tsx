@@ -3,6 +3,7 @@ import { Users, Phone, Calendar } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getDoctorPatients } from "@/server/services/doctors";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
+import { formatSlotDate } from "@/lib/slot-time";
 
 export default async function DoctorPatientsPage() {
   const supabase = await createClient();
@@ -58,7 +59,6 @@ export default async function DoctorPatientsPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {patients.map((patient) => {
-                  const lastDate = new Date(patient.lastAppointmentDate);
                   return (
                     <tr
                       key={patient.patientId}
@@ -89,12 +89,7 @@ export default async function DoctorPatientsPage() {
                       <td className="px-4 py-3 text-muted-foreground">
                         <span className="flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
-                          {lastDate.toLocaleDateString("ar-EG", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                            timeZone: "UTC",
-                          })}
+                          {formatSlotDate(patient.lastAppointmentDate)}
                         </span>
                       </td>
                       <td className="px-4 py-3">

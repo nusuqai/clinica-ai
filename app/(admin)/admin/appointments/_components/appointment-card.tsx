@@ -5,6 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import type { AdminAppointment } from "@/server/services/appointments";
 import { getAllowedTransitions } from "@/lib/appointment-transitions";
+import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
 interface AppointmentCardProps {
   appointment: AdminAppointment;
@@ -16,10 +17,6 @@ export default function AppointmentCard({ appointment }: AppointmentCardProps) {
     id: appointment.id,
     disabled: !canMove,
   });
-
-  const date = new Date(appointment.slot.date);
-  const start = new Date(appointment.slot.startTime);
-  const end = new Date(appointment.slot.endTime);
 
   return (
     <div
@@ -48,12 +45,12 @@ export default function AppointmentCard({ appointment }: AppointmentCardProps) {
       </p>
 
       <p className="text-xs text-muted-foreground mt-2">
-        {date.toLocaleDateString("ar-EG", { day: "numeric", month: "short", year: "numeric" })}
+        {formatSlotDate(appointment.slot.date)}
       </p>
       <p className="text-xs text-muted-foreground" dir="ltr">
-        {start.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+        {formatSlotTime(appointment.slot.startTime)}
         {" – "}
-        {end.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+        {formatSlotTime(appointment.slot.endTime)}
       </p>
 
       {appointment.cancellationReason && (

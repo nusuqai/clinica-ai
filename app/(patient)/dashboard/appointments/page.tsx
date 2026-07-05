@@ -7,6 +7,7 @@ import PageHeader from "@/components/admin/page-header";
 import Link from "next/link";
 import { CalendarPlus, CalendarDays } from "lucide-react";
 import type { AppointmentStatus } from "@prisma/client";
+import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
 const STATUS_LABELS: Record<AppointmentStatus, string> = {
   PENDING: "قيد الانتظار",
@@ -109,9 +110,6 @@ export default async function PatientAppointmentsPage({ searchParams }: PageProp
               </thead>
               <tbody className="divide-y divide-border">
                 {appointments.map((appt) => {
-                  const date = new Date(appt.slot.date);
-                  const start = new Date(appt.slot.startTime);
-                  const end = new Date(appt.slot.endTime);
                   return (
                     <tr key={appt.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3 font-medium text-foreground">
@@ -119,16 +117,12 @@ export default async function PatientAppointmentsPage({ searchParams }: PageProp
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{appt.doctor.specialty}</td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {date.toLocaleDateString("ar-EG", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
+                        {formatSlotDate(appt.slot.date)}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground" dir="ltr">
-                        {start.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+                        {formatSlotTime(appt.slot.startTime)}
                         {" – "}
-                        {end.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+                        {formatSlotTime(appt.slot.endTime)}
                       </td>
                       <td className="px-4 py-3">
                         <AppointmentStatusBadge status={appt.status} />

@@ -7,6 +7,7 @@ import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import RulesTab from "./_components/rules-tab";
 import SlotsTab from "./_components/slots-tab";
 import EditDoctorModal from "../_components/edit-doctor-modal";
+import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
 const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
@@ -166,23 +167,16 @@ async function AppointmentsContent({ doctorId }: { doctorId: string }) {
               </tr>
             )}
             {appointments.map((appt) => {
-              const date = new Date(appt.slot.date);
-              const start = new Date(appt.slot.startTime);
-              const end = new Date(appt.slot.endTime);
               return (
                 <tr key={appt.id} className="hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3 font-medium text-foreground">{appt.patient.fullName}</td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {date.toLocaleDateString("ar-EG", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    })}
+                    {formatSlotDate(appt.slot.date)}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground" dir="ltr">
-                    {start.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+                    {formatSlotTime(appt.slot.startTime)}
                     {" – "}
-                    {end.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+                    {formatSlotTime(appt.slot.endTime)}
                   </td>
                   <td className="px-4 py-3">
                     <AppointmentStatusBadge status={appt.status} />

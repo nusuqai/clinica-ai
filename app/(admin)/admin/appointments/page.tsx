@@ -8,17 +8,17 @@ export default async function AdminAppointmentsPage() {
     listAppointments(),
     listDoctors(),
   ]);
-
   return (
     <div>
-      <PageHeader
-        title="المواعيد"
-        subtitle={`${appointments.length} موعد`}
-      />
+      <PageHeader title="المواعيد" subtitle={`${appointments.length} موعد`} />
 
       <AppointmentBoard
         appointments={appointments}
-        doctors={doctors.map((d) => ({ id: d.id, fullName: d.profile.fullName, specialty: d.specialty }))}
+        doctors={doctors.map((d) => ({
+          id: d.id,
+          fullName: d.profile.fullName,
+          specialty: d.specialty,
+        }))}
       />
     </div>
   );

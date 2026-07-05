@@ -6,6 +6,7 @@ import {
   getPatientStats,
 } from "@/server/services/appointments";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
+import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { CalendarDays, CalendarPlus, CheckCircle, XCircle, Clock } from "lucide-react";
 
 export default async function PatientDashboardPage() {
@@ -94,9 +95,6 @@ export default async function PatientDashboardPage() {
         ) : (
           <ul className="divide-y divide-border">
             {upcoming.map((appt) => {
-              const date = new Date(appt.slot.date);
-              const start = new Date(appt.slot.startTime);
-              const end = new Date(appt.slot.endTime);
               return (
                 <li key={appt.id} className="px-6 py-4 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3 min-w-0">
@@ -113,12 +111,12 @@ export default async function PatientDashboardPage() {
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <AppointmentStatusBadge status={appt.status} />
                     <p className="text-xs text-muted-foreground font-sans">
-                      {date.toLocaleDateString("ar-EG", { day: "numeric", month: "short" })}
+                      {formatSlotDate(appt.slot.date, { day: "numeric", month: "short" })}
                       {" • "}
                       <span dir="ltr">
-                        {start.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+                        {formatSlotTime(appt.slot.startTime)}
                         {" – "}
-                        {end.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+                        {formatSlotTime(appt.slot.endTime)}
                       </span>
                     </p>
                   </div>

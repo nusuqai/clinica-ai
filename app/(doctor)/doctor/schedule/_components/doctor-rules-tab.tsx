@@ -11,6 +11,7 @@ import {
 } from "@/server/actions/doctor";
 import Modal from "@/components/admin/modal";
 import type { AvailabilityRule, DayOfWeek } from "@prisma/client";
+import { formatSlotDate } from "@/lib/slot-time";
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   SUN: "الأحد",
@@ -147,7 +148,7 @@ export default function DoctorRulesTab({ rules }: DoctorRulesTabProps) {
                 {rule.generatedUntil && (
                   <p className="text-xs text-muted-foreground font-sans">
                     آخر توليد حتى:{" "}
-                    {new Date(rule.generatedUntil).toLocaleDateString("ar-EG", {
+                    {formatSlotDate(rule.generatedUntil, {
                       day: "numeric",
                       month: "long",
                       year: "numeric",
