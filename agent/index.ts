@@ -25,7 +25,8 @@ export type AgentStreamEvent =
       result: unknown;
       status: "ok" | "error";
     }
-  | { type: "done"; text: string; toolCalls: ToolCallRecord[] };
+  | { type: "done"; text: string; toolCalls: ToolCallRecord[] }
+  | { type: "handoff" };
 
 function buildAgent(ctx: AgentContext) {
   return createReactAgent({

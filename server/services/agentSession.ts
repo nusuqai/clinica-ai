@@ -41,6 +41,15 @@ export async function resolveActiveSession(
   return session.id;
 }
 
+/** Whether AI auto-reply is currently on for this session. */
+export async function isSessionAiEnabled(sessionId: string): Promise<boolean> {
+  const session = await prisma.chatSession.findUnique({
+    where: { id: sessionId },
+    select: { aiEnabled: true },
+  });
+  return session?.aiEnabled ?? true;
+}
+
 /** Prior messages of a session, oldest first, for LLM context. */
 export async function getSessionMessages(
   sessionId: string,

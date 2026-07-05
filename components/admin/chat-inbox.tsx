@@ -21,8 +21,10 @@ import {
   Globe,
   Loader2,
   Inbox,
+  Bot,
+  BotOff,
 } from "lucide-react";
-import { sendAdminReply } from "@/server/actions/messages";
+import { sendAdminReply, setSessionAiEnabled } from "@/server/actions/messages";
 import {
   useRealtimeMessages,
   useRealtimeConversations,
@@ -55,6 +57,7 @@ export default function ChatInbox({
   const [reply, setReply] = useState("");
   const [sending, startSending] = useTransition();
   const [listPending, startListTransition] = useTransition();
+  const [aiTogglePending, startAiToggle] = useTransition();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Sync when server re-renders with fresh data
@@ -96,6 +99,19 @@ export default function ChatInbox({
     setReply("");
     startSending(async () => {
       await sendAdminReply(activeId, text);
+    });
+  };
+
+  const handleToggleAi = () => {
+    if (!selectedConversation?.activeSessionId) return;
+    const sessionId = selectedConversation.activeSessionId;
+    const next = !selectedConversation.aiEnabled;
+    setSelectedConversation((prev) =>
+      prev ? { ...prev, aiEnabled: next } : prev,
+    );
+    startAiToggle(async () => {
+      await setSessionAiEnabled(sessionId, next);
+      router.refresh();
     });
   };
 
@@ -206,7 +222,37 @@ export default function ChatInbox({
                   </p>
                 )}
               </div>
-              <div className="ms-auto">
+              <div className="ms-auto flex items-center gap-2">
+                {selectedConversation.escalations.length > 0 && (
+                  <span
+                    className="text-[10px] text-amber-600 font-sans"
+                    title={selectedConversation.escalations
+                      .map((e) => e.reason ?? "بدون سبب")
+                      .join(" · ")}
+                  >
+                    {selectedConversation.escalations.length} طلب تصعيد
+                  </span>
+                )}
+                {selectedConversation.activeSessionId && (
+                  <button
+                    onClick={handleToggleAi}
+                    disabled={aiTogglePending}
+                    className={[
+                      "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-sans transition-colors disabled:opacity-50",
+                      selectedConversation.aiEnabled
+                        ? "bg-accent/10 text-accent"
+                        : "bg-muted text-muted-foreground",
+                    ].join(" ")}
+                    title="تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة"
+                  >
+                    {selectedConversation.aiEnabled ? (
+                      <Bot className="w-3.5 h-3.5" />
+                    ) : (
+                      <BotOff className="w-3.5 h-3.5" />
+                    )}
+                    {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
+                  </button>
+                )}
                 {selectedConversation.channel === "WHATSAPP" ? (
                   <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-sans">
                     <Smartphone className="w-3 h-3" />

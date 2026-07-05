@@ -47,3 +47,27 @@ export async function sendAdminReply(
 
   revalidatePath("/admin/messages");
 }
+
+export async function setSessionAiEnabled(
+  sessionId: string,
+  enabled: boolean,
+): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const profile = await prisma.profile.findUnique({
+    where: { id: user.id },
+    select: { role: true },
+  });
+  if (profile?.role !== "ADMIN") throw new Error("Forbidden");
+
+  await prisma.chatSession.update({
+    where: { id: sessionId },
+    data: { aiEnabled: enabled },
+  });
+
+  revalidatePath("/admin/messages");
+}

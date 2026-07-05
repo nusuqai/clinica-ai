@@ -137,6 +137,13 @@ export default function ChatBubble() {
           content: String(ev.text ?? m.content),
         }));
         break;
+      case "handoff":
+        patchAgent(agentId, (m) => ({
+          ...m,
+          streaming: false,
+          content: "تم تحويل محادثتك إلى أحد الموظفين، سيتم الرد عليك قريباً.",
+        }));
+        break;
       case "error":
         patchAgent(agentId, (m) => ({
           ...m,

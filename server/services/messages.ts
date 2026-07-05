@@ -20,11 +20,20 @@ export interface MessageItem {
   isRead: boolean;
 }
 
+export interface EscalationItem {
+  reason: string | null;
+  createdAt: Date;
+}
+
 export interface ConversationDetail {
   id: string;
   channel: "WEB" | "WHATSAPP";
   contactName: string;
   contactPhone?: string;
+  /** Most recent chat session (may be expired) — null if no message yet. */
+  activeSessionId: string | null;
+  aiEnabled: boolean;
+  escalations: EscalationItem[];
 }
 
 export async function getConversations(): Promise<ConversationSummary[]> {
@@ -79,15 +88,28 @@ export async function getConversationDetail(
 ): Promise<ConversationDetail | null> {
   const c = await prisma.conversation.findUnique({
     where: { id },
-    include: { user: { select: { fullName: true, phone: true } } },
+    include: {
+      user: { select: { fullName: true, phone: true } },
+      sessions: {
+        orderBy: { startedAt: "desc" },
+        take: 1,
+        include: {
+          escalations: { orderBy: { createdAt: "desc" } },
+        },
+      },
+    },
   });
   if (!c) return null;
+  const latestSession = c.sessions[0];
   return {
     id: c.id,
     channel: c.channel,
     contactName:
       c.user?.fullName ?? c.whatsappName ?? c.whatsappPhone ?? "غير معروف",
     contactPhone: c.user?.phone ?? c.whatsappPhone ?? undefined,
+    activeSessionId: latestSession?.id ?? null,
+    aiEnabled: latestSession?.aiEnabled ?? true,
+    escalations: latestSession?.escalations ?? [],
   };
 }
 

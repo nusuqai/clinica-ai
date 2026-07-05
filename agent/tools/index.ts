@@ -15,7 +15,7 @@ export function getToolsForRole(ctx: AgentContext): DynamicStructuredTool[] {
   // Unknown WhatsApp contact → info only, no actions.
   if (ctx.role === null) return commonTools();
 
-  const base = [...commonTools(), escalationTool()];
+  const base = [...commonTools(), escalationTool(ctx)];
   switch (ctx.role) {
     case "PATIENT":
       return [...base, ...patientTools(ctx)];

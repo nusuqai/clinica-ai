@@ -15,6 +15,7 @@ import {
   getSessionMessages,
   persistUserMessage,
   persistAgentMessage,
+  isSessionAiEnabled,
   type SessionMessage,
 } from "./agentSession";
 
@@ -46,6 +47,12 @@ export async function* streamWebAgent(
   const conversationId = await getOrCreateWebConversation(userId);
   const sessionId = await resolveActiveSession(conversationId);
   await persistUserMessage(conversationId, sessionId, userText, userId);
+
+  if (!(await isSessionAiEnabled(sessionId))) {
+    yield { type: "handoff" };
+    return;
+  }
+
   const prior = await getSessionMessages(sessionId);
 
   const ctx: AgentContext = {
@@ -108,6 +115,9 @@ export async function handleWhatsAppMessage(
     userText,
     profile?.id ?? null,
   );
+
+  if (!(await isSessionAiEnabled(sessionId))) return;
+
   const prior = await getSessionMessages(sessionId);
 
   const conv = await prisma.conversation.findUnique({

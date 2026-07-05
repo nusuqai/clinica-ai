@@ -145,9 +145,10 @@ model Conversation {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  user     Profile?      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages Message[]
-  sessions ChatSession[]
+  user        Profile?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  sessions    ChatSession[]
+  escalations Escalation[]
 
   @@unique([userId, channel])
   @@map("conversations")
@@ -160,12 +161,34 @@ model ChatSession {
   conversationId String   @db.Uuid
   startedAt      DateTime @default(now())
   expiresAt      DateTime // startedAt + 30 min
+  // AI auto-reply for this session. Defaults on for every new session; the
+  // admin can pause it, or the escalate_to_human tool turns it off when the
+  // user asks for a human. Does not carry over to the next session.
+  aiEnabled      Boolean  @default(true)
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   messages     Message[]
+  escalations  Escalation[]
 
   @@index([conversationId])
   @@map("chat_sessions")
+}
+
+// One row per escalate_to_human request. A session can have several — e.g.
+// user escalates, admin re-enables the AI, user escalates again.
+model Escalation {
+  id             String   @id @default(uuid()) @db.Uuid
+  conversationId String   @db.Uuid
+  sessionId      String   @db.Uuid
+  reason         String?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  session      ChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([sessionId])
+  @@map("escalations")
 }
 
 model Message {
