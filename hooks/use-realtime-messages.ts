@@ -3,9 +3,22 @@
 import { useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+/** Raw shape of a `messages` row as delivered by Supabase Realtime. */
+export interface RealtimeMessageRow {
+  id: string;
+  conversationId: string;
+  sessionId: string | null;
+  senderType: "USER" | "ADMIN" | "AGENT";
+  senderId: string | null;
+  content: string;
+  metadata: unknown;
+  isRead: boolean;
+  createdAt: string;
+}
+
 export function useRealtimeMessages(
   conversationId: string | null,
-  onNewMessage: () => void,
+  onNewMessage: (row: RealtimeMessageRow) => void,
 ) {
   const callbackRef = useRef(onNewMessage);
   callbackRef.current = onNewMessage;
@@ -21,9 +34,10 @@ export function useRealtimeMessages(
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: `conversationId=eq.${conversationId}`,
         },
-        () => callbackRef.current(),
+        (payload) => {
+          callbackRef.current(payload.new as unknown as RealtimeMessageRow);
+        },
       )
       .subscribe();
     return () => {

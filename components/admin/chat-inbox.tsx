@@ -28,6 +28,7 @@ import { sendAdminReply, setSessionAiEnabled } from "@/server/actions/messages";
 import {
   useRealtimeMessages,
   useRealtimeConversations,
+  RealtimeMessageRow,
 } from "@/hooks/use-realtime-messages";
 import type {
   ConversationSummary,
@@ -80,12 +81,10 @@ export default function ChatInbox({
     startListTransition(() => router.refresh());
   }, [router]);
 
-  const refreshMessages = useCallback(() => {
-    router.refresh();
-  }, [router]);
-
   useRealtimeConversations(refreshConversations);
-  useRealtimeMessages(activeId, refreshMessages);
+  useRealtimeMessages(activeId, () => {
+    router.refresh();
+  });
 
   const handleSelectConversation = (id: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -250,7 +249,9 @@ export default function ChatInbox({
                     ) : (
                       <BotOff className="w-3.5 h-3.5" />
                     )}
-                    {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
+                    {selectedConversation.aiEnabled
+                      ? "الذكاء مفعّل"
+                      : "الذكاء متوقف"}
                   </button>
                 )}
                 {selectedConversation.channel === "WHATSAPP" ? (

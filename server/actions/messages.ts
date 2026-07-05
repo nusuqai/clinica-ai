@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { sendTextMessage } from "@/lib/evolution";
+import { resolveActiveSession } from "@/server/services/agentSession";
 
 export async function sendAdminReply(
   conversationId: string,
@@ -26,9 +27,12 @@ export async function sendAdminReply(
   });
   if (!conversation) throw new Error("Conversation not found");
 
+  const sessionId = await resolveActiveSession(conversationId);
+
   await prisma.message.create({
     data: {
       conversationId,
+      sessionId,
       senderType: "ADMIN",
       senderId: user.id,
       content,
