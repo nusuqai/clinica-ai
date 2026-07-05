@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { X, CalendarDays, Clock, CheckCircle, AlertCircle, LogIn } from "lucide-react";
+import { X, Clock, CheckCircle, AlertCircle, LogIn } from "lucide-react";
 import Link from "next/link";
 import {
   bookAppointmentAction,
+  getAvailableDaysAction,
   getAvailableSlotsAction,
 } from "@/server/actions/patient";
 
@@ -36,14 +37,13 @@ function formatTime(iso: string) {
   });
 }
 
-function getMinDate() {
-  return new Date().toISOString().split("T")[0];
-}
-
-function getMaxDate() {
-  const d = new Date();
-  d.setDate(d.getDate() + 60);
-  return d.toISOString().split("T")[0];
+function formatDayChip(dateStr: string) {
+  const d = new Date(dateStr);
+  return {
+    weekday: d.toLocaleDateString("ar-EG", { weekday: "short" }),
+    day: d.toLocaleDateString("ar-EG", { day: "numeric" }),
+    month: d.toLocaleDateString("ar-EG", { month: "short" }),
+  };
 }
 
 export function BookAppointmentModal({
@@ -56,6 +56,9 @@ export function BookAppointmentModal({
   const needsAuth = !isAuthenticated || !isPatient;
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedDate, setSelectedDate] = useState("");
+  const [availableDays, setAvailableDays] = useState<string[]>([]);
+  const [daysLoading, setDaysLoading] = useState(true);
+  const [daysError, setDaysError] = useState("");
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [notes, setNotes] = useState("");
@@ -64,6 +67,41 @@ export function BookAppointmentModal({
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState(false);
   const [bookingError, setBookingError] = useState("");
+
+  // Load doctor's available days once, up-front
+  useEffect(() => {
+    if (needsAuth) return;
+    let cancelled = false;
+    setDaysLoading(true);
+    setDaysError("");
+    getAvailableDaysAction(doctor.id)
+      .then((days) => {
+        if (cancelled) return;
+        setAvailableDays(days);
+        if (days.length === 0)
+          setDaysError("لا توجد أيام متاحة لهذا الطبيب حالياً");
+      })
+      .catch(() => {
+        if (!cancelled)
+          setDaysError("تعذر تحميل الأيام المتاحة، يرجى المحاولة مجدداً");
+      })
+      .finally(() => {
+        if (!cancelled) setDaysLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doctor.id, needsAuth]);
+
+  // Lock background scroll while modal is open
+  useEffect(() => {
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = original;
+    };
+  }, []);
 
   // Close on overlay click
   function handleOverlayClick(e: React.MouseEvent) {
@@ -87,7 +125,8 @@ export function BookAppointmentModal({
     try {
       const result = await getAvailableSlotsAction(doctor.id, date);
       setSlots(result);
-      if (result.length === 0) setSlotsError("لا توجد مواعيد متاحة في هذا اليوم");
+      if (result.length === 0)
+        setSlotsError("لا توجد مواعيد متاحة في هذا اليوم");
     } catch {
       setSlotsError("تعذر تحميل المواعيد، يرجى المحاولة مجدداً");
     } finally {
@@ -104,7 +143,10 @@ export function BookAppointmentModal({
     if (!selectedSlot) return;
     setBookingError("");
     startTransition(async () => {
-      const res = await bookAppointmentAction(selectedSlot.id, notes || undefined);
+      const res = await bookAppointmentAction(
+        selectedSlot.id,
+        notes || undefined,
+      );
       if (res.ok) {
         setSuccess(true);
       } else {
@@ -136,7 +178,9 @@ export function BookAppointmentModal({
               <p className="font-sans text-sm font-semibold text-text">
                 {doctor.name}
               </p>
-              <p className="font-sans text-xs text-text/50">{doctor.specialty}</p>
+              <p className="font-sans text-xs text-text/50">
+                {doctor.specialty}
+              </p>
             </div>
           </div>
           <button
@@ -185,24 +229,56 @@ export function BookAppointmentModal({
             <div className="flex flex-col gap-5">
               <div>
                 <p className="mb-1 font-heading text-base font-bold text-text">
-                  اختر تاريخ الموعد
+                  اختر يوم الموعد
                 </p>
                 <p className="font-sans text-sm text-text/50">
-                  سيتم عرض المواعيد المتاحة بعد اختيار التاريخ
+                  هذه هي الأيام المتاحة لدى الطبيب — اختر يوماً لعرض الأوقات
+                  المتاحة
                 </p>
               </div>
 
-              <div className="relative">
-                <CalendarDays className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text/40" />
-                <input
-                  type="date"
-                  min={getMinDate()}
-                  max={getMaxDate()}
-                  value={selectedDate}
-                  onChange={(e) => handleDateChange(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-background py-3 pr-10 pl-4 font-sans text-sm text-text focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-                />
-              </div>
+              {daysLoading && (
+                <div className="flex items-center justify-center py-6">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                </div>
+              )}
+
+              {daysError && !daysLoading && (
+                <div className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  {daysError}
+                </div>
+              )}
+
+              {!daysLoading && availableDays.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {availableDays.map((dateStr) => {
+                    const { weekday, day, month } = formatDayChip(dateStr);
+                    const isSelected = selectedDate === dateStr;
+                    return (
+                      <button
+                        key={dateStr}
+                        onClick={() => handleDateChange(dateStr)}
+                        className={`flex shrink-0 flex-col items-center gap-0.5 rounded-xl border px-4 py-2.5 text-center transition-all ${
+                          isSelected
+                            ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
+                            : "border-border bg-background text-text hover:border-accent/50"
+                        }`}
+                      >
+                        <span className="font-sans text-xs opacity-70">
+                          {weekday}
+                        </span>
+                        <span className="font-heading text-base font-bold">
+                          {day}
+                        </span>
+                        <span className="font-sans text-[11px] opacity-70">
+                          {month}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Slots */}
               {slotsLoading && (
@@ -258,10 +334,14 @@ export function BookAppointmentModal({
             <div className="flex flex-col gap-5">
               {/* Summary */}
               <div className="rounded-xl bg-muted px-4 py-3">
-                <p className="font-sans text-xs font-medium text-text/50">تفاصيل الموعد</p>
+                <p className="font-sans text-xs font-medium text-text/50">
+                  تفاصيل الموعد
+                </p>
                 <div className="mt-2 flex flex-col gap-1">
                   <div className="flex items-center justify-between">
-                    <span className="font-sans text-sm text-text/70">التاريخ</span>
+                    <span className="font-sans text-sm text-text/70">
+                      التاريخ
+                    </span>
                     <span className="font-sans text-sm font-medium text-text">
                       {new Date(selectedDate).toLocaleDateString("ar-EG", {
                         weekday: "long",
@@ -272,7 +352,9 @@ export function BookAppointmentModal({
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="font-sans text-sm text-text/70">الوقت</span>
+                    <span className="font-sans text-sm text-text/70">
+                      الوقت
+                    </span>
                     <span className="font-sans text-sm font-medium text-text">
                       {selectedSlot && formatTime(selectedSlot.startTime)} —{" "}
                       {selectedSlot && formatTime(selectedSlot.endTime)}
@@ -280,7 +362,9 @@ export function BookAppointmentModal({
                   </div>
                   {doctor.fee && (
                     <div className="flex items-center justify-between">
-                      <span className="font-sans text-sm text-text/70">رسوم الكشف</span>
+                      <span className="font-sans text-sm text-text/70">
+                        رسوم الكشف
+                      </span>
                       <span className="font-sans text-sm font-semibold text-accent">
                         {doctor.fee} جنيه
                       </span>
@@ -312,7 +396,10 @@ export function BookAppointmentModal({
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => { setStep(1); setBookingError(""); }}
+                  onClick={() => {
+                    setStep(1);
+                    setBookingError("");
+                  }}
                   className="flex-1 rounded-xl border border-border py-3 font-medium text-text transition-colors hover:bg-muted"
                 >
                   رجوع

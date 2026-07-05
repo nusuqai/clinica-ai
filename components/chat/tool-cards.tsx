@@ -232,6 +232,32 @@ function StatsCard({ result }: { result: R }) {
   );
 }
 
+// Friendly Arabic labels for tools that don't have a dedicated card.
+const TOOL_LABELS: Record<string, string> = {
+  get_current_datetime: "التحقق من التاريخ والوقت",
+  add_doctor_notes: "إضافة ملاحظات الطبيب",
+  list_my_patients: "عرض قائمة المرضى",
+  get_my_schedule: "عرض الجدول الزمني",
+  block_slot: "حجب الموعد",
+  unblock_slot: "إلغاء حجب الموعد",
+  create_availability_rule: "إنشاء قاعدة توفر",
+  generate_slots: "إنشاء المواعيد المتاحة",
+  escalate_to_human: "تحويل المحادثة إلى موظف",
+  create_doctor_account: "إنشاء حساب طبيب",
+  update_doctor: "تحديث بيانات الطبيب",
+  set_doctor_active: "تحديث حالة تفعيل الطبيب",
+  list_users: "عرض قائمة المستخدمين",
+  update_user_role: "تحديث صلاحية المستخدم",
+  list_doctor_rules: "عرض قواعد توفر الطبيب",
+  delete_availability_rule: "حذف قاعدة التوفر",
+  toggle_rule_active: "تفعيل/تعطيل قاعدة التوفر",
+  list_doctor_slots: "عرض مواعيد الطبيب",
+  toggle_slot_blocked: "تفعيل/تعطيل حجب الموعد",
+  send_message_to_conversation: "إرسال رسالة للمحادثة",
+  cancel_appointment: "إلغاء الموعد",
+  update_my_profile: "تحديث الملف الشخصي",
+};
+
 function GenericToolCard({ name, result }: { name: string; result: R }) {
   if (result.escalated) {
     return (
@@ -245,7 +271,9 @@ function GenericToolCard({ name, result }: { name: string; result: R }) {
     <CardShell icon={<Wrench className="w-4 h-4" />} title="تم التنفيذ">
       <div className="flex items-center gap-2 text-xs text-foreground">
         <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
-        <span className="text-muted-foreground">{name}</span>
+        <span className="text-muted-foreground">
+          {TOOL_LABELS[name] ?? name}
+        </span>
       </div>
     </CardShell>
   );

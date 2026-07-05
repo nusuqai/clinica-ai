@@ -2,7 +2,12 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, err, type Result } from "./_result";
-import type { Doctor, Profile, DayOfWeek, AppointmentStatus } from "@prisma/client";
+import type {
+  Doctor,
+  Profile,
+  DayOfWeek,
+  AppointmentStatus,
+} from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,6 +101,30 @@ export async function getAvailableSlotsForBooking(
   });
 }
 
+export async function getAvailableDaysForBooking(
+  doctorId: string,
+  daysAhead = 60,
+): Promise<string[]> {
+  const now = new Date();
+  const until = new Date(now);
+  until.setDate(until.getDate() + daysAhead);
+
+  const slots = await prisma.slot.findMany({
+    where: {
+      doctorId,
+      isBlocked: false,
+      appointment: null,
+      startTime: { gt: now },
+      date: { lte: until },
+    },
+    select: { date: true },
+    distinct: ["date"],
+    orderBy: { date: "asc" },
+  });
+
+  return slots.map((s) => s.date.toISOString().split("T")[0]);
+}
+
 export async function listDoctors(): Promise<DoctorWithProfile[]> {
   const [doctors, { data: authList }] = await Promise.all([
     prisma.doctor.findMany({
@@ -116,7 +145,7 @@ export async function listDoctors(): Promise<DoctorWithProfile[]> {
   ]);
 
   const emailMap = new Map<string, string>(
-    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""])
+    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""]),
   );
 
   return doctors.map((d) => ({ ...d, email: emailMap.get(d.id) ?? "" }));
@@ -141,7 +170,8 @@ export async function getDoctor(
   });
   if (!doctor) return null;
 
-  const { data: authUser } = await createAdminClient().auth.admin.getUserById(doctorId);
+  const { data: authUser } =
+    await createAdminClient().auth.admin.getUserById(doctorId);
   return { ...doctor, email: authUser?.user?.email ?? "" };
 }
 
@@ -344,7 +374,10 @@ export async function toggleRuleActive(
   isActive: boolean,
 ): Promise<Result<void>> {
   try {
-    await prisma.availabilityRule.update({ where: { id: ruleId }, data: { isActive } });
+    await prisma.availabilityRule.update({
+      where: { id: ruleId },
+      data: { isActive },
+    });
     return ok(undefined);
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل تحديث حالة القاعدة");
@@ -354,7 +387,13 @@ export async function toggleRuleActive(
 // ─── Slot Generation ──────────────────────────────────────────────────────────
 
 const DAY_MAP: Record<DayOfWeek, number> = {
-  SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6,
+  SUN: 0,
+  MON: 1,
+  TUE: 2,
+  WED: 3,
+  THU: 4,
+  FRI: 5,
+  SAT: 6,
 };
 
 export async function generateSlotsForRule(
@@ -362,14 +401,18 @@ export async function generateSlotsForRule(
   daysAhead = 30,
 ): Promise<Result<{ count: number }>> {
   try {
-    const rule = await prisma.availabilityRule.findUnique({ where: { id: ruleId } });
+    const rule = await prisma.availabilityRule.findUnique({
+      where: { id: ruleId },
+    });
     if (!rule) return err("القاعدة غير موجودة");
 
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
     const from = rule.generatedUntil
-      ? new Date(Math.max(rule.generatedUntil.getTime() + 86_400_000, today.getTime()))
+      ? new Date(
+          Math.max(rule.generatedUntil.getTime() + 86_400_000, today.getTime()),
+        )
       : today;
 
     const until = new Date(today);
@@ -413,7 +456,10 @@ export async function generateSlotsForRule(
     }
 
     if (slotsToCreate.length > 0) {
-      await prisma.slot.createMany({ data: slotsToCreate, skipDuplicates: true });
+      await prisma.slot.createMany({
+        data: slotsToCreate,
+        skipDuplicates: true,
+      });
     }
     await prisma.availabilityRule.update({
       where: { id: ruleId },
@@ -432,8 +478,20 @@ export async function listDoctorSlots(
   doctorId: string,
   options?: { from?: Date; to?: Date },
 ): Promise<DoctorSlot[]> {
-  const from = options?.from ?? (() => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); return d; })();
-  const to = options?.to ?? (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() + 30); return d; })();
+  const from =
+    options?.from ??
+    (() => {
+      const d = new Date();
+      d.setUTCHours(0, 0, 0, 0);
+      return d;
+    })();
+  const to =
+    options?.to ??
+    (() => {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() + 30);
+      return d;
+    })();
 
   return prisma.slot.findMany({
     where: { doctorId, date: { gte: from, lte: to } },
@@ -493,7 +551,9 @@ export type DoctorPatient = {
   totalAppointments: number;
 };
 
-export async function getDoctorPatients(doctorId: string): Promise<DoctorPatient[]> {
+export async function getDoctorPatients(
+  doctorId: string,
+): Promise<DoctorPatient[]> {
   const appointments = await prisma.appointment.findMany({
     where: { doctorId },
     include: {

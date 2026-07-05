@@ -27,7 +27,10 @@ export async function updateProfileAction(
     revalidatePath("/dashboard/profile");
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "فشل تحديث الملف الشخصي" };
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "فشل تحديث الملف الشخصي",
+    };
   }
 }
 
@@ -53,7 +56,10 @@ export async function cancelAppointmentAction(
   if (["CANCELLED", "COMPLETED", "NO_SHOW"].includes(appointment.status))
     return { ok: false, error: "لا يمكن إلغاء هذا الموعد" };
 
-  const result = await AppointmentService.updateAppointmentStatus(appointmentId, "CANCELLED");
+  const result = await AppointmentService.updateAppointmentStatus(
+    appointmentId,
+    "CANCELLED",
+  );
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath("/dashboard");
@@ -62,6 +68,12 @@ export async function cancelAppointmentAction(
 }
 
 // ─── Public queries (no auth required) ───────────────────────────────────────
+
+export async function getAvailableDaysAction(
+  doctorId: string,
+): Promise<string[]> {
+  return DoctorService.getAvailableDaysForBooking(doctorId);
+}
 
 export async function getAvailableSlotsAction(
   doctorId: string,

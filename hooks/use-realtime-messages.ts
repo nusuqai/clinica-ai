@@ -21,7 +21,7 @@ export function useRealtimeMessages(
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: `conversation_id=eq.${conversationId}`,
+          filter: `conversationId=eq.${conversationId}`,
         },
         () => callbackRef.current(),
       )
