@@ -4,6 +4,16 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import * as DoctorService from "@/server/services/doctors";
 import { jsonTool, money, timeStr } from "./shared";
 
+const DAY_LABELS_AR: Record<string, string> = {
+  SUN: "الأحد",
+  MON: "الإثنين",
+  TUE: "الثلاثاء",
+  WED: "الأربعاء",
+  THU: "الخميس",
+  FRI: "الجمعة",
+  SAT: "السبت",
+};
+
 /** Tools available to every caller, including unknown WhatsApp contacts. */
 export function commonTools(): DynamicStructuredTool[] {
   return [
@@ -70,14 +80,41 @@ export function commonTools(): DynamicStructuredTool[] {
     ),
     jsonTool(
       {
+        name: "get_doctor_working_hours",
+        description:
+          "اعرض مواعيد عمل الطبيب (أيام الأسبوع وساعات العمل الثابتة) قبل عرض الفترات المتاحة. استخدمها دائماً أولاً عندما يريد المستخدم حجز موعد، حتى يختار يوماً يعمل فيه الطبيب فعلاً، ثم استخدم get_doctor_availability لعرض الفترات المتاحة في ذلك اليوم.",
+        schema: z.object({ doctorId: z.string() }),
+      },
+      async ({ doctorId }) => {
+        const doctor = await DoctorService.getDoctor(doctorId);
+        if (!doctor) return { error: "الطبيب غير موجود" };
+        const rules = await DoctorService.listDoctorRules(doctorId);
+        return {
+          doctorId,
+          doctorName: doctor.profile.fullName,
+          workingHours: rules
+            .filter((r) => r.isActive)
+            .map((r) => ({
+              day: DAY_LABELS_AR[r.dayOfWeek] ?? r.dayOfWeek,
+              from: r.startTime,
+              to: r.endTime,
+            })),
+        };
+      },
+    ),
+    jsonTool(
+      {
         name: "get_doctor_availability",
         description:
-          "اعرض المواعيد المتاحة لطبيب معيّن في تاريخ محدد (بصيغة YYYY-MM-DD).",
+          "اعرض الفترات (slots) المتاحة فعلياً لطبيب معيّن في تاريخ محدد (بصيغة YYYY-MM-DD). استخدمها بعد get_doctor_working_hours وبعد أن يختار المستخدم يوماً يعمل فيه الطبيب.",
         schema: z.object({
           doctorId: z.string(),
           date: z
             .string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+            .regex(
+              /^\d{4}-\d{2}-\d{2}$/,
+              "يجب أن يكون التاريخ بصيغة YYYY-MM-DD",
+            ),
         }),
       },
       async ({ doctorId, date }) => {
