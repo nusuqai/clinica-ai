@@ -14,6 +14,7 @@ import { StatsSection } from "@/components/landing/stats-section";
 import { FAQSection } from "@/components/landing/faq-section";
 import { CTABannerSection } from "@/components/landing/cta-banner-section";
 import { FooterSection } from "@/components/landing/footer-section";
+import GuestChatBubble from "@/components/chat/guest-chat-bubble";
 
 export default async function LandingPage() {
   // ── Auth check ──────────────────────────────────────────────────────────────
@@ -25,7 +26,8 @@ export default async function LandingPage() {
   let isAuthenticated = false;
   let isPatient = false;
 
-  if (user) {
+  // Anonymous sessions (used for guest chat) must not appear as "logged in".
+  if (user && !user.is_anonymous) {
     isAuthenticated = true;
     const profile = await prisma.profile.findUnique({
       where: { id: user.id },
@@ -49,9 +51,15 @@ export default async function LandingPage() {
 
   const specialtyCounts = new Map<string, number>();
   for (const d of doctors) {
-    specialtyCounts.set(d.specialty, (specialtyCounts.get(d.specialty) ?? 0) + 1);
+    specialtyCounts.set(
+      d.specialty,
+      (specialtyCounts.get(d.specialty) ?? 0) + 1,
+    );
   }
-  const specialties = Array.from(specialtyCounts, ([name, count]) => ({ name, count }));
+  const specialties = Array.from(specialtyCounts, ([name, count]) => ({
+    name,
+    count,
+  }));
 
   // Serialise Prisma Decimal + Date fields for client components
   const serialisedDoctors = doctors.map((d) => ({
@@ -93,12 +101,16 @@ export default async function LandingPage() {
 
         <FeaturesSection />
         <SpecialtiesSection specialties={specialties} />
-        <StatsSection doctorCount={doctorCount} appointmentCount={appointmentCount} />
+        <StatsSection
+          doctorCount={doctorCount}
+          appointmentCount={appointmentCount}
+        />
         <FAQSection />
         <CTABannerSection />
       </main>
 
       <FooterSection />
+      <GuestChatBubble />
     </div>
   );
 }
