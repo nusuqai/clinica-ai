@@ -134,12 +134,14 @@ export default function ChatInbox({
     router.push(`/admin/messages?${params.toString()}`);
   };
 
+  const isWhatsappChecking =
+    selectedConversation?.channel === "WHATSAPP" && waConnected === null;
   const isWhatsappDisconnected =
     selectedConversation?.channel === "WHATSAPP" && waConnected === false;
 
   const handleSend = async () => {
     const text = reply.trim();
-    if (!text || !activeId || isWhatsappDisconnected) return;
+    if (!text || !activeId || isWhatsappDisconnected || isWhatsappChecking) return;
     setReply("");
     setSendError(null);
     startSending(async () => {
@@ -427,11 +429,21 @@ export default function ChatInbox({
 
             {/* Reply box */}
             <div className="px-4 py-3 border-t border-border flex-shrink-0">
+              {isWhatsappChecking && (
+                <div className="mb-2 flex items-center gap-2 rounded-xl bg-muted/50 border border-border px-3.5 py-2.5 text-xs text-muted-foreground font-sans">
+                  <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" />
+                  <span>جاري التحقق من حالة اتصال واتساب...</span>
+                </div>
+              )}
               {isWhatsappDisconnected && (
                 <div className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-xs text-amber-700 font-sans">
                   <WifiOff className="w-4 h-4 flex-shrink-0" />
                   <span>
-                    واتساب غير متصل، لن يتم تسليم الرسائل. يرجى الاتصال
+                    واتساب غير متصل، لن يتم تسليم الرسائل. يرجى الاتصال من{" "}
+                    <a href="/admin/whatsapp" className="underline font-medium">
+                      إعدادات واتساب
+                    </a>{" "}
+                    أولاً.
                   </span>
                 </div>
               )}
@@ -452,13 +464,18 @@ export default function ChatInbox({
                       : "اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
                   }
                   rows={2}
-                  disabled={sending || isWhatsappDisconnected}
+                  disabled={sending || isWhatsappDisconnected || isWhatsappChecking}
                   className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50 leading-relaxed"
                   dir="rtl"
                 />
                 <button
                   onClick={handleSend}
-                  disabled={sending || !reply.trim() || isWhatsappDisconnected}
+                  disabled={
+                    sending ||
+                    !reply.trim() ||
+                    isWhatsappDisconnected ||
+                    isWhatsappChecking
+                  }
                   className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-40"
                 >
                   {sending ? (

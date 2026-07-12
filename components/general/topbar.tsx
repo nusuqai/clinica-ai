@@ -31,10 +31,10 @@ export default function Topbar({ title, onMenuClick }: TopbarProps) {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
-        <button className="relative p-2 rounded-xl text-primary/60 hover:text-primary hover:bg-primary/5 transition-colors">
+        {/* <button className="relative p-2 rounded-xl text-primary/60 hover:text-primary hover:bg-primary/5 transition-colors">
           <Bell className="w-5 h-5" />
           <span className="absolute top-1.5 end-1.5 w-2 h-2 rounded-full bg-accent" />
-        </button>
+        </button> */}
       </div>
     </header>
   );
