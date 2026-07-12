@@ -5,6 +5,7 @@ import Sidebar from "./sidebar";
 import Topbar from "./topbar";
 import { navConfig, roleMeta } from "./nav-config";
 import ChatBubble from "@/components/chat/chat-bubble";
+import EscalationProvider from "./escalation-provider";
 
 export type DashboardRole = "patient" | "doctor" | "admin";
 
@@ -13,6 +14,8 @@ interface DashboardShellProps {
   role: DashboardRole;
   userFullName: string;
   userEmail: string;
+  /** Admin only — conversation IDs with an unresolved escalation on load. */
+  initialUnresolvedEscalationConversationIds?: string[];
 }
 
 export default function DashboardShell({
@@ -20,6 +23,7 @@ export default function DashboardShell({
   role,
   userFullName,
   userEmail,
+  initialUnresolvedEscalationConversationIds = [],
 }: DashboardShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -27,7 +31,7 @@ export default function DashboardShell({
   const navItems = navConfig[role];
   const { label: roleLabel, pageTitle } = roleMeta[role];
 
-  return (
+  const shell = (
     <div className="flex h-screen w-full overflow-hidden bg-background">
       {/* Mobile overlay */}
       {mobileOpen && (
@@ -56,5 +60,15 @@ export default function DashboardShell({
       {/* AI assistant — available to every role */}
       <ChatBubble />
     </div>
+  );
+
+  if (role !== "admin") return shell;
+
+  return (
+    <EscalationProvider
+      initialConversationIds={initialUnresolvedEscalationConversationIds}
+    >
+      {shell}
+    </EscalationProvider>
   );
 }

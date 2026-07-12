@@ -23,6 +23,7 @@ import {
   Inbox,
   Bot,
   BotOff,
+  AlertTriangle,
 } from "lucide-react";
 import { sendAdminReply, setSessionAiEnabled } from "@/server/actions/messages";
 import {
@@ -30,6 +31,7 @@ import {
   useRealtimeConversations,
   RealtimeMessageRow,
 } from "@/hooks/use-realtime-messages";
+import { useEscalationAlerts } from "@/components/general/escalation-provider";
 import type {
   ConversationSummary,
   MessageItem,
@@ -85,6 +87,21 @@ export default function ChatInbox({
   useRealtimeMessages(activeId, () => {
     router.refresh();
   });
+
+  // EscalationProvider owns the single realtime subscription for escalations
+  // (a second subscribed channel with the same name crashes the realtime
+  // client) — react to its event counter instead of subscribing again here.
+  // Escalations don't always come with a new message (e.g. resolving one by
+  // re-enabling the AI doesn't), so they need their own refresh trigger.
+  const { eventTick } = useEscalationAlerts();
+  const isFirstEventTick = useRef(true);
+  useEffect(() => {
+    if (isFirstEventTick.current) {
+      isFirstEventTick.current = false;
+      return;
+    }
+    refreshConversations();
+  }, [eventTick, refreshConversations]);
 
   const handleSelectConversation = (id: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -147,14 +164,21 @@ export default function ChatInbox({
                 onClick={() => handleSelectConversation(conv.id)}
                 className={[
                   "w-full text-start px-4 py-3 hover:bg-muted/50 transition-colors",
+                  conv.hasUnresolvedEscalation ? "bg-red-50" : "",
                   activeId === conv.id
                     ? "bg-accent/8 border-e-2 border-accent"
                     : "",
                 ].join(" ")}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-foreground font-sans truncate max-w-[140px]">
-                    {conv.contactName}
+                  <span className="text-sm font-medium text-foreground font-sans truncate max-w-[140px] flex items-center gap-1.5">
+                    {conv.hasUnresolvedEscalation && (
+                      <AlertTriangle
+                        className="w-3.5 h-3.5 text-red-500 flex-shrink-0"
+                        aria-label="طلب تصعيد غير محلول"
+                      />
+                    )}
+                    <span className="truncate">{conv.contactName}</span>
                   </span>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     {conv.unreadCount > 0 && (
@@ -222,16 +246,36 @@ export default function ChatInbox({
                 )}
               </div>
               <div className="ms-auto flex items-center gap-2">
-                {selectedConversation.escalations.length > 0 && (
-                  <span
-                    className="text-[10px] text-amber-600 font-sans"
-                    title={selectedConversation.escalations
-                      .map((e) => e.reason ?? "بدون سبب")
-                      .join(" · ")}
-                  >
-                    {selectedConversation.escalations.length} طلب تصعيد
-                  </span>
-                )}
+                {selectedConversation.escalations.length > 0 &&
+                  (() => {
+                    const unresolved = selectedConversation.escalations.filter(
+                      (e) => !e.resolvedAt,
+                    );
+                    const isUnresolved = unresolved.length > 0;
+                    const shown = isUnresolved
+                      ? unresolved
+                      : selectedConversation.escalations;
+                    return (
+                      <span
+                        className={[
+                          "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-sans",
+                          isUnresolved
+                            ? "bg-red-100 text-red-700"
+                            : "text-muted-foreground",
+                        ].join(" ")}
+                        title={shown
+                          .map((e) => e.reason ?? "بدون سبب")
+                          .join(" · ")}
+                      >
+                        {isUnresolved && (
+                          <AlertTriangle className="w-3 h-3" />
+                        )}
+                        {isUnresolved
+                          ? `${unresolved.length} طلب تصعيد بانتظار الرد`
+                          : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد)`}
+                      </span>
+                    );
+                  })()}
                 {selectedConversation.activeSessionId && (
                   <button
                     onClick={handleToggleAi}

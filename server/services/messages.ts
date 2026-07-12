@@ -9,6 +9,7 @@ export interface ConversationSummary {
   lastMessage?: string;
   lastMessageAt?: Date;
   unreadCount: number;
+  hasUnresolvedEscalation: boolean;
 }
 
 export interface MessageItem {
@@ -23,6 +24,7 @@ export interface MessageItem {
 export interface EscalationItem {
   reason: string | null;
   createdAt: Date;
+  resolvedAt: Date | null;
 }
 
 export interface ConversationDetail {
@@ -56,6 +58,7 @@ export async function getConversations(): Promise<ConversationSummary[]> {
       _count: {
         select: {
           messages: { where: { isRead: false, senderType: "USER" } },
+          escalations: { where: { resolvedAt: null } },
         },
       },
     },
@@ -73,7 +76,21 @@ export async function getConversations(): Promise<ConversationSummary[]> {
     lastMessage: c.messages[0]?.content ?? undefined,
     lastMessageAt: c.messages[0]?.createdAt ?? undefined,
     unreadCount: c._count.messages,
+    hasUnresolvedEscalation: c._count.escalations > 0,
   }));
+}
+
+/** Conversation IDs with at least one unresolved escalation — used to seed
+ * the admin-wide alert state (sidebar bell) on first load. */
+export async function getUnresolvedEscalationConversationIds(): Promise<
+  string[]
+> {
+  const rows = await prisma.escalation.findMany({
+    where: { resolvedAt: null, conversation: NOT_STAFF_OWNED },
+    select: { conversationId: true },
+    distinct: ["conversationId"],
+  });
+  return rows.map((r) => r.conversationId);
 }
 
 export async function getMessages(

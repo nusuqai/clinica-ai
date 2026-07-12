@@ -2,8 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LucideIcon, ChevronRight, X, LogOut, Stethoscope } from "lucide-react";
+import {
+  LucideIcon,
+  ChevronRight,
+  X,
+  LogOut,
+  Stethoscope,
+  Bell,
+} from "lucide-react";
 import { signOut } from "@/server/actions/auth";
+import { useEscalationAlerts } from "./escalation-provider";
 
 export interface NavItem {
   href: string;
@@ -65,7 +73,9 @@ export default function Sidebar({
       <aside
         className={[
           "fixed inset-y-0 end-0 z-30 flex flex-col w-72 bg-primary text-white md:hidden transition-transform duration-300 ease-in-out",
-          mobileOpen ? "translate-x-0" : "translate-x-full rtl:-translate-x-full",
+          mobileOpen
+            ? "translate-x-0"
+            : "translate-x-full rtl:-translate-x-full",
         ].join(" ")}
       >
         <button
@@ -111,6 +121,8 @@ function SidebarContent({
   onToggleCollapse,
   pathname,
 }: SidebarContentProps) {
+  const { hasUnresolved } = useEscalationAlerts();
+
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
@@ -144,13 +156,21 @@ function SidebarContent({
               !navItems.some(
                 (item) =>
                   item.href !== href &&
-                  (pathname === item.href || pathname.startsWith(item.href + "/")),
+                  (pathname === item.href ||
+                    pathname.startsWith(item.href + "/")),
               ));
+          const showAlert = href === "/admin/messages" && hasUnresolved;
           return (
             <Link
               key={href}
               href={href}
-              title={collapsed ? label : undefined}
+              title={
+                collapsed
+                  ? showAlert
+                    ? `${label} — يوجد طلب تصعيد غير محلول`
+                    : label
+                  : undefined
+              }
               className={[
                 "flex items-center gap-3 px-3 py-2.5 rounded-xl font-sans text-sm transition-all duration-150 group relative",
                 isActive
@@ -161,13 +181,30 @@ function SidebarContent({
               {isActive && (
                 <span className="absolute end-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-accent rounded-full" />
               )}
-              <Icon
-                className={[
-                  "w-5 h-5 flex-shrink-0 transition-colors",
-                  isActive ? "text-accent" : "text-white/50 group-hover:text-white/80",
-                ].join(" ")}
-              />
-              {!collapsed && <span className="truncate">{label}</span>}
+              <span className="relative flex-shrink-0">
+                <Icon
+                  className={[
+                    "w-5 h-5 transition-colors",
+                    isActive
+                      ? "text-accent"
+                      : "text-white/50 group-hover:text-white/80",
+                  ].join(" ")}
+                />
+                {showAlert && (
+                  <span className="absolute -top-1 -end-1 flex w-2.5 h-2.5">
+                    <span className="animate-ping absolute inline-flex w-full h-full rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-red-500 border border-primary" />
+                  </span>
+                )}
+              </span>
+              {!collapsed && (
+                <span className="truncate flex items-center gap-1.5">
+                  {label}
+                  {showAlert && (
+                    <Bell className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                  )}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -183,7 +220,9 @@ function SidebarContent({
           ].join(" ")}
         >
           <div className="w-8 h-8 rounded-full bg-accent/30 flex items-center justify-center flex-shrink-0">
-            <span className="text-xs font-bold text-accent font-sans">{initials}</span>
+            <span className="text-xs font-bold text-accent font-sans">
+              {initials}
+            </span>
           </div>
           {!collapsed && (
             <div className="overflow-hidden">

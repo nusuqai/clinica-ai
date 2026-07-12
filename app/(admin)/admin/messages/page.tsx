@@ -8,12 +8,18 @@ import {
   markConversationRead,
 } from "@/server/services/messages";
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface PageProps {
   searchParams: Promise<{ id?: string }>;
 }
 
 export default async function AdminMessagesPage({ searchParams }: PageProps) {
-  const { id } = await searchParams;
+  const { id: rawId } = await searchParams;
+  // The `id` query param is user-controlled (URL bar, bookmarks, stale
+  // links) — never pass it to Prisma unvalidated.
+  const id = rawId && UUID_RE.test(rawId) ? rawId : undefined;
 
   const [conversations, selectedConversation, messages] = await Promise.all([
     getConversations(),

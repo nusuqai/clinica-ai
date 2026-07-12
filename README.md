@@ -41,6 +41,9 @@ legacy/         Previous implementation, kept for reference
    npm run prisma:migrate
    ```
 
+   If `prisma:migrate` fails with a shadow database error, see [prisma/README.md](prisma/README.md)
+   for the workaround.
+
 4. Run the dev server:
 
    ```bash

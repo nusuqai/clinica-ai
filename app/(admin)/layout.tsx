@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import DashboardShell from "@/components/general/dashboard-shell";
+import { getUnresolvedEscalationConversationIds } from "@/server/services/messages";
 
 export default async function AdminLayout({
   children,
@@ -22,11 +23,17 @@ export default async function AdminLayout({
 
   if (profile?.role !== "ADMIN") redirect("/dashboard");
 
+  const initialUnresolvedEscalationConversationIds =
+    await getUnresolvedEscalationConversationIds();
+
   return (
     <DashboardShell
       role="admin"
       userFullName={profile?.fullName ?? user.email ?? "مسؤول"}
       userEmail={user.email ?? ""}
+      initialUnresolvedEscalationConversationIds={
+        initialUnresolvedEscalationConversationIds
+      }
     >
       {children}
     </DashboardShell>

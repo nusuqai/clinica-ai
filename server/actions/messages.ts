@@ -40,6 +40,13 @@ export async function sendAdminReply(
     },
   });
 
+  // A human reply counts as handling the escalation, whether or not the AI
+  // gets turned back on afterwards.
+  await prisma.escalation.updateMany({
+    where: { conversationId, resolvedAt: null },
+    data: { resolvedAt: new Date() },
+  });
+
   if (conversation.channel === "WHATSAPP" && conversation.whatsappPhone) {
     await sendTextMessage(conversation.whatsappPhone, content);
   }
@@ -72,6 +79,15 @@ export async function setSessionAiEnabled(
     where: { id: sessionId },
     data: { aiEnabled: enabled },
   });
+
+  // Handing control back to the AI counts as resolving any open escalation
+  // on this session.
+  if (enabled) {
+    await prisma.escalation.updateMany({
+      where: { sessionId, resolvedAt: null },
+      data: { resolvedAt: new Date() },
+    });
+  }
 
   revalidatePath("/admin/messages");
 }

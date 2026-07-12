@@ -177,11 +177,14 @@ model ChatSession {
 // One row per escalate_to_human request. A session can have several — e.g.
 // user escalates, admin re-enables the AI, user escalates again.
 model Escalation {
-  id             String   @id @default(uuid()) @db.Uuid
-  conversationId String   @db.Uuid
-  sessionId      String   @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  conversationId String    @db.Uuid
+  sessionId      String    @db.Uuid
   reason         String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
+  // Set when an admin re-enables the AI for the session or sends a manual
+  // reply in the conversation — whichever happens first. Null = still open.
+  resolvedAt     DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session      ChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
