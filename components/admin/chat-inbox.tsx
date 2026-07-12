@@ -24,6 +24,7 @@ import {
   Bot,
   BotOff,
   AlertTriangle,
+  WifiOff,
 } from "lucide-react";
 import { sendAdminReply, setSessionAiEnabled } from "@/server/actions/messages";
 import {
@@ -61,6 +62,8 @@ export default function ChatInbox({
   const [sending, startSending] = useTransition();
   const [listPending, startListTransition] = useTransition();
   const [aiTogglePending, startAiToggle] = useTransition();
+  const [waConnected, setWaConnected] = useState<boolean | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Sync when server re-renders with fresh data
@@ -73,6 +76,28 @@ export default function ChatInbox({
     () => setSelectedConversation(initialConversation),
     [initialConversation],
   );
+
+  // Reset send error and re-check WhatsApp connection when switching threads.
+  useEffect(() => {
+    setSendError(null);
+    if (selectedConversation?.channel !== "WHATSAPP") {
+      setWaConnected(null);
+      return;
+    }
+    let cancelled = false;
+    setWaConnected(null);
+    fetch("/api/whatsapp/status")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setWaConnected(data.state === "open");
+      })
+      .catch(() => {
+        if (!cancelled) setWaConnected(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedConversation?.id, selectedConversation?.channel]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -109,12 +134,21 @@ export default function ChatInbox({
     router.push(`/admin/messages?${params.toString()}`);
   };
 
+  const isWhatsappDisconnected =
+    selectedConversation?.channel === "WHATSAPP" && waConnected === false;
+
   const handleSend = async () => {
     const text = reply.trim();
-    if (!text || !activeId) return;
+    if (!text || !activeId || isWhatsappDisconnected) return;
     setReply("");
+    setSendError(null);
     startSending(async () => {
-      await sendAdminReply(activeId, text);
+      const result = await sendAdminReply(activeId, text);
+      if (result.whatsappSendFailed) {
+        setSendError(
+          "تم حفظ الرد لكن تعذّر إرساله عبر واتساب. تحقّق من الاتصال في إعدادات واتساب.",
+        );
+      }
     });
   };
 
@@ -267,9 +301,7 @@ export default function ChatInbox({
                           .map((e) => e.reason ?? "بدون سبب")
                           .join(" · ")}
                       >
-                        {isUnresolved && (
-                          <AlertTriangle className="w-3 h-3" />
-                        )}
+                        {isUnresolved && <AlertTriangle className="w-3 h-3" />}
                         {isUnresolved
                           ? `${unresolved.length} طلب تصعيد بانتظار الرد`
                           : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد)`}
@@ -395,20 +427,38 @@ export default function ChatInbox({
 
             {/* Reply box */}
             <div className="px-4 py-3 border-t border-border flex-shrink-0">
+              {isWhatsappDisconnected && (
+                <div className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-xs text-amber-700 font-sans">
+                  <WifiOff className="w-4 h-4 flex-shrink-0" />
+                  <span>
+                    واتساب غير متصل، لن يتم تسليم الرسائل. يرجى الاتصال
+                  </span>
+                </div>
+              )}
+              {sendError && (
+                <div className="mb-2 flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs text-red-700 font-sans">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span>{sendError}</span>
+                </div>
+              )}
               <div className="flex items-end gap-2">
                 <textarea
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
+                  placeholder={
+                    isWhatsappDisconnected
+                      ? "واتساب غير متصل..."
+                      : "اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
+                  }
                   rows={2}
-                  disabled={sending}
+                  disabled={sending || isWhatsappDisconnected}
                   className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50 leading-relaxed"
                   dir="rtl"
                 />
                 <button
                   onClick={handleSend}
-                  disabled={sending || !reply.trim()}
+                  disabled={sending || !reply.trim() || isWhatsappDisconnected}
                   className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-40"
                 >
                   {sending ? (

@@ -12,10 +12,12 @@ import { escalationTool } from "./escalation";
  * never constructed, so the model cannot see or call them.
  */
 export function getToolsForRole(ctx: AgentContext): DynamicStructuredTool[] {
-  // Unknown WhatsApp contact → info only, no actions.
-  if (ctx.role === null) return commonTools();
-
   const base = [...commonTools(), escalationTool(ctx)];
+
+  // Unknown WhatsApp contact / anonymous web guest → can still ask for a
+  // human, but no identity-gated booking/data actions.
+  if (ctx.role === null) return base;
+
   switch (ctx.role) {
     case "PATIENT":
       return [...base, ...patientTools(ctx)];

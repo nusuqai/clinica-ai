@@ -6,10 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { sendTextMessage } from "@/lib/evolution";
 import { resolveActiveSession } from "@/server/services/agentSession";
 
+export interface SendAdminReplyResult {
+  whatsappSendFailed: boolean;
+}
+
 export async function sendAdminReply(
   conversationId: string,
   content: string,
-): Promise<void> {
+): Promise<SendAdminReplyResult> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -47,8 +51,16 @@ export async function sendAdminReply(
     data: { resolvedAt: new Date() },
   });
 
+  let whatsappSendFailed = false;
   if (conversation.channel === "WHATSAPP" && conversation.whatsappPhone) {
-    await sendTextMessage(conversation.whatsappPhone, content);
+    try {
+      await sendTextMessage(conversation.whatsappPhone, content);
+    } catch (err) {
+      // The reply is already saved in the conversation; a failed WhatsApp
+      // delivery (e.g. instance disconnected) shouldn't crash the admin UI.
+      console.error("Failed to send WhatsApp message:", err);
+      whatsappSendFailed = true;
+    }
   }
 
   await prisma.conversation.update({
@@ -57,6 +69,7 @@ export async function sendAdminReply(
   });
 
   revalidatePath("/admin/messages");
+  return { whatsappSendFailed };
 }
 
 export async function setSessionAiEnabled(
