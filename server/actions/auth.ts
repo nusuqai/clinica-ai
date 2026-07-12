@@ -54,24 +54,6 @@ export async function signUp(formData: FormData) {
   redirect("/dashboard");
 }
 
-/**
- * Ensures the caller has a session so guests can use the chat widget without
- * an account. Runs entirely on the server — the browser never talks to
- * Supabase directly for this, it just calls this action.
- */
-export async function signInAsGuest() {
-  const supabase = await createClient();
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (session) return { success: true };
-
-  const { error } = await supabase.auth.signInAnonymously();
-  if (error) return { success: false, error: error.message };
-  return { success: true };
-}
-
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();

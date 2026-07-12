@@ -13,7 +13,7 @@ export default async function PatientLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user || user.is_anonymous) redirect("/login");
+  if (!user) redirect("/login");
 
   const profile = await prisma.profile.findUnique({
     where: { id: user.id },

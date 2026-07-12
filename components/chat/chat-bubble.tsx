@@ -3,17 +3,28 @@
 import { useEffect, useRef, useState } from "react";
 import { MessageCircle, X, Send, Loader2, Bot } from "lucide-react";
 import ChatMessageView from "./chat-message";
-import { getWebChatMessages } from "@/server/actions/chat";
+import {
+  getWebChatMessages,
+  getGuestChatMessages,
+} from "@/server/actions/chat";
 import { useRealtimeMessages } from "@/hooks/use-realtime-messages";
 import type { ChatMessage, ClientToolCall } from "./types";
 
 let idCounter = 0;
 const nextId = () => `local-${Date.now()}-${idCounter++}`;
 
-export default function ChatBubble() {
+// A guest's conversation isn't tied to an account, so its id is the browser's
+// only handle on it — persisted here so a reload doesn't start a new one.
+const GUEST_CONVERSATION_KEY = "clinica_guest_conversation_id";
+
+export default function ChatBubble({ guest = false }: { guest?: boolean }) {
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(() =>
+    guest && typeof window !== "undefined"
+      ? window.localStorage.getItem(GUEST_CONVERSATION_KEY)
+      : null,
+  );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -27,21 +38,52 @@ export default function ChatBubble() {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [input]);
 
+  function rememberConversationId(id: string) {
+    setConversationId(id);
+    if (guest) window.localStorage.setItem(GUEST_CONVERSATION_KEY, id);
+  }
+
   // TODO: why this is exists ?, the below useEffect it do the samething
 
   // Resolve the conversation id as soon as the widget mounts, independent of
   // whether the panel has been opened — otherwise the realtime subscription
   // below never starts and admin replies sent before the first open are missed.
+  // Guests have no account to resolve a conversation from, so this only
+  // applies to logged-in users; a guest's conversationId is only known once
+  // it already exists (from localStorage) or after their first message.
   useEffect(() => {
+    if (guest) return;
     getWebChatMessages().then((state) => {
       if (state) setConversationId(state.conversationId);
     });
-  }, []);
+  }, [guest]);
 
   // Load the active session's history the first time the panel is opened.
   useEffect(() => {
     if (!open || loaded) return;
     setLoaded(true);
+    if (guest) {
+      if (!conversationId) return;
+      getGuestChatMessages(conversationId).then((state) => {
+        if (!state) return;
+        setMessages(
+          state.messages.map((m) => ({
+            id: m.id,
+            role:
+              m.senderType === "USER"
+                ? "user"
+                : m.senderType === "ADMIN"
+                  ? "admin"
+                  : "agent",
+            content: m.content,
+            toolCalls:
+              (m.metadata?.toolCalls as ClientToolCall[] | undefined) ??
+              undefined,
+          })),
+        );
+      });
+      return;
+    }
     getWebChatMessages().then((state) => {
       if (!state) return;
       setConversationId(state.conversationId);
@@ -61,7 +103,7 @@ export default function ChatBubble() {
         })),
       );
     });
-  }, [open, loaded]);
+  }, [open, loaded, guest, conversationId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -115,7 +157,9 @@ export default function ChatBubble() {
       const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify(
+          guest ? { message: text, conversationId } : { message: text },
+        ),
       });
       if (!res.ok || !res.body) throw new Error("network");
 
@@ -151,6 +195,9 @@ export default function ChatBubble() {
 
   function handleEvent(agentId: string, ev: Record<string, unknown>) {
     switch (ev.type) {
+      case "init":
+        if (guest) rememberConversationId(String(ev.conversationId));
+        break;
       case "token":
         patchAgent(agentId, (m) => ({
           ...m,

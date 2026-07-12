@@ -6,7 +6,9 @@ import UserRowActions from "./_components/user-row-actions";
 
 export default async function AdminUsersPage() {
   const supabase = await createClient();
-  const { data: { user: me } } = await supabase.auth.getUser();
+  const {
+    data: { user: me },
+  } = await supabase.auth.getUser();
 
   const users = await listUsers();
 
@@ -22,35 +24,53 @@ export default async function AdminUsersPage() {
           <table className="w-full text-sm font-sans">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">الاسم</th>
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">البريد الإلكتروني</th>
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">الهاتف</th>
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">الدور</th>
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">تاريخ التسجيل</th>
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">إجراءات</th>
+                <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                  الاسم
+                </th>
+                <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                  البريد الإلكتروني
+                </th>
+                <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                  الهاتف
+                </th>
+                <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                  الدور
+                </th>
+                <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                  تاريخ التسجيل
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-muted-foreground">لا يوجد مستخدمون</td>
+                  <td
+                    colSpan={6}
+                    className="text-center py-12 text-muted-foreground"
+                  >
+                    لا يوجد مستخدمون
+                  </td>
                 </tr>
               )}
               {users.map((user) => (
-                <tr key={user.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3 font-medium text-foreground">{user.fullName}</td>
-                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">{user.email}</td>
-                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">{user.phone ?? "—"}</td>
-                  <td className="px-4 py-3"><RoleBadge role={user.role} /></td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {new Date(user.createdAt).toLocaleDateString("ar-EG")}
+                <tr
+                  key={user.id}
+                  className="hover:bg-muted/30 transition-colors"
+                >
+                  <td className="px-4 py-3 font-medium text-foreground">
+                    {user.fullName}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">
+                    {user.email}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">
+                    {user.phone ?? "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <UserRowActions
-                      userId={user.id}
-                      currentRole={user.role}
-                      isSelf={user.id === me?.id}
-                    />
+                    <RoleBadge role={user.role} />
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {new Date(user.createdAt).toLocaleDateString("ar-EG")}
                   </td>
                 </tr>
               ))}

@@ -143,3 +143,27 @@ export async function getOrCreateWebConversation(
   });
   return created.id;
 }
+
+/**
+ * Resolves a guest (no account) WEB conversation. Reuses `conversationId` if
+ * it's still a valid, unclaimed guest conversation (channel WEB, no userId —
+ * this scopes it away from any logged-in user's conversation); otherwise
+ * creates a fresh one. The browser is the only place the id is stored, same
+ * pattern as a guest cart id.
+ */
+export async function getOrCreateGuestWebConversation(
+  conversationId: string | null,
+): Promise<string> {
+  if (conversationId) {
+    const existing = await prisma.conversation.findFirst({
+      where: { id: conversationId, channel: "WEB", userId: null },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+  }
+  const created = await prisma.conversation.create({
+    data: { channel: "WEB" },
+    select: { id: true },
+  });
+  return created.id;
+}

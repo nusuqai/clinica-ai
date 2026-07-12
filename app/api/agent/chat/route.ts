@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { streamWebAgent } from "@/server/services/agentRunner";
+import {
+  streamWebAgent,
+  streamGuestWebAgent,
+} from "@/server/services/agentRunner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,10 +13,8 @@ export async function POST(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { message?: string };
+  let body: { message?: string; conversationId?: string };
   try {
     body = await request.json();
   } catch {
@@ -30,7 +31,10 @@ export async function POST(request: NextRequest) {
       const send = (data: unknown) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       try {
-        for await (const ev of streamWebAgent(user.id, message)) {
+        const events = user
+          ? streamWebAgent(user.id, message)
+          : streamGuestWebAgent(body.conversationId ?? null, message);
+        for await (const ev of events) {
           send(ev);
         }
       } catch (e) {

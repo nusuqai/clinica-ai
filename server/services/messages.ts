@@ -36,8 +36,16 @@ export interface ConversationDetail {
   escalations: EscalationItem[];
 }
 
+// Admins (and doctors) also get the AI chat bubble in their dashboard — their
+// own conversation with it is not a customer contact and must not appear in
+// the inbox they use to manage customer conversations.
+const NOT_STAFF_OWNED = {
+  OR: [{ userId: null }, { user: { role: "PATIENT" as const } }],
+};
+
 export async function getConversations(): Promise<ConversationSummary[]> {
   const conversations = await prisma.conversation.findMany({
+    where: NOT_STAFF_OWNED,
     orderBy: { updatedAt: "desc" },
     include: {
       user: { select: { fullName: true, phone: true } },
@@ -57,7 +65,10 @@ export async function getConversations(): Promise<ConversationSummary[]> {
     id: c.id,
     channel: c.channel,
     contactName:
-      c.user?.fullName ?? c.whatsappName ?? c.whatsappPhone ?? "غير معروف",
+      c.user?.fullName ??
+      c.whatsappName ??
+      c.whatsappPhone ??
+      (c.channel === "WEB" ? "زائر" : "غير معروف"),
     contactPhone: c.user?.phone ?? c.whatsappPhone ?? undefined,
     lastMessage: c.messages[0]?.content ?? undefined,
     lastMessageAt: c.messages[0]?.createdAt ?? undefined,
@@ -86,8 +97,8 @@ export async function getMessages(
 export async function getConversationDetail(
   id: string,
 ): Promise<ConversationDetail | null> {
-  const c = await prisma.conversation.findUnique({
-    where: { id },
+  const c = await prisma.conversation.findFirst({
+    where: { id, ...NOT_STAFF_OWNED },
     include: {
       user: { select: { fullName: true, phone: true } },
       sessions: {
@@ -105,7 +116,10 @@ export async function getConversationDetail(
     id: c.id,
     channel: c.channel,
     contactName:
-      c.user?.fullName ?? c.whatsappName ?? c.whatsappPhone ?? "غير معروف",
+      c.user?.fullName ??
+      c.whatsappName ??
+      c.whatsappPhone ??
+      (c.channel === "WEB" ? "زائر" : "غير معروف"),
     contactPhone: c.user?.phone ?? c.whatsappPhone ?? undefined,
     activeSessionId: latestSession?.id ?? null,
     aiEnabled: latestSession?.aiEnabled ?? true,

@@ -14,7 +14,7 @@ import { StatsSection } from "@/components/landing/stats-section";
 import { FAQSection } from "@/components/landing/faq-section";
 import { CTABannerSection } from "@/components/landing/cta-banner-section";
 import { FooterSection } from "@/components/landing/footer-section";
-import GuestChatBubble from "@/components/chat/guest-chat-bubble";
+import ChatBubble from "@/components/chat/chat-bubble";
 
 export default async function LandingPage() {
   // ── Auth check ──────────────────────────────────────────────────────────────
@@ -26,8 +26,7 @@ export default async function LandingPage() {
   let isAuthenticated = false;
   let isPatient = false;
 
-  // Anonymous sessions (used for guest chat) must not appear as "logged in".
-  if (user && !user.is_anonymous) {
+  if (user) {
     isAuthenticated = true;
     const profile = await prisma.profile.findUnique({
       where: { id: user.id },
@@ -110,7 +109,7 @@ export default async function LandingPage() {
       </main>
 
       <FooterSection />
-      <GuestChatBubble />
+      <ChatBubble guest={!isAuthenticated} />
     </div>
   );
 }

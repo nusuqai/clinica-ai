@@ -11,6 +11,7 @@ import type { AgentStreamEvent } from "@/agent";
 import type { ToolCallRecord } from "@/agent/types";
 import {
   getOrCreateWebConversation,
+  getOrCreateGuestWebConversation,
   resolveActiveSession,
   getSessionMessages,
   persistUserMessage,
@@ -82,6 +83,60 @@ export async function* streamWebAgent(
     {
       toolCalls,
     },
+  );
+}
+
+/**
+ * Web channel, no account: mirrors the WhatsApp "unknown contact" flow —
+ * `role: null` limits the agent to `commonTools()` (info only, no booking).
+ * `conversationId` comes from the browser (localStorage), reused across
+ * messages if it's still a valid, unclaimed guest conversation; a fresh one
+ * is created otherwise and reported back via an `init` event so the browser
+ * can remember it.
+ */
+export async function* streamGuestWebAgent(
+  conversationId: string | null,
+  userText: string,
+): AsyncGenerator<AgentStreamEvent | { type: "init"; conversationId: string }> {
+  const resolvedConversationId =
+    await getOrCreateGuestWebConversation(conversationId);
+  yield { type: "init", conversationId: resolvedConversationId };
+
+  const sessionId = await resolveActiveSession(resolvedConversationId);
+  await persistUserMessage(resolvedConversationId, sessionId, userText, null);
+
+  if (!(await isSessionAiEnabled(sessionId))) {
+    yield { type: "handoff" };
+    return;
+  }
+
+  const prior = await getSessionMessages(sessionId);
+
+  const ctx: AgentContext = {
+    actorId: null,
+    role: null,
+    channel: "WEB",
+    conversationId: resolvedConversationId,
+    sessionId,
+    actorName: "زائر",
+  };
+
+  let finalText = "";
+  let toolCalls: ToolCallRecord[] = [];
+
+  for await (const ev of runAgentStream(ctx, toPrior(prior))) {
+    if (ev.type === "done") {
+      finalText = ev.text;
+      toolCalls = ev.toolCalls;
+    }
+    yield ev;
+  }
+
+  await persistAgentMessage(
+    resolvedConversationId,
+    sessionId,
+    finalText || FALLBACK_REPLY,
+    { toolCalls },
   );
 }
 

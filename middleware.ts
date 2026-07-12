@@ -9,8 +9,8 @@ const PUBLIC_ROUTES = [
   "/verify-otp",
   "/reset-password",
 ];
-// Routes that accept anonymous (guest) sessions — middleware lets them through
-// without a "real" user, and the route handler itself enforces its own auth.
+// Routes that accept unauthenticated guest requests (no Supabase session at
+// all) — the route handler itself scopes what a guest can do.
 const PUBLIC_API_ROUTES = ["/api/whatsapp/webhook", "/api/agent/chat"];
 
 export async function middleware(request: NextRequest) {
@@ -47,9 +47,6 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  // Anonymous sessions (used to let guests chat on the landing page) must
-  // never count as "logged in" for routing purposes.
-  const realUser = user && !user.is_anonymous ? user : null;
 
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_ROUTES.some(
@@ -57,13 +54,13 @@ export async function middleware(request: NextRequest) {
   );
   const isPublicApi = PUBLIC_API_ROUTES.some((r) => pathname.startsWith(r));
 
-  if (!realUser && !isPublic && !isPublicApi) {
+  if (!user && !isPublic && !isPublicApi) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  if (realUser && (pathname === "/login" || pathname === "/register")) {
+  if (user && (pathname === "/login" || pathname === "/register")) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);

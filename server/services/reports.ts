@@ -104,7 +104,14 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivity[]> {
           include: { user: { select: { fullName: true } } },
         },
       },
-      where: { senderType: "USER" },
+      // Exclude admins'/doctors' own chat with the AI assistant — not a
+      // customer contact, shouldn't show up as "activity" to review.
+      where: {
+        senderType: "USER",
+        conversation: {
+          OR: [{ userId: null }, { user: { role: "PATIENT" } }],
+        },
+      },
     }),
   ]);
 
@@ -124,7 +131,7 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivity[]> {
         m.conversation.user?.fullName ??
         m.conversation.whatsappName ??
         m.conversation.whatsappPhone ??
-        "غير معروف",
+        (m.conversation.channel === "WEB" ? "زائر" : "غير معروف"),
       subLabel: m.content.slice(0, 60),
       createdAt: m.createdAt,
     })),
