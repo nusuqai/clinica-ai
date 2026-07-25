@@ -3,6 +3,7 @@
 import {
   useState,
   useEffect,
+  useMemo,
   useRef,
   useTransition,
   useCallback,
@@ -25,8 +26,14 @@ import {
   BotOff,
   AlertTriangle,
   WifiOff,
+  RotateCw,
 } from "lucide-react";
-import { sendAdminReply, setSessionAiEnabled } from "@/server/actions/messages";
+import {
+  sendAdminReply,
+  retryWhatsappDelivery,
+  setSessionAiEnabled,
+  type SendAdminReplyResult,
+} from "@/server/actions/messages";
 import {
   useRealtimeMessages,
   useRealtimeConversations,
@@ -45,6 +52,34 @@ interface ChatInboxProps {
   messages: MessageItem[];
 }
 
+/**
+ * `sending` → in flight. `sent` → persisted and delivered, kept only until the
+ * server row arrives. `failed_sync` → nothing was written to the database.
+ * `failed_whatsapp` → the row exists but WhatsApp delivery failed.
+ */
+type PendingStatus = "sending" | "sent" | "failed_sync" | "failed_whatsapp";
+
+/** An admin reply rendered optimistically, before/independently of the server
+ *  round-trip. Client-side only — these do not survive a reload. */
+interface PendingMessage {
+  clientId: string;
+  conversationId: string;
+  content: string;
+  createdAt: Date;
+  status: PendingStatus;
+  /** Set once the message row exists; lets it replace the server bubble. */
+  serverId?: string;
+}
+
+interface RenderedMessage {
+  key: string;
+  content: string;
+  senderType: MessageItem["senderType"];
+  sessionId: string | null;
+  createdAt: Date;
+  pending?: PendingMessage;
+}
+
 export default function ChatInbox({
   conversations: initialConversations,
   selectedConversation: initialConversation,
@@ -59,11 +94,10 @@ export default function ChatInbox({
   const [selectedConversation, setSelectedConversation] =
     useState(initialConversation);
   const [reply, setReply] = useState("");
-  const [sending, startSending] = useTransition();
+  const [pending, setPending] = useState<PendingMessage[]>([]);
   const [listPending, startListTransition] = useTransition();
   const [aiTogglePending, startAiToggle] = useTransition();
   const [waConnected, setWaConnected] = useState<boolean | null>(null);
-  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Sync when server re-renders with fresh data
@@ -77,9 +111,22 @@ export default function ChatInbox({
     [initialConversation],
   );
 
-  // Reset send error and re-check WhatsApp connection when switching threads.
+  // An optimistic bubble is retired once its real row shows up in the server
+  // props. Failed and in-flight ones stay put — they're the only record of the
+  // message the admin typed.
   useEffect(() => {
-    setSendError(null);
+    const serverIds = new Set(initialMessages.map((m) => m.id));
+    setPending((prev) => {
+      const next = prev.filter(
+        (p) =>
+          !(p.status === "sent" && p.serverId && serverIds.has(p.serverId)),
+      );
+      return next.length === prev.length ? prev : next;
+    });
+  }, [initialMessages]);
+
+  // Re-check the WhatsApp connection when switching threads.
+  useEffect(() => {
     if (selectedConversation?.channel !== "WHATSAPP") {
       setWaConnected(null);
       return;
@@ -99,10 +146,41 @@ export default function ChatInbox({
     };
   }, [selectedConversation?.id, selectedConversation?.channel]);
 
+  // Server rows plus this thread's optimistic bubbles. A pending entry that
+  // already has a row hides that row, so a message that failed to reach
+  // WhatsApp renders once — from pending state, carrying its badge.
+  const threadMessages = useMemo<RenderedMessage[]>(() => {
+    const mine = pending.filter((p) => p.conversationId === activeId);
+    const superseded = new Set(
+      mine.map((p) => p.serverId).filter((id): id is string => !!id),
+    );
+    return [
+      ...messages
+        .filter((m) => !superseded.has(m.id))
+        .map((m) => ({
+          key: m.id,
+          content: m.content,
+          senderType: m.senderType,
+          sessionId: m.sessionId,
+          createdAt: m.createdAt,
+        })),
+      // Always newest, so appending keeps the createdAt-ascending order.
+      ...mine.map((p) => ({
+        key: p.clientId,
+        content: p.content,
+        senderType: "ADMIN" as const,
+        // No session, so the "new session" divider never splits on these.
+        sessionId: null,
+        createdAt: p.createdAt,
+        pending: p,
+      })),
+    ];
+  }, [messages, pending, activeId]);
+
   // Scroll to bottom when messages change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [threadMessages]);
 
   const refreshConversations = useCallback(() => {
     startListTransition(() => router.refresh());
@@ -139,19 +217,87 @@ export default function ChatInbox({
   const isWhatsappDisconnected =
     selectedConversation?.channel === "WHATSAPP" && waConnected === false;
 
-  const handleSend = async () => {
-    const text = reply.trim();
-    if (!text || !activeId || isWhatsappDisconnected || isWhatsappChecking) return;
-    setReply("");
-    setSendError(null);
-    startSending(async () => {
-      const result = await sendAdminReply(activeId, text);
-      if (result.whatsappSendFailed) {
-        setSendError(
-          "تم حفظ الرد لكن تعذّر إرساله عبر واتساب. تحقّق من الاتصال في إعدادات واتساب.",
-        );
+  const patchPending = useCallback(
+    (clientId: string, patch: Partial<PendingMessage>) => {
+      setPending((prev) =>
+        prev.map((p) => (p.clientId === clientId ? { ...p, ...patch } : p)),
+      );
+    },
+    [],
+  );
+
+  /** Runs the full send (creates the row + delivers) and reflects the outcome
+   *  on the bubble. Used for the first attempt and for retrying a sync failure,
+   *  where no row exists yet. */
+  const deliver = useCallback(
+    async (clientId: string, conversationId: string, text: string) => {
+      let result: SendAdminReplyResult;
+      try {
+        result = await sendAdminReply(conversationId, text);
+      } catch (err) {
+        // Network error, or the action itself blew up.
+        console.error("Failed to send admin reply:", err);
+        patchPending(clientId, { status: "failed_sync" });
+        return;
       }
-    });
+      if (!result.ok) {
+        patchPending(clientId, { status: "failed_sync" });
+        return;
+      }
+      patchPending(clientId, {
+        serverId: result.messageId,
+        status: result.whatsappSendFailed ? "failed_whatsapp" : "sent",
+      });
+      router.refresh();
+    },
+    [patchPending, router],
+  );
+
+  const handleSend = () => {
+    const text = reply.trim();
+    if (!text || !activeId || isWhatsappDisconnected || isWhatsappChecking)
+      return;
+    // Safe to clear: the text now lives in the bubble, and stays there if the
+    // send fails.
+    setReply("");
+    const clientId = crypto.randomUUID();
+    setPending((prev) => [
+      ...prev,
+      {
+        clientId,
+        conversationId: activeId,
+        content: text,
+        createdAt: new Date(),
+        status: "sending",
+      },
+    ]);
+    void deliver(clientId, activeId, text);
+  };
+
+  const handleRetry = (clientId: string) => {
+    const entry = pending.find((p) => p.clientId === clientId);
+    if (!entry || entry.status === "sending" || entry.status === "sent") return;
+    patchPending(clientId, { status: "sending" });
+
+    // The row already exists — re-deliver it instead of writing a duplicate.
+    if (entry.status === "failed_whatsapp" && entry.serverId) {
+      const serverId = entry.serverId;
+      void (async () => {
+        try {
+          const result = await retryWhatsappDelivery(serverId);
+          patchPending(clientId, {
+            status: result.ok ? "sent" : "failed_whatsapp",
+          });
+          if (result.ok) router.refresh();
+        } catch (err) {
+          console.error("Failed to retry WhatsApp delivery:", err);
+          patchPending(clientId, { status: "failed_whatsapp" });
+        }
+      })();
+      return;
+    }
+
+    void deliver(clientId, entry.conversationId, entry.content);
   };
 
   const handleToggleAi = () => {
@@ -348,20 +494,23 @@ export default function ChatInbox({
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-              {messages.length === 0 && (
+              {threadMessages.length === 0 && (
                 <p className="text-center text-xs text-muted-foreground font-sans py-8">
                   لا توجد رسائل في هذه المحادثة
                 </p>
               )}
-              {messages.map((msg, idx) => {
-                const prev = messages[idx - 1];
+              {threadMessages.map((msg, idx) => {
+                const prev = threadMessages[idx - 1];
                 const showDivider =
                   !!msg.sessionId && msg.sessionId !== prev?.sessionId;
                 const isOutgoing =
                   msg.senderType === "ADMIN" || msg.senderType === "AGENT";
                 const isAgent = msg.senderType === "AGENT";
+                const status = msg.pending?.status;
+                const isFailed =
+                  status === "failed_sync" || status === "failed_whatsapp";
                 return (
-                  <Fragment key={msg.id}>
+                  <Fragment key={msg.key}>
                     {showDivider && (
                       <div className="flex items-center gap-2 py-1" dir="rtl">
                         <div className="flex-1 h-px bg-border" />
@@ -383,12 +532,15 @@ export default function ChatInbox({
                     >
                       <div
                         className={[
-                          "max-w-[70%] px-3.5 py-2 rounded-2xl text-sm font-sans leading-relaxed",
+                          "max-w-[70%] px-3.5 py-2 rounded-2xl text-sm font-sans leading-relaxed transition-opacity",
                           isAgent
                             ? "bg-accent/10 text-foreground rounded-ss-sm border border-accent/20"
                             : isOutgoing
-                              ? "bg-muted text-foreground rounded-ss-sm"
+                              ? isFailed
+                                ? "bg-red-50 border border-red-200 text-foreground rounded-ss-sm"
+                                : "bg-muted text-foreground rounded-ss-sm"
                               : "bg-primary text-white rounded-se-sm",
+                          status === "sending" ? "opacity-50" : "",
                         ].join(" ")}
                       >
                         {isAgent && (
@@ -405,20 +557,45 @@ export default function ChatInbox({
                         ) : (
                           <p>{msg.content}</p>
                         )}
-                        <p
-                          className={[
-                            "text-[10px] mt-1",
-                            isOutgoing
-                              ? "text-muted-foreground"
-                              : "text-white/60",
-                          ].join(" ")}
-                          dir="ltr"
-                        >
-                          {new Date(msg.createdAt).toLocaleTimeString("ar-EG", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
+                        {status === "sending" ? (
+                          <p className="text-[10px] mt-1 flex items-center gap-1 text-muted-foreground">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            جارٍ الإرسال...
+                          </p>
+                        ) : isFailed ? (
+                          <div className="mt-1 flex items-center gap-1.5 text-[10px] text-red-700">
+                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                            <span>
+                              {status === "failed_whatsapp"
+                                ? "تم الحفظ لكن لم تصل إلى واتساب"
+                                : "لم يتم حفظ الرسالة"}
+                            </span>
+                            <button
+                              onClick={() =>
+                                handleRetry(msg.pending!.clientId)
+                              }
+                              className="inline-flex items-center gap-1 font-medium underline hover:no-underline"
+                            >
+                              <RotateCw className="w-3 h-3" />
+                              إعادة المحاولة
+                            </button>
+                          </div>
+                        ) : (
+                          <p
+                            className={[
+                              "text-[10px] mt-1",
+                              isOutgoing
+                                ? "text-muted-foreground"
+                                : "text-white/60",
+                            ].join(" ")}
+                            dir="ltr"
+                          >
+                            {new Date(msg.createdAt).toLocaleTimeString(
+                              "ar-EG",
+                              { hour: "2-digit", minute: "2-digit" },
+                            )}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </Fragment>
@@ -447,12 +624,6 @@ export default function ChatInbox({
                   </span>
                 </div>
               )}
-              {sendError && (
-                <div className="mb-2 flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs text-red-700 font-sans">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                  <span>{sendError}</span>
-                </div>
-              )}
               <div className="flex items-end gap-2">
                 <textarea
                   value={reply}
@@ -464,25 +635,18 @@ export default function ChatInbox({
                       : "اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
                   }
                   rows={2}
-                  disabled={sending || isWhatsappDisconnected || isWhatsappChecking}
+                  disabled={isWhatsappDisconnected || isWhatsappChecking}
                   className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50 leading-relaxed"
                   dir="rtl"
                 />
                 <button
                   onClick={handleSend}
                   disabled={
-                    sending ||
-                    !reply.trim() ||
-                    isWhatsappDisconnected ||
-                    isWhatsappChecking
+                    !reply.trim() || isWhatsappDisconnected || isWhatsappChecking
                   }
                   className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-40"
                 >
-                  {sending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
+                  <Send className="w-4 h-4" />
                 </button>
               </div>
             </div>

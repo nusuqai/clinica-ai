@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { handleWhatsAppMessage } from "@/server/services/agentRunner";
+import {
+  handleWhatsAppMessage,
+  handleUnsupportedWhatsAppMessage,
+} from "@/server/services/agentRunner";
+import { parseInboundMessage } from "@/lib/whatsapp-inbound";
 
 export async function GET() {
   return NextResponse.json({ ok: true });
@@ -47,13 +51,13 @@ export async function POST(request: NextRequest) {
   const phone = remoteJid.replace("@s.whatsapp.net", "");
   const pushName = (data?.pushName as string | undefined) || phone;
 
-  const msg = data?.message as Record<string, unknown> | undefined;
-  const content =
-    (msg?.conversation as string | undefined) ||
-    ((msg?.extendedTextMessage as Record<string, unknown> | undefined)?.text as
-      | string
-      | undefined) ||
-    "[رسالة غير مدعومة]";
+  const inbound = parseInboundMessage(data?.message);
+  console.log("[webhook] message kind:", inbound.kind);
+
+  // Reactions, edits and deletions carry nothing to answer.
+  if (inbound.kind === "ignore") {
+    return NextResponse.json({ ok: true });
+  }
 
   // Find or create a conversation keyed by phone number
   let conversation = await prisma.conversation.findUnique({
@@ -74,6 +78,19 @@ export async function POST(request: NextRequest) {
       data: { whatsappName: pushName },
     });
   }
+
+  // The agent only reads text, so media never reaches it — record what came in
+  // and tell the contact to send text instead.
+  if (inbound.kind === "unsupported") {
+    try {
+      await handleUnsupportedWhatsAppMessage(conversation.id, phone, inbound);
+    } catch (e) {
+      console.error("[webhook] unsupported-message error:", e);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  const content = inbound.text;
 
   // Hand off to the AI agent: it persists the user message + agent reply
   // (linked to the active session) and sends the reply back via WhatsApp.

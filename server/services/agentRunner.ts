@@ -1,6 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { sendTextMessage } from "@/lib/evolution";
+import type { UnsupportedMediaType } from "@/lib/whatsapp-inbound";
+import { startTypingIndicator } from "./whatsappTyping";
 import {
   runAgentStream,
   runAgentToText,
@@ -21,6 +23,14 @@ import {
 } from "./agentSession";
 
 const FALLBACK_REPLY = "تم تنفيذ طلبك.";
+
+const UNSUPPORTED_PREFIX = "عذراً، لا يمكننا استقبال";
+const unsupportedReply = (noun: string) =>
+  `${UNSUPPORTED_PREFIX} ${noun}. الرجاء إرسال رسالتك كنص فقط. 🙏`;
+
+/** Media usually arrives in bursts (a photo album, a voice note plus a file),
+ *  so the notice is repeated at most once per window. */
+const UNSUPPORTED_NOTICE_COOLDOWN_MS = 60_000;
 
 function toPrior(messages: SessionMessage[]): PriorMessage[] {
   return messages.map((m) => ({
@@ -141,6 +151,50 @@ export async function* streamGuestWebAgent(
 }
 
 /**
+ * WhatsApp channel, non-text message: records that something arrived so the
+ * admin can see the gap in the thread, and tells the contact we only take text.
+ *
+ * The notice is sent whether or not the AI is enabled — it reports a hard
+ * limitation of the channel (nobody, human or agent, can read the attachment),
+ * not an agent opinion.
+ */
+export async function handleUnsupportedWhatsAppMessage(
+  conversationId: string,
+  phone: string,
+  media: UnsupportedMediaType,
+): Promise<void> {
+  const profile = await prisma.profile.findUnique({
+    where: { phone },
+    select: { id: true },
+  });
+
+  const sessionId = await resolveActiveSession(conversationId);
+  // Always recorded, even when the notice below is suppressed, so the admin
+  // sees every item the contact actually sent.
+  await persistUserMessage(
+    conversationId,
+    sessionId,
+    media.placeholder,
+    profile?.id ?? null,
+  );
+
+  const recentReply = await prisma.message.findFirst({
+    where: {
+      conversationId,
+      senderType: "AGENT",
+      createdAt: { gte: new Date(Date.now() - UNSUPPORTED_NOTICE_COOLDOWN_MS) },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { content: true },
+  });
+  if (recentReply?.content.startsWith(UNSUPPORTED_PREFIX)) return;
+
+  const reply = unsupportedReply(media.noun);
+  await persistAgentMessage(conversationId, sessionId, reply, null);
+  await sendTextMessage(phone, reply);
+}
+
+/**
  * WhatsApp channel: resolves the session, persists the user message, runs the
  * agent (non-streaming), persists + sends the reply. Phone is matched to a
  * profile — unknown numbers get an info-only agent (no actions).
@@ -189,7 +243,18 @@ export async function handleWhatsAppMessage(
     actorName: profile?.fullName ?? conv?.whatsappName ?? "",
   };
 
-  const { text, toolCalls } = await runAgentToText(ctx, toPrior(prior));
+  // The agent is fully buffered (no token streaming on this channel), so show
+  // "typing…" for the whole run instead of leaving the contact in silence.
+  const stopTyping = startTypingIndicator(phone);
+  let text: string;
+  let toolCalls: ToolCallRecord[];
+  try {
+    ({ text, toolCalls } = await runAgentToText(ctx, toPrior(prior)));
+  } finally {
+    // Stop before persisting/sending so the indicator overlaps the reply as
+    // little as possible.
+    stopTyping();
+  }
   const reply = text || FALLBACK_REPLY;
 
   await persistAgentMessage(conversationId, sessionId, reply, { toolCalls });

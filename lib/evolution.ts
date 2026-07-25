@@ -56,6 +56,34 @@ export async function sendTextMessage(
   if (!res.ok) throw new Error(`Evolution API send ${res.status}`);
 }
 
+export type PresenceState =
+  | "composing"
+  | "recording"
+  | "paused"
+  | "available"
+  | "unavailable";
+
+/**
+ * Sets the chat presence ("typing…"/"recording…") shown to a contact.
+ *
+ * Evolution emits `presence`, then blocks for the full `delayMs`, then always
+ * emits `paused` — the presence can't be held open or cancelled, so keeping an
+ * indicator up for a long operation means re-firing this call in a loop
+ * (see `server/services/whatsappTyping.ts`).
+ */
+export async function sendPresence(
+  phone: string,
+  presence: PresenceState,
+  delayMs = 0,
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/chat/sendPresence/${INSTANCE}`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ number: phone, presence, delay: delayMs }),
+  });
+  if (!res.ok) throw new Error(`Evolution API sendPresence ${res.status}`);
+}
+
 export async function disconnectInstance(): Promise<void> {
   const res = await fetch(`${BASE_URL}/instance/logout/${INSTANCE}`, {
     method: "DELETE",
