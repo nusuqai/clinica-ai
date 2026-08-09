@@ -36,7 +36,7 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
     { href: "/admin/doctors", label: "الأطباء", icon: Stethoscope },
     { href: "/admin/appointments", label: "المواعيد", icon: CalendarDays },
     { href: "/admin/messages", label: "الرسائل", icon: MessageSquare },
-    // { href: "/admin/whatsapp", label: "واتساب", icon: Smartphone },
+    { href: "/admin/whatsapp", label: "واتساب والقوالب", icon: Smartphone },
     { href: "/admin/reports", label: "التقارير", icon: BarChart3 },
   ],
 };

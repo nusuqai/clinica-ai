@@ -11,7 +11,7 @@ const PUBLIC_ROUTES = [
 ];
 // Routes that accept unauthenticated guest requests (no Supabase session at
 // all) — the route handler itself scopes what a guest can do.
-const PUBLIC_API_ROUTES = ["/api/whatsapp/webhook", "/api/agent/chat"];
+const PUBLIC_API_ROUTES = ["/api/meta/whatsapp/webhook", "/api/agent/chat"];
 
 export async function middleware(request: NextRequest) {
   if (

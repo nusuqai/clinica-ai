@@ -3,7 +3,8 @@ import { z } from "zod";
 import { AppointmentStatus, Channel, DayOfWeek, SenderType } from "@prisma/client";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
-import { sendTextMessage } from "@/lib/evolution";
+import { sendTextMessage } from "@/lib/meta/whatsapp";
+import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as UserService from "@/server/services/users";
@@ -323,7 +324,17 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           },
         });
         if (conv.channel === Channel.WHATSAPP && conv.whatsappPhone) {
-          await sendTextMessage(conv.whatsappPhone, content);
+          // Per-clinic credentials; a delivery failure (unconfigured clinic,
+          // closed 24-hour window) must not fail the whole tool — the message
+          // is already persisted in the conversation.
+          const creds = await getClinicWhatsappCredentials(conv.clinicId);
+          if (creds) {
+            try {
+              await sendTextMessage(conv.whatsappPhone, content, creds);
+            } catch (err) {
+              console.error("[agent] failed to deliver WhatsApp message:", err);
+            }
+          }
         }
         await prisma.conversation.update({
           where: { id: conversationId },

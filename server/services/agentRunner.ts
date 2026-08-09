@@ -2,9 +2,10 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, SenderType, type Role } from "@prisma/client";
 import { DEFAULT_CLINIC_ID } from "@/lib/tenant";
-import { sendTextMessage } from "@/lib/evolution";
-import type { UnsupportedMediaType } from "@/lib/whatsapp-inbound";
-import { startTypingIndicator } from "./whatsappTyping";
+import { sendTextMessage, WhatsAppApiError } from "@/lib/meta/whatsapp";
+import type { WhatsAppCredentials } from "@/lib/meta/whatsapp";
+import type { UnsupportedMediaType } from "@/lib/meta/whatsapp-inbound";
+import { showTypingIndicator } from "./whatsappTyping";
 import {
   runAgentStream,
   runAgentToText,
@@ -33,6 +34,33 @@ const unsupportedReply = (noun: string) =>
 /** Media usually arrives in bursts (a photo album, a voice note plus a file),
  *  so the notice is repeated at most once per window. */
 const UNSUPPORTED_NOTICE_COOLDOWN_MS = 60_000;
+
+/**
+ * Sends a reply over the Cloud API without letting a delivery failure escape.
+ *
+ * The reply is already persisted, and the admin inbox offers a retry, so
+ * throwing would only make the webhook treat an already-handled message as
+ * unprocessed and record the inbound text a second time. A closed 24-hour
+ * window (code 131047) is the expected failure — free-form text can't reach a
+ * contact who's been silent, and an approved template is the only option.
+ */
+async function deliverReply(
+  phone: string,
+  reply: string,
+  creds: WhatsAppCredentials,
+): Promise<void> {
+  try {
+    await sendTextMessage(phone, reply, creds);
+  } catch (err) {
+    if (err instanceof WhatsAppApiError && err.isOutsideServiceWindow) {
+      console.error(
+        `[whatsapp] reply not delivered to ${phone}: the 24-hour service window has closed — only an approved template can reach this contact`,
+      );
+      return;
+    }
+    console.error(`[whatsapp] reply not delivered to ${phone}:`, err);
+  }
+}
 
 function toPrior(messages: SessionMessage[]): PriorMessage[] {
   return messages.map((m) => ({
@@ -172,6 +200,7 @@ export async function handleUnsupportedWhatsAppMessage(
   conversationId: string,
   phone: string,
   media: UnsupportedMediaType,
+  creds: WhatsAppCredentials,
 ): Promise<void> {
   const profile = await prisma.profile.findUnique({
     where: { phone },
@@ -201,7 +230,7 @@ export async function handleUnsupportedWhatsAppMessage(
 
   const reply = unsupportedReply(media.noun);
   await persistAgentMessage(conversationId, sessionId, reply, null);
-  await sendTextMessage(phone, reply);
+  await deliverReply(phone, reply, creds);
 }
 
 /**
@@ -213,6 +242,9 @@ export async function handleWhatsAppMessage(
   conversationId: string,
   phone: string,
   userText: string,
+  /** Meta message id — enables read receipts and the typing indicator. */
+  messageId: string,
+  creds: WhatsAppCredentials,
 ): Promise<void> {
   const profile = await prisma.profile.findUnique({
     where: { phone },
@@ -265,19 +297,13 @@ export async function handleWhatsAppMessage(
   };
 
   // The agent is fully buffered (no token streaming on this channel), so show
-  // "typing…" for the whole run instead of leaving the contact in silence.
-  const stopTyping = startTypingIndicator(phone);
-  let text: string;
-  let toolCalls: ToolCallRecord[];
-  try {
-    ({ text, toolCalls } = await runAgentToText(ctx, toPrior(prior)));
-  } finally {
-    // Stop before persisting/sending so the indicator overlaps the reply as
-    // little as possible.
-    stopTyping();
-  }
+  // "typing…" instead of leaving the contact in silence. Meta clears it when
+  // the reply lands, so there is nothing to stop afterwards.
+  showTypingIndicator(messageId, creds);
+
+  const { text, toolCalls } = await runAgentToText(ctx, toPrior(prior));
   const reply = text || FALLBACK_REPLY;
 
   await persistAgentMessage(conversationId, sessionId, reply, { toolCalls });
-  await sendTextMessage(phone, reply);
+  await deliverReply(phone, reply, creds);
 }
