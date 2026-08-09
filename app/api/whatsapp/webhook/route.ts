@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Channel, SenderType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_CLINIC_ID } from "@/lib/tenant";
 import {
   handleWhatsAppMessage,
   handleUnsupportedWhatsAppMessage,
@@ -59,15 +61,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Find or create a conversation keyed by phone number
+  // Find or create a conversation keyed by phone number, in the default clinic
+  // (multi-clinic WhatsApp routing lands with #4/#7).
   let conversation = await prisma.conversation.findUnique({
-    where: { whatsappPhone: phone },
+    where: {
+      clinicId_whatsappPhone: {
+        clinicId: DEFAULT_CLINIC_ID,
+        whatsappPhone: phone,
+      },
+    },
   });
 
   if (!conversation) {
     conversation = await prisma.conversation.create({
       data: {
-        channel: "WHATSAPP",
+        clinicId: DEFAULT_CLINIC_ID,
+        channel: Channel.WHATSAPP,
         whatsappPhone: phone,
         whatsappName: pushName,
       },
@@ -100,7 +109,7 @@ export async function POST(request: NextRequest) {
     console.error("[webhook] agent error:", e);
     // Still store the inbound message so the admin can follow up manually.
     await prisma.message.create({
-      data: { conversationId: conversation.id, senderType: "USER", content },
+      data: { conversationId: conversation.id, senderType: SenderType.USER, content },
     });
     await prisma.conversation.update({
       where: { id: conversation.id },

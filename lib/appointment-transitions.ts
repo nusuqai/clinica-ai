@@ -1,11 +1,20 @@
-import type { AppointmentStatus } from "@prisma/client";
+import { AppointmentStatus } from "@prisma/client";
 
 const ALLOWED_TRANSITIONS: Record<AppointmentStatus, AppointmentStatus[]> = {
-  PENDING: ["CONFIRMED", "CANCELLED", "NO_SHOW", "COMPLETED"],
-  CONFIRMED: ["COMPLETED", "CANCELLED", "NO_SHOW"],
-  COMPLETED: [],
-  CANCELLED: [],
-  NO_SHOW: [],
+  [AppointmentStatus.PENDING]: [
+    AppointmentStatus.CONFIRMED,
+    AppointmentStatus.CANCELLED,
+    AppointmentStatus.NO_SHOW,
+    AppointmentStatus.COMPLETED,
+  ],
+  [AppointmentStatus.CONFIRMED]: [
+    AppointmentStatus.COMPLETED,
+    AppointmentStatus.CANCELLED,
+    AppointmentStatus.NO_SHOW,
+  ],
+  [AppointmentStatus.COMPLETED]: [],
+  [AppointmentStatus.CANCELLED]: [],
+  [AppointmentStatus.NO_SHOW]: [],
 };
 
 export function getAllowedTransitions(status: AppointmentStatus): AppointmentStatus[] {

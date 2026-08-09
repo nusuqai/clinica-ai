@@ -12,6 +12,8 @@ import type { Role, Channel } from "@prisma/client";
 export interface AgentContext {
   actorId: string | null;
   role: Role | null;
+  /** The clinic (tenant) this conversation belongs to; scopes every tool. */
+  clinicId: string;
   channel: Channel;
   conversationId: string;
   sessionId: string;

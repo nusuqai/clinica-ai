@@ -1,4 +1,5 @@
 import "server-only";
+import { AppointmentStatus, Channel, Role, SenderType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,9 +32,21 @@ export interface RecentActivity {
   createdAt: Date;
 }
 
+// User ids that are staff (DOCTOR/ADMIN) of this clinic — their own AI chats are
+// not customer contacts and are excluded from customer-facing activity/inbox.
+async function staffUserIds(clinicId: string): Promise<string[]> {
+  const rows = await prisma.clinicMember.findMany({
+    where: { clinicId, role: { in: [Role.DOCTOR, Role.ADMIN] } },
+    select: { userId: true },
+  });
+  return rows.map((r) => r.userId);
+}
+
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export async function getDashboardStats(): Promise<DashboardStats> {
+export async function getDashboardStats(
+  clinicId: string,
+): Promise<DashboardStats> {
   const [
     totalUsers,
     totalDoctors,
@@ -41,14 +54,15 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     appointmentCounts,
     totalConversations,
   ] = await Promise.all([
-    prisma.profile.count(),
-    prisma.profile.count({ where: { role: "DOCTOR" } }),
-    prisma.profile.count({ where: { role: "PATIENT" } }),
+    prisma.clinicMember.count({ where: { clinicId } }),
+    prisma.doctor.count({ where: { clinicId } }),
+    prisma.clinicMember.count({ where: { clinicId, role: Role.PATIENT } }),
     prisma.appointment.groupBy({
       by: ["status"],
+      where: { clinicId },
       _count: { status: true },
     }),
-    prisma.conversation.count(),
+    prisma.conversation.count({ where: { clinicId } }),
   ]);
 
   const countByStatus = Object.fromEntries(
@@ -60,18 +74,21 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     totalDoctors,
     totalPatients,
     totalAppointments: Object.values(countByStatus).reduce((a, b) => a + b, 0),
-    pendingAppointments: countByStatus["PENDING"] ?? 0,
-    confirmedAppointments: countByStatus["CONFIRMED"] ?? 0,
-    cancelledAppointments: countByStatus["CANCELLED"] ?? 0,
-    completedAppointments: countByStatus["COMPLETED"] ?? 0,
+    pendingAppointments: countByStatus[AppointmentStatus.PENDING] ?? 0,
+    confirmedAppointments: countByStatus[AppointmentStatus.CONFIRMED] ?? 0,
+    cancelledAppointments: countByStatus[AppointmentStatus.CANCELLED] ?? 0,
+    completedAppointments: countByStatus[AppointmentStatus.COMPLETED] ?? 0,
     totalConversations,
   };
 }
 
-export async function getDoctorLoad(): Promise<DoctorLoad[]> {
+export async function getDoctorLoad(clinicId: string): Promise<DoctorLoad[]> {
   const doctors = await prisma.doctor.findMany({
-    include: {
-      profile: { select: { fullName: true } },
+    where: { clinicId },
+    select: {
+      id: true,
+      fullName: true,
+      specialty: true,
       _count: { select: { appointments: true } },
     },
     orderBy: { appointments: { _count: "desc" } },
@@ -80,20 +97,26 @@ export async function getDoctorLoad(): Promise<DoctorLoad[]> {
 
   return doctors.map((d) => ({
     doctorId: d.id,
-    doctorName: d.profile.fullName,
+    doctorName: d.fullName,
     specialty: d.specialty,
     appointmentCount: d._count.appointments,
   }));
 }
 
-export async function getRecentActivity(limit = 10): Promise<RecentActivity[]> {
+export async function getRecentActivity(
+  clinicId: string,
+  limit = 10,
+): Promise<RecentActivity[]> {
+  const staffIds = await staffUserIds(clinicId);
+
   const [recentAppointments, recentMessages] = await Promise.all([
     prisma.appointment.findMany({
+      where: { clinicId },
       take: limit,
       orderBy: { createdAt: "desc" },
       include: {
         patient: { select: { fullName: true } },
-        doctor: { select: { profile: { select: { fullName: true } } } },
+        doctor: { select: { fullName: true } },
       },
     }),
     prisma.message.findMany({
@@ -101,15 +124,21 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivity[]> {
       orderBy: { createdAt: "desc" },
       include: {
         conversation: {
-          include: { user: { select: { fullName: true } } },
+          select: {
+            channel: true,
+            whatsappName: true,
+            whatsappPhone: true,
+            user: { select: { fullName: true } },
+          },
         },
       },
-      // Exclude admins'/doctors' own chat with the AI assistant — not a
-      // customer contact, shouldn't show up as "activity" to review.
+      // Exclude staff members' own chat with the AI assistant — not a customer
+      // contact, shouldn't show up as "activity" to review.
       where: {
-        senderType: "USER",
+        senderType: SenderType.USER,
         conversation: {
-          OR: [{ userId: null }, { user: { role: "PATIENT" } }],
+          clinicId,
+          OR: [{ userId: null }, { userId: { notIn: staffIds } }],
         },
       },
     }),
@@ -119,7 +148,7 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivity[]> {
     ...recentAppointments.map((a) => ({
       type: "appointment" as const,
       id: a.id,
-      label: `${a.patient.fullName} ← ${a.doctor.profile.fullName}`,
+      label: `${a.patient.fullName} ← ${a.doctor.fullName}`,
       subLabel: a.createdAt.toLocaleDateString("ar-EG"),
       status: a.status,
       createdAt: a.createdAt,
@@ -131,7 +160,7 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivity[]> {
         m.conversation.user?.fullName ??
         m.conversation.whatsappName ??
         m.conversation.whatsappPhone ??
-        (m.conversation.channel === "WEB" ? "زائر" : "غير معروف"),
+        (m.conversation.channel === Channel.WEB ? "زائر" : "غير معروف"),
       subLabel: m.content.slice(0, 60),
       createdAt: m.createdAt,
     })),

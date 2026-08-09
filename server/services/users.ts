@@ -18,25 +18,34 @@ export interface AdminUser {
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
 /**
- * Lists all profiles merged with email from auth.users via the service-role client.
- * AI agent tools can call this directly.
+ * Lists the members of a clinic with their per-clinic role, merged with email
+ * from auth.users via the service-role client.
  */
-export async function listUsers(): Promise<AdminUser[]> {
-  const [profiles, { data: authList }] = await Promise.all([
-    prisma.profile.findMany({
-      select: { id: true, fullName: true, phone: true, role: true, createdAt: true },
+export async function listUsers(clinicId: string): Promise<AdminUser[]> {
+  const [members, { data: authList }] = await Promise.all([
+    prisma.clinicMember.findMany({
+      where: { clinicId },
+      select: {
+        role: true,
+        createdAt: true,
+        user: { select: { id: true, fullName: true, phone: true } },
+      },
       orderBy: { createdAt: "desc" },
     }),
     createAdminClient().auth.admin.listUsers({ perPage: 1000 }),
   ]);
 
   const emailMap = new Map<string, string>(
-    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""])
+    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""]),
   );
 
-  return profiles.map((p) => ({
-    ...p,
-    email: emailMap.get(p.id) ?? "",
+  return members.map((m) => ({
+    id: m.user.id,
+    fullName: m.user.fullName,
+    phone: m.user.phone,
+    role: m.role,
+    createdAt: m.createdAt,
+    email: emailMap.get(m.user.id) ?? "",
   }));
 }
 
@@ -44,10 +53,15 @@ export async function listUsers(): Promise<AdminUser[]> {
 
 export async function updateUserRole(
   userId: string,
-  role: Role
+  clinicId: string,
+  role: Role,
 ): Promise<Result<void>> {
   try {
-    await prisma.profile.update({ where: { id: userId }, data: { role } });
+    await prisma.clinicMember.upsert({
+      where: { userId_clinicId: { userId, clinicId } },
+      update: { role },
+      create: { userId, clinicId, role },
+    });
     return ok(undefined);
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل تحديث دور المستخدم");

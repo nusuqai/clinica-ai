@@ -12,6 +12,8 @@ export type DashboardRole = "patient" | "doctor" | "admin";
 interface DashboardShellProps {
   children: React.ReactNode;
   role: DashboardRole;
+  /** URL prefix for this clinic, e.g. `/clinic/sunrise-dental`. */
+  basePath: string;
   userFullName: string;
   userEmail: string;
   /** Admin only — conversation IDs with an unresolved escalation on load. */
@@ -21,6 +23,7 @@ interface DashboardShellProps {
 export default function DashboardShell({
   children,
   role,
+  basePath,
   userFullName,
   userEmail,
   initialUnresolvedEscalationConversationIds = [],
@@ -28,7 +31,12 @@ export default function DashboardShell({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const navItems = navConfig[role];
+  // Nav hrefs are clinic-relative; prefix them with this clinic's base path.
+  // The "/" home link (back to the public site) is left absolute.
+  const navItems = navConfig[role].map((item) => ({
+    ...item,
+    href: item.href === "/" ? "/" : `${basePath}${item.href}`,
+  }));
   const { label: roleLabel, pageTitle } = roleMeta[role];
 
   const shell = (

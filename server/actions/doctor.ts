@@ -1,29 +1,26 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import type { AppointmentStatus, DayOfWeek } from "@prisma/client";
+import { Role, type AppointmentStatus, type DayOfWeek } from "@prisma/client";
 
+import { getActiveClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
 async function requireDoctor(): Promise<{ userId: string; doctorId: string }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("غير مصرح");
+  const ctx = await getActiveClinicContext();
+  if (!ctx || ctx.role !== Role.DOCTOR) throw new Error("غير مصرح");
 
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { role: true },
+  const doctor = await prisma.doctor.findFirst({
+    where: { profileId: ctx.user.id, clinicId: ctx.clinic.id },
+    select: { id: true },
   });
-  if (profile?.role !== "DOCTOR") throw new Error("غير مصرح");
+  if (!doctor) throw new Error("غير مصرح");
 
-  return { userId: user.id, doctorId: user.id };
+  return { userId: ctx.user.id, doctorId: doctor.id };
 }
 
 // ─── Appointment actions ──────────────────────────────────────────────────────
@@ -46,8 +43,8 @@ export async function updateAppointmentStatusAsDoctorAction(
     cancellationReason,
   );
   if (!result.ok) return { error: result.error };
-  revalidatePath("/doctor/appointments");
-  revalidatePath("/doctor");
+  revalidatePath("/clinic/[slug]/doctor/appointments", "page");
+  revalidatePath("/clinic/[slug]/doctor", "page");
   return { success: true };
 }
 
@@ -67,7 +64,7 @@ export async function updateDoctorNotesAction(
     data: { doctorNotes },
   });
 
-  revalidatePath("/doctor/appointments");
+  revalidatePath("/clinic/[slug]/doctor/appointments", "page");
   return { success: true };
 }
 
@@ -88,8 +85,8 @@ export async function updateMyProfileAction(formData: FormData) {
   });
 
   if (!result.ok) return { error: result.error };
-  revalidatePath("/doctor/profile");
-  revalidatePath("/doctor");
+  revalidatePath("/clinic/[slug]/doctor/profile", "page");
+  revalidatePath("/clinic/[slug]/doctor", "page");
   return { success: true };
 }
 
@@ -108,7 +105,7 @@ export async function createMyRuleAction(formData: FormData) {
       : 30,
   });
   if (!result.ok) return { error: result.error };
-  revalidatePath("/doctor/schedule");
+  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
   return { success: true };
 }
 
@@ -122,7 +119,7 @@ export async function deleteMyRuleAction(ruleId: string) {
 
   const result = await DoctorService.deleteRule(ruleId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/doctor/schedule");
+  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
   return { success: true };
 }
 
@@ -136,7 +133,7 @@ export async function toggleMyRuleActiveAction(ruleId: string, isActive: boolean
 
   const result = await DoctorService.toggleRuleActive(ruleId, isActive);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/doctor/schedule");
+  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
   return { success: true };
 }
 
@@ -150,7 +147,7 @@ export async function generateMySlotsAction(ruleId: string) {
 
   const result = await DoctorService.generateSlotsForRule(ruleId, 30);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/doctor/schedule");
+  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
   return { success: true, count: result.data.count };
 }
 
@@ -164,6 +161,6 @@ export async function toggleMySlotBlockedAction(slotId: string) {
 
   const result = await DoctorService.toggleSlotBlocked(slotId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/doctor/schedule");
+  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
   return { success: true };
 }

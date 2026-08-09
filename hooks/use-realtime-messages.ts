@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { SenderType } from "@prisma/client";
 import { createClient } from "@/lib/supabase/client";
 
 /** Raw shape of a `messages` row as delivered by Supabase Realtime. */
@@ -8,7 +9,7 @@ export interface RealtimeMessageRow {
   id: string;
   conversationId: string;
   sessionId: string | null;
-  senderType: "USER" | "ADMIN" | "AGENT";
+  senderType: SenderType;
   senderId: string | null;
   content: string;
   metadata: unknown;

@@ -1,5 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { Channel, SenderType, type Role } from "@prisma/client";
+import { DEFAULT_CLINIC_ID } from "@/lib/tenant";
 import { sendTextMessage } from "@/lib/evolution";
 import type { UnsupportedMediaType } from "@/lib/whatsapp-inbound";
 import { startTypingIndicator } from "./whatsappTyping";
@@ -49,13 +51,17 @@ export async function* streamWebAgent(
   userId: string,
   userText: string,
 ): AsyncGenerator<AgentStreamEvent> {
-  const profile = await prisma.profile.findUnique({
-    where: { id: userId },
-    select: { role: true, fullName: true },
+  const membership = await prisma.clinicMember.findFirst({
+    where: { userId, clinic: { isActive: true } },
+    orderBy: { createdAt: "asc" },
+    select: { role: true, clinicId: true, user: { select: { fullName: true } } },
   });
-  if (!profile) throw new Error("Profile not found");
+  if (!membership) throw new Error("No clinic membership for user");
 
-  const conversationId = await getOrCreateWebConversation(userId);
+  const conversationId = await getOrCreateWebConversation(
+    userId,
+    membership.clinicId,
+  );
   const sessionId = await resolveActiveSession(conversationId);
   await persistUserMessage(conversationId, sessionId, userText, userId);
 
@@ -68,11 +74,12 @@ export async function* streamWebAgent(
 
   const ctx: AgentContext = {
     actorId: userId,
-    role: profile.role,
-    channel: "WEB",
+    role: membership.role,
+    clinicId: membership.clinicId,
+    channel: Channel.WEB,
     conversationId,
     sessionId,
-    actorName: profile.fullName,
+    actorName: membership.user.fullName,
   };
 
   let finalText = "";
@@ -108,8 +115,10 @@ export async function* streamGuestWebAgent(
   conversationId: string | null,
   userText: string,
 ): AsyncGenerator<AgentStreamEvent | { type: "init"; conversationId: string }> {
-  const resolvedConversationId =
-    await getOrCreateGuestWebConversation(conversationId);
+  const resolvedConversationId = await getOrCreateGuestWebConversation(
+    conversationId,
+    DEFAULT_CLINIC_ID,
+  );
   yield { type: "init", conversationId: resolvedConversationId };
 
   const sessionId = await resolveActiveSession(resolvedConversationId);
@@ -125,7 +134,8 @@ export async function* streamGuestWebAgent(
   const ctx: AgentContext = {
     actorId: null,
     role: null,
-    channel: "WEB",
+    clinicId: DEFAULT_CLINIC_ID,
+    channel: Channel.WEB,
     conversationId: resolvedConversationId,
     sessionId,
     actorName: "زائر",
@@ -181,7 +191,7 @@ export async function handleUnsupportedWhatsAppMessage(
   const recentReply = await prisma.message.findFirst({
     where: {
       conversationId,
-      senderType: "AGENT",
+      senderType: SenderType.AGENT,
       createdAt: { gte: new Date(Date.now() - UNSUPPORTED_NOTICE_COOLDOWN_MS) },
     },
     orderBy: { createdAt: "desc" },
@@ -206,7 +216,7 @@ export async function handleWhatsAppMessage(
 ): Promise<void> {
   const profile = await prisma.profile.findUnique({
     where: { phone },
-    select: { id: true, role: true, fullName: true },
+    select: { id: true, fullName: true },
   });
 
   // Link the conversation to the matched account so the admin inbox + role
@@ -231,13 +241,24 @@ export async function handleWhatsAppMessage(
 
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { whatsappName: true },
+    select: { whatsappName: true, clinicId: true },
   });
+
+  // The contact's role is per-clinic; resolve it in this conversation's clinic.
+  let role: Role | null = null;
+  if (profile && conv) {
+    const m = await prisma.clinicMember.findUnique({
+      where: { userId_clinicId: { userId: profile.id, clinicId: conv.clinicId } },
+      select: { role: true },
+    });
+    role = m?.role ?? null;
+  }
 
   const ctx: AgentContext = {
     actorId: profile?.id ?? null,
-    role: profile?.role ?? null,
-    channel: "WHATSAPP",
+    role,
+    clinicId: conv?.clinicId ?? DEFAULT_CLINIC_ID,
+    channel: Channel.WHATSAPP,
     conversationId,
     sessionId,
     actorName: profile?.fullName ?? conv?.whatsappName ?? "",

@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
+import { AppointmentStatus, Role } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { roleHome } from "@/lib/auth";
+import { DEFAULT_CLINIC_ID } from "@/lib/tenant";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
-
 import { LandingNav } from "@/components/landing/landing-nav";
 import { HeroSection } from "@/components/landing/hero-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
@@ -25,24 +27,31 @@ export default async function LandingPage() {
 
   let isAuthenticated = false;
   let isPatient = false;
+  let dashboardHref = "/";
 
   if (user) {
     isAuthenticated = true;
-    const profile = await prisma.profile.findUnique({
-      where: { id: user.id },
-      select: { role: true },
+    const membership = await prisma.clinicMember.findFirst({
+      where: { userId: user.id, clinic: { isActive: true } },
+      orderBy: { createdAt: "asc" },
+      select: { role: true, clinic: { select: { slug: true } } },
     });
 
-    if (profile?.role === "DOCTOR") redirect("/doctor");
-    if (profile?.role === "ADMIN") redirect("/admin");
-
-    isPatient = profile?.role === "PATIENT";
+    if (membership) {
+      if (membership.role === Role.DOCTOR || membership.role === Role.ADMIN) {
+        redirect(roleHome(membership.clinic.slug, membership.role));
+      }
+      isPatient = membership.role === Role.PATIENT;
+      dashboardHref = `/clinic/${membership.clinic.slug}/dashboard`;
+    }
   }
 
-  // ── Data fetching ────────────────────────────────────────────────────────────
+  // ── Data fetching (product landing shows the default/demo clinic) ─────────────
   const [doctors, allAppointments] = await Promise.all([
-    DoctorService.listActiveDoctors(),
-    AppointmentService.listAppointments({ status: "COMPLETED" }),
+    DoctorService.listActiveDoctors(DEFAULT_CLINIC_ID),
+    AppointmentService.listAppointments(DEFAULT_CLINIC_ID, {
+      status: AppointmentStatus.COMPLETED,
+    }),
   ]);
 
   const doctorCount = doctors.length;
@@ -75,7 +84,11 @@ export default async function LandingPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <LandingNav isAuthenticated={isAuthenticated} isPatient={isPatient} />
+      <LandingNav
+        isAuthenticated={isAuthenticated}
+        isPatient={isPatient}
+        dashboardHref={dashboardHref}
+      />
 
       <main className="flex-1">
         {/* Hero */}
@@ -94,6 +107,9 @@ export default async function LandingPage() {
               doctors={serialisedDoctors}
               isAuthenticated={isAuthenticated}
               isPatient={isPatient}
+              appointmentsHref={
+                isPatient ? `${dashboardHref}/appointments` : undefined
+              }
             />
           </div>
         </section>

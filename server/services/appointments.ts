@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
-import type { AppointmentStatus } from "@prisma/client";
+import { AppointmentStatus } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +30,16 @@ export interface AdminAppointment {
   doctor: { profile: { fullName: string }; specialty: string };
 }
 
+// The doctor now carries its own name; keep the `doctor.profile.fullName` view
+// shape the UI expects by selecting the doctor's fields and reshaping.
+const doctorNameSelect = { select: { specialty: true, fullName: true } } as const;
+const reshapeDoctor = <T extends { doctor: { specialty: string; fullName: string } }>(
+  row: T,
+) => ({
+  ...row,
+  doctor: { specialty: row.doctor.specialty, profile: { fullName: row.doctor.fullName } },
+});
+
 // ─── Patient Queries ──────────────────────────────────────────────────────────
 
 export async function getPatientAppointments(
@@ -40,12 +50,12 @@ export async function getPatientAppointments(
     limit?: number;
   },
 ): Promise<PatientAppointment[]> {
-  return prisma.appointment.findMany({
+  const rows = await prisma.appointment.findMany({
     where: {
       patientId,
       ...(options?.upcoming
         ? {
-            status: { in: ["PENDING", "CONFIRMED"] },
+            status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
             slot: { startTime: { gt: new Date() } },
           }
         : options?.status
@@ -54,16 +64,12 @@ export async function getPatientAppointments(
     },
     include: {
       slot: { select: { date: true, startTime: true, endTime: true } },
-      doctor: {
-        select: {
-          specialty: true,
-          profile: { select: { fullName: true } },
-        },
-      },
+      doctor: doctorNameSelect,
     },
     orderBy: { slot: { startTime: options?.upcoming ? "asc" : "desc" } },
     ...(options?.limit ? { take: options.limit } : {}),
   });
+  return rows.map(reshapeDoctor);
 }
 
 export async function getPatientStats(patientId: string) {
@@ -72,47 +78,41 @@ export async function getPatientStats(patientId: string) {
     prisma.appointment.count({
       where: {
         patientId,
-        status: { in: ["PENDING", "CONFIRMED"] },
+        status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
         slot: { startTime: { gt: new Date() } },
       },
     }),
-    prisma.appointment.count({ where: { patientId, status: "COMPLETED" } }),
-    prisma.appointment.count({ where: { patientId, status: "CANCELLED" } }),
+    prisma.appointment.count({ where: { patientId, status: AppointmentStatus.COMPLETED } }),
+    prisma.appointment.count({ where: { patientId, status: AppointmentStatus.CANCELLED } }),
   ]);
   return { total, upcoming, completed, cancelled };
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export async function listAppointments(filters?: {
-  status?: AppointmentStatus;
-  doctorId?: string;
-  patientId?: string;
-}): Promise<AdminAppointment[]> {
-  return prisma.appointment.findMany({
+export async function listAppointments(
+  clinicId: string,
+  filters?: {
+    status?: AppointmentStatus;
+    doctorId?: string;
+    patientId?: string;
+  },
+): Promise<AdminAppointment[]> {
+  const rows = await prisma.appointment.findMany({
     where: {
+      clinicId,
       ...(filters?.status && { status: filters.status }),
       ...(filters?.doctorId && { doctorId: filters.doctorId }),
       ...(filters?.patientId && { patientId: filters.patientId }),
     },
     include: {
-      slot: {
-        select: {
-          date: true,
-          startTime: true,
-          endTime: true,
-        },
-      },
+      slot: { select: { date: true, startTime: true, endTime: true } },
       patient: { select: { fullName: true } },
-      doctor: {
-        select: {
-          specialty: true,
-          profile: { select: { fullName: true } },
-        },
-      },
+      doctor: doctorNameSelect,
     },
     orderBy: { slot: { date: "desc" } },
   });
+  return rows.map(reshapeDoctor);
 }
 
 // ─── Doctor Queries ───────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ export async function getDoctorAppointments(
       doctorId,
       ...(options?.upcoming
         ? {
-            status: { in: ["PENDING", "CONFIRMED"] },
+            status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
             slot: { startTime: { gt: new Date() } },
           }
         : options?.status
@@ -164,7 +164,7 @@ export async function createAppointment(
   try {
     const slot = await prisma.slot.findUnique({
       where: { id: slotId },
-      include: { appointment: true },
+      include: { appointment: true, doctor: { select: { clinicId: true } } },
     });
     if (!slot) return err("الموعد غير موجود");
     if (slot.isBlocked) return err("هذا الموعد غير متاح");
@@ -173,10 +173,11 @@ export async function createAppointment(
 
     const appointment = await prisma.appointment.create({
       data: {
+        clinicId: slot.doctor.clinicId,
         patientId,
         doctorId: slot.doctorId,
         slotId,
-        status: "PENDING",
+        status: AppointmentStatus.PENDING,
         patientNotes: patientNotes ?? null,
       },
     });
@@ -199,7 +200,7 @@ export async function updateAppointmentStatus(
       where: { id: appointmentId },
       data: {
         status,
-        ...(status === "CANCELLED" && {
+        ...(status === AppointmentStatus.CANCELLED && {
           cancelledAt: new Date(),
           cancellationReason: cancellationReason ?? null,
         }),

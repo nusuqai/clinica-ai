@@ -1,8 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { Role } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { redirectToUserClinic } from "@/lib/auth";
+import { DEFAULT_CLINIC_ID } from "@/lib/tenant";
 
 export async function signIn(formData: FormData) {
   const supabase = await createClient();
@@ -20,12 +23,10 @@ export async function signIn(formData: FormData) {
 
   const profile = await prisma.profile.findUnique({
     where: { id: data.user.id },
-    select: { role: true },
+    select: { isPlatformAdmin: true },
   });
 
-  if (profile?.role === "DOCTOR") redirect("/doctor");
-  if (profile?.role === "ADMIN") redirect("/admin");
-  redirect("/dashboard");
+  await redirectToUserClinic(data.user.id, profile?.isPlatformAdmin ?? false);
 }
 
 export async function signUp(formData: FormData) {
@@ -51,7 +52,29 @@ export async function signUp(formData: FormData) {
     return { error: error.message };
   }
 
-  redirect("/dashboard");
+  // Give the caller a PATIENT membership in the default clinic (public
+  // self-registration). The identity profile is created by the auth DB trigger.
+  const userId = data.user?.id;
+  if (userId) {
+    let profile = await prisma.profile.findUnique({ where: { id: userId } });
+    if (!profile) {
+      await new Promise((r) => setTimeout(r, 500));
+      profile = await prisma.profile.findUnique({ where: { id: userId } });
+    }
+    if (!profile) {
+      await prisma.profile.create({
+        data: { id: userId, fullName, phone: phone || null },
+      });
+    }
+    await prisma.clinicMember.upsert({
+      where: { userId_clinicId: { userId, clinicId: DEFAULT_CLINIC_ID } },
+      update: {},
+      create: { userId, clinicId: DEFAULT_CLINIC_ID, role: Role.PATIENT },
+    });
+    await redirectToUserClinic(userId, false);
+  }
+
+  redirect("/login");
 }
 
 export async function signOut() {
