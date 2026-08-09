@@ -16,6 +16,7 @@ import {
   sendTemplateMessage,
   type MessageTemplate,
   type TemplateCategory,
+  type TemplateButton,
 } from "@/lib/meta/whatsapp";
 
 const CONFIG_PATH = "/clinic/[slug]/admin/whatsapp";
@@ -100,8 +101,10 @@ export async function createTemplateAction(input: {
   name: string;
   category: TemplateCategory;
   language: string;
+  headerText?: string;
   bodyText: string;
   footerText?: string;
+  buttons?: TemplateButton[];
   bodyExamples?: string[];
 }): Promise<{ ok: true; status: string } | ActionError> {
   const auth = await requireAdminClinic();
@@ -119,13 +122,26 @@ export async function createTemplateAction(input: {
     return { ok: false, reason: "error", message: "Template body is required" };
   }
 
+  // Drop empty buttons; validate the required field per type.
+  const buttons = (input.buttons ?? []).filter((b) => b.text.trim());
+  for (const b of buttons) {
+    if (b.type === "URL" && !b.url?.trim()) {
+      return { ok: false, reason: "error", message: "زر الرابط يحتاج عنوان URL" };
+    }
+    if (b.type === "PHONE_NUMBER" && !b.phoneNumber?.trim()) {
+      return { ok: false, reason: "error", message: "زر الاتصال يحتاج رقم هاتف" };
+    }
+  }
+
   try {
     const result = await createMessageTemplate(creds.accessToken, creds.wabaId, {
       name,
       category: input.category,
       language: input.language,
+      headerText: input.headerText,
       bodyText: input.bodyText,
       footerText: input.footerText,
+      buttons: buttons.length > 0 ? buttons : undefined,
       bodyExamples: input.bodyExamples,
     });
     revalidatePath(CONFIG_PATH, "page");

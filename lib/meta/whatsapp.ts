@@ -209,31 +209,92 @@ export type TemplateStatus =
 
 export type TemplateCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION";
 
+/** A button attached to a template. We support the three most common types. */
+export type TemplateButtonType = "QUICK_REPLY" | "URL" | "PHONE_NUMBER";
+
+export interface TemplateButton {
+  type: TemplateButtonType;
+  text: string;
+  /** For URL buttons. */
+  url?: string;
+  /** For PHONE_NUMBER buttons. */
+  phoneNumber?: string;
+}
+
 export interface MessageTemplate {
   id: string;
   name: string;
   status: TemplateStatus;
   category: string;
   language: string;
+  /** Optional TEXT header ("title"), with `{{n}}` placeholders left in. */
+  headerText: string;
   /** The BODY component text, with `{{n}}` placeholders left in. */
   bodyText: string;
+  /** Optional FOOTER text. */
+  footerText: string;
+  /** Buttons on the template (empty if none). */
+  buttons: TemplateButton[];
   /** Number of `{{n}}` placeholders in the body — how many inputs to render. */
   variableCount: number;
 }
 
-interface RawComponent {
+interface RawButton {
   type?: string;
   text?: string;
+  url?: string;
+  phone_number?: string;
 }
 
-function extractBody(components: RawComponent[] | undefined): {
+interface RawComponent {
+  type?: string;
+  format?: string;
+  text?: string;
+  buttons?: RawButton[];
+}
+
+/** Pulls the display-relevant pieces out of a template's components array. */
+function extractComponents(components: RawComponent[] | undefined): {
+  headerText: string;
   bodyText: string;
+  footerText: string;
+  buttons: TemplateButton[];
   variableCount: number;
 } {
-  const body = components?.find((c) => c.type?.toUpperCase() === "BODY");
-  const bodyText = body?.text ?? "";
+  const find = (type: string) =>
+    components?.find((c) => c.type?.toUpperCase() === type);
+
+  const header = find("HEADER");
+  // Only TEXT headers carry text we can render; media headers have no `text`.
+  const headerText =
+    header?.format?.toUpperCase() === "TEXT" ? (header.text ?? "") : "";
+  const bodyText = find("BODY")?.text ?? "";
+  const footerText = find("FOOTER")?.text ?? "";
+
+  const rawButtons = find("BUTTONS")?.buttons ?? [];
+  const buttons: TemplateButton[] = rawButtons
+    .map((b): TemplateButton | null => {
+      const type = b.type?.toUpperCase();
+      if (type === "QUICK_REPLY" || type === "URL" || type === "PHONE_NUMBER") {
+        return {
+          type,
+          text: b.text ?? "",
+          url: b.url,
+          phoneNumber: b.phone_number,
+        };
+      }
+      return null;
+    })
+    .filter((b): b is TemplateButton => b !== null);
+
   const matches = bodyText.match(/\{\{\s*\d+\s*\}\}/g);
-  return { bodyText, variableCount: matches ? matches.length : 0 };
+  return {
+    headerText,
+    bodyText,
+    footerText,
+    buttons,
+    variableCount: matches ? matches.length : 0,
+  };
 }
 
 /** Lists all message templates for a WABA, with their approval status. */
@@ -251,16 +312,18 @@ export async function listMessageTemplates(
   const data = Array.isArray(json.data) ? json.data : [];
   return data.map((raw) => {
     const t = raw as Record<string, unknown>;
-    const { bodyText, variableCount } = extractBody(
-      t.components as RawComponent[] | undefined,
-    );
+    const { headerText, bodyText, footerText, buttons, variableCount } =
+      extractComponents(t.components as RawComponent[] | undefined);
     return {
       id: String(t.id ?? ""),
       name: String(t.name ?? ""),
       status: String(t.status ?? "") as TemplateStatus,
       category: String(t.category ?? ""),
       language: String(t.language ?? ""),
+      headerText,
       bodyText,
+      footerText,
+      buttons,
       variableCount,
     };
   });
@@ -272,12 +335,29 @@ export interface CreateTemplateInput {
   category: TemplateCategory;
   /** BCP-47-ish language code, e.g. `ar` or `en_US`. */
   language: string;
+  /** Optional TEXT header ("title"). Kept static (no variables) for now. */
+  headerText?: string;
   /** Body text; use `{{1}}`, `{{2}}`… for variables. */
   bodyText: string;
   /** Optional short footer line. */
   footerText?: string;
+  /** Optional buttons (quick-reply / URL / phone). Kept static (no variables). */
+  buttons?: TemplateButton[];
   /** Example values for each body variable — Meta requires them to review. */
   bodyExamples?: string[];
+}
+
+/** Maps our button shape to the Cloud API's component button shape. */
+function toApiButton(b: TemplateButton): Record<string, unknown> {
+  switch (b.type) {
+    case "URL":
+      return { type: "URL", text: b.text, url: b.url };
+    case "PHONE_NUMBER":
+      return { type: "PHONE_NUMBER", text: b.text, phone_number: b.phoneNumber };
+    case "QUICK_REPLY":
+    default:
+      return { type: "QUICK_REPLY", text: b.text };
+  }
 }
 
 /**
@@ -289,17 +369,30 @@ export async function createMessageTemplate(
   wabaId: string,
   input: CreateTemplateInput,
 ): Promise<{ id: string; status: string }> {
-  const components: Record<string, unknown>[] = [
-    {
-      type: "BODY",
-      text: input.bodyText,
-      ...(input.bodyExamples && input.bodyExamples.length > 0
-        ? { example: { body_text: [input.bodyExamples] } }
-        : {}),
-    },
-  ];
+  // Component order matters to Meta: HEADER, BODY, FOOTER, BUTTONS.
+  const components: Record<string, unknown>[] = [];
+  if (input.headerText?.trim()) {
+    components.push({
+      type: "HEADER",
+      format: "TEXT",
+      text: input.headerText.trim(),
+    });
+  }
+  components.push({
+    type: "BODY",
+    text: input.bodyText,
+    ...(input.bodyExamples && input.bodyExamples.length > 0
+      ? { example: { body_text: [input.bodyExamples] } }
+      : {}),
+  });
   if (input.footerText?.trim()) {
     components.push({ type: "FOOTER", text: input.footerText.trim() });
+  }
+  if (input.buttons && input.buttons.length > 0) {
+    components.push({
+      type: "BUTTONS",
+      buttons: input.buttons.map(toApiButton),
+    });
   }
 
   const json = await graphFetch({

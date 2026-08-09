@@ -5,20 +5,14 @@ import { Loader2, X, Send, FileText, AlertTriangle } from "lucide-react";
 import { listTemplatesAction } from "@/server/actions/whatsapp";
 import { sendWhatsappTemplate } from "@/server/actions/messages";
 import type { MessageTemplate } from "@/lib/meta/whatsapp";
+import { fillTemplate } from "@/lib/meta/template-render";
+import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
 
 interface TemplatePickerProps {
   conversationId: string;
   onClose: () => void;
   /** Called after a template is sent + persisted, so the inbox can append it. */
   onSent: (msg: { messageId: string; createdAt: string; content: string }) => void;
-}
-
-/** Substitutes `{{1}}`, `{{2}}`… in a template body with the given values. */
-export function fillTemplate(bodyText: string, variables: string[]): string {
-  return bodyText.replace(/\{\{\s*(\d+)\s*\}\}/g, (_m, n) => {
-    const value = variables[Number(n) - 1];
-    return value?.trim() ? value : `{{${n}}}`;
-  });
 }
 
 /**
@@ -187,9 +181,13 @@ export default function WhatsappTemplatePicker({
                   ))}
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">معاينة</p>
-                    <div className="rounded-lg bg-muted px-3.5 py-2.5 text-sm text-foreground whitespace-pre-wrap">
-                      {rendered}
-                    </div>
+                    <WhatsappPreview
+                      headerText={selected.headerText}
+                      bodyText={selected.bodyText}
+                      variables={variables}
+                      footerText={selected.footerText}
+                      buttons={selected.buttons}
+                    />
                   </div>
                   {error && (
                     <p className="text-xs text-red-600 flex items-center gap-1">

@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import {
   LucideIcon,
   ChevronRight,
+  ChevronDown,
   X,
   LogOut,
   Stethoscope,
@@ -17,6 +19,8 @@ export interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
+  /** Sub-items — when present the item renders as a collapsible group. */
+  children?: NavItem[];
 }
 
 interface SidebarProps {
@@ -123,6 +127,25 @@ function SidebarContent({
 }: SidebarContentProps) {
   const { hasUnresolved } = useEscalationAlerts();
 
+  // Every href in the tree (parents + children), used for active tie-breaking so
+  // a broad parent like `/admin` doesn't light up on a deeper route.
+  const allHrefs = navItems.flatMap((item) => [
+    item.href,
+    ...(item.children?.map((c) => c.href) ?? []),
+  ]);
+
+  const isHrefActive = (href: string): boolean => {
+    if (pathname === href) return true;
+    if (href === "/" || !pathname.startsWith(href + "/")) return false;
+    // A more specific href also matches → let that one win instead.
+    return !allHrefs.some(
+      (h) =>
+        h !== href &&
+        h.startsWith(href) &&
+        (pathname === h || pathname.startsWith(h + "/")),
+    );
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
@@ -148,66 +171,26 @@ function SidebarContent({
 
       {/* Nav items */}
       <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
-        {navItems.map(({ href, label, icon: Icon }) => {
-          const isActive =
-            pathname === href ||
-            (href !== "/" &&
-              pathname.startsWith(href + "/") &&
-              !navItems.some(
-                (item) =>
-                  item.href !== href &&
-                  (pathname === item.href ||
-                    pathname.startsWith(item.href + "/")),
-              ));
-          const showAlert = href.endsWith("/admin/messages") && hasUnresolved;
-          return (
-            <Link
-              key={href}
-              href={href}
-              title={
-                collapsed
-                  ? showAlert
-                    ? `${label} — يوجد طلب تصعيد غير محلول`
-                    : label
-                  : undefined
-              }
-              className={[
-                "flex items-center gap-3 px-3 py-2.5 rounded-xl font-sans text-sm transition-all duration-150 group relative",
-                isActive
-                  ? "bg-accent/15 text-accent font-medium"
-                  : "text-white/70 hover:bg-white/8 hover:text-white",
-              ].join(" ")}
-            >
-              {isActive && (
-                <span className="absolute end-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-accent rounded-full" />
-              )}
-              <span className="relative flex-shrink-0">
-                <Icon
-                  className={[
-                    "w-5 h-5 transition-colors",
-                    isActive
-                      ? "text-accent"
-                      : "text-white/50 group-hover:text-white/80",
-                  ].join(" ")}
-                />
-                {showAlert && (
-                  <span className="absolute -top-1 -end-1 flex w-2.5 h-2.5">
-                    <span className="animate-ping absolute inline-flex w-full h-full rounded-full bg-red-400 opacity-75" />
-                    <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-red-500 border border-primary" />
-                  </span>
-                )}
-              </span>
-              {!collapsed && (
-                <span className="truncate flex items-center gap-1.5">
-                  {label}
-                  {showAlert && (
-                    <Bell className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-                  )}
-                </span>
-              )}
-            </Link>
-          );
-        })}
+        {navItems.map((item) =>
+          item.children && item.children.length > 0 ? (
+            <NavGroup
+              key={item.href}
+              item={item}
+              collapsed={collapsed}
+              isHrefActive={isHrefActive}
+              hasUnresolved={hasUnresolved}
+              onToggleCollapse={onToggleCollapse}
+            />
+          ) : (
+            <NavLeaf
+              key={item.href}
+              item={item}
+              collapsed={collapsed}
+              active={isHrefActive(item.href)}
+              showAlert={item.href.endsWith("/admin/messages") && hasUnresolved}
+            />
+          ),
+        )}
       </nav>
 
       {/* Bottom: user info + sign out */}
@@ -268,6 +251,155 @@ function SidebarContent({
           {!collapsed && <span>طي القائمة</span>}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** A single navigable row. `indented` shifts it to read as a sub-item. */
+function NavLeaf({
+  item,
+  collapsed,
+  active,
+  showAlert = false,
+  indented = false,
+}: {
+  item: NavItem;
+  collapsed: boolean;
+  active: boolean;
+  showAlert?: boolean;
+  indented?: boolean;
+}) {
+  const { href, label, icon: Icon } = item;
+  return (
+    <Link
+      href={href}
+      title={
+        collapsed
+          ? showAlert
+            ? `${label} — يوجد طلب تصعيد غير محلول`
+            : label
+          : undefined
+      }
+      className={[
+        "flex items-center gap-3 px-3 py-2.5 rounded-xl font-sans text-sm transition-all duration-150 group relative",
+        indented ? "ps-9 py-2" : "",
+        active
+          ? "bg-accent/15 text-accent font-medium"
+          : "text-white/70 hover:bg-white/8 hover:text-white",
+      ].join(" ")}
+    >
+      {active && (
+        <span className="absolute end-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-accent rounded-full" />
+      )}
+      <span className="relative flex-shrink-0">
+        <Icon
+          className={[
+            indented ? "w-4 h-4" : "w-5 h-5",
+            "transition-colors",
+            active ? "text-accent" : "text-white/50 group-hover:text-white/80",
+          ].join(" ")}
+        />
+        {showAlert && (
+          <span className="absolute -top-1 -end-1 flex w-2.5 h-2.5">
+            <span className="animate-ping absolute inline-flex w-full h-full rounded-full bg-red-400 opacity-75" />
+            <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-red-500 border border-primary" />
+          </span>
+        )}
+      </span>
+      {!collapsed && (
+        <span className="truncate flex items-center gap-1.5">
+          {label}
+          {showAlert && (
+            <Bell className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+          )}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+/** A parent row with children — expands to reveal its sub-items. */
+function NavGroup({
+  item,
+  collapsed,
+  isHrefActive,
+  hasUnresolved,
+  onToggleCollapse,
+}: {
+  item: NavItem;
+  collapsed: boolean;
+  isHrefActive: (href: string) => boolean;
+  hasUnresolved: boolean;
+  onToggleCollapse: () => void;
+}) {
+  const { label, icon: Icon, children = [] } = item;
+  const childActive = children.some((c) => isHrefActive(c.href));
+  // Auto-open when a child is active; let the user override afterwards.
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null);
+  const open = manualOpen ?? childActive;
+
+  const handleHeaderClick = () => {
+    // On the collapsed rail there's no room for children — expand the rail
+    // first so they become visible.
+    if (collapsed) {
+      onToggleCollapse();
+      setManualOpen(true);
+      return;
+    }
+    setManualOpen(!open);
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={handleHeaderClick}
+        title={collapsed ? label : undefined}
+        className={[
+          "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-sans text-sm transition-all duration-150 group relative",
+          childActive
+            ? "bg-accent/15 text-accent font-medium"
+            : "text-white/70 hover:bg-white/8 hover:text-white",
+        ].join(" ")}
+      >
+        {childActive && (
+          <span className="absolute end-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-accent rounded-full" />
+        )}
+        <span className="relative flex-shrink-0">
+          <Icon
+            className={[
+              "w-5 h-5 transition-colors",
+              childActive
+                ? "text-accent"
+                : "text-white/50 group-hover:text-white/80",
+            ].join(" ")}
+          />
+        </span>
+        {!collapsed && (
+          <>
+            <span className="truncate flex-1 text-start">{label}</span>
+            <ChevronDown
+              className={[
+                "w-4 h-4 flex-shrink-0 transition-transform duration-200",
+                open ? "rotate-180" : "rotate-0",
+              ].join(" ")}
+            />
+          </>
+        )}
+      </button>
+      {!collapsed && open && (
+        <div className="mt-0.5 space-y-0.5">
+          {children.map((child) => (
+            <NavLeaf
+              key={child.href}
+              item={child}
+              collapsed={false}
+              active={isHrefActive(child.href)}
+              indented
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
