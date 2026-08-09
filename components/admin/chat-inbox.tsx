@@ -18,16 +18,19 @@ import {
   MessageSquare,
   Send,
   Phone,
-  Smartphone,
   Globe,
   Loader2,
   Inbox,
   Bot,
   BotOff,
   AlertTriangle,
-  WifiOff,
+  Clock,
+  FileText,
   RotateCw,
 } from "lucide-react";
+import { WhatsappIcon } from "@/components/icons/whatsapp-icon";
+import WhatsappTemplatePicker from "@/components/admin/whatsapp-template-picker";
+import { isWithinWhatsappWindow } from "@/lib/meta/window";
 import {
   sendAdminReply,
   retryWhatsappDelivery,
@@ -101,7 +104,10 @@ export default function ChatInbox({
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [listPending, startListTransition] = useTransition();
   const [aiTogglePending, startAiToggle] = useTransition();
-  const [waConnected, setWaConnected] = useState<boolean | null>(null);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  // Ticks so the 24-hour-window gate re-evaluates as time passes without a
+  // reload — the window can lapse while the admin sits on a thread.
+  const [nowTs, setNowTs] = useState(() => Date.now());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Sync when server re-renders with fresh data
@@ -129,26 +135,12 @@ export default function ChatInbox({
     });
   }, [initialMessages]);
 
-  // Re-check the WhatsApp connection when switching threads.
+  // Keep the window gate live: re-evaluate every 30s so the reply box flips to
+  // "template only" the moment the 24-hour window lapses.
   useEffect(() => {
-    if (selectedConversation?.channel !== Channel.WHATSAPP) {
-      setWaConnected(null);
-      return;
-    }
-    let cancelled = false;
-    setWaConnected(null);
-    fetch("/api/whatsapp/status")
-      .then((res) => res.json())
-      .then((data) => {
-        if (!cancelled) setWaConnected(data.state === "open");
-      })
-      .catch(() => {
-        if (!cancelled) setWaConnected(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedConversation?.id, selectedConversation?.channel]);
+    const id = setInterval(() => setNowTs(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Server rows plus this thread's optimistic bubbles. A pending entry that
   // already has a row hides that row, so a message that failed to reach
@@ -216,10 +208,13 @@ export default function ChatInbox({
     router.push(`${basePath}/admin/messages?${params.toString()}`);
   };
 
-  const isWhatsappChecking =
-    selectedConversation?.channel === Channel.WHATSAPP && waConnected === null;
-  const isWhatsappDisconnected =
-    selectedConversation?.channel === Channel.WHATSAPP && waConnected === false;
+  const isWhatsapp = selectedConversation?.channel === Channel.WHATSAPP;
+  // Outside the 24-hour window WhatsApp refuses free-form text; the admin must
+  // send an approved template instead. `nowTs` is read so this recomputes on
+  // each tick. Web conversations are never gated.
+  void nowTs;
+  const isOutsideWindow =
+    isWhatsapp && !isWithinWhatsappWindow(selectedConversation?.lastInboundAt);
 
   const patchPending = useCallback(
     (clientId: string, patch: Partial<PendingMessage>) => {
@@ -259,8 +254,7 @@ export default function ChatInbox({
 
   const handleSend = () => {
     const text = reply.trim();
-    if (!text || !activeId || isWhatsappDisconnected || isWhatsappChecking)
-      return;
+    if (!text || !activeId || isOutsideWindow) return;
     // Safe to clear: the text now lives in the bubble, and stays there if the
     // send fails.
     setReply("");
@@ -276,6 +270,28 @@ export default function ChatInbox({
       },
     ]);
     void deliver(clientId, activeId, text);
+  };
+
+  // A template send is already persisted server-side; show it immediately as a
+  // "sent" bubble (retired once the server row arrives), like a normal reply.
+  const handleTemplateSent = (msg: {
+    messageId: string;
+    createdAt: string;
+    content: string;
+  }) => {
+    if (!activeId) return;
+    setPending((prev) => [
+      ...prev,
+      {
+        clientId: crypto.randomUUID(),
+        conversationId: activeId,
+        content: msg.content,
+        createdAt: new Date(msg.createdAt),
+        status: "sent",
+        serverId: msg.messageId,
+      },
+    ]);
+    router.refresh();
   };
 
   const handleRetry = (clientId: string) => {
@@ -373,7 +389,7 @@ export default function ChatInbox({
                       </span>
                     )}
                     {conv.channel === Channel.WHATSAPP ? (
-                      <Smartphone className="w-3.5 h-3.5 text-green-500" />
+                      <WhatsappIcon className="w-3.5 h-3.5 text-green-500" />
                     ) : (
                       <Globe className="w-3.5 h-3.5 text-accent" />
                     )}
@@ -484,7 +500,7 @@ export default function ChatInbox({
                 )}
                 {selectedConversation.channel === Channel.WHATSAPP ? (
                   <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-sans">
-                    <Smartphone className="w-3 h-3" />
+                    <WhatsappIcon className="w-3 h-3" />
                     واتساب
                   </span>
                 ) : (
@@ -610,53 +626,57 @@ export default function ChatInbox({
 
             {/* Reply box */}
             <div className="px-4 py-3 border-t border-border flex-shrink-0">
-              {isWhatsappChecking && (
-                <div className="mb-2 flex items-center gap-2 rounded-xl bg-muted/50 border border-border px-3.5 py-2.5 text-xs text-muted-foreground font-sans">
-                  <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" />
-                  <span>جاري التحقق من حالة اتصال واتساب...</span>
+              {isOutsideWindow ? (
+                // Outside the 24-hour window WhatsApp refuses free-form text —
+                // only an approved template can reach the contact.
+                <div className="flex flex-col gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-3 text-xs text-amber-800 font-sans">
+                  <div className="flex items-start gap-2">
+                    <Clock className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>
+                      انتهت نافذة الـ24 ساعة منذ آخر رسالة من العميل. لا يمكن إرسال
+                      رسالة نصية حرة — أرسل قالبًا معتمدًا من ميتا بدلاً من ذلك.
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowTemplatePicker(true)}
+                    className="self-start inline-flex items-center gap-1.5 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    إرسال قالب معتمد
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-end gap-2">
+                  <textarea
+                    value={reply}
+                    onChange={(e) => setReply(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
+                    rows={2}
+                    className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50 leading-relaxed"
+                    dir="rtl"
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={!reply.trim()}
+                    className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-40"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
                 </div>
               )}
-              {isWhatsappDisconnected && (
-                <div className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-xs text-amber-700 font-sans">
-                  <WifiOff className="w-4 h-4 flex-shrink-0" />
-                  <span>
-                    واتساب غير متصل، لن يتم تسليم الرسائل. يرجى الاتصال من{" "}
-                    <a href={`${basePath}/admin/whatsapp`} className="underline font-medium">
-                      إعدادات واتساب
-                    </a>{" "}
-                    أولاً.
-                  </span>
-                </div>
-              )}
-              <div className="flex items-end gap-2">
-                <textarea
-                  value={reply}
-                  onChange={(e) => setReply(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={
-                    isWhatsappDisconnected
-                      ? "واتساب غير متصل..."
-                      : "اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
-                  }
-                  rows={2}
-                  disabled={isWhatsappDisconnected || isWhatsappChecking}
-                  className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50 leading-relaxed"
-                  dir="rtl"
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={
-                    !reply.trim() || isWhatsappDisconnected || isWhatsappChecking
-                  }
-                  className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-40"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </div>
             </div>
           </>
         )}
       </div>
+
+      {showTemplatePicker && selectedConversation && (
+        <WhatsappTemplatePicker
+          conversationId={selectedConversation.id}
+          onClose={() => setShowTemplatePicker(false)}
+          onSent={handleTemplateSent}
+        />
+      )}
     </div>
   );
 }

@@ -73,8 +73,42 @@ model Clinic {
   appointments      Appointment[]
   conversations     Conversation[]
   requestsFulfilled ClinicRequest[] @relation("RequestCreatedClinic")
+  whatsappConfig    WhatsappConfig?
 
   @@map("clinics")
+}
+
+// Per-clinic WhatsApp Cloud API (Meta official) credentials. Entered manually
+// by an admin — no embedded-signup provider yet (business not verified), and
+// each clinic runs its OWN Meta app, so we can't collect app secrets to verify
+// webhook signatures. Instead each clinic gets a unique, unguessable webhook
+// URL: the `webhookToken` in the path both identifies the clinic and acts as
+// the shared secret. The access token is encrypted at rest (AES-256-GCM, see
+// lib/crypto/secret-box.ts); the other values are low-sensitivity config the
+// clinic itself must copy into Meta.
+model WhatsappConfig {
+  id                String   @id @default(uuid()) @db.Uuid
+  clinicId          String   @unique @db.Uuid
+  // WhatsApp sender id ("Phone number ID" in the Meta dashboard).
+  phoneNumberId     String   @unique
+  // WhatsApp Business Account id — needed to list/create message templates.
+  wabaId            String
+  // System-user access token, encrypted. Never selected into client code raw.
+  accessTokenCipher String
+  // Unguessable token embedded in this clinic's unique callback URL
+  // (…/api/meta/whatsapp/webhook/{webhookToken}). Routes inbound events to the
+  // clinic and, in lieu of app-secret signature verification, gates the
+  // endpoint. Rotatable independently of the clinic's identity.
+  webhookToken      String   @unique
+  // The verify token this clinic types into Meta's webhook config; checked on
+  // the GET verification handshake.
+  verifyToken       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_configs")
 }
 
 // Membership join table: a Profile belongs to a Clinic with a role. The unique
