@@ -3,14 +3,17 @@
 import { useState, useTransition } from "react";
 import { X, AlertCircle } from "lucide-react";
 import { cancelAppointmentAction } from "@/server/actions/patient";
-import type { AppointmentStatus } from "@prisma/client";
+import { AppointmentStatus } from "@prisma/client";
 
 interface Props {
   appointmentId: string;
   status: AppointmentStatus;
 }
 
-const cancellable: AppointmentStatus[] = ["PENDING", "CONFIRMED"];
+const cancellable: AppointmentStatus[] = [
+  AppointmentStatus.PENDING,
+  AppointmentStatus.CONFIRMED,
+];
 
 export function CancelAppointmentButton({ appointmentId, status }: Props) {
   const [isPending, startTransition] = useTransition();

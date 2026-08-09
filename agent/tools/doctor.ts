@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { AppointmentStatus, DayOfWeek } from "@prisma/client";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as DoctorService from "@/server/services/doctors";
@@ -40,7 +41,7 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
   const statusTool = (
     name: string,
     description: string,
-    status: "CONFIRMED" | "CANCELLED" | "COMPLETED" | "NO_SHOW",
+    status: AppointmentStatus,
   ) =>
     jsonTool(
       {
@@ -87,10 +88,10 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
         };
       },
     ),
-    statusTool("confirm_appointment", "أكّد موعداً معلّقاً.", "CONFIRMED"),
-    statusTool("decline_appointment", "ارفض/ألغِ موعداً.", "CANCELLED"),
-    statusTool("complete_appointment", "علّم الموعد كمكتمل.", "COMPLETED"),
-    statusTool("mark_no_show", "علّم أن المريض لم يحضر.", "NO_SHOW"),
+    statusTool("confirm_appointment", "أكّد موعداً معلّقاً.", AppointmentStatus.CONFIRMED),
+    statusTool("decline_appointment", "ارفض/ألغِ موعداً.", AppointmentStatus.CANCELLED),
+    statusTool("complete_appointment", "علّم الموعد كمكتمل.", AppointmentStatus.COMPLETED),
+    statusTool("mark_no_show", "علّم أن المريض لم يحضر.", AppointmentStatus.NO_SHOW),
     jsonTool(
       {
         name: "add_doctor_notes",
@@ -191,7 +192,7 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
         name: "create_availability_rule",
         description: "أنشئ قاعدة توفر أسبوعية للطبيب الحالي وولّد الفترات لها.",
         schema: z.object({
-          dayOfWeek: z.enum(["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]),
+          dayOfWeek: z.nativeEnum(DayOfWeek),
           startTime: z
             .string()
             .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),

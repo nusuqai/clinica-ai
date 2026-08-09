@@ -15,7 +15,7 @@ const DAY_LABELS_AR: Record<string, string> = {
 };
 
 /** Tools available to every caller, including unknown WhatsApp contacts. */
-export function commonTools(): DynamicStructuredTool[] {
+export function commonTools(clinicId: string): DynamicStructuredTool[] {
   return [
     jsonTool(
       {
@@ -44,7 +44,7 @@ export function commonTools(): DynamicStructuredTool[] {
         schema: z.object({}),
       },
       async () => {
-        const doctors = await DoctorService.listActiveDoctors();
+        const doctors = await DoctorService.listActiveDoctors(clinicId);
         return {
           doctors: doctors.map((d) => ({
             id: d.id,
@@ -63,7 +63,7 @@ export function commonTools(): DynamicStructuredTool[] {
         schema: z.object({ specialty: z.string().describe("التخصص المطلوب") }),
       },
       async ({ specialty }) => {
-        const doctors = await DoctorService.listActiveDoctors();
+        const doctors = await DoctorService.listActiveDoctors(clinicId);
         const q = specialty.trim();
         return {
           specialty: q,
@@ -86,7 +86,7 @@ export function commonTools(): DynamicStructuredTool[] {
         schema: z.object({ doctorId: z.string() }),
       },
       async ({ doctorId }) => {
-        const doctor = await DoctorService.getDoctor(doctorId);
+        const doctor = await DoctorService.getDoctor(doctorId, clinicId);
         if (!doctor) return { error: "الطبيب غير موجود" };
         const rules = await DoctorService.listDoctorRules(doctorId);
         return {
@@ -118,7 +118,7 @@ export function commonTools(): DynamicStructuredTool[] {
         }),
       },
       async ({ doctorId, date }) => {
-        const doctor = await DoctorService.getDoctor(doctorId);
+        const doctor = await DoctorService.getDoctor(doctorId, clinicId);
         if (!doctor) return { error: "الطبيب غير موجود" };
         const slots = await DoctorService.getAvailableSlotsForBooking(
           doctorId,

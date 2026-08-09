@@ -10,6 +10,7 @@ import {
   BarChart3,
   Wrench,
 } from "lucide-react";
+import { AppointmentStatus } from "@prisma/client";
 import type { ClientToolCall } from "./types";
 
 // ── shared layout ────────────────────────────────────────────────────────────
@@ -46,18 +47,18 @@ function ErrorCard({ message }: { message: string }) {
 }
 
 const STATUS_AR: Record<string, string> = {
-  PENDING: "قيد الانتظار",
-  CONFIRMED: "مؤكد",
-  CANCELLED: "ملغى",
-  COMPLETED: "مكتمل",
-  NO_SHOW: "لم يحضر",
+  [AppointmentStatus.PENDING]: "قيد الانتظار",
+  [AppointmentStatus.CONFIRMED]: "مؤكد",
+  [AppointmentStatus.CANCELLED]: "ملغى",
+  [AppointmentStatus.COMPLETED]: "مكتمل",
+  [AppointmentStatus.NO_SHOW]: "لم يحضر",
 };
 
 function StatusPill({ status }: { status: string }) {
   const color =
-    status === "CONFIRMED" || status === "COMPLETED"
+    status === AppointmentStatus.CONFIRMED || status === AppointmentStatus.COMPLETED
       ? "bg-green-100 text-green-700"
-      : status === "CANCELLED" || status === "NO_SHOW"
+      : status === AppointmentStatus.CANCELLED || status === AppointmentStatus.NO_SHOW
         ? "bg-red-100 text-red-600"
         : "bg-amber-100 text-amber-700";
   return (

@@ -8,6 +8,7 @@ import {
   getGuestChatMessages,
 } from "@/server/actions/chat";
 import { useRealtimeMessages } from "@/hooks/use-realtime-messages";
+import { SenderType } from "@prisma/client";
 import type { ChatMessage, ClientToolCall } from "./types";
 
 let idCounter = 0;
@@ -70,9 +71,9 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
           state.messages.map((m) => ({
             id: m.id,
             role:
-              m.senderType === "USER"
+              m.senderType === SenderType.USER
                 ? "user"
-                : m.senderType === "ADMIN"
+                : m.senderType === SenderType.ADMIN
                   ? "admin"
                   : "agent",
             content: m.content,
@@ -91,9 +92,9 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
         state.messages.map((m) => ({
           id: m.id,
           role:
-            m.senderType === "USER"
+            m.senderType === SenderType.USER
               ? "user"
-              : m.senderType === "ADMIN"
+              : m.senderType === SenderType.ADMIN
                 ? "admin"
                 : "agent",
           content: m.content,
@@ -120,7 +121,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       setMessages((prev) => {
         const existingIds = new Set(prev.map((m) => m.id));
         const newAdminMessages = state.messages
-          .filter((m) => m.senderType === "ADMIN" && !existingIds.has(m.id))
+          .filter((m) => m.senderType === SenderType.ADMIN && !existingIds.has(m.id))
           .map((m) => ({
             id: m.id,
             role: "admin" as const,

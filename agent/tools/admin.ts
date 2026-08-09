@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { AppointmentStatus, Channel, DayOfWeek, SenderType } from "@prisma/client";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import { sendTextMessage } from "@/lib/evolution";
@@ -19,7 +20,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         schema: z.object({}),
       },
       async () => {
-        const doctors = await DoctorService.listDoctors();
+        const doctors = await DoctorService.listDoctors(ctx.clinicId);
         return {
           doctors: doctors.map((d) => ({
             id: d.id,
@@ -48,6 +49,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
       async (input) => {
         const res = await DoctorService.createDoctorAccount({
           ...input,
+          clinicId: ctx.clinicId,
           phone: input.phone ?? undefined,
           bio: input.bio ?? undefined,
           consultationFee: input.consultationFee ?? undefined,
@@ -101,7 +103,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         schema: z.object({}),
       },
       async () => {
-        const users = await UserService.listUsers();
+        const users = await UserService.listUsers(ctx.clinicId);
         return {
           users: users.map((u) => ({
             id: u.id,
@@ -123,7 +125,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ userId, role }) => {
-        const res = await UserService.updateUserRole(userId, role);
+        const res = await UserService.updateUserRole(userId, ctx.clinicId, role);
         return res.ok ? { userId, role } : { error: res.error };
       },
     ),
@@ -133,15 +135,13 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         description:
           "اعرض كل المواعيد مع إمكانية التصفية بالحالة أو الطبيب أو المريض.",
         schema: z.object({
-          status: z
-            .enum(["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED", "NO_SHOW"])
-            .nullable(),
+          status: z.nativeEnum(AppointmentStatus).nullable(),
           doctorId: z.string().nullable(),
           patientId: z.string().nullable(),
         }),
       },
       async (filters) => {
-        const appts = await AppointmentService.listAppointments({
+        const appts = await AppointmentService.listAppointments(ctx.clinicId, {
           status: filters.status ?? undefined,
           doctorId: filters.doctorId ?? undefined,
           patientId: filters.patientId ?? undefined,
@@ -164,7 +164,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         description: "اعرض إحصائيات لوحة تحكم العيادة.",
         schema: z.object({}),
       },
-      async () => getDashboardStats(),
+      async () => getDashboardStats(ctx.clinicId),
     ),
     jsonTool(
       {
@@ -193,7 +193,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           "أنشئ قاعدة توفر أسبوعية لطبيب معيّن وولّد الفترات لها تلقائياً.",
         schema: z.object({
           doctorId: z.string(),
-          dayOfWeek: z.enum(["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]),
+          dayOfWeek: z.nativeEnum(DayOfWeek),
           startTime: z
             .string()
             .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),
@@ -316,13 +316,13 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         await prisma.message.create({
           data: {
             conversationId,
-            senderType: "ADMIN",
+            senderType: SenderType.ADMIN,
             senderId: ctx.actorId,
             content,
             isRead: true,
           },
         });
-        if (conv.channel === "WHATSAPP" && conv.whatsappPhone) {
+        if (conv.channel === Channel.WHATSAPP && conv.whatsappPhone) {
           await sendTextMessage(conv.whatsappPhone, content);
         }
         await prisma.conversation.update({

@@ -1,0 +1,50 @@
+import { Suspense } from "react";
+import { requireActiveMember } from "@/lib/auth";
+import PageHeader from "@/components/admin/page-header";
+import ChatInbox from "@/components/admin/chat-inbox";
+import {
+  getConversations,
+  getConversationDetail,
+  getMessages,
+  markConversationRead,
+} from "@/server/services/messages";
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface PageProps {
+  searchParams: Promise<{ id?: string }>;
+}
+
+export default async function AdminMessagesPage({ searchParams }: PageProps) {
+  const { id: rawId } = await searchParams;
+  // The `id` query param is user-controlled (URL bar, bookmarks, stale
+  // links) — never pass it to Prisma unvalidated.
+  const id = rawId && UUID_RE.test(rawId) ? rawId : undefined;
+
+  const { clinic } = await requireActiveMember(["ADMIN"]);
+  const [conversations, selectedConversation, messages] = await Promise.all([
+    getConversations(clinic.id),
+    id ? getConversationDetail(id, clinic.id) : Promise.resolve(null),
+    id ? getMessages(id) : Promise.resolve([]),
+  ]);
+
+  // Mark messages as read when admin opens a conversation
+  if (id) {
+    await markConversationRead(id);
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      <PageHeader title="الرسائل" subtitle="إدارة محادثات المرضى عبر واتساب والويب" />
+      <Suspense>
+        <ChatInbox
+          conversations={conversations}
+          selectedConversation={selectedConversation}
+          messages={messages}
+          basePath={`/clinic/${clinic.slug}`}
+        />
+      </Suspense>
+    </div>
+  );
+}

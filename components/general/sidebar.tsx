@@ -159,7 +159,7 @@ function SidebarContent({
                   (pathname === item.href ||
                     pathname.startsWith(item.href + "/")),
               ));
-          const showAlert = href === "/admin/messages" && hasUnresolved;
+          const showAlert = href.endsWith("/admin/messages") && hasUnresolved;
           return (
             <Link
               key={href}

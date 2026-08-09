@@ -1,8 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { AppointmentStatus, Role } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { getActiveClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 
@@ -23,8 +25,8 @@ export async function updateProfileAction(
       where: { id: user.id },
       data: { fullName: fullName.trim(), phone: phone?.trim() || null },
     });
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/profile");
+    revalidatePath("/clinic/[slug]/dashboard", "page");
+    revalidatePath("/clinic/[slug]/dashboard/profile", "page");
     return { ok: true };
   } catch (e) {
     return {
@@ -53,17 +55,22 @@ export async function cancelAppointmentAction(
   if (!appointment) return { ok: false, error: "الموعد غير موجود" };
   if (appointment.patientId !== user.id)
     return { ok: false, error: "ليس لديك صلاحية إلغاء هذا الموعد" };
-  if (["CANCELLED", "COMPLETED", "NO_SHOW"].includes(appointment.status))
+  const uncancellable: AppointmentStatus[] = [
+    AppointmentStatus.CANCELLED,
+    AppointmentStatus.COMPLETED,
+    AppointmentStatus.NO_SHOW,
+  ];
+  if (uncancellable.includes(appointment.status))
     return { ok: false, error: "لا يمكن إلغاء هذا الموعد" };
 
   const result = await AppointmentService.updateAppointmentStatus(
     appointmentId,
-    "CANCELLED",
+    AppointmentStatus.CANCELLED,
   );
   if (!result.ok) return { ok: false, error: result.error };
 
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/appointments");
+  revalidatePath("/clinic/[slug]/dashboard", "page");
+  revalidatePath("/clinic/[slug]/dashboard/appointments", "page");
   return { ok: true };
 }
 
@@ -94,24 +101,14 @@ export async function bookAppointmentAction(
   slotId: string,
   patientNotes?: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { role: true },
-  });
-
-  if (!profile || profile.role !== "PATIENT") {
+  const ctx = await getActiveClinicContext();
+  if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
+  if (ctx.role !== Role.PATIENT) {
     return { ok: false, error: "هذه الخدمة للمرضى فقط" };
   }
 
   const result = await AppointmentService.createAppointment(
-    user.id,
+    ctx.user.id,
     slotId,
     patientNotes,
   );

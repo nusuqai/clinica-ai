@@ -2,29 +2,59 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, err, type Result } from "./_result";
-import type {
-  Doctor,
-  Profile,
-  DayOfWeek,
-  AppointmentStatus,
-} from "@prisma/client";
+import { AppointmentStatus, Role, type Doctor, type DayOfWeek } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// A doctor is now a standalone record with its own name/contact. We keep a
+// `profile`-shaped view (synthesized from the doctor's own fields, plus the
+// linked account when there is one) so existing UI keeps working unchanged.
 export type DoctorWithProfile = Doctor & {
-  profile: Pick<Profile, "fullName" | "phone" | "avatarUrl" | "createdAt">;
+  profile: {
+    fullName: string;
+    phone: string | null;
+    avatarUrl: string | null;
+    createdAt: Date;
+  };
   email?: string;
   _count: { appointments: number };
 };
 
+type DoctorRow = Doctor & {
+  profile: { avatarUrl: string | null; createdAt: Date } | null;
+  _count: { appointments: number };
+};
+
+function toView(d: DoctorRow, email?: string): DoctorWithProfile {
+  return {
+    ...d,
+    profile: {
+      fullName: d.fullName,
+      phone: d.phone,
+      avatarUrl: d.profile?.avatarUrl ?? null,
+      createdAt: d.profile?.createdAt ?? new Date(0),
+    },
+    ...(email !== undefined ? { email } : {}),
+  };
+}
+
+const linkedProfileSelect = {
+  profile: { select: { avatarUrl: true, createdAt: true } },
+  _count: { select: { appointments: true } },
+} as const;
+
 export interface CreateDoctorInput {
-  email: string;
-  password: string;
+  clinicId: string;
   fullName: string;
   phone?: string;
   specialty: string;
   bio?: string;
   consultationFee?: number;
+}
+
+export interface CreateDoctorAccountInput extends CreateDoctorInput {
+  email: string;
+  password: string;
 }
 
 export interface UpdateDoctorInput {
@@ -60,22 +90,15 @@ export type DoctorSlot = {
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export async function listActiveDoctors(): Promise<DoctorWithProfile[]> {
-  return prisma.doctor.findMany({
-    where: { isActive: true },
-    include: {
-      profile: {
-        select: {
-          fullName: true,
-          phone: true,
-          avatarUrl: true,
-          createdAt: true,
-        },
-      },
-      _count: { select: { appointments: true } },
-    },
-    orderBy: { profile: { fullName: "asc" } },
+export async function listActiveDoctors(
+  clinicId: string,
+): Promise<DoctorWithProfile[]> {
+  const doctors = await prisma.doctor.findMany({
+    where: { clinicId, isActive: true },
+    include: linkedProfileSelect,
+    orderBy: { fullName: "asc" },
   });
+  return doctors.map((d) => toView(d));
 }
 
 export async function getAvailableSlotsForBooking(
@@ -125,21 +148,14 @@ export async function getAvailableDaysForBooking(
   return slots.map((s) => s.date.toISOString().split("T")[0]);
 }
 
-export async function listDoctors(): Promise<DoctorWithProfile[]> {
+export async function listDoctors(
+  clinicId: string,
+): Promise<DoctorWithProfile[]> {
   const [doctors, { data: authList }] = await Promise.all([
     prisma.doctor.findMany({
-      include: {
-        profile: {
-          select: {
-            fullName: true,
-            phone: true,
-            avatarUrl: true,
-            createdAt: true,
-          },
-        },
-        _count: { select: { appointments: true } },
-      },
-      orderBy: { profile: { fullName: "asc" } },
+      where: { clinicId },
+      include: linkedProfileSelect,
+      orderBy: { fullName: "asc" },
     }),
     createAdminClient().auth.admin.listUsers({ perPage: 1000 }),
   ]);
@@ -148,66 +164,94 @@ export async function listDoctors(): Promise<DoctorWithProfile[]> {
     (authList?.users ?? []).map((u) => [u.id, u.email ?? ""]),
   );
 
-  return doctors.map((d) => ({ ...d, email: emailMap.get(d.id) ?? "" }));
+  return doctors.map((d) =>
+    toView(d, d.profileId ? (emailMap.get(d.profileId) ?? "") : ""),
+  );
 }
 
 export async function getDoctor(
   doctorId: string,
+  clinicId?: string,
 ): Promise<DoctorWithProfile | null> {
-  const doctor = await prisma.doctor.findUnique({
-    where: { id: doctorId },
-    include: {
-      profile: {
-        select: {
-          fullName: true,
-          phone: true,
-          avatarUrl: true,
-          createdAt: true,
-        },
-      },
-      _count: { select: { appointments: true } },
-    },
+  const doctor = await prisma.doctor.findFirst({
+    where: { id: doctorId, ...(clinicId ? { clinicId } : {}) },
+    include: linkedProfileSelect,
   });
   if (!doctor) return null;
 
-  const { data: authUser } =
-    await createAdminClient().auth.admin.getUserById(doctorId);
-  return { ...doctor, email: authUser?.user?.email ?? "" };
+  let email = "";
+  if (doctor.profileId) {
+    const { data: authUser } =
+      await createAdminClient().auth.admin.getUserById(doctor.profileId);
+    email = authUser?.user?.email ?? "";
+  }
+  return toView(doctor, email);
+}
+
+/** Resolve the Doctor record for a logged-in user (via their linked account). */
+export async function getDoctorByProfileId(
+  profileId: string,
+  clinicId?: string,
+): Promise<DoctorWithProfile | null> {
+  const doctor = await prisma.doctor.findFirst({
+    where: { profileId, ...(clinicId ? { clinicId } : {}) },
+    include: linkedProfileSelect,
+  });
+  if (!doctor) return null;
+  return toView(doctor);
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
+/** Create a standalone doctor with NO login account (profileId stays null). */
+export async function createDoctor(
+  input: CreateDoctorInput,
+): Promise<Result<{ id: string; fullName: string }>> {
+  try {
+    const doctor = await prisma.doctor.create({
+      data: {
+        clinicId: input.clinicId,
+        fullName: input.fullName,
+        phone: input.phone || null,
+        specialty: input.specialty,
+        bio: input.bio ?? null,
+        consultationFee: input.consultationFee ?? null,
+        isActive: true,
+      },
+    });
+    return ok({ id: doctor.id, fullName: doctor.fullName });
+  } catch (e) {
+    return err(e instanceof Error ? e.message : "فشل إنشاء الطبيب");
+  }
+}
+
 /**
- * Creates a full doctor account from scratch:
- * 1. Creates auth user via service-role (email confirmed immediately)
- * 2. DB trigger auto-creates profiles row as PATIENT
- * 3. Prisma transaction: promotes role → DOCTOR + inserts doctors row
- * 4. On any failure after step 1: deletes the auth user to prevent orphans
- *
- * AI agent tools can import and call this function directly.
+ * Create a doctor together with a login account:
+ * 1. Create auth user (confirmed).
+ * 2. Add a DOCTOR membership in the clinic.
+ * 3. Create the Doctor row linked to that account (profileId).
+ * On failure after step 1, the auth user is deleted to avoid orphans.
  */
 export async function createDoctorAccount(
-  input: CreateDoctorInput,
+  input: CreateDoctorAccountInput,
 ): Promise<Result<{ id: string; fullName: string }>> {
   const admin = createAdminClient();
 
-  // Step 1 — create auth user (confirmed, no email verification needed)
-  const { data: authData, error: authError } =
-    await admin.auth.admin.createUser({
+  const { data: authData, error: authError } = await admin.auth.admin.createUser(
+    {
       email: input.email,
       password: input.password,
       email_confirm: true,
-      user_metadata: {
-        full_name: input.fullName,
-        phone: input.phone || null,
-      },
-    });
+      user_metadata: { full_name: input.fullName, phone: input.phone || null },
+    },
+  );
 
   if (authError) {
+    const m = authError.message.toLowerCase();
     if (
-      authError.message.toLowerCase().includes("already registered") ||
-      authError.message.toLowerCase().includes("already been registered") ||
-      authError.message.toLowerCase().includes("email address") ||
+      m.includes("already registered") ||
+      m.includes("already been registered") ||
+      m.includes("email address") ||
       authError.code === "email_exists"
     ) {
       return err("هذا البريد الإلكتروني مسجل بالفعل.");
@@ -218,54 +262,84 @@ export async function createDoctorAccount(
   const userId = authData.user.id;
 
   try {
-    // Step 2 — the DB trigger will have fired and created profiles row as PATIENT.
-    // Give it a moment in case of slight async; retry once if not found.
+    // The DB trigger creates the identity profile; ensure it exists.
     let profile = await prisma.profile.findUnique({ where: { id: userId } });
     if (!profile) {
       await new Promise((r) => setTimeout(r, 500));
       profile = await prisma.profile.findUnique({ where: { id: userId } });
     }
-
     if (!profile) {
-      // Trigger didn't fire — create profile manually
       await prisma.profile.create({
-        data: {
-          id: userId,
-          role: "DOCTOR",
-          fullName: input.fullName,
-          phone: input.phone || null,
-        },
+        data: { id: userId, fullName: input.fullName, phone: input.phone || null },
       });
     }
 
-    // Step 3 — transaction: promote role + create Doctor record
-    await prisma.$transaction([
-      prisma.profile.update({
-        where: { id: userId },
+    const doctor = await prisma.$transaction(async (tx) => {
+      await tx.clinicMember.upsert({
+        where: { userId_clinicId: { userId, clinicId: input.clinicId } },
+        update: { role: Role.DOCTOR },
+        create: { userId, clinicId: input.clinicId, role: Role.DOCTOR },
+      });
+      return tx.doctor.create({
         data: {
-          role: "DOCTOR",
+          clinicId: input.clinicId,
+          profileId: userId,
           fullName: input.fullName,
           phone: input.phone || null,
-        },
-      }),
-      prisma.doctor.create({
-        data: {
-          id: userId,
           specialty: input.specialty,
           bio: input.bio ?? null,
           consultationFee: input.consultationFee ?? null,
           isActive: true,
         },
-      }),
-    ]);
+      });
+    });
 
-    return ok({ id: userId, fullName: input.fullName });
+    return ok({ id: doctor.id, fullName: doctor.fullName });
   } catch (e) {
-    // Rollback: delete the auth user so no orphan is left
     await admin.auth.admin.deleteUser(userId);
     const msg = e instanceof Error ? e.message : "خطأ غير متوقع";
-    if (msg.includes("phone")) return err("رقم الهاتف مستخدم بالفعل.");
     return err(`فشل إنشاء حساب الطبيب: ${msg}`);
+  }
+}
+
+/** Attach a NEW login account to an existing account-less doctor. */
+export async function linkDoctorAccount(
+  doctorId: string,
+  input: { email: string; password: string },
+): Promise<Result<void>> {
+  const admin = createAdminClient();
+
+  const doctor = await prisma.doctor.findUnique({ where: { id: doctorId } });
+  if (!doctor) return err("الطبيب غير موجود");
+  if (doctor.profileId) return err("هذا الطبيب لديه حساب بالفعل.");
+
+  const { data: authData, error: authError } = await admin.auth.admin.createUser(
+    {
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: { full_name: doctor.fullName, phone: doctor.phone },
+    },
+  );
+  if (authError) return err(authError.message);
+
+  const userId = authData.user.id;
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.clinicMember.upsert({
+        where: { userId_clinicId: { userId, clinicId: doctor.clinicId } },
+        update: { role: Role.DOCTOR },
+        create: { userId, clinicId: doctor.clinicId, role: Role.DOCTOR },
+      });
+      await tx.doctor.update({
+        where: { id: doctorId },
+        data: { profileId: userId },
+      });
+    });
+    return ok(undefined);
+  } catch (e) {
+    await admin.auth.admin.deleteUser(userId);
+    return err(e instanceof Error ? e.message : "فشل ربط الحساب بالطبيب");
   }
 }
 
@@ -273,31 +347,18 @@ export async function updateDoctor(
   input: UpdateDoctorInput,
 ): Promise<Result<void>> {
   try {
-    await prisma.$transaction([
-      ...(input.fullName !== undefined || input.phone !== undefined
-        ? [
-            prisma.profile.update({
-              where: { id: input.doctorId },
-              data: {
-                ...(input.fullName !== undefined && {
-                  fullName: input.fullName,
-                }),
-                ...(input.phone !== undefined && { phone: input.phone }),
-              },
-            }),
-          ]
-        : []),
-      prisma.doctor.update({
-        where: { id: input.doctorId },
-        data: {
-          ...(input.specialty !== undefined && { specialty: input.specialty }),
-          ...(input.bio !== undefined && { bio: input.bio }),
-          ...(input.consultationFee !== undefined && {
-            consultationFee: input.consultationFee,
-          }),
-        },
-      }),
-    ]);
+    await prisma.doctor.update({
+      where: { id: input.doctorId },
+      data: {
+        ...(input.fullName !== undefined && { fullName: input.fullName }),
+        ...(input.phone !== undefined && { phone: input.phone }),
+        ...(input.specialty !== undefined && { specialty: input.specialty }),
+        ...(input.bio !== undefined && { bio: input.bio }),
+        ...(input.consultationFee !== undefined && {
+          consultationFee: input.consultationFee,
+        }),
+      },
+    });
     return ok(undefined);
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل تحديث بيانات الطبيب");
@@ -316,12 +377,19 @@ export async function setDoctorActive(
   }
 }
 
+/** Delete a doctor. If a login account is linked, also remove it. */
 export async function deleteDoctor(doctorId: string): Promise<Result<void>> {
   try {
-    const admin = createAdminClient();
-    // Cascade in DB handles profile + doctor rows
-    const { error } = await admin.auth.admin.deleteUser(doctorId);
-    if (error) return err(error.message);
+    const doctor = await prisma.doctor.findUnique({ where: { id: doctorId } });
+    if (!doctor) return err("الطبيب غير موجود");
+
+    await prisma.doctor.delete({ where: { id: doctorId } });
+
+    if (doctor.profileId) {
+      const admin = createAdminClient();
+      // Removes the auth user (profile + memberships cascade in DB).
+      await admin.auth.admin.deleteUser(doctor.profileId);
+    }
     return ok(undefined);
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل حذف الطبيب");
@@ -522,9 +590,9 @@ export async function getDoctorStats(doctorId: string) {
         where: { doctorId, slot: { date: { gte: today, lte: todayEnd } } },
       }),
       prisma.appointment.count({
-        where: { doctorId, status: { in: ["PENDING", "CONFIRMED"] } },
+        where: { doctorId, status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] } },
       }),
-      prisma.appointment.count({ where: { doctorId, status: "COMPLETED" } }),
+      prisma.appointment.count({ where: { doctorId, status: AppointmentStatus.COMPLETED } }),
       prisma.appointment.count({ where: { doctorId } }),
       prisma.appointment.findMany({
         where: { doctorId },

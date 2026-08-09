@@ -1,5 +1,6 @@
 "use server";
 
+import { Channel, type SenderType } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -11,7 +12,7 @@ import type { AgentMessageMetadata } from "@/agent/types";
 export interface WebChatMessage {
   id: string;
   content: string;
-  senderType: "USER" | "ADMIN" | "AGENT";
+  senderType: SenderType;
   metadata: AgentMessageMetadata | null;
   createdAt: string;
 }
@@ -33,7 +34,17 @@ export async function getWebChatMessages(): Promise<WebChatState | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const conversationId = await getOrCreateWebConversation(user.id);
+  const membership = await prisma.clinicMember.findFirst({
+    where: { userId: user.id, clinic: { isActive: true } },
+    orderBy: { createdAt: "asc" },
+    select: { clinicId: true },
+  });
+  if (!membership) return null;
+
+  const conversationId = await getOrCreateWebConversation(
+    user.id,
+    membership.clinicId,
+  );
 
   const activeSession = await prisma.chatSession.findFirst({
     where: { conversationId, expiresAt: { gt: new Date() } },
@@ -67,7 +78,7 @@ export async function getGuestChatMessages(
   conversationId: string,
 ): Promise<WebChatState | null> {
   const conversation = await prisma.conversation.findFirst({
-    where: { id: conversationId, channel: "WEB", userId: null },
+    where: { id: conversationId, channel: Channel.WEB, userId: null },
     select: { id: true },
   });
   if (!conversation) return null;

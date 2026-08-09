@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { Channel, Role, SenderType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getActiveClinicContext } from "@/lib/auth";
 import { sendTextMessage } from "@/lib/evolution";
 import { resolveActiveSession } from "@/server/services/agentSession";
 
@@ -30,20 +31,12 @@ export async function sendAdminReply(
   conversationId: string,
   content: string,
 ): Promise<SendAdminReplyResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, reason: "unauthorized" };
+  const ctx = await getActiveClinicContext();
+  if (!ctx) return { ok: false, reason: "unauthorized" };
+  if (ctx.role !== Role.ADMIN) return { ok: false, reason: "forbidden" };
 
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { role: true },
-  });
-  if (profile?.role !== "ADMIN") return { ok: false, reason: "forbidden" };
-
-  const conversation = await prisma.conversation.findUnique({
-    where: { id: conversationId },
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: conversationId, clinicId: ctx.clinic.id },
   });
   if (!conversation) return { ok: false, reason: "not_found" };
 
@@ -55,8 +48,8 @@ export async function sendAdminReply(
       data: {
         conversationId,
         sessionId,
-        senderType: "ADMIN",
-        senderId: user.id,
+        senderType: SenderType.ADMIN,
+        senderId: ctx.user.id,
         content,
         isRead: true,
       },
@@ -76,7 +69,7 @@ export async function sendAdminReply(
   }
 
   let whatsappSendFailed = false;
-  if (conversation.channel === "WHATSAPP" && conversation.whatsappPhone) {
+  if (conversation.channel === Channel.WHATSAPP && conversation.whatsappPhone) {
     try {
       await sendTextMessage(conversation.whatsappPhone, content);
     } catch (err) {
@@ -92,7 +85,7 @@ export async function sendAdminReply(
     data: { updatedAt: new Date() },
   });
 
-  revalidatePath("/admin/messages");
+  revalidatePath("/clinic/[slug]/admin/messages", "page");
   return {
     ok: true,
     messageId: message.id,
@@ -108,17 +101,8 @@ export async function sendAdminReply(
 export async function retryWhatsappDelivery(
   messageId: string,
 ): Promise<{ ok: boolean }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false };
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { role: true },
-  });
-  if (profile?.role !== "ADMIN") return { ok: false };
+  const ctx = await getActiveClinicContext();
+  if (!ctx || ctx.role !== Role.ADMIN) return { ok: false };
 
   const message = await prisma.message.findUnique({
     where: { id: messageId },
@@ -128,7 +112,7 @@ export async function retryWhatsappDelivery(
 
   const { conversation } = message;
   // Nothing to deliver on the web channel — treat it as already delivered.
-  if (conversation.channel !== "WHATSAPP" || !conversation.whatsappPhone) {
+  if (conversation.channel !== Channel.WHATSAPP || !conversation.whatsappPhone) {
     return { ok: true };
   }
 
@@ -145,17 +129,9 @@ export async function setSessionAiEnabled(
   sessionId: string,
   enabled: boolean,
 ): Promise<void> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { role: true },
-  });
-  if (profile?.role !== "ADMIN") throw new Error("Forbidden");
+  const ctx = await getActiveClinicContext();
+  if (!ctx) throw new Error("Unauthorized");
+  if (ctx.role !== Role.ADMIN) throw new Error("Forbidden");
 
   await prisma.chatSession.update({
     where: { id: sessionId },
@@ -171,5 +147,5 @@ export async function setSessionAiEnabled(
     });
   }
 
-  revalidatePath("/admin/messages");
+  revalidatePath("/clinic/[slug]/admin/messages", "page");
 }

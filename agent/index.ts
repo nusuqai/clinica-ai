@@ -2,6 +2,7 @@ import "server-only";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
+import { SenderType } from "@prisma/client";
 import { createModel } from "./model";
 import { getToolsForRole } from "./tools";
 import { buildSystemPrompt } from "./prompts";
@@ -10,7 +11,7 @@ import type { AgentContext, ToolCallRecord } from "./types";
 export type { AgentContext } from "./types";
 
 export interface PriorMessage {
-  senderType: "USER" | "ADMIN" | "AGENT";
+  senderType: SenderType;
   content: string;
   toolCalls?: ToolCallRecord[];
 }
@@ -39,7 +40,7 @@ function buildAgent(ctx: AgentContext) {
 function toLangChainMessages(prior: PriorMessage[]): BaseMessage[] {
   const result: BaseMessage[] = [];
   for (const m of prior) {
-    if (m.senderType === "USER") {
+    if (m.senderType === SenderType.USER) {
       result.push(new HumanMessage(m.content));
     } else if (m.toolCalls && m.toolCalls.length > 0) {
       // Reconstruct the full tool-calling turn so the LLM can reference

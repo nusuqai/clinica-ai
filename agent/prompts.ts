@@ -1,3 +1,4 @@
+import { Channel, Role } from "@prisma/client";
 import type { AgentContext } from "./types";
 
 const CLINIC = "عيادة ClinicaAI";
@@ -5,11 +6,11 @@ const CLINIC = "عيادة ClinicaAI";
 const BOOKING_FLOW =
   "عند رغبة المستخدم بالحجز: لا تسأله عن تاريخ محدد مباشرة ولا تفترض مواعيد. أولاً استخدم get_doctor_working_hours لعرض أيام وساعات عمل الطبيب، دعه يختار يوماً يعمل فيه الطبيب فعلاً، ثم استخدم get_doctor_availability لعرض الفترات (slots) المتاحة فعلياً في ذلك اليوم ليختار منها.";
 
-const ROLE_GUIDE: Record<string, string> = {
-  PATIENT: `أنت تتحدث مع مريض. يمكنك مساعدته في: البحث عن طبيب، عرض مواعيد العمل والفترات المتاحة، حجز/إلغاء/إعادة جدولة موعد، عرض مواعيده، وتحديث بياناته. ${BOOKING_FLOW} أكّد التفاصيل قبل تنفيذ أي إجراء.`,
-  DOCTOR:
+const ROLE_GUIDE: Record<Role, string> = {
+  [Role.PATIENT]: `أنت تتحدث مع مريض. يمكنك مساعدته في: البحث عن طبيب، عرض مواعيد العمل والفترات المتاحة، حجز/إلغاء/إعادة جدولة موعد، عرض مواعيده، وتحديث بياناته. ${BOOKING_FLOW} أكّد التفاصيل قبل تنفيذ أي إجراء.`,
+  [Role.DOCTOR]:
     "أنت تتحدث مع طبيب. يمكنك مساعدته في: عرض مواعيده ومرضاه، تأكيد/رفض/إكمال المواعيد وتعليم عدم الحضور، إضافة ملاحظات، إدارة جدوله (الفترات وقواعد التوفر)، وعرض إحصائياته.",
-  ADMIN:
+  [Role.ADMIN]:
     "أنت تتحدث مع مسؤول العيادة. يمكنك إدارة الأطباء والمستخدمين والمواعيد، عرض الإحصائيات، وإرسال رسائل للمحادثات.",
 };
 
@@ -19,7 +20,7 @@ const GUEST_WEB_GUIDE = `أنت تتحدث مع زائر لم يسجّل الد�
 
 export function buildSystemPrompt(ctx: AgentContext): string {
   const unknownGuide =
-    ctx.channel === "WHATSAPP" ? UNKNOWN_WHATSAPP_GUIDE : GUEST_WEB_GUIDE;
+    ctx.channel === Channel.WHATSAPP ? UNKNOWN_WHATSAPP_GUIDE : GUEST_WEB_GUIDE;
   const guide = ctx.role ? ROLE_GUIDE[ctx.role] : unknownGuide;
   const now = new Date();
   return [

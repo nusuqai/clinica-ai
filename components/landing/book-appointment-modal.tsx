@@ -28,6 +28,8 @@ interface Props {
   isAuthenticated: boolean;
   isPatient: boolean;
   onClose: () => void;
+  /** Where the "view my appointments" success link points. */
+  appointmentsHref?: string;
 }
 
 function formatTime(iso: string) {
@@ -47,6 +49,7 @@ export function BookAppointmentModal({
   isAuthenticated,
   isPatient,
   onClose,
+  appointmentsHref = "/",
 }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const needsAuth = !isAuthenticated || !isPatient;
@@ -427,7 +430,7 @@ export function BookAppointmentModal({
               </div>
               <div className="flex w-full flex-col gap-2">
                 <Link
-                  href="/dashboard/appointments"
+                  href={appointmentsHref}
                   className="block w-full rounded-xl bg-primary py-3 text-center font-medium text-white hover:opacity-90"
                 >
                   عرض مواعيدي

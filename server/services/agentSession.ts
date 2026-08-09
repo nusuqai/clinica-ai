@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
+import { Channel, SenderType, type Prisma } from "@prisma/client";
 import type { AgentMessageMetadata } from "@/agent/types";
 
 /** Fixed session window: 30 min from the session's first message. */
@@ -9,7 +9,7 @@ export const SESSION_MINUTES = 30;
 export interface SessionMessage {
   id: string;
   content: string;
-  senderType: "USER" | "ADMIN" | "AGENT";
+  senderType: SenderType;
   metadata: AgentMessageMetadata | null;
   createdAt: Date;
 }
@@ -77,7 +77,7 @@ export async function persistUserMessage(
     data: {
       conversationId,
       sessionId,
-      senderType: "USER",
+      senderType: SenderType.USER,
       senderId,
       content,
       isRead: true,
@@ -87,7 +87,7 @@ export async function persistUserMessage(
   return {
     id: m.id,
     content: m.content,
-    senderType: "USER",
+    senderType: SenderType.USER,
     metadata: null,
     createdAt: m.createdAt,
   };
@@ -103,7 +103,7 @@ export async function persistAgentMessage(
     data: {
       conversationId,
       sessionId,
-      senderType: "AGENT",
+      senderType: SenderType.AGENT,
       content,
       isRead: true,
       metadata: metadata
@@ -115,7 +115,7 @@ export async function persistAgentMessage(
   return {
     id: m.id,
     content: m.content,
-    senderType: "AGENT",
+    senderType: SenderType.AGENT,
     metadata,
     createdAt: m.createdAt,
   };
@@ -128,17 +128,19 @@ async function touchConversation(conversationId: string) {
   });
 }
 
-/** The single WEB conversation for a logged-in user (created on first use). */
+/** The single WEB conversation for a logged-in user in a clinic (created on
+ * first use). */
 export async function getOrCreateWebConversation(
   userId: string,
+  clinicId: string,
 ): Promise<string> {
   const existing = await prisma.conversation.findUnique({
-    where: { userId_channel: { userId, channel: "WEB" } },
+    where: { clinicId_userId_channel: { clinicId, userId, channel: Channel.WEB } },
     select: { id: true },
   });
   if (existing) return existing.id;
   const created = await prisma.conversation.create({
-    data: { userId, channel: "WEB" },
+    data: { clinicId, userId, channel: Channel.WEB },
     select: { id: true },
   });
   return created.id;
@@ -153,16 +155,17 @@ export async function getOrCreateWebConversation(
  */
 export async function getOrCreateGuestWebConversation(
   conversationId: string | null,
+  clinicId: string,
 ): Promise<string> {
   if (conversationId) {
     const existing = await prisma.conversation.findFirst({
-      where: { id: conversationId, channel: "WEB", userId: null },
+      where: { id: conversationId, channel: Channel.WEB, userId: null },
       select: { id: true },
     });
     if (existing) return existing.id;
   }
   const created = await prisma.conversation.create({
-    data: { channel: "WEB" },
+    data: { clinicId, channel: Channel.WEB },
     select: { id: true },
   });
   return created.id;

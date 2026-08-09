@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { AppointmentStatus } from "@prisma/client";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as AppointmentService from "@/server/services/appointments";
@@ -31,18 +32,13 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           where: { id: res.data.id },
           include: {
             slot: { select: { date: true, startTime: true, endTime: true } },
-            doctor: {
-              select: {
-                specialty: true,
-                profile: { select: { fullName: true } },
-              },
-            },
+            doctor: { select: { specialty: true, fullName: true } },
           },
         });
         return {
           appointmentId: res.data.id,
-          status: "PENDING",
-          doctorName: appt?.doctor.profile.fullName,
+          status: AppointmentStatus.PENDING,
+          doctorName: appt?.doctor.fullName,
           specialty: appt?.doctor.specialty,
           date: appt ? dateStr(appt.slot.date) : undefined,
           time: appt ? timeStr(appt.slot.startTime) : undefined,
@@ -65,15 +61,20 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         });
         if (!appt || appt.patientId !== patientId)
           return { error: "الموعد غير موجود أو لا يخصك" };
-        if (["CANCELLED", "COMPLETED", "NO_SHOW"].includes(appt.status))
+        const uncancellable: AppointmentStatus[] = [
+          AppointmentStatus.CANCELLED,
+          AppointmentStatus.COMPLETED,
+          AppointmentStatus.NO_SHOW,
+        ];
+        if (uncancellable.includes(appt.status))
           return { error: "لا يمكن إلغاء هذا الموعد" };
         const res = await AppointmentService.updateAppointmentStatus(
           appointmentId,
-          "CANCELLED",
+          AppointmentStatus.CANCELLED,
           reason ?? undefined,
         );
         if (!res.ok) return { error: res.error };
-        return { appointmentId, status: "CANCELLED" };
+        return { appointmentId, status: AppointmentStatus.CANCELLED };
       },
     ),
     jsonTool(
@@ -97,13 +98,13 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         if (!created.ok) return { error: created.error };
         await AppointmentService.updateAppointmentStatus(
           appointmentId,
-          "CANCELLED",
+          AppointmentStatus.CANCELLED,
           "إعادة جدولة",
         );
         return {
           oldAppointmentId: appointmentId,
           newAppointmentId: created.data.id,
-          status: "PENDING",
+          status: AppointmentStatus.PENDING,
         };
       },
     ),

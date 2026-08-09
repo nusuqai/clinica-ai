@@ -61,9 +61,21 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && (pathname === "/login" || pathname === "/register")) {
+    // Send to the landing page, which routes each user on from there (patients
+    // to their dashboard, staff to their clinic area, platform admins to
+    // /platform). Avoids assuming everyone has a patient dashboard.
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = "/";
     return NextResponse.redirect(url);
+  }
+
+  // Record the clinic from the URL so server actions can scope to it.
+  const clinicMatch = pathname.match(/^\/clinic\/([^/]+)/);
+  if (clinicMatch) {
+    supabaseResponse.cookies.set("active-clinic", clinicMatch[1], {
+      path: "/",
+      sameSite: "lax",
+    });
   }
 
   return supabaseResponse;

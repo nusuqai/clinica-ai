@@ -7,9 +7,11 @@ import { Stethoscope, Menu, X } from "lucide-react";
 interface LandingNavProps {
   isAuthenticated: boolean;
   isPatient: boolean;
+  /** Signed-in patient's dashboard URL (their clinic). */
+  dashboardHref?: string;
 }
 
-export function LandingNav({ isAuthenticated, isPatient }: LandingNavProps) {
+export function LandingNav({ isAuthenticated, isPatient, dashboardHref = "/" }: LandingNavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -58,14 +60,14 @@ export function LandingNav({ isAuthenticated, isPatient }: LandingNavProps) {
         <div className="hidden items-center gap-3 md:flex">
           {isAuthenticated && isPatient ? (
             <Link
-              href="/dashboard"
+              href={dashboardHref}
               className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
             >
               لوحة تحكمي
             </Link>
           ) : isAuthenticated ? (
             <Link
-              href="/dashboard"
+              href={dashboardHref}
               className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
             >
               لوحة التحكم
@@ -118,7 +120,7 @@ export function LandingNav({ isAuthenticated, isPatient }: LandingNavProps) {
             </a>
             {isAuthenticated && isPatient ? (
               <Link
-                href="/dashboard"
+                href={dashboardHref}
                 className="rounded-lg bg-accent px-4 py-2 text-center text-sm font-medium text-white"
               >
                 لوحة تحكمي

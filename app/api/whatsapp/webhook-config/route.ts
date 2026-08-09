@@ -1,19 +1,11 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { prisma } from "@/lib/prisma";
+import { Role } from "@prisma/client";
+import { getActiveClinicContext } from "@/lib/auth";
 import { getWebhookConfig, setWebhook } from "@/lib/evolution";
 
 async function assertAdmin() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { role: true },
-  });
-  return profile?.role === "ADMIN" ? user : null;
+  const ctx = await getActiveClinicContext();
+  return ctx && ctx.role === Role.ADMIN ? ctx : null;
 }
 
 const WEBHOOK_PATH = "/api/whatsapp/webhook";

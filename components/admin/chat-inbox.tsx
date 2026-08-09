@@ -40,6 +40,7 @@ import {
   RealtimeMessageRow,
 } from "@/hooks/use-realtime-messages";
 import { useEscalationAlerts } from "@/components/general/escalation-provider";
+import { Channel, SenderType } from "@prisma/client";
 import type {
   ConversationSummary,
   MessageItem,
@@ -50,6 +51,8 @@ interface ChatInboxProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationDetail | null;
   messages: MessageItem[];
+  /** This clinic's URL prefix, e.g. `/clinic/sunrise-dental`. */
+  basePath: string;
 }
 
 /**
@@ -84,6 +87,7 @@ export default function ChatInbox({
   conversations: initialConversations,
   selectedConversation: initialConversation,
   messages: initialMessages,
+  basePath,
 }: ChatInboxProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -127,7 +131,7 @@ export default function ChatInbox({
 
   // Re-check the WhatsApp connection when switching threads.
   useEffect(() => {
-    if (selectedConversation?.channel !== "WHATSAPP") {
+    if (selectedConversation?.channel !== Channel.WHATSAPP) {
       setWaConnected(null);
       return;
     }
@@ -168,7 +172,7 @@ export default function ChatInbox({
       ...mine.map((p) => ({
         key: p.clientId,
         content: p.content,
-        senderType: "ADMIN" as const,
+        senderType: SenderType.ADMIN,
         // No session, so the "new session" divider never splits on these.
         sessionId: null,
         createdAt: p.createdAt,
@@ -209,13 +213,13 @@ export default function ChatInbox({
   const handleSelectConversation = (id: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("id", id);
-    router.push(`/admin/messages?${params.toString()}`);
+    router.push(`${basePath}/admin/messages?${params.toString()}`);
   };
 
   const isWhatsappChecking =
-    selectedConversation?.channel === "WHATSAPP" && waConnected === null;
+    selectedConversation?.channel === Channel.WHATSAPP && waConnected === null;
   const isWhatsappDisconnected =
-    selectedConversation?.channel === "WHATSAPP" && waConnected === false;
+    selectedConversation?.channel === Channel.WHATSAPP && waConnected === false;
 
   const patchPending = useCallback(
     (clientId: string, patch: Partial<PendingMessage>) => {
@@ -368,7 +372,7 @@ export default function ChatInbox({
                         {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
                       </span>
                     )}
-                    {conv.channel === "WHATSAPP" ? (
+                    {conv.channel === Channel.WHATSAPP ? (
                       <Smartphone className="w-3.5 h-3.5 text-green-500" />
                     ) : (
                       <Globe className="w-3.5 h-3.5 text-accent" />
@@ -478,7 +482,7 @@ export default function ChatInbox({
                       : "الذكاء متوقف"}
                   </button>
                 )}
-                {selectedConversation.channel === "WHATSAPP" ? (
+                {selectedConversation.channel === Channel.WHATSAPP ? (
                   <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-sans">
                     <Smartphone className="w-3 h-3" />
                     واتساب
@@ -504,8 +508,8 @@ export default function ChatInbox({
                 const showDivider =
                   !!msg.sessionId && msg.sessionId !== prev?.sessionId;
                 const isOutgoing =
-                  msg.senderType === "ADMIN" || msg.senderType === "AGENT";
-                const isAgent = msg.senderType === "AGENT";
+                  msg.senderType === SenderType.ADMIN || msg.senderType === SenderType.AGENT;
+                const isAgent = msg.senderType === SenderType.AGENT;
                 const status = msg.pending?.status;
                 const isFailed =
                   status === "failed_sync" || status === "failed_whatsapp";
@@ -617,7 +621,7 @@ export default function ChatInbox({
                   <WifiOff className="w-4 h-4 flex-shrink-0" />
                   <span>
                     واتساب غير متصل، لن يتم تسليم الرسائل. يرجى الاتصال من{" "}
-                    <a href="/admin/whatsapp" className="underline font-medium">
+                    <a href={`${basePath}/admin/whatsapp`} className="underline font-medium">
                       إعدادات واتساب
                     </a>{" "}
                     أولاً.
