@@ -16,7 +16,7 @@ export default async function WhatsAppTemplatesPage() {
         subtitle="أنشئ القوالب وعاينها كما تظهر في واتساب، وأرسل المعتمدة منها"
       />
       <div className="space-y-6">
-        <CreateTemplate disabled={!configured} />
+        {/* <CreateTemplate disabled={!configured} /> */}
         <TemplatesList disabled={!configured} />
       </div>
     </div>
