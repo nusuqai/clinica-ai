@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import {
-  streamWebAgent,
-  streamGuestWebAgent,
-} from "@/server/services/agentRunner";
+import { streamWebAgent } from "@/server/services/agentRunner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +10,12 @@ export async function POST(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // Chat is available to signed-in users only — a member's clinic scopes the
+  // agent. Guests browse the public clinic pages and sign in to chat/book.
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   let body: { message?: string; conversationId?: string };
   try {
@@ -31,10 +34,7 @@ export async function POST(request: NextRequest) {
       const send = (data: unknown) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       try {
-        const events = user
-          ? streamWebAgent(user.id, message)
-          : streamGuestWebAgent(body.conversationId ?? null, message);
-        for await (const ev of events) {
+        for await (const ev of streamWebAgent(user.id, message)) {
           send(ev);
         }
       } catch (e) {

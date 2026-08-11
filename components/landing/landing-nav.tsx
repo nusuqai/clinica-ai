@@ -9,9 +9,27 @@ interface LandingNavProps {
   isPatient: boolean;
   /** Signed-in patient's dashboard URL (their clinic). */
   dashboardHref?: string;
+  /** Brand shown in the nav (defaults to the product name). */
+  brandName?: string;
+  /** Where the logo/home link points (a clinic landing when scoped). */
+  homeHref?: string;
+  /** Auth links — clinic-scoped on a per-clinic landing. */
+  loginHref?: string;
+  registerHref?: string;
+  /** Clinic logo shown instead of the default icon, when provided. */
+  logoUrl?: string | null;
 }
 
-export function LandingNav({ isAuthenticated, isPatient, dashboardHref = "/" }: LandingNavProps) {
+export function LandingNav({
+  isAuthenticated,
+  isPatient,
+  dashboardHref = "/",
+  brandName = "ClinicaAI",
+  homeHref = "/",
+  loginHref = "/login",
+  registerHref = "/register",
+  logoUrl = null,
+}: LandingNavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -31,12 +49,21 @@ export function LandingNav({ isAuthenticated, isPatient, dashboardHref = "/" }: 
     >
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent">
-            <Stethoscope className="h-5 w-5 text-white" />
-          </div>
+        <Link href={homeHref} className="flex items-center gap-2">
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt={brandName}
+              className="h-9 w-9 rounded-xl object-cover"
+            />
+          ) : (
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent">
+              <Stethoscope className="h-5 w-5 text-white" />
+            </div>
+          )}
           <span className="font-heading text-xl font-bold text-white">
-            ClinicaAI
+            {brandName}
           </span>
         </Link>
 
@@ -75,13 +102,13 @@ export function LandingNav({ isAuthenticated, isPatient, dashboardHref = "/" }: 
           ) : (
             <>
               <Link
-                href="/login"
+                href={loginHref}
                 className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition-colors hover:border-accent hover:text-accent"
               >
                 تسجيل الدخول
               </Link>
               <Link
-                href="/register"
+                href={registerHref}
                 className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
               >
                 إنشاء حساب
@@ -128,13 +155,13 @@ export function LandingNav({ isAuthenticated, isPatient, dashboardHref = "/" }: 
             ) : !isAuthenticated ? (
               <div className="flex flex-col gap-2">
                 <Link
-                  href="/login"
+                  href={loginHref}
                   className="rounded-lg border border-white/30 px-4 py-2 text-center text-sm font-medium text-white"
                 >
                   تسجيل الدخول
                 </Link>
                 <Link
-                  href="/register"
+                  href={registerHref}
                   className="rounded-lg bg-accent px-4 py-2 text-center text-sm font-medium text-white"
                 >
                   إنشاء حساب

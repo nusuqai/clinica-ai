@@ -7,12 +7,15 @@ interface HeroSectionProps {
   doctorCount: number;
   appointmentCount: number;
   isAuthenticated: boolean;
+  /** When set, personalizes the hero for a specific clinic. */
+  clinicName?: string;
 }
 
 export function HeroSection({
   doctorCount,
   appointmentCount,
   isAuthenticated,
+  clinicName,
 }: HeroSectionProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -46,7 +49,7 @@ export function HeroSection({
         <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-1.5">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
           <span className="font-sans text-sm font-medium text-accent">
-            منصة العيادة الذكية
+            {clinicName ?? "منصة العيادة الذكية"}
           </span>
         </div>
 
@@ -62,8 +65,9 @@ export function HeroSection({
 
         {/* Subheading */}
         <p className="mx-auto mt-6 max-w-2xl font-sans text-lg leading-relaxed text-white/60">
-          ClinicaAI تجمعك بأطباء متخصصين في مختلف التخصصات. احجز موعدك في ثوانٍ
-          واستمتع بتجربة رعاية صحية متطورة.
+          {clinicName
+            ? `${clinicName} تجمعك بأطبائها المتخصصين. احجز موعدك في ثوانٍ واستمتع بتجربة رعاية صحية متطورة.`
+            : "ClinicaAI تجمعك بأطباء متخصصين في مختلف التخصصات. احجز موعدك في ثوانٍ واستمتع بتجربة رعاية صحية متطورة."}
         </p>
 
         {/* CTA buttons */}

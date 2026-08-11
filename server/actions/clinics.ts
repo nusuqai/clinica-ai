@@ -165,18 +165,62 @@ export async function createClinic(formData: FormData) {
   const name = (formData.get("name") as string)?.trim();
   if (!name) return { error: "اسم العيادة مطلوب" };
 
-  const slug = await uniqueSlug((formData.get("slug") as string)?.trim() || name);
-  const clinic = await prisma.clinic.create({
-    data: {
-      name,
-      slug,
-      logoUrl: (formData.get("logoUrl") as string)?.trim() || null,
-      primaryColor: (formData.get("primaryColor") as string)?.trim() || null,
-      accentColor: (formData.get("accentColor") as string)?.trim() || null,
-    },
-  });
-  revalidatePath("/platform/clinics");
-  return { success: true, clinicId: clinic.id, slug: clinic.slug };
+  const adminName = (formData.get("adminName") as string)?.trim();
+  const adminEmail = (formData.get("adminEmail") as string)?.trim();
+  const adminPhone = (formData.get("adminPhone") as string)?.trim() || null;
+  if (!adminName || !adminEmail) {
+    return { error: "اسم وبريد مدير العيادة مطلوبان" };
+  }
+
+  const admin = createAdminClient();
+  try {
+    const slug = await uniqueSlug(
+      (formData.get("slug") as string)?.trim() || name,
+    );
+
+    // Create (or reuse) the auth account that will manage this clinic, then set
+    // it up as the clinic's ADMIN — same path as approving a clinic request.
+    const userId = await getOrCreateAuthUser(
+      admin,
+      adminEmail,
+      adminName,
+      adminPhone,
+    );
+
+    let profile = await prisma.profile.findUnique({ where: { id: userId } });
+    if (!profile) {
+      await new Promise((r) => setTimeout(r, 500));
+      profile = await prisma.profile.findUnique({ where: { id: userId } });
+    }
+    if (!profile) {
+      await prisma.profile.create({
+        data: { id: userId, fullName: adminName, phone: adminPhone },
+      });
+    }
+
+    const clinic = await prisma.$transaction(async (tx) => {
+      const c = await tx.clinic.create({
+        data: {
+          name,
+          slug,
+          logoUrl: (formData.get("logoUrl") as string)?.trim() || null,
+          primaryColor: (formData.get("primaryColor") as string)?.trim() || null,
+          accentColor: (formData.get("accentColor") as string)?.trim() || null,
+        },
+      });
+      await tx.clinicMember.upsert({
+        where: { userId_clinicId: { userId, clinicId: c.id } },
+        update: { role: Role.ADMIN },
+        create: { userId, clinicId: c.id, role: Role.ADMIN },
+      });
+      return c;
+    });
+
+    revalidatePath("/platform/clinics");
+    return { success: true, clinicId: clinic.id, slug: clinic.slug };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "فشل إنشاء العيادة" };
+  }
 }
 
 export async function updateClinic(clinicId: string, formData: FormData) {
