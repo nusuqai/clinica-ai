@@ -14,6 +14,8 @@ import {
   FileText,
   KeyRound,
   BookOpen,
+  Bot,
+  Wallet,
 } from "lucide-react";
 import type { NavItem } from "./sidebar";
 
@@ -47,6 +49,15 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
         { href: "/admin/whatsapp/templates", label: "القوالب", icon: FileText },
         { href: "/admin/whatsapp/configuration", label: "الإعدادات", icon: KeyRound },
         { href: "/admin/whatsapp/guide", label: "دليل الإعداد", icon: BookOpen },
+      ],
+    },
+    {
+      href: "/admin/ai",
+      label: "المساعد الذكي",
+      icon: Bot,
+      children: [
+        { href: "/admin/ai", label: "الإعدادات والرصيد", icon: Wallet },
+        { href: "/admin/ai/usage", label: "تقرير التكاليف", icon: BarChart3 },
       ],
     },
     { href: "/admin/reports", label: "التقارير", icon: BarChart3 },

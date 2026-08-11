@@ -5,6 +5,7 @@ import { ClinicRequestStatus, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ensureClinicAiCredit } from "@/server/services/aiCredit";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -140,6 +141,7 @@ export async function approveClinicRequest(requestId: string) {
       return c;
     });
 
+    await ensureClinicAiCredit(clinic.id);
     revalidatePath("/platform/requests");
     revalidatePath("/platform/clinics");
     return { success: true, clinicId: clinic.id, slug: clinic.slug };
@@ -175,6 +177,7 @@ export async function createClinic(formData: FormData) {
       accentColor: (formData.get("accentColor") as string)?.trim() || null,
     },
   });
+  await ensureClinicAiCredit(clinic.id);
   revalidatePath("/platform/clinics");
   return { success: true, clinicId: clinic.id, slug: clinic.slug };
 }

@@ -37,3 +37,15 @@ export interface ToolCallRecord {
 export interface AgentMessageMetadata {
   toolCalls: ToolCallRecord[];
 }
+
+/**
+ * Token usage for a single agent turn, summed across the (possibly several) LLM
+ * calls a ReAct turn makes. Fed to the credit service to compute + charge cost.
+ * `model` is the model name the provider actually billed, snapshotted per turn.
+ */
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  model: string;
+}

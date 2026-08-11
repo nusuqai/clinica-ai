@@ -6,7 +6,7 @@ import { SenderType } from "@prisma/client";
 import { createModel } from "./model";
 import { getToolsForRole } from "./tools";
 import { buildSystemPrompt } from "./prompts";
-import type { AgentContext, ToolCallRecord } from "./types";
+import type { AgentContext, ToolCallRecord, TokenUsage } from "./types";
 
 export type { AgentContext } from "./types";
 
@@ -26,8 +26,22 @@ export type AgentStreamEvent =
       result: unknown;
       status: "ok" | "error";
     }
-  | { type: "done"; text: string; toolCalls: ToolCallRecord[] }
+  | {
+      type: "done";
+      text: string;
+      toolCalls: ToolCallRecord[];
+      usage: TokenUsage;
+    }
   | { type: "handoff" };
+
+const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o";
+
+const emptyUsage = (): TokenUsage => ({
+  promptTokens: 0,
+  completionTokens: 0,
+  totalTokens: 0,
+  model: DEFAULT_MODEL,
+});
 
 function buildAgent(ctx: AgentContext) {
   return createReactAgent({
@@ -109,6 +123,13 @@ export async function* runAgentStream(
   const pending: { id: string; name: string; args: Record<string, unknown> }[] =
     [];
 
+  // A ReAct turn makes one LLM call per tool-calling round, so token usage is
+  // summed across every `on_chat_model_end` event, not read from the last one.
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let totalTokens = 0;
+  let usageModel = DEFAULT_MODEL;
+
   const stream = agent.streamEvents(
     { messages },
     { version: "v2", configurable: { thread_id: ctx.sessionId } },
@@ -147,10 +168,39 @@ export async function* runAgentStream(
         status,
       });
       yield { type: "tool_result", name: ev.name, result, status };
+    } else if (ev.event === "on_chat_model_end") {
+      // LangChain surfaces per-call usage on the final AIMessage. Field names
+      // are input_tokens / output_tokens / total_tokens; the billed model name
+      // is on response_metadata. Sum prompt/completion separately — never derive
+      // cost from total_tokens (providers don't always keep it consistent).
+      const out = ev.data?.output as
+        | {
+            usage_metadata?: {
+              input_tokens?: number;
+              output_tokens?: number;
+              total_tokens?: number;
+            };
+            response_metadata?: { model_name?: string };
+          }
+        | undefined;
+      const u = out?.usage_metadata;
+      if (u) {
+        promptTokens += u.input_tokens ?? 0;
+        completionTokens += u.output_tokens ?? 0;
+        totalTokens += u.total_tokens ?? 0;
+      }
+      if (out?.response_metadata?.model_name) {
+        usageModel = out.response_metadata.model_name;
+      }
     }
   }
 
-  yield { type: "done", text: finalText.trim(), toolCalls };
+  yield {
+    type: "done",
+    text: finalText.trim(),
+    toolCalls,
+    usage: { promptTokens, completionTokens, totalTokens, model: usageModel },
+  };
 }
 
 /**
@@ -159,14 +209,16 @@ export async function* runAgentStream(
 export async function runAgentToText(
   ctx: AgentContext,
   prior: PriorMessage[],
-): Promise<{ text: string; toolCalls: ToolCallRecord[] }> {
+): Promise<{ text: string; toolCalls: ToolCallRecord[]; usage: TokenUsage }> {
   let text = "";
   let toolCalls: ToolCallRecord[] = [];
+  let usage: TokenUsage = emptyUsage();
   for await (const ev of runAgentStream(ctx, prior)) {
     if (ev.type === "done") {
       text = ev.text;
       toolCalls = ev.toolCalls;
+      usage = ev.usage;
     }
   }
-  return { text, toolCalls };
+  return { text, toolCalls, usage };
 }
