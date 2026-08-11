@@ -4,8 +4,27 @@ import { redirect } from "next/navigation";
 import { Role } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { redirectToUserClinic } from "@/lib/auth";
-import { DEFAULT_CLINIC_ID } from "@/lib/tenant";
+import { redirectToUserClinic, roleHome } from "@/lib/auth";
+
+// Ensure the identity Profile row exists. It's normally created by the Supabase
+// auth DB trigger, but that can lag a beat right after sign-up, so we retry once
+// and fall back to creating it ourselves.
+async function ensureProfile(
+  userId: string,
+  fullName: string,
+  phone: string | null,
+) {
+  let profile = await prisma.profile.findUnique({ where: { id: userId } });
+  if (!profile) {
+    await new Promise((r) => setTimeout(r, 500));
+    profile = await prisma.profile.findUnique({ where: { id: userId } });
+  }
+  if (!profile) {
+    await prisma.profile.create({
+      data: { id: userId, fullName, phone: phone || null },
+    });
+  }
+}
 
 export async function signIn(formData: FormData) {
   const supabase = await createClient();
@@ -52,29 +71,134 @@ export async function signUp(formData: FormData) {
     return { error: error.message };
   }
 
-  // Give the caller a PATIENT membership in the default clinic (public
-  // self-registration). The identity profile is created by the auth DB trigger.
+  // Root sign-up creates a ClinicaAI account only — it is NOT tied to any
+  // clinic. Patients join a specific clinic via /clinic/{slug}/register, and
+  // staff/admins are added to a clinic by an admin. The identity profile is
+  // created by the auth DB trigger (ensured here as a fallback).
   const userId = data.user?.id;
   if (userId) {
-    let profile = await prisma.profile.findUnique({ where: { id: userId } });
-    if (!profile) {
-      await new Promise((r) => setTimeout(r, 500));
-      profile = await prisma.profile.findUnique({ where: { id: userId } });
-    }
-    if (!profile) {
-      await prisma.profile.create({
-        data: { id: userId, fullName, phone: phone || null },
-      });
-    }
-    await prisma.clinicMember.upsert({
-      where: { userId_clinicId: { userId, clinicId: DEFAULT_CLINIC_ID } },
-      update: {},
-      create: { userId, clinicId: DEFAULT_CLINIC_ID, role: Role.PATIENT },
-    });
-    await redirectToUserClinic(userId, false);
+    await ensureProfile(userId, fullName, phone);
+    redirect("/");
   }
 
   redirect("/login");
+}
+
+// ─── Per-clinic auth ──────────────────────────────────────────────────────────
+// Login / register scoped to a specific clinic (from the /clinic/[slug]/... URL),
+// so we know which clinic a self-registering patient is joining and can route an
+// existing account straight to its dashboard in that clinic.
+
+async function activeClinicBySlug(slug: string) {
+  return prisma.clinic.findFirst({
+    where: { slug, isActive: true },
+    select: { id: true, name: true },
+  });
+}
+
+export async function signInToClinic(slug: string, formData: FormData) {
+  const supabase = await createClient();
+
+  const clinic = await activeClinicBySlug(slug);
+  if (!clinic) return { error: "العيادة غير موجودة." };
+
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+
+  const { error, data } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error) {
+    return { error: "البريد الإلكتروني أو كلمة المرور غير صحيحة." };
+  }
+
+  const membership = await prisma.clinicMember.findUnique({
+    where: { userId_clinicId: { userId: data.user.id, clinicId: clinic.id } },
+    select: { role: true },
+  });
+  if (membership) redirect(roleHome(slug, membership.role));
+
+  // Platform admins may enter any clinic even without a membership.
+  const profile = await prisma.profile.findUnique({
+    where: { id: data.user.id },
+    select: { isPlatformAdmin: true },
+  });
+  if (profile?.isPlatformAdmin) redirect(roleHome(slug, Role.ADMIN));
+
+  // Authenticated but NOT a member of this clinic. The password check already
+  // opened a session; we must not leave the visitor signed in to a clinic they
+  // don't belong to — sign out immediately. The page then offers to create an
+  // account here, which re-authenticates via joinClinic.
+  await supabase.auth.signOut();
+  return { needsJoin: true as const, clinicName: clinic.name };
+}
+
+// Create a PATIENT membership in this clinic. Re-authenticates with the same
+// credentials (the sign-in flow signed the non-member out), then joins.
+export async function joinClinic(slug: string, formData: FormData) {
+  const supabase = await createClient();
+
+  const clinic = await activeClinicBySlug(slug);
+  if (!clinic) return { error: "العيادة غير موجودة." };
+
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+
+  const { error, data } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error) {
+    return { error: "تعذّر تأكيد الحساب. حاول تسجيل الدخول مرة أخرى." };
+  }
+
+  await prisma.clinicMember.upsert({
+    where: { userId_clinicId: { userId: data.user.id, clinicId: clinic.id } },
+    update: {},
+    create: { userId: data.user.id, clinicId: clinic.id, role: Role.PATIENT },
+  });
+  redirect(roleHome(slug, Role.PATIENT));
+}
+
+export async function signUpToClinic(slug: string, formData: FormData) {
+  const supabase = await createClient();
+
+  const clinic = await activeClinicBySlug(slug);
+  if (!clinic) return { error: "العيادة غير موجودة." };
+
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+  const fullName = formData.get("fullName") as string;
+  const phone = formData.get("phone") as string;
+
+  const { error, data } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { full_name: fullName, phone } },
+  });
+
+  if (error) {
+    if (error.message.includes("already registered")) {
+      return {
+        error: "هذا البريد مسجل بالفعل. سجّل الدخول لإضافة حسابك إلى هذه العيادة.",
+      };
+    }
+    return { error: error.message };
+  }
+
+  const userId = data.user?.id;
+  if (userId) {
+    await ensureProfile(userId, fullName, phone);
+    await prisma.clinicMember.upsert({
+      where: { userId_clinicId: { userId, clinicId: clinic.id } },
+      update: {},
+      create: { userId, clinicId: clinic.id, role: Role.PATIENT },
+    });
+    redirect(roleHome(slug, Role.PATIENT));
+  }
+
+  redirect(`/clinic/${slug}/login`);
 }
 
 export async function signOut() {

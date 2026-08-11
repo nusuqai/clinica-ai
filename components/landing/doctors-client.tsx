@@ -22,6 +22,9 @@ interface Props {
   isPatient: boolean;
   /** Patient's appointments URL, threaded to the booking modal's success link. */
   appointmentsHref?: string;
+  /** Auth links for the booking modal's "sign in to continue" state. */
+  loginHref?: string;
+  registerHref?: string;
 }
 
 const AVATAR_COLORS = [
@@ -56,7 +59,14 @@ interface BookTarget {
   fee: number | null;
 }
 
-export function DoctorsClient({ doctors, isAuthenticated, isPatient, appointmentsHref }: Props) {
+export function DoctorsClient({
+  doctors,
+  isAuthenticated,
+  isPatient,
+  appointmentsHref,
+  loginHref,
+  registerHref,
+}: Props) {
   const specialties = ["الكل", ...Array.from(new Set(doctors.map((d) => d.specialty)))];
   const [filter, setFilter] = useState("الكل");
   const [bookTarget, setBookTarget] = useState<BookTarget | null>(null);
@@ -183,6 +193,8 @@ export function DoctorsClient({ doctors, isAuthenticated, isPatient, appointment
           isAuthenticated={isAuthenticated}
           isPatient={isPatient}
           appointmentsHref={appointmentsHref}
+          loginHref={loginHref}
+          registerHref={registerHref}
           onClose={() => setBookTarget(null)}
         />
       )}

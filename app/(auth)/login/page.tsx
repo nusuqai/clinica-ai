@@ -117,25 +117,6 @@ export default function LoginPage() {
         </button>
       </form>
 
-      {/* Divider */}
-      <div className="my-6 flex items-center gap-4">
-        <div className="flex-1 h-px bg-text/8" />
-        <span className="text-xs text-text/30 font-sans">أو</span>
-        <div className="flex-1 h-px bg-text/8" />
-      </div>
-
-      {/* Register link */}
-      <p className="text-center text-sm font-sans text-text/50">
-        ليس لديك حساب؟{" "}
-        <Link
-          href="/register"
-          className="font-semibold text-accent hover:text-accent/80 transition-colors"
-        >
-          أنشئ حساباً جديداً
-        </Link>
-      </p>
-
-      {/* Back to home */}
       <div className="mt-8 text-center">
         <Link
           href="/"

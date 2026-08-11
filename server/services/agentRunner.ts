@@ -1,7 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, SenderType, type Role } from "@prisma/client";
-import { DEFAULT_CLINIC_ID } from "@/lib/tenant";
 import { sendTextMessage, WhatsAppApiError } from "@/lib/meta/whatsapp";
 import type { WhatsAppCredentials } from "@/lib/meta/whatsapp";
 import type { UnsupportedMediaType } from "@/lib/meta/whatsapp-inbound";
@@ -16,7 +15,6 @@ import type { AgentStreamEvent } from "@/agent";
 import type { ToolCallRecord } from "@/agent/types";
 import {
   getOrCreateWebConversation,
-  getOrCreateGuestWebConversation,
   resolveActiveSession,
   getSessionMessages,
   persistUserMessage,
@@ -198,81 +196,6 @@ export async function* streamWebAgent(
 }
 
 /**
- * Web channel, no account: mirrors the WhatsApp "unknown contact" flow —
- * `role: null` limits the agent to `commonTools()` (info only, no booking).
- * `conversationId` comes from the browser (localStorage), reused across
- * messages if it's still a valid, unclaimed guest conversation; a fresh one
- * is created otherwise and reported back via an `init` event so the browser
- * can remember it.
- */
-export async function* streamGuestWebAgent(
-  conversationId: string | null,
-  userText: string,
-): AsyncGenerator<AgentStreamEvent | { type: "init"; conversationId: string }> {
-  const resolvedConversationId = await getOrCreateGuestWebConversation(
-    conversationId,
-    DEFAULT_CLINIC_ID,
-  );
-  yield { type: "init", conversationId: resolvedConversationId };
-
-  const sessionId = await resolveActiveSession(resolvedConversationId);
-  await persistUserMessage(resolvedConversationId, sessionId, userText, null);
-
-  if (!(await isSessionAiEnabled(sessionId))) {
-    yield { type: "handoff" };
-    return;
-  }
-
-  if (
-    await clinicGateBlocks(DEFAULT_CLINIC_ID, resolvedConversationId, sessionId)
-  ) {
-    yield { type: "handoff" };
-    return;
-  }
-
-  const prior = await getSessionMessages(sessionId);
-
-  const ctx: AgentContext = {
-    actorId: null,
-    role: null,
-    clinicId: DEFAULT_CLINIC_ID,
-    channel: Channel.WEB,
-    conversationId: resolvedConversationId,
-    sessionId,
-    actorName: "زائر",
-  };
-
-  let finalText = "";
-  let toolCalls: ToolCallRecord[] = [];
-  let usage: TokenUsage | null = null;
-
-  for await (const ev of runAgentStream(ctx, toPrior(prior))) {
-    if (ev.type === "done") {
-      finalText = ev.text;
-      toolCalls = ev.toolCalls;
-      usage = ev.usage;
-    }
-    yield ev;
-  }
-
-  const agentMsg = await persistAgentMessage(
-    resolvedConversationId,
-    sessionId,
-    finalText || FALLBACK_REPLY,
-    { toolCalls },
-  );
-
-  if (usage) {
-    await chargeReply({
-      clinicId: DEFAULT_CLINIC_ID,
-      sessionId,
-      messageId: agentMsg.id,
-      usage,
-    });
-  }
-}
-
-/**
  * WhatsApp channel, non-text message: records that something arrived so the
  * admin can see the gap in the thread, and tells the contact we only take text.
  *
@@ -357,7 +280,9 @@ export async function handleWhatsAppMessage(
     where: { id: conversationId },
     select: { whatsappName: true, clinicId: true },
   });
-  const clinicId = conv?.clinicId ?? DEFAULT_CLINIC_ID;
+  // The conversation was just created/updated above, so this is defensive.
+  if (!conv) return;
+  const clinicId = conv.clinicId;
 
   if (await clinicGateBlocks(clinicId, conversationId, sessionId)) return;
 
@@ -365,7 +290,7 @@ export async function handleWhatsAppMessage(
 
   // The contact's role is per-clinic; resolve it in this conversation's clinic.
   let role: Role | null = null;
-  if (profile && conv) {
+  if (profile) {
     const m = await prisma.clinicMember.findUnique({
       where: { userId_clinicId: { userId: profile.id, clinicId: conv.clinicId } },
       select: { role: true },

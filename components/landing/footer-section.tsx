@@ -1,7 +1,19 @@
 import { Stethoscope } from "lucide-react";
 import Link from "next/link";
 
-export function FooterSection() {
+interface FooterSectionProps {
+  brandName?: string;
+  tagline?: string;
+  loginHref?: string;
+  registerHref?: string;
+}
+
+export function FooterSection({
+  brandName = "ClinicaAI",
+  tagline = "منصة العيادة الذكية — احجز مواعيدك مع أفضل الأطباء بسهولة وأمان",
+  loginHref = "/login",
+  registerHref = "/register",
+}: FooterSectionProps = {}) {
   return (
     <footer className="bg-primary">
       <div className="mx-auto max-w-7xl px-6 py-12">
@@ -12,25 +24,25 @@ export function FooterSection() {
               <Stethoscope className="h-5 w-5 text-white" />
             </div>
             <span className="font-heading text-xl font-bold text-white">
-              ClinicaAI
+              {brandName}
             </span>
           </div>
 
           {/* Tagline */}
           <p className="max-w-sm font-sans text-sm leading-relaxed text-white/50">
-            منصة العيادة الذكية — احجز مواعيدك مع أفضل الأطباء بسهولة وأمان
+            {tagline}
           </p>
 
           {/* Links */}
           <div className="flex flex-wrap justify-center gap-6">
             <Link
-              href="/login"
+              href={loginHref}
               className="font-sans text-sm text-white/50 transition-colors hover:text-accent"
             >
               تسجيل الدخول
             </Link>
             <Link
-              href="/register"
+              href={registerHref}
               className="font-sans text-sm text-white/50 transition-colors hover:text-accent"
             >
               إنشاء حساب
@@ -48,7 +60,7 @@ export function FooterSection() {
 
           {/* Copyright */}
           <p className="font-sans text-xs text-white/30">
-            © {new Date().getFullYear()} ClinicaAI — جميع الحقوق محفوظة
+            © {new Date().getFullYear()} {brandName} — جميع الحقوق محفوظة
           </p>
         </div>
       </div>
