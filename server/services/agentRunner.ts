@@ -24,6 +24,13 @@ import {
   isSessionAiEnabled,
   type SessionMessage,
 } from "./agentSession";
+import {
+  getClinicAiStatus,
+  chargeUsage,
+  isDuplicateChargeError,
+  ensureOpenEscalation,
+} from "./aiCredit";
+import type { TokenUsage } from "@/agent/types";
 
 const FALLBACK_REPLY = "تم تنفيذ طلبك.";
 
@@ -71,6 +78,49 @@ function toPrior(messages: SessionMessage[]): PriorMessage[] {
 }
 
 /**
+ * The clinic-level gate, checked after the per-session `isSessionAiEnabled`
+ * pause and before running the agent. Returns true (agent must NOT reply) when
+ * the clinic has turned its AI off or has run out of credit; in both cases the
+ * already-persisted user message is surfaced to a human via an escalation.
+ */
+async function clinicGateBlocks(
+  clinicId: string,
+  conversationId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const status = await getClinicAiStatus(clinicId);
+  if (!status.aiEnabled) {
+    await ensureOpenEscalation(conversationId, sessionId, "clinic_disabled");
+    return true;
+  }
+  if (!status.sufficient) {
+    await ensureOpenEscalation(conversationId, sessionId, "insufficient_credit");
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Meters the cost of a reply against the clinic balance. Kept off the reply's
+ * critical path: a duplicate charge (webhook redelivery) is expected and
+ * swallowed, and any other failure is logged — never allowed to crash delivery
+ * of an already-sent reply.
+ */
+async function chargeReply(args: {
+  clinicId: string;
+  sessionId: string | null;
+  messageId: string | null;
+  usage: TokenUsage;
+}): Promise<void> {
+  try {
+    await chargeUsage(args);
+  } catch (err) {
+    if (isDuplicateChargeError(err)) return;
+    console.error("[aiCredit] failed to charge usage", err);
+  }
+}
+
+/**
  * Web channel: persists the user message, streams the agent (SSE events),
  * then persists the AGENT reply with its tool-call metadata. Yields events for
  * the route to forward to the browser.
@@ -98,6 +148,11 @@ export async function* streamWebAgent(
     return;
   }
 
+  if (await clinicGateBlocks(membership.clinicId, conversationId, sessionId)) {
+    yield { type: "handoff" };
+    return;
+  }
+
   const prior = await getSessionMessages(sessionId);
 
   const ctx: AgentContext = {
@@ -112,16 +167,18 @@ export async function* streamWebAgent(
 
   let finalText = "";
   let toolCalls: ToolCallRecord[] = [];
+  let usage: TokenUsage | null = null;
 
   for await (const ev of runAgentStream(ctx, toPrior(prior))) {
     if (ev.type === "done") {
       finalText = ev.text;
       toolCalls = ev.toolCalls;
+      usage = ev.usage;
     }
     yield ev;
   }
 
-  await persistAgentMessage(
+  const agentMsg = await persistAgentMessage(
     conversationId,
     sessionId,
     finalText || FALLBACK_REPLY,
@@ -129,6 +186,15 @@ export async function* streamWebAgent(
       toolCalls,
     },
   );
+
+  if (usage) {
+    await chargeReply({
+      clinicId: membership.clinicId,
+      sessionId,
+      messageId: agentMsg.id,
+      usage,
+    });
+  }
 }
 
 /**
@@ -157,6 +223,13 @@ export async function* streamGuestWebAgent(
     return;
   }
 
+  if (
+    await clinicGateBlocks(DEFAULT_CLINIC_ID, resolvedConversationId, sessionId)
+  ) {
+    yield { type: "handoff" };
+    return;
+  }
+
   const prior = await getSessionMessages(sessionId);
 
   const ctx: AgentContext = {
@@ -171,21 +244,32 @@ export async function* streamGuestWebAgent(
 
   let finalText = "";
   let toolCalls: ToolCallRecord[] = [];
+  let usage: TokenUsage | null = null;
 
   for await (const ev of runAgentStream(ctx, toPrior(prior))) {
     if (ev.type === "done") {
       finalText = ev.text;
       toolCalls = ev.toolCalls;
+      usage = ev.usage;
     }
     yield ev;
   }
 
-  await persistAgentMessage(
+  const agentMsg = await persistAgentMessage(
     resolvedConversationId,
     sessionId,
     finalText || FALLBACK_REPLY,
     { toolCalls },
   );
+
+  if (usage) {
+    await chargeReply({
+      clinicId: DEFAULT_CLINIC_ID,
+      sessionId,
+      messageId: agentMsg.id,
+      usage,
+    });
+  }
 }
 
 /**
@@ -269,12 +353,15 @@ export async function handleWhatsAppMessage(
 
   if (!(await isSessionAiEnabled(sessionId))) return;
 
-  const prior = await getSessionMessages(sessionId);
-
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     select: { whatsappName: true, clinicId: true },
   });
+  const clinicId = conv?.clinicId ?? DEFAULT_CLINIC_ID;
+
+  if (await clinicGateBlocks(clinicId, conversationId, sessionId)) return;
+
+  const prior = await getSessionMessages(sessionId);
 
   // The contact's role is per-clinic; resolve it in this conversation's clinic.
   let role: Role | null = null;
@@ -289,7 +376,7 @@ export async function handleWhatsAppMessage(
   const ctx: AgentContext = {
     actorId: profile?.id ?? null,
     role,
-    clinicId: conv?.clinicId ?? DEFAULT_CLINIC_ID,
+    clinicId,
     channel: Channel.WHATSAPP,
     conversationId,
     sessionId,
@@ -301,9 +388,12 @@ export async function handleWhatsAppMessage(
   // the reply lands, so there is nothing to stop afterwards.
   showTypingIndicator(messageId, creds);
 
-  const { text, toolCalls } = await runAgentToText(ctx, toPrior(prior));
+  const { text, toolCalls, usage } = await runAgentToText(ctx, toPrior(prior));
   const reply = text || FALLBACK_REPLY;
 
-  await persistAgentMessage(conversationId, sessionId, reply, { toolCalls });
+  const agentMsg = await persistAgentMessage(conversationId, sessionId, reply, {
+    toolCalls,
+  });
   await deliverReply(phone, reply, creds);
+  await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage });
 }
