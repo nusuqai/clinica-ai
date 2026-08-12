@@ -16,6 +16,11 @@ export interface AgentContext {
   clinicId: string;
   /** The clinic's URL slug — used to build public links (e.g. the register page). */
   clinicSlug: string;
+  /**
+   * The contact's WhatsApp number (wa_id, e.g. "201014443991"), or null on web.
+   * Used to prefill the register link so the phone matches their WhatsApp number.
+   */
+  contactPhone: string | null;
   channel: Channel;
   conversationId: string;
   sessionId: string;

@@ -8,6 +8,8 @@ import { signUpToClinic } from "@/server/actions/auth";
 interface Props {
   slug: string;
   clinicName: string;
+  /** Prefilled from the ?phone= URL param (e.g. a WhatsApp deep link). */
+  initialPhone?: string;
 }
 
 /** Example of the required WhatsApp-matching phone format (country code + number). */
@@ -31,7 +33,7 @@ function isValidPhone(phone: string): boolean {
   return /^[1-9]\d{9,14}$/.test(phone);
 }
 
-export function ClinicRegisterForm({ slug, clinicName }: Props) {
+export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Props) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +119,7 @@ export function ClinicRegisterForm({ slug, clinicName }: Props) {
               autoComplete="tel"
               required
               dir="ltr"
+              defaultValue={normalizePhone(initialPhone)}
               className="block w-full pr-11 pl-4 py-3.5 font-sans text-sm border border-text/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-white text-right placeholder:text-text/30 transition-all"
               placeholder={PHONE_EXAMPLE}
             />
