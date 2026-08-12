@@ -1,4 +1,4 @@
-import { DollarSign, Coins, MessageSquare, Sigma } from "lucide-react";
+import { DollarSign, Coins, MessageSquare } from "lucide-react";
 import { requireActiveMember } from "@/lib/auth";
 import PageHeader from "@/components/admin/page-header";
 import StatCard from "@/components/admin/stat-card";
@@ -20,33 +20,27 @@ export default async function AiUsagePage() {
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <StatCard label="إجمالي التكلفة" value={usd(report.totalCharged)} icon={DollarSign} color="primary" />
-        <StatCard label="عدد الردود" value={report.turns} icon={MessageSquare} color="accent" />
-        <StatCard label="إجمالي الرموز (Tokens)" value={report.totalTokens.toLocaleString("en-US")} icon={Sigma} color="primary" />
-        <StatCard label="متوسط تكلفة الرد" value={usd(report.avgCostPerTurn)} icon={Coins} color="accent" />
+        <StatCard
+          label="إجمالي التكلفة"
+          value={usd(report.totalCharged)}
+          icon={DollarSign}
+          color="primary"
+        />
+        <StatCard
+          label="عدد الردود"
+          value={report.turns}
+          icon={MessageSquare}
+          color="accent"
+        />
+        <StatCard
+          label="متوسط تكلفة الرد"
+          value={usd(report.avgCostPerTurn)}
+          icon={Coins}
+          color="accent"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card border border-border rounded-2xl p-6">
-          <h2 className="font-heading font-semibold text-foreground mb-6">
-            التكلفة حسب النموذج
-          </h2>
-          {report.byModel.length > 0 ? (
-            <BarList
-              items={report.byModel.map((m) => ({
-                label: m.label,
-                sublabel: usd(m.value),
-                value: Number(m.value.toFixed(6)),
-              }))}
-              color="bg-primary"
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground font-sans">
-              لا توجد بيانات استخدام بعد.
-            </p>
-          )}
-        </div>
-
         <div className="bg-card border border-border rounded-2xl p-6">
           <h2 className="font-heading font-semibold text-foreground mb-6">
             التكلفة اليومية
@@ -67,12 +61,6 @@ export default async function AiUsagePage() {
           )}
         </div>
       </div>
-
-      <p className="text-xs text-muted-foreground font-sans mt-6">
-        التكلفة الخام لمزود الذكاء الاصطناعي خلال الفترة:{" "}
-        <span dir="ltr">{usd(report.totalRaw)}</span> · الرصيد الحالي:{" "}
-        <span dir="ltr">{usd(report.balance)}</span>
-      </p>
     </div>
   );
 }
