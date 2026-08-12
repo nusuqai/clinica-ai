@@ -3,8 +3,15 @@ import { prisma } from "@/lib/prisma";
 import { Channel, SenderType, type Prisma } from "@prisma/client";
 import type { AgentMessageMetadata } from "@/agent/types";
 
-/** Fixed session window: 30 min from the session's first message. */
-export const SESSION_MINUTES = 30;
+/**
+ * Fixed session window from the session's first message.
+ *
+ * TEMPORARY: bumped from 30 min to 1 week so conversations keep continuity —
+ * `getSessionMessages` only loads the current session, so a new session starts
+ * the agent "cold". Revert to a short window once session compaction (a summary
+ * of the previous session fed into the next) lands. See #29.
+ */
+export const SESSION_MINUTES = 7 * 24 * 60; // 1 week
 
 export interface SessionMessage {
   id: string;
@@ -16,8 +23,8 @@ export interface SessionMessage {
 
 /**
  * Returns the active session for a conversation, creating one if none is live.
- * A session is live while `expiresAt > now`; otherwise a fresh 30-min window
- * starts. `thread_id` for the agent = this session id.
+ * A session is live while `expiresAt > now`; otherwise a fresh window starts
+ * (SESSION_MINUTES). `thread_id` for the agent = this session id.
  */
 export async function resolveActiveSession(
   conversationId: string,
