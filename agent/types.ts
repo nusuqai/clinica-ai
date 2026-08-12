@@ -14,6 +14,8 @@ export interface AgentContext {
   role: Role | null;
   /** The clinic (tenant) this conversation belongs to; scopes every tool. */
   clinicId: string;
+  /** The clinic's URL slug — used to build public links (e.g. the register page). */
+  clinicSlug: string;
   channel: Channel;
   conversationId: string;
   sessionId: string;

@@ -10,6 +10,27 @@ interface Props {
   clinicName: string;
 }
 
+/** Example of the required WhatsApp-matching phone format (country code + number). */
+const PHONE_EXAMPLE = "201014443991";
+
+/**
+ * Strips anything a user might type around the digits (spaces, dashes,
+ * parentheses, and a leading + or 00) so the stored number matches the
+ * WhatsApp `wa_id` format exactly — international, digits only, no leading zero.
+ */
+function normalizePhone(raw: string): string {
+  return raw
+    .trim()
+    .replace(/[\s()\-]/g, "")
+    .replace(/^\+/, "")
+    .replace(/^00/, "");
+}
+
+/** International format: country code first, digits only, no leading zero, 10–15 digits. */
+function isValidPhone(phone: string): boolean {
+  return /^[1-9]\d{9,14}$/.test(phone);
+}
+
 export function ClinicRegisterForm({ slug, clinicName }: Props) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -20,6 +41,16 @@ export function ClinicRegisterForm({ slug, clinicName }: Props) {
     e.preventDefault();
     setError(null);
     const formData = new FormData(e.currentTarget);
+
+    const phone = normalizePhone((formData.get("phone") as string) ?? "");
+    if (!isValidPhone(phone)) {
+      setError(
+        `أدخل رقم الهاتف بالصيغة الدولية بدون علامة (+) وبدون صفر في البداية: بادئة الدولة ثم الرقم، مثال: ${PHONE_EXAMPLE}`,
+      );
+      return;
+    }
+    // Store the normalized number so it matches the WhatsApp number exactly.
+    formData.set("phone", phone);
 
     const password = formData.get("password") as string;
     const confirm = formData.get("confirmPassword") as string;
@@ -82,12 +113,18 @@ export function ClinicRegisterForm({ slug, clinicName }: Props) {
             <input
               name="phone"
               type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
               required
               dir="ltr"
               className="block w-full pr-11 pl-4 py-3.5 font-sans text-sm border border-text/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-white text-right placeholder:text-text/30 transition-all"
-              placeholder="+20 100 000 0000"
+              placeholder={PHONE_EXAMPLE}
             />
           </div>
+          <p className="text-xs text-text/40 font-sans">
+            بادئة الدولة ثم الرقم بدون (+) وبدون صفر — مثال:{" "}
+            <span dir="ltr">{PHONE_EXAMPLE}</span>
+          </p>
         </div>
 
         <div className="space-y-1.5">

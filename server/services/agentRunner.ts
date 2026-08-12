@@ -92,7 +92,11 @@ async function clinicGateBlocks(
     return true;
   }
   if (!status.sufficient) {
-    await ensureOpenEscalation(conversationId, sessionId, "insufficient_credit");
+    await ensureOpenEscalation(
+      conversationId,
+      sessionId,
+      "insufficient_credit",
+    );
     return true;
   }
   return false;
@@ -130,7 +134,12 @@ export async function* streamWebAgent(
   const membership = await prisma.clinicMember.findFirst({
     where: { userId, clinic: { isActive: true } },
     orderBy: { createdAt: "asc" },
-    select: { role: true, clinicId: true, user: { select: { fullName: true } } },
+    select: {
+      role: true,
+      clinicId: true,
+      clinic: { select: { slug: true } },
+      user: { select: { fullName: true } },
+    },
   });
   if (!membership) throw new Error("No clinic membership for user");
 
@@ -157,6 +166,7 @@ export async function* streamWebAgent(
     actorId: userId,
     role: membership.role,
     clinicId: membership.clinicId,
+    clinicSlug: membership.clinic.slug,
     channel: Channel.WEB,
     conversationId,
     sessionId,
@@ -278,7 +288,11 @@ export async function handleWhatsAppMessage(
 
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { whatsappName: true, clinicId: true },
+    select: {
+      whatsappName: true,
+      clinicId: true,
+      clinic: { select: { slug: true } },
+    },
   });
   // The conversation was just created/updated above, so this is defensive.
   if (!conv) return;
@@ -292,7 +306,9 @@ export async function handleWhatsAppMessage(
   let role: Role | null = null;
   if (profile) {
     const m = await prisma.clinicMember.findUnique({
-      where: { userId_clinicId: { userId: profile.id, clinicId: conv.clinicId } },
+      where: {
+        userId_clinicId: { userId: profile.id, clinicId: conv.clinicId },
+      },
       select: { role: true },
     });
     role = m?.role ?? null;
@@ -302,6 +318,7 @@ export async function handleWhatsAppMessage(
     actorId: profile?.id ?? null,
     role,
     clinicId,
+    clinicSlug: conv.clinic.slug,
     channel: Channel.WHATSAPP,
     conversationId,
     sessionId,
