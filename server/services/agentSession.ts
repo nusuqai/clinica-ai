@@ -4,14 +4,18 @@ import { Channel, SenderType, type Prisma } from "@prisma/client";
 import type { AgentMessageMetadata } from "@/agent/types";
 
 /**
- * Fixed session window from the session's first message.
+ * Session window in minutes, measured from the session's first message.
+ * Configurable via the SESSION_MINUTES env var; defaults to 30.
  *
- * TEMPORARY: bumped from 30 min to 1 week so conversations keep continuity —
- * `getSessionMessages` only loads the current session, so a new session starts
- * the agent "cold". Revert to a short window once session compaction (a summary
- * of the previous session fed into the next) lands. See #29.
+ * Note: a new session starts the agent "cold" — `getSessionMessages` only loads
+ * the current session — until session compaction (a summary of the previous
+ * session fed into the next) lands. See #29.
  */
-export const SESSION_MINUTES = 7 * 24 * 60; // 1 week
+const envSessionMinutes = Number(process.env.SESSION_MINUTES);
+export const SESSION_MINUTES =
+  Number.isFinite(envSessionMinutes) && envSessionMinutes > 0
+    ? envSessionMinutes
+    : 30;
 
 export interface SessionMessage {
   id: string;
