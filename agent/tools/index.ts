@@ -6,6 +6,7 @@ import { patientTools } from "./patient";
 import { doctorTools } from "./doctor";
 import { adminTools } from "./admin";
 import { escalationTool } from "./escalation";
+import { registerInClinicTool } from "./registration";
 
 /**
  * Returns EXACTLY the tools the actor's role may use. Out-of-role tools are
@@ -16,7 +17,13 @@ export function getToolsForRole(ctx: AgentContext): DynamicStructuredTool[] {
 
   // Unknown WhatsApp contact / anonymous web guest → can still ask for a
   // human, but no identity-gated booking/data actions.
-  if (ctx.role === null) return base;
+  if (ctx.role === null) {
+    // Case 2: the contact HAS an account (actorId set) but isn't a member of
+    // this clinic — let the agent register them here as a patient.
+    return ctx.actorId
+      ? [...base, registerInClinicTool(ctx)]
+      : base;
+  }
 
   switch (ctx.role) {
     case "PATIENT":
