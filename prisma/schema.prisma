@@ -299,7 +299,7 @@ model ChatSession {
   id             String   @id @default(uuid()) @db.Uuid
   conversationId String   @db.Uuid
   startedAt      DateTime @default(now())
-  expiresAt      DateTime // startedAt + 30 min
+  expiresAt      DateTime // startedAt + SESSION_MINUTES (temporarily 1 week, see #29)
   // AI auto-reply for this session. Defaults on for every new session; the
   // admin can pause it, or the escalate_to_human tool turns it off when the
   // user asks for a human. Does not carry over to the next session.
