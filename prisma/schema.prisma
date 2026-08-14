@@ -1,11 +1,14 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+  schemas           = ["public", "auth"]
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -16,6 +19,8 @@ enum Role {
   PATIENT
   DOCTOR
   ADMIN
+
+  @@schema("public")
 }
 
 enum DayOfWeek {
@@ -26,6 +31,8 @@ enum DayOfWeek {
   THU
   FRI
   SAT
+
+  @@schema("public")
 }
 
 enum AppointmentStatus {
@@ -34,23 +41,69 @@ enum AppointmentStatus {
   CANCELLED
   COMPLETED
   NO_SHOW
+
+  @@schema("public")
 }
 
 enum Channel {
   WEB
   WHATSAPP
+
+  @@schema("public")
 }
 
 enum SenderType {
   USER
   ADMIN
   AGENT
+
+  @@schema("public")
 }
 
 enum ClinicRequestStatus {
   PENDING
   APPROVED
   REJECTED
+
+  @@schema("public")
+}
+
+// ─── Supabase Auth (externally managed) ──────────────────────────────────────
+
+// Owned by Supabase GoTrue — NOT by Prisma. It exists here only so Prisma can
+// resolve the profiles.id -> auth.users.id foreign key. Never let a generated
+// migration ALTER or DROP anything in this schema: review every migration.sql
+// before applying and delete any statement that touches `auth`.
+model AuthUser {
+  id                 String    @id @db.Uuid
+  instanceId         String?   @map("instance_id") @db.Uuid
+  aud                String?   @db.VarChar(255)
+  role               String?   @db.VarChar(255)
+  email              String?   @db.VarChar(255)
+  encryptedPassword  String?   @map("encrypted_password") @db.VarChar(255)
+  emailConfirmedAt   DateTime? @map("email_confirmed_at") @db.Timestamptz(6)
+  invitedAt          DateTime? @map("invited_at") @db.Timestamptz(6)
+  confirmationToken  String?   @map("confirmation_token") @db.VarChar(255)
+  confirmationSentAt DateTime? @map("confirmation_sent_at") @db.Timestamptz(6)
+  recoveryToken      String?   @map("recovery_token") @db.VarChar(255)
+  recoverySentAt     DateTime? @map("recovery_sent_at") @db.Timestamptz(6)
+  lastSignInAt       DateTime? @map("last_sign_in_at") @db.Timestamptz(6)
+  rawAppMetaData     Json?     @map("raw_app_meta_data")
+  rawUserMetaData    Json?     @map("raw_user_meta_data")
+  isSuperAdmin       Boolean?  @map("is_super_admin")
+  createdAt          DateTime? @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime? @map("updated_at") @db.Timestamptz(6)
+  phone              String?   @unique
+  phoneConfirmedAt   DateTime? @map("phone_confirmed_at") @db.Timestamptz(6)
+  bannedUntil        DateTime? @map("banned_until") @db.Timestamptz(6)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(6)
+  isAnonymous        Boolean?  @map("is_anonymous")
+  isSsoUser          Boolean?  @map("is_sso_user")
+
+  profile Profile?
+
+  @@map("users")
+  @@schema("auth")
 }
 
 // ─── Tenancy ────────────────────────────────────────────────────────────────
@@ -75,6 +128,7 @@ model Clinic {
   requestsFulfilled ClinicRequest[] @relation("RequestCreatedClinic")
 
   @@map("clinics")
+  @@schema("public")
 }
 
 // Membership join table: a Profile belongs to a Clinic with a role. The unique
@@ -92,6 +146,7 @@ model ClinicMember {
   @@unique([userId, clinicId])
   @@index([clinicId])
   @@map("clinic_members")
+  @@schema("public")
 }
 
 // A request (from the public landing page) to create a new clinic. The platform
@@ -117,6 +172,7 @@ model ClinicRequest {
 
   @@index([status])
   @@map("clinic_requests")
+  @@schema("public")
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -133,14 +189,16 @@ model Profile {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  doctor           Doctor?
-  appointments     Appointment[]
-  conversations    Conversation[]
-  sentMessages     Message[]       @relation("SenderProfile")
+  authUser          AuthUser        @relation(fields: [id], references: [id], onDelete: Cascade)
+  doctor            Doctor?
+  appointments      Appointment[]
+  conversations     Conversation[]
+  sentMessages      Message[]       @relation("SenderProfile")
   clinicMemberships ClinicMember[]
-  reviewedRequests ClinicRequest[] @relation("RequestReviewer")
+  reviewedRequests  ClinicRequest[] @relation("RequestReviewer")
 
   @@map("profiles")
+  @@schema("public")
 }
 
 // A doctor is a standalone record scoped to a clinic. It can exist WITHOUT any
@@ -165,6 +223,7 @@ model Doctor {
 
   @@index([clinicId])
   @@map("doctors")
+  @@schema("public")
 }
 
 model AvailabilityRule {
@@ -182,6 +241,7 @@ model AvailabilityRule {
 
   @@index([doctorId])
   @@map("availability_rules")
+  @@schema("public")
 }
 
 model Slot {
@@ -199,6 +259,7 @@ model Slot {
 
   @@index([doctorId, date])
   @@map("slots")
+  @@schema("public")
 }
 
 model Appointment {
@@ -224,6 +285,7 @@ model Appointment {
   @@index([patientId])
   @@index([doctorId])
   @@map("appointments")
+  @@schema("public")
 }
 
 model Conversation {
@@ -246,6 +308,7 @@ model Conversation {
   @@unique([clinicId, userId, channel])
   @@index([clinicId])
   @@map("conversations")
+  @@schema("public")
 }
 
 // A bounded chat window (fixed 30-min from its first message) used to scope
@@ -266,6 +329,7 @@ model ChatSession {
 
   @@index([conversationId])
   @@map("chat_sessions")
+  @@schema("public")
 }
 
 // One row per escalate_to_human request. A session can have several — e.g.
@@ -286,6 +350,7 @@ model Escalation {
   @@index([conversationId])
   @@index([sessionId])
   @@map("escalations")
+  @@schema("public")
 }
 
 model Message {
@@ -306,4 +371,5 @@ model Message {
   @@index([conversationId])
   @@index([sessionId])
   @@map("messages")
+  @@schema("public")
 }

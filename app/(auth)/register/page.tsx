@@ -31,7 +31,6 @@ export default function RegisterPage() {
       setError("كلمتا المرور غير متطابقتين.");
       return;
     }
-
     startTransition(async () => {
       const result = await signUp(formData);
       if (result?.error) setError(result.error);
