@@ -14,13 +14,40 @@ const ROLE_GUIDE: Record<Role, string> = {
     "أنت تتحدث مع مسؤول العيادة. يمكنك إدارة الأطباء والمستخدمين والمواعيد، عرض الإحصائيات، وإرسال رسائل للمحادثات.",
 };
 
-const UNKNOWN_WHATSAPP_GUIDE = `رقم هاتف هذا الشخص على واتساب غير مسجّل لدينا (لم نجد أي حساب مرتبط به في قاعدة البيانات) — أي أنه غير مسجّل معنا. في أول رد له، أخبره بوضوح ولطف أنه غير موجود في نظامنا، وأنه يجب عليه الدخول إلى موقعنا الإلكتروني وإنشاء حساب جديد، وإضافة رقم الهاتف نفسه الذي يتواصل به معنا الآن على واتساب حتى يتم ربط حسابه به، ثم العودة للتواصل معنا مجدداً وسنكون سعداء بمساعدته في كل ما يحتاج. يمكنك بعد ذلك تقديم معلومات عامة فقط إن سأل: قائمة الأطباء وتخصصاتهم، ومواعيد عملهم، والفترات المتاحة. لا يمكنك حجز أي موعد له بأي حال. ${BOOKING_FLOW}`;
+/**
+ * Full public registration URL for a clinic
+ * (e.g. https://app.example.com/clinic/smile/register?phone=201014443991).
+ * The phone is passed as a query param so the register form prefills it — the
+ * contact never has to type or format their number.
+ */
+function registerUrl(slug: string, phone: string | null): string {
+  const base = (process.env.APP_URL ?? "").replace(/\/+$/, "");
+  const query = phone ? `?phone=${encodeURIComponent(phone)}` : "";
+  return `${base}/clinic/${slug}/register${query}`;
+}
+
+const unknownWhatsAppGuide = (slug: string, phone: string | null) =>
+  `رقم هاتف هذا الشخص على واتساب غير مسجّل لدينا (لم نجد أي حساب مرتبط به في قاعدة البيانات) — أي أنه غير مسجّل معنا. في أول رد له، أخبره بوضوح ولطف أنه غير موجود في نظامنا، وأنه يجب عليه إنشاء حساب جديد من صفحة التسجيل على موقعنا عبر هذا الرابط: ${registerUrl(slug, phone)} — رقم هاتفه سيكون مُعبّأً تلقائياً في نموذج التسجيل، فكل ما عليه هو إكمال باقي البيانات (الاسم، البريد، كلمة المرور) دون تغيير رقم الهاتف، ثم العودة للتواصل معنا مجدداً وسنكون سعداء بمساعدته في كل ما يحتاج. أدرج الرابط كاملاً في ردّك، واكتبه كنص عادي صريح (URL كامل) بدون أي تنسيق أو أقواس مربّعة أو صيغة ماركداون مثل [نص](رابط)، لأن واتساب لا يدعم روابط ماركداون ويظهرها مشوّهة. يمكنك بعد ذلك تقديم معلومات عامة فقط إن سأل: قائمة الأطباء وتخصصاتهم، ومواعيد عملهم، والفترات المتاحة. لا يمكنك حجز أي موعد له بأي حال. ${BOOKING_FLOW}`;
+
+// Case 2: the contact already has an account, but is not a member of THIS
+// clinic. The agent can register them here directly via `register_in_clinic`.
+const EXISTING_ACCOUNT_NOT_MEMBER_GUIDE = `هذا الشخص لديه حساب لدينا بالفعل، لكنه غير مسجّل في هذه العيادة تحديداً. رحّب به وقدّم له المعلومات العامة إن سأل (قائمة الأطباء وتخصصاتهم، مواعيد العمل، الفترات المتاحة). وإذا رغب في الحجز أو استخدام خدمات هذه العيادة، استخدم أداة register_in_clinic لتسجيله كمريض في هذه العيادة باستخدام حسابه الحالي، ثم أخبره أنه أصبح مسجّلاً وأنه يمكنه الآن متابعة طلبه (سيتم تفعيل الحجز في رسالته التالية). لا تطلب منه الذهاب إلى الموقع. ${BOOKING_FLOW}`;
 
 const GUEST_WEB_GUIDE = `أنت تتحدث مع زائر لم يسجّل الدخول بعد. رحّب به وقدّم له معلومات عامة إن سأل: قائمة الأطباء وتخصصاتهم، ومواعيد عملهم، والفترات المتاحة. لا يمكنك حجز أو إلغاء أو تعديل أي موعد له لأنه لا يملك حساباً — إذا رغب بالحجز، أخبره بلطف أنه يحتاج أولاً لإنشاء حساب أو تسجيل الدخول من الموقع، ثم يمكنه العودة لإتمام الحجز. ${BOOKING_FLOW}`;
 
 export function buildSystemPrompt(ctx: AgentContext): string {
-  const unknownGuide =
-    ctx.channel === Channel.WHATSAPP ? UNKNOWN_WHATSAPP_GUIDE : GUEST_WEB_GUIDE;
+  // For an unidentified contact (role null): on WhatsApp, an existing account
+  // that just isn't a member of this clinic (Case 2, actorId set) can be
+  // registered here directly; a brand-new number (Case 1) is sent to the
+  // website. On web, an anonymous guest.
+  let unknownGuide: string;
+  if (ctx.channel === Channel.WHATSAPP) {
+    unknownGuide = ctx.actorId
+      ? EXISTING_ACCOUNT_NOT_MEMBER_GUIDE
+      : unknownWhatsAppGuide(ctx.clinicSlug, ctx.contactPhone);
+  } else {
+    unknownGuide = GUEST_WEB_GUIDE;
+  }
   const guide = ctx.role ? ROLE_GUIDE[ctx.role] : unknownGuide;
   const now = new Date();
   return [
@@ -33,6 +60,9 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     "- قبل أي إجراء يغيّر البيانات (حجز، إلغاء، تأكيد، حذف، تعديل) تأكّد أنك جمعت المعلومات الصحيحة.",
     "- ردّ دائماً باللغة العربية وبأسلوب موجز وودود.",
     "- إذا لم تستطع تنفيذ الطلب أو طلب المستخدم موظفاً بشرياً، استخدم أداة escalate_to_human إن كانت متاحة.",
+    ctx.channel === Channel.WHATSAPP
+      ? "- هذه محادثة واتساب: لا تستخدم تنسيق ماركداون إطلاقاً. اكتب أي رابط كـ URL كامل بنص عادي بدون أقواس مربّعة ولا صيغة [نص](رابط)، حتى يظهر الرابط قابلاً للنقر."
+      : "",
   ]
     .filter(Boolean)
     .join("\n");

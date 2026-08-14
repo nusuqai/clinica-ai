@@ -37,6 +37,10 @@ export interface ConversationDetail {
   activeSessionId: string | null;
   aiEnabled: boolean;
   escalations: EscalationItem[];
+  /** Timestamp of the contact's last inbound message. On WhatsApp this anchors
+   *  the 24-hour customer-service window: free-form replies are only allowed
+   *  while `now - lastInboundAt < 24h`. Null if the contact never wrote. */
+  lastInboundAt: Date | null;
 }
 
 // Conversations of this clinic that belong to customers, not staff. Admins (and
@@ -139,6 +143,12 @@ export async function getConversationDetail(
           escalations: { orderBy: { createdAt: "desc" } },
         },
       },
+      messages: {
+        where: { senderType: SenderType.USER },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { createdAt: true },
+      },
     },
   });
   if (!c) return null;
@@ -155,6 +165,7 @@ export async function getConversationDetail(
     activeSessionId: latestSession?.id ?? null,
     aiEnabled: latestSession?.aiEnabled ?? true,
     escalations: latestSession?.escalations ?? [],
+    lastInboundAt: c.messages[0]?.createdAt ?? null,
   };
 }
 

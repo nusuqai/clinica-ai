@@ -14,6 +14,13 @@ export interface AgentContext {
   role: Role | null;
   /** The clinic (tenant) this conversation belongs to; scopes every tool. */
   clinicId: string;
+  /** The clinic's URL slug — used to build public links (e.g. the register page). */
+  clinicSlug: string;
+  /**
+   * The contact's WhatsApp number (wa_id, e.g. "201014443991"), or null on web.
+   * Used to prefill the register link so the phone matches their WhatsApp number.
+   */
+  contactPhone: string | null;
   channel: Channel;
   conversationId: string;
   sessionId: string;
@@ -36,4 +43,16 @@ export interface ToolCallRecord {
 
 export interface AgentMessageMetadata {
   toolCalls: ToolCallRecord[];
+}
+
+/**
+ * Token usage for a single agent turn, summed across the (possibly several) LLM
+ * calls a ReAct turn makes. Fed to the credit service to compute + charge cost.
+ * `model` is the model name the provider actually billed, snapshotted per turn.
+ */
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  model: string;
 }

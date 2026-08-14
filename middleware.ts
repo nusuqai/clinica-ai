@@ -3,15 +3,20 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_ROUTES = [
   "/",
+  "/clinics",
   "/login",
   "/register",
   "/forgot-password",
   "/verify-otp",
   "/reset-password",
 ];
+
+// A clinic's public surface: its landing page and its own login/register. Deeper
+// routes (/clinic/{slug}/admin|doctor|dashboard/...) stay authenticated.
+const PUBLIC_CLINIC_PATH = /^\/clinic\/[^/]+(\/(login|register))?\/?$/;
 // Routes that accept unauthenticated guest requests (no Supabase session at
 // all) — the route handler itself scopes what a guest can do.
-const PUBLIC_API_ROUTES = ["/api/whatsapp/webhook", "/api/agent/chat"];
+const PUBLIC_API_ROUTES = ["/api/meta/whatsapp/webhook", "/api/agent/chat"];
 
 export async function middleware(request: NextRequest) {
   if (
@@ -49,9 +54,9 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isPublic = PUBLIC_ROUTES.some(
-    (r) => pathname === r || pathname.startsWith(r + "?"),
-  );
+  const isPublic =
+    PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "?")) ||
+    PUBLIC_CLINIC_PATH.test(pathname);
   const isPublicApi = PUBLIC_API_ROUTES.some((r) => pathname.startsWith(r));
 
   if (!user && !isPublic && !isPublicApi) {

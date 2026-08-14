@@ -31,11 +31,27 @@ export function CreateClinicForm() {
     >
       <input name="name" placeholder="اسم العيادة" required className={inputCls} />
       <input name="slug" placeholder="المعرّف (اختياري)" className={inputCls} dir="ltr" />
+
+      {/* Managing admin — the account set up as this clinic's ADMIN */}
+      <input name="adminName" placeholder="اسم مدير العيادة" required className={inputCls} />
+      <input
+        name="adminEmail"
+        type="email"
+        placeholder="بريد مدير العيادة"
+        required
+        className={inputCls}
+        dir="ltr"
+      />
+      <input name="adminPhone" placeholder="هاتف المدير (اختياري)" className={inputCls} dir="ltr" />
+
       <input name="logoUrl" placeholder="رابط الشعار (اختياري)" className={inputCls} dir="ltr" />
       <div className="flex gap-3">
         <input name="primaryColor" placeholder="#0B1F3A" className={inputCls} dir="ltr" />
         <input name="accentColor" placeholder="#00C2CB" className={inputCls} dir="ltr" />
       </div>
+      <p className="sm:col-span-2 text-xs text-muted-foreground">
+        سيتم إنشاء حساب لمدير العيادة (أو استخدام حسابه الحالي) وتعيينه مسؤولاً عن هذه العيادة.
+      </p>
       <div className="sm:col-span-2 flex items-center gap-3">
         <button
           type="submit"

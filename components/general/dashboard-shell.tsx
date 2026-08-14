@@ -33,9 +33,14 @@ export default function DashboardShell({
 
   // Nav hrefs are clinic-relative; prefix them with this clinic's base path.
   // The "/" home link (back to the public site) is left absolute.
+  const prefix = (href: string) => (href === "/" ? "/" : `${basePath}${href}`);
   const navItems = navConfig[role].map((item) => ({
     ...item,
-    href: item.href === "/" ? "/" : `${basePath}${item.href}`,
+    href: prefix(item.href),
+    children: item.children?.map((child) => ({
+      ...child,
+      href: prefix(child.href),
+    })),
   }));
   const { label: roleLabel, pageTitle } = roleMeta[role];
 

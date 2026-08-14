@@ -30,6 +30,9 @@ interface Props {
   onClose: () => void;
   /** Where the "view my appointments" success link points. */
   appointmentsHref?: string;
+  /** Auth links for the "sign in to continue" state (clinic-scoped when set). */
+  loginHref?: string;
+  registerHref?: string;
 }
 
 function formatTime(iso: string) {
@@ -50,6 +53,8 @@ export function BookAppointmentModal({
   isPatient,
   onClose,
   appointmentsHref = "/",
+  loginHref = "/login",
+  registerHref = "/register",
 }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const needsAuth = !isAuthenticated || !isPatient;
@@ -208,13 +213,13 @@ export function BookAppointmentModal({
               </div>
               <div className="flex w-full flex-col gap-2">
                 <Link
-                  href="/login"
+                  href={loginHref}
                   className="block w-full rounded-xl bg-primary py-3 text-center font-medium text-white transition-opacity hover:opacity-90"
                 >
                   تسجيل الدخول
                 </Link>
                 <Link
-                  href="/register"
+                  href={registerHref}
                   className="block w-full rounded-xl border border-border py-3 text-center font-medium text-text transition-colors hover:bg-muted"
                 >
                   إنشاء حساب جديد

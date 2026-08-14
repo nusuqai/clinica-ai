@@ -1,10 +1,10 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, SenderType, type Role } from "@prisma/client";
-import { DEFAULT_CLINIC_ID } from "@/lib/tenant";
-import { sendTextMessage } from "@/lib/evolution";
-import type { UnsupportedMediaType } from "@/lib/whatsapp-inbound";
-import { startTypingIndicator } from "./whatsappTyping";
+import { sendTextMessage, WhatsAppApiError } from "@/lib/meta/whatsapp";
+import type { WhatsAppCredentials } from "@/lib/meta/whatsapp";
+import type { UnsupportedMediaType } from "@/lib/meta/whatsapp-inbound";
+import { showTypingIndicator } from "./whatsappTyping";
 import {
   runAgentStream,
   runAgentToText,
@@ -15,7 +15,6 @@ import type { AgentStreamEvent } from "@/agent";
 import type { ToolCallRecord } from "@/agent/types";
 import {
   getOrCreateWebConversation,
-  getOrCreateGuestWebConversation,
   resolveActiveSession,
   getSessionMessages,
   persistUserMessage,
@@ -23,6 +22,13 @@ import {
   isSessionAiEnabled,
   type SessionMessage,
 } from "./agentSession";
+import {
+  getClinicAiStatus,
+  chargeUsage,
+  isDuplicateChargeError,
+  ensureOpenEscalation,
+} from "./aiCredit";
+import type { TokenUsage } from "@/agent/types";
 
 const FALLBACK_REPLY = "تم تنفيذ طلبك.";
 
@@ -34,12 +40,86 @@ const unsupportedReply = (noun: string) =>
  *  so the notice is repeated at most once per window. */
 const UNSUPPORTED_NOTICE_COOLDOWN_MS = 60_000;
 
+/**
+ * Sends a reply over the Cloud API without letting a delivery failure escape.
+ *
+ * The reply is already persisted, and the admin inbox offers a retry, so
+ * throwing would only make the webhook treat an already-handled message as
+ * unprocessed and record the inbound text a second time. A closed 24-hour
+ * window (code 131047) is the expected failure — free-form text can't reach a
+ * contact who's been silent, and an approved template is the only option.
+ */
+async function deliverReply(
+  phone: string,
+  reply: string,
+  creds: WhatsAppCredentials,
+): Promise<void> {
+  try {
+    await sendTextMessage(phone, reply, creds);
+  } catch (err) {
+    if (err instanceof WhatsAppApiError && err.isOutsideServiceWindow) {
+      console.error(
+        `[whatsapp] reply not delivered to ${phone}: the 24-hour service window has closed — only an approved template can reach this contact`,
+      );
+      return;
+    }
+    console.error(`[whatsapp] reply not delivered to ${phone}:`, err);
+  }
+}
+
 function toPrior(messages: SessionMessage[]): PriorMessage[] {
   return messages.map((m) => ({
     senderType: m.senderType,
     content: m.content,
     toolCalls: m.metadata?.toolCalls,
   }));
+}
+
+/**
+ * The clinic-level gate, checked after the per-session `isSessionAiEnabled`
+ * pause and before running the agent. Returns true (agent must NOT reply) when
+ * the clinic has turned its AI off or has run out of credit; in both cases the
+ * already-persisted user message is surfaced to a human via an escalation.
+ */
+async function clinicGateBlocks(
+  clinicId: string,
+  conversationId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const status = await getClinicAiStatus(clinicId);
+  if (!status.aiEnabled) {
+    await ensureOpenEscalation(conversationId, sessionId, "clinic_disabled");
+    return true;
+  }
+  if (!status.sufficient) {
+    await ensureOpenEscalation(
+      conversationId,
+      sessionId,
+      "insufficient_credit",
+    );
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Meters the cost of a reply against the clinic balance. Kept off the reply's
+ * critical path: a duplicate charge (webhook redelivery) is expected and
+ * swallowed, and any other failure is logged — never allowed to crash delivery
+ * of an already-sent reply.
+ */
+async function chargeReply(args: {
+  clinicId: string;
+  sessionId: string | null;
+  messageId: string | null;
+  usage: TokenUsage;
+}): Promise<void> {
+  try {
+    await chargeUsage(args);
+  } catch (err) {
+    if (isDuplicateChargeError(err)) return;
+    console.error("[aiCredit] failed to charge usage", err);
+  }
 }
 
 /**
@@ -54,7 +134,12 @@ export async function* streamWebAgent(
   const membership = await prisma.clinicMember.findFirst({
     where: { userId, clinic: { isActive: true } },
     orderBy: { createdAt: "asc" },
-    select: { role: true, clinicId: true, user: { select: { fullName: true } } },
+    select: {
+      role: true,
+      clinicId: true,
+      clinic: { select: { slug: true } },
+      user: { select: { fullName: true } },
+    },
   });
   if (!membership) throw new Error("No clinic membership for user");
 
@@ -70,12 +155,19 @@ export async function* streamWebAgent(
     return;
   }
 
+  if (await clinicGateBlocks(membership.clinicId, conversationId, sessionId)) {
+    yield { type: "handoff" };
+    return;
+  }
+
   const prior = await getSessionMessages(sessionId);
 
   const ctx: AgentContext = {
     actorId: userId,
     role: membership.role,
     clinicId: membership.clinicId,
+    clinicSlug: membership.clinic.slug,
+    contactPhone: null,
     channel: Channel.WEB,
     conversationId,
     sessionId,
@@ -84,16 +176,18 @@ export async function* streamWebAgent(
 
   let finalText = "";
   let toolCalls: ToolCallRecord[] = [];
+  let usage: TokenUsage | null = null;
 
   for await (const ev of runAgentStream(ctx, toPrior(prior))) {
     if (ev.type === "done") {
       finalText = ev.text;
       toolCalls = ev.toolCalls;
+      usage = ev.usage;
     }
     yield ev;
   }
 
-  await persistAgentMessage(
+  const agentMsg = await persistAgentMessage(
     conversationId,
     sessionId,
     finalText || FALLBACK_REPLY,
@@ -101,63 +195,15 @@ export async function* streamWebAgent(
       toolCalls,
     },
   );
-}
 
-/**
- * Web channel, no account: mirrors the WhatsApp "unknown contact" flow —
- * `role: null` limits the agent to `commonTools()` (info only, no booking).
- * `conversationId` comes from the browser (localStorage), reused across
- * messages if it's still a valid, unclaimed guest conversation; a fresh one
- * is created otherwise and reported back via an `init` event so the browser
- * can remember it.
- */
-export async function* streamGuestWebAgent(
-  conversationId: string | null,
-  userText: string,
-): AsyncGenerator<AgentStreamEvent | { type: "init"; conversationId: string }> {
-  const resolvedConversationId = await getOrCreateGuestWebConversation(
-    conversationId,
-    DEFAULT_CLINIC_ID,
-  );
-  yield { type: "init", conversationId: resolvedConversationId };
-
-  const sessionId = await resolveActiveSession(resolvedConversationId);
-  await persistUserMessage(resolvedConversationId, sessionId, userText, null);
-
-  if (!(await isSessionAiEnabled(sessionId))) {
-    yield { type: "handoff" };
-    return;
+  if (usage) {
+    await chargeReply({
+      clinicId: membership.clinicId,
+      sessionId,
+      messageId: agentMsg.id,
+      usage,
+    });
   }
-
-  const prior = await getSessionMessages(sessionId);
-
-  const ctx: AgentContext = {
-    actorId: null,
-    role: null,
-    clinicId: DEFAULT_CLINIC_ID,
-    channel: Channel.WEB,
-    conversationId: resolvedConversationId,
-    sessionId,
-    actorName: "زائر",
-  };
-
-  let finalText = "";
-  let toolCalls: ToolCallRecord[] = [];
-
-  for await (const ev of runAgentStream(ctx, toPrior(prior))) {
-    if (ev.type === "done") {
-      finalText = ev.text;
-      toolCalls = ev.toolCalls;
-    }
-    yield ev;
-  }
-
-  await persistAgentMessage(
-    resolvedConversationId,
-    sessionId,
-    finalText || FALLBACK_REPLY,
-    { toolCalls },
-  );
 }
 
 /**
@@ -172,6 +218,7 @@ export async function handleUnsupportedWhatsAppMessage(
   conversationId: string,
   phone: string,
   media: UnsupportedMediaType,
+  creds: WhatsAppCredentials,
 ): Promise<void> {
   const profile = await prisma.profile.findUnique({
     where: { phone },
@@ -201,7 +248,7 @@ export async function handleUnsupportedWhatsAppMessage(
 
   const reply = unsupportedReply(media.noun);
   await persistAgentMessage(conversationId, sessionId, reply, null);
-  await sendTextMessage(phone, reply);
+  await deliverReply(phone, reply, creds);
 }
 
 /**
@@ -213,6 +260,9 @@ export async function handleWhatsAppMessage(
   conversationId: string,
   phone: string,
   userText: string,
+  /** Meta message id — enables read receipts and the typing indicator. */
+  messageId: string,
+  creds: WhatsAppCredentials,
 ): Promise<void> {
   const profile = await prisma.profile.findUnique({
     where: { phone },
@@ -237,18 +287,29 @@ export async function handleWhatsAppMessage(
 
   if (!(await isSessionAiEnabled(sessionId))) return;
 
-  const prior = await getSessionMessages(sessionId);
-
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { whatsappName: true, clinicId: true },
+    select: {
+      whatsappName: true,
+      clinicId: true,
+      clinic: { select: { slug: true } },
+    },
   });
+  // The conversation was just created/updated above, so this is defensive.
+  if (!conv) return;
+  const clinicId = conv.clinicId;
+
+  if (await clinicGateBlocks(clinicId, conversationId, sessionId)) return;
+
+  const prior = await getSessionMessages(sessionId);
 
   // The contact's role is per-clinic; resolve it in this conversation's clinic.
   let role: Role | null = null;
-  if (profile && conv) {
+  if (profile) {
     const m = await prisma.clinicMember.findUnique({
-      where: { userId_clinicId: { userId: profile.id, clinicId: conv.clinicId } },
+      where: {
+        userId_clinicId: { userId: profile.id, clinicId: conv.clinicId },
+      },
       select: { role: true },
     });
     role = m?.role ?? null;
@@ -257,7 +318,9 @@ export async function handleWhatsAppMessage(
   const ctx: AgentContext = {
     actorId: profile?.id ?? null,
     role,
-    clinicId: conv?.clinicId ?? DEFAULT_CLINIC_ID,
+    clinicId,
+    clinicSlug: conv.clinic.slug,
+    contactPhone: phone,
     channel: Channel.WHATSAPP,
     conversationId,
     sessionId,
@@ -265,19 +328,16 @@ export async function handleWhatsAppMessage(
   };
 
   // The agent is fully buffered (no token streaming on this channel), so show
-  // "typing…" for the whole run instead of leaving the contact in silence.
-  const stopTyping = startTypingIndicator(phone);
-  let text: string;
-  let toolCalls: ToolCallRecord[];
-  try {
-    ({ text, toolCalls } = await runAgentToText(ctx, toPrior(prior)));
-  } finally {
-    // Stop before persisting/sending so the indicator overlaps the reply as
-    // little as possible.
-    stopTyping();
-  }
+  // "typing…" instead of leaving the contact in silence. Meta clears it when
+  // the reply lands, so there is nothing to stop afterwards.
+  showTypingIndicator(messageId, creds);
+
+  const { text, toolCalls, usage } = await runAgentToText(ctx, toPrior(prior));
   const reply = text || FALLBACK_REPLY;
 
-  await persistAgentMessage(conversationId, sessionId, reply, { toolCalls });
-  await sendTextMessage(phone, reply);
+  const agentMsg = await persistAgentMessage(conversationId, sessionId, reply, {
+    toolCalls,
+  });
+  await deliverReply(phone, reply, creds);
+  await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage });
 }
