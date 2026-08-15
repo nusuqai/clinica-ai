@@ -37,7 +37,9 @@ export function useRealtimeMessages(
           table: "messages",
         },
         (payload) => {
-          callbackRef.current(payload.new as unknown as RealtimeMessageRow);
+          const row = payload.new as unknown as RealtimeMessageRow;
+          if (row.conversationId !== conversationId) return;
+          callbackRef.current(row);
         },
       )
       .subscribe();
@@ -46,7 +48,6 @@ export function useRealtimeMessages(
     };
   }, [conversationId]);
 }
-
 /** Raw shape of an `escalations` row as delivered by Supabase Realtime. */
 export interface RealtimeEscalationRow {
   id: string;
@@ -92,9 +93,14 @@ export function useRealtimeEscalations(
   }, []);
 }
 
-export function useRealtimeConversations(onUpdate: () => void) {
-  const callbackRef = useRef(onUpdate);
-  callbackRef.current = onUpdate;
+export function useRealtimeConversations(
+  onNewMessage: (row: RealtimeMessageRow) => void,
+  onConversationChange: () => void,
+) {
+  const messageRef = useRef(onNewMessage);
+  messageRef.current = onNewMessage;
+  const conversationRef = useRef(onConversationChange);
+  conversationRef.current = onConversationChange;
 
   useEffect(() => {
     const supabase = createClient();
@@ -103,12 +109,14 @@ export function useRealtimeConversations(onUpdate: () => void) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "conversations" },
-        () => callbackRef.current(),
+        () => conversationRef.current(),
       )
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
-        () => callbackRef.current(),
+        (payload) => {
+          messageRef.current(payload.new as unknown as RealtimeMessageRow);
+        },
       )
       .subscribe();
     return () => {

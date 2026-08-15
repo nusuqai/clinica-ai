@@ -182,11 +182,75 @@ export default function ChatInbox({
     startListTransition(() => router.refresh());
   }, [router]);
 
-  useRealtimeConversations(refreshConversations);
-  useRealtimeMessages(activeId, () => {
-    router.refresh();
-  });
+  const handleRealtimeMessage = useCallback(
+    (row: RealtimeMessageRow) => {
+      // Reconcile with this admin's own optimistic bubble, whichever arrives
+      // first — this realtime event or deliver()'s own response. Matched by
+      // conversation + content since the row doesn't carry the client id;
+      // fine for the common case of one in-flight admin send at a time.
+      if (row.senderType === SenderType.ADMIN) {
+        setPending((prev) => {
+          const match = prev.find(
+            (p) =>
+              p.conversationId === row.conversationId &&
+              !p.serverId &&
+              p.content === row.content,
+          );
+          if (!match) return prev;
+          return prev.map((p) =>
+            p.clientId === match.clientId
+              ? { ...p, serverId: row.id, status: "sent" as const }
+              : p,
+          );
+        });
+      }
 
+      // Append to the thread only if it's the open conversation.
+      if (row.conversationId === activeId) {
+        setMessages((prev) =>
+          prev.some((m) => m.id === row.id)
+            ? prev
+            : [
+                ...prev,
+                {
+                  id: row.id,
+                  content: row.content,
+                  senderType: row.senderType,
+                  sessionId: row.sessionId,
+                  createdAt: new Date(row.createdAt),
+                  isRead: row.isRead,
+                },
+              ],
+        );
+      }
+
+      // Patch the sidebar in place — preview, timestamp, unread, order.
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === row.conversationId);
+        if (idx === -1) {
+          // Unknown conversation (e.g. a brand-new contact) — no summary
+          // fields to patch from a bare message row, fall back once.
+          refreshConversations();
+          return prev;
+        }
+        const updated: ConversationSummary = {
+          ...prev[idx],
+          lastMessage: row.content,
+          lastMessageAt: new Date(row.createdAt),
+          unreadCount:
+            row.senderType === SenderType.USER &&
+            row.conversationId !== activeId
+              ? prev[idx].unreadCount + 1
+              : prev[idx].unreadCount,
+        };
+        const rest = prev.filter((_, i) => i !== idx);
+        return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
+      });
+    },
+    [activeId, refreshConversations],
+  );
+
+  useRealtimeConversations(handleRealtimeMessage, refreshConversations);
   // EscalationProvider owns the single realtime subscription for escalations
   // (a second subscribed channel with the same name crashes the realtime
   // client) — react to its event counter instead of subscribing again here.
@@ -524,7 +588,8 @@ export default function ChatInbox({
                 const showDivider =
                   !!msg.sessionId && msg.sessionId !== prev?.sessionId;
                 const isOutgoing =
-                  msg.senderType === SenderType.ADMIN || msg.senderType === SenderType.AGENT;
+                  msg.senderType === SenderType.ADMIN ||
+                  msg.senderType === SenderType.AGENT;
                 const isAgent = msg.senderType === SenderType.AGENT;
                 const status = msg.pending?.status;
                 const isFailed =
@@ -591,9 +656,7 @@ export default function ChatInbox({
                                 : "لم يتم حفظ الرسالة"}
                             </span>
                             <button
-                              onClick={() =>
-                                handleRetry(msg.pending!.clientId)
-                              }
+                              onClick={() => handleRetry(msg.pending!.clientId)}
                               className="inline-flex items-center gap-1 font-medium underline hover:no-underline"
                             >
                               <RotateCw className="w-3 h-3" />
@@ -633,8 +696,9 @@ export default function ChatInbox({
                   <div className="flex items-start gap-2">
                     <Clock className="w-4 h-4 flex-shrink-0 mt-0.5" />
                     <span>
-                      انتهت نافذة الـ24 ساعة منذ آخر رسالة من العميل. لا يمكن إرسال
-                      رسالة نصية حرة — أرسل قالبًا معتمدًا من ميتا بدلاً من ذلك.
+                      انتهت نافذة الـ24 ساعة منذ آخر رسالة من العميل. لا يمكن
+                      إرسال رسالة نصية حرة — أرسل قالبًا معتمدًا من ميتا بدلاً
+                      من ذلك.
                     </span>
                   </div>
                   <button
