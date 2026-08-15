@@ -2,12 +2,15 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { Search, X } from "lucide-react";
+import { Search, X, Calendar, Clock, Stethoscope, MapPin, Phone, User, StickyNote } from "lucide-react";
+import { toast } from "sonner";
 import { AppointmentStatus } from "@prisma/client";
 import { updateAppointmentStatusAction } from "@/server/actions/admin";
 import type { AdminAppointment } from "@/server/services/appointments";
 import { canTransition } from "@/lib/appointment-transitions";
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
+import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import Modal from "@/components/admin/modal";
 import BoardColumn from "./board-column";
 
@@ -41,7 +44,7 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
   const [appointments, setAppointments] = useState(initial);
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [detailsAppt, setDetailsAppt] = useState<AdminAppointment | null>(null);
   const [, startTransition] = useTransition();
 
   const [doctorFilter, setDoctorFilter] = useState("");
@@ -91,12 +94,12 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
   }
 
   function commitStatus(id: string, previousStatus: AppointmentStatus, status: AppointmentStatus, reason?: string) {
-    setError(null);
     startTransition(async () => {
       const res = await updateAppointmentStatusAction(id, status, reason);
       if (res?.error) {
-        setError(res.error);
+        // Revert the optimistic move and surface the validation error.
         applyStatus(id, previousStatus);
+        toast.error(res.error);
       }
     });
   }
@@ -110,7 +113,12 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
 
     const newStatus = over.id as AppointmentStatus;
     if (newStatus === appointment.status) return;
-    if (!canTransition(appointment.status, newStatus)) return;
+    if (!canTransition(appointment.status, newStatus)) {
+      toast.error(
+        `لا يمكن نقل الموعد من "${APPOINTMENT_STATUS_LABELS[appointment.status]}" إلى "${APPOINTMENT_STATUS_LABELS[newStatus]}".`,
+      );
+      return;
+    }
 
     if (newStatus === AppointmentStatus.CANCELLED) {
       setPendingCancelId(appointment.id);
@@ -181,10 +189,6 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
         )}
       </div>
 
-      {error && (
-        <p className="text-sm text-red-600 font-sans mb-3">{error}</p>
-      )}
-
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-4">
           {STATUS_ORDER.map((status) => (
@@ -193,6 +197,7 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
               status={status}
               label={APPOINTMENT_STATUS_LABELS[status]}
               appointments={columns[status]}
+              onOpenDetails={setDetailsAppt}
             />
           ))}
         </div>
@@ -238,6 +243,90 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
           </div>
         </div>
       </Modal>
+
+      <Modal
+        open={detailsAppt !== null}
+        onClose={() => setDetailsAppt(null)}
+        title="تفاصيل الموعد"
+        width="max-w-md"
+      >
+        {detailsAppt && (
+          <div className="space-y-4 font-sans">
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-semibold text-foreground">
+                {detailsAppt.patient.fullName}
+              </span>
+              <AppointmentStatusBadge status={detailsAppt.status} />
+            </div>
+
+            <div className="space-y-3 text-sm">
+              <DetailRow icon={User} label="المريض">
+                {detailsAppt.patient.fullName}
+              </DetailRow>
+              {detailsAppt.patient.phone && (
+                <DetailRow icon={Phone} label="هاتف المريض">
+                  <span dir="ltr">{detailsAppt.patient.phone}</span>
+                </DetailRow>
+              )}
+              <DetailRow icon={Stethoscope} label="الطبيب">
+                {detailsAppt.doctor.profile.fullName}
+                {detailsAppt.doctor.specialty ? ` · ${detailsAppt.doctor.specialty}` : ""}
+              </DetailRow>
+              <DetailRow icon={MapPin} label="الفرع">
+                {detailsAppt.branch?.name ?? "—"}
+              </DetailRow>
+              <DetailRow icon={Calendar} label="التاريخ">
+                {formatSlotDate(detailsAppt.slot.date)}
+              </DetailRow>
+              <DetailRow icon={Clock} label="الوقت">
+                <span dir="ltr">
+                  {formatSlotTime(detailsAppt.slot.startTime)} – {formatSlotTime(detailsAppt.slot.endTime)}
+                </span>
+              </DetailRow>
+              {detailsAppt.patientNotes && (
+                <DetailRow icon={StickyNote} label="ملاحظات المريض">
+                  {detailsAppt.patientNotes}
+                </DetailRow>
+              )}
+              {detailsAppt.doctorNotes && (
+                <DetailRow icon={StickyNote} label="ملاحظات الطبيب">
+                  {detailsAppt.doctorNotes}
+                </DetailRow>
+              )}
+              {detailsAppt.cancellationReason && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm">
+                  <span className="font-medium">سبب الإلغاء: </span>
+                  {detailsAppt.cancellationReason}
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-muted-foreground pt-2 border-t border-border">
+              تم الحجز في {formatSlotDate(detailsAppt.createdAt)}
+            </p>
+          </div>
+        )}
+      </Modal>
     </>
+  );
+}
+
+function DetailRow({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <Icon className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-foreground">{children}</p>
+      </div>
+    </div>
   );
 }
