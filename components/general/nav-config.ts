@@ -16,6 +16,9 @@ import {
   BookOpen,
   Bot,
   Wallet,
+  MapPin,
+  Building2,
+  Tags,
 } from "lucide-react";
 import type { NavItem } from "./sidebar";
 
@@ -39,6 +42,9 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
     { href: "/admin", label: "الرئيسية", icon: LayoutDashboard },
     { href: "/admin/users", label: "المستخدمون", icon: Users },
     { href: "/admin/doctors", label: "الأطباء", icon: Stethoscope },
+    { href: "/admin/specialties", label: "التخصصات", icon: Tags },
+    { href: "/admin/branches", label: "الفروع", icon: MapPin },
+    { href: "/admin/settings", label: "معلومات العيادة", icon: Building2 },
     { href: "/admin/appointments", label: "المواعيد", icon: CalendarDays },
     { href: "/admin/messages", label: "الرسائل", icon: MessageSquare },
     {

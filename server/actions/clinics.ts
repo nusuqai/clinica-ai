@@ -124,6 +124,10 @@ export async function approveClinicRequest(requestId: string) {
       const c = await tx.clinic.create({
         data: { name: request.requestedClinicName, slug },
       });
+      // Every clinic must have at least one branch.
+      await tx.branch.create({
+        data: { clinicId: c.id, name: "الفرع الرئيسي", isMain: true },
+      });
       await tx.clinicMember.upsert({
         where: { userId_clinicId: { userId, clinicId: c.id } },
         update: { role: Role.ADMIN },
@@ -209,6 +213,10 @@ export async function createClinic(formData: FormData) {
           primaryColor: (formData.get("primaryColor") as string)?.trim() || null,
           accentColor: (formData.get("accentColor") as string)?.trim() || null,
         },
+      });
+      // Every clinic must have at least one branch.
+      await tx.branch.create({
+        data: { clinicId: c.id, name: "الفرع الرئيسي", isMain: true },
       });
       await tx.clinicMember.upsert({
         where: { userId_clinicId: { userId, clinicId: c.id } },

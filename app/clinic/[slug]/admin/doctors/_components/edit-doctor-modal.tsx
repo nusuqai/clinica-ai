@@ -5,12 +5,20 @@ import { Pencil } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import { updateDoctorAction } from "@/server/actions/admin";
 import type { DoctorWithProfile } from "@/server/services/doctors";
+import type { BranchOption } from "./add-doctor-modal";
+import SpecialtySelect, { type SpecialtyOption } from "./specialty-select";
 
 interface EditDoctorModalProps {
   doctor: DoctorWithProfile;
+  branches: BranchOption[];
+  specialties: SpecialtyOption[];
 }
 
-export default function EditDoctorModal({ doctor }: EditDoctorModalProps) {
+export default function EditDoctorModal({
+  doctor,
+  branches,
+  specialties,
+}: EditDoctorModalProps) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -63,16 +71,37 @@ export default function EditDoctorModal({ doctor }: EditDoctorModalProps) {
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
+            <div>
+              <SpecialtySelect
+                specialties={specialties}
+                defaultSpecialtyId={doctor.specialtyId}
+              />
+            </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">التخصص</label>
+              <label className="text-sm font-medium text-foreground font-sans">سنوات الخبرة</label>
               <input
-                name="specialty"
-                defaultValue={doctor.specialty}
+                name="yearsOfExperience"
+                type="number"
+                min={0}
+                dir="ltr"
+                defaultValue={doctor.yearsOfExperience?.toString() ?? ""}
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">رسوم الاستشارة</label>
+              <label className="text-sm font-medium text-foreground font-sans">سعر الكشف</label>
+              <input
+                name="examinationFee"
+                type="number"
+                min={0}
+                step="0.01"
+                dir="ltr"
+                defaultValue={doctor.examinationFee?.toString() ?? ""}
+                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground font-sans">سعر الاستشارة</label>
               <input
                 name="consultationFee"
                 type="number"
@@ -83,6 +112,53 @@ export default function EditDoctorModal({ doctor }: EditDoctorModalProps) {
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
+          </div>
+
+          {/* Flags */}
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground font-sans">
+              <input
+                type="checkbox"
+                name="requiresAdvanceBooking"
+                defaultChecked={doctor.requiresAdvanceBooking}
+              />
+              يحتاج حجزاً مسبقاً
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground font-sans">
+              <input
+                type="checkbox"
+                name="acceptsChildren"
+                defaultChecked={doctor.acceptsChildren}
+              />
+              يكشف على الأطفال
+            </label>
+          </div>
+
+          {/* Branches */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground font-sans">فروع العمل</label>
+            {branches.length === 0 ? (
+              <p className="text-xs text-muted-foreground font-sans">
+                لا توجد فروع. أضف فرعاً من صفحة الفروع أولاً.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                {branches.map((b) => (
+                  <label
+                    key={b.id}
+                    className="flex items-center gap-2 text-sm font-sans border border-border rounded-xl px-3 py-2 cursor-pointer hover:bg-muted"
+                  >
+                    <input
+                      type="checkbox"
+                      name="branchIds"
+                      value={b.id}
+                      defaultChecked={doctor.branchIds.includes(b.id)}
+                    />
+                    {b.name}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">

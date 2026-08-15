@@ -32,14 +32,14 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           where: { id: res.data.id },
           include: {
             slot: { select: { date: true, startTime: true, endTime: true } },
-            doctor: { select: { specialty: true, fullName: true } },
+            doctor: { select: { specialty: { select: { name: true } }, fullName: true } },
           },
         });
         return {
           appointmentId: res.data.id,
           status: AppointmentStatus.PENDING,
           doctorName: appt?.doctor.fullName,
-          specialty: appt?.doctor.specialty,
+          specialty: appt?.doctor.specialty?.name ?? null,
           date: appt ? dateStr(appt.slot.date) : undefined,
           time: appt ? timeStr(appt.slot.startTime) : undefined,
         };

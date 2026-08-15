@@ -70,8 +70,9 @@ export default function DashboardShell({
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
 
-      {/* AI assistant — available to every role */}
-      <ChatBubble />
+      {/* AI assistant — for patients & doctors only; hidden on the admin side
+          (admins manage conversations from the Messages inbox instead). */}
+      {role !== "admin" && <ChatBubble />}
     </div>
   );
 

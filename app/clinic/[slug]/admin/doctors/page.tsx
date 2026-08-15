@@ -2,6 +2,8 @@ import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { requireActiveMember } from "@/lib/auth";
 import { listDoctors } from "@/server/services/doctors";
+import { listBranches } from "@/server/services/branches";
+import { listSpecialtyOptions } from "@/server/services/specialties";
 import PageHeader from "@/components/admin/page-header";
 import AddDoctorModal from "./_components/add-doctor-modal";
 import EditDoctorModal from "./_components/edit-doctor-modal";
@@ -9,14 +11,19 @@ import DoctorRowActions from "./_components/doctor-row-actions";
 
 export default async function AdminDoctorsPage() {
   const { clinic } = await requireActiveMember(["ADMIN"]);
-  const doctors = await listDoctors(clinic.id);
+  const [doctors, branchRows, specialties] = await Promise.all([
+    listDoctors(clinic.id),
+    listBranches(clinic.id, { activeOnly: true }),
+    listSpecialtyOptions(clinic.id),
+  ]);
+  const branches = branchRows.map((b) => ({ id: b.id, name: b.name }));
 
   return (
     <div>
       <PageHeader
         title="الأطباء"
         subtitle={`${doctors.length} طبيب مسجّل`}
-        action={<AddDoctorModal />}
+        action={<AddDoctorModal branches={branches} specialties={specialties} />}
       />
 
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -71,7 +78,11 @@ export default async function AdminDoctorsPage() {
                       >
                         <ExternalLink className="w-4 h-4" />
                       </Link>
-                      <EditDoctorModal doctor={doctor} />
+                      <EditDoctorModal
+                        doctor={doctor}
+                        branches={branches}
+                        specialties={specialties}
+                      />
                       <DoctorRowActions doctorId={doctor.id} isActive={doctor.isActive} />
                     </div>
                   </td>

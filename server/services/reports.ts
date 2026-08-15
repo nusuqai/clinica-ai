@@ -88,7 +88,7 @@ export async function getDoctorLoad(clinicId: string): Promise<DoctorLoad[]> {
     select: {
       id: true,
       fullName: true,
-      specialty: true,
+      specialty: { select: { name: true } },
       _count: { select: { appointments: true } },
     },
     orderBy: { appointments: { _count: "desc" } },
@@ -98,7 +98,7 @@ export async function getDoctorLoad(clinicId: string): Promise<DoctorLoad[]> {
   return doctors.map((d) => ({
     doctorId: d.id,
     doctorName: d.fullName,
-    specialty: d.specialty,
+    specialty: d.specialty?.name ?? "",
     appointmentCount: d._count.appointments,
   }));
 }
