@@ -2,11 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { updateMyProfileAction } from "@/server/actions/doctor";
+import SpecialtySelect, {
+  type SpecialtyOption,
+} from "@/app/clinic/[slug]/admin/doctors/_components/specialty-select";
 
 interface ProfileFormProps {
   fullName: string;
   phone: string | null;
-  specialty: string;
+  specialtyId: string | null;
+  specialties: SpecialtyOption[];
   bio: string | null;
   consultationFee: string | null;
 }
@@ -14,7 +18,8 @@ interface ProfileFormProps {
 export default function ProfileForm({
   fullName,
   phone,
-  specialty,
+  specialtyId,
+  specialties,
   bio,
   consultationFee,
 }: ProfileFormProps) {
@@ -80,18 +85,8 @@ export default function ProfileForm({
           />
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground font-sans">
-            التخصص *
-          </label>
-          <input
-            name="specialty"
-            type="text"
-            required
-            defaultValue={specialty}
-            placeholder="طب عام، قلب، أسنان..."
-            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
+        <div>
+          <SpecialtySelect specialties={specialties} defaultSpecialtyId={specialtyId} />
         </div>
 
         <div className="space-y-1.5">

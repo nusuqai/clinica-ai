@@ -4,8 +4,20 @@ import { useState, useTransition, useRef } from "react";
 import { UserPlus } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import { createDoctorAction } from "@/server/actions/admin";
+import SpecialtySelect, { type SpecialtyOption } from "./specialty-select";
 
-export default function AddDoctorModal() {
+export interface BranchOption {
+  id: string;
+  name: string;
+}
+
+export default function AddDoctorModal({
+  branches,
+  specialties,
+}: {
+  branches: BranchOption[];
+  specialties: SpecialtyOption[];
+}) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [withAccount, setWithAccount] = useState(false);
@@ -110,19 +122,40 @@ export default function AddDoctorModal() {
             )}
 
             {/* Specialty */}
+            <div>
+              <SpecialtySelect specialties={specialties} required />
+            </div>
+
+            {/* Years of experience */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">التخصص *</label>
+              <label className="text-sm font-medium text-foreground font-sans">سنوات الخبرة (اختياري)</label>
               <input
-                name="specialty"
-                required
-                placeholder="طب الأسرة"
+                name="yearsOfExperience"
+                type="number"
+                min={0}
+                dir="ltr"
+                placeholder="10"
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
 
-            {/* Consultation fee */}
+            {/* Examination fee */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">رسوم الاستشارة (اختياري)</label>
+              <label className="text-sm font-medium text-foreground font-sans">سعر الكشف (اختياري)</label>
+              <input
+                name="examinationFee"
+                type="number"
+                min={0}
+                step="0.01"
+                dir="ltr"
+                placeholder="200.00"
+                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+
+            {/* Consultation (follow-up) fee */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground font-sans">سعر الاستشارة (اختياري)</label>
               <input
                 name="consultationFee"
                 type="number"
@@ -133,6 +166,40 @@ export default function AddDoctorModal() {
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
+          </div>
+
+          {/* Flags */}
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground font-sans">
+              <input type="checkbox" name="requiresAdvanceBooking" defaultChecked />
+              يحتاج حجزاً مسبقاً
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground font-sans">
+              <input type="checkbox" name="acceptsChildren" />
+              يكشف على الأطفال
+            </label>
+          </div>
+
+          {/* Branches */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground font-sans">فروع العمل</label>
+            {branches.length === 0 ? (
+              <p className="text-xs text-muted-foreground font-sans">
+                لا توجد فروع. أضف فرعاً من صفحة الفروع أولاً.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                {branches.map((b) => (
+                  <label
+                    key={b.id}
+                    className="flex items-center gap-2 text-sm font-sans border border-border rounded-xl px-3 py-2 cursor-pointer hover:bg-muted"
+                  >
+                    <input type="checkbox" name="branchIds" value={b.id} />
+                    {b.name}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Bio */}

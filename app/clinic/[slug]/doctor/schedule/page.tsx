@@ -7,7 +7,10 @@ import {
   listDoctorSlots,
   getDoctorByProfileId,
 } from "@/server/services/doctors";
-import DoctorRulesTab from "./_components/doctor-rules-tab";
+import { listBranches } from "@/server/services/branches";
+import DoctorRulesTab, {
+  type DoctorBranchOption,
+} from "./_components/doctor-rules-tab";
 import DoctorSlotsTab from "./_components/doctor-slots-tab";
 
 const TABS = [
@@ -67,15 +70,44 @@ export default async function DoctorSchedulePage({
       </div>
 
       {/* Tab content */}
-      {activeTab === "rules" && <RulesContent doctorId={doctor.id} />}
+      {activeTab === "rules" && (
+        <RulesContent
+          doctorId={doctor.id}
+          clinicId={ctx.clinic.id}
+          branchIds={doctor.branchIds}
+        />
+      )}
       {activeTab === "slots" && <SlotsContent doctorId={doctor.id} />}
     </div>
   );
 }
 
-async function RulesContent({ doctorId }: { doctorId: string }) {
-  const rules = await listDoctorRules(doctorId);
-  return <DoctorRulesTab rules={rules} />;
+async function RulesContent({
+  doctorId,
+  clinicId,
+  branchIds,
+}: {
+  doctorId: string;
+  clinicId: string;
+  branchIds: string[];
+}) {
+  const [rules, branchRows] = await Promise.all([
+    listDoctorRules(doctorId),
+    listBranches(clinicId, { activeOnly: true }),
+  ]);
+  const branches: DoctorBranchOption[] = branchRows
+    .filter((b) => branchIds.includes(b.id))
+    .map((b) => ({
+      id: b.id,
+      name: b.name,
+      hours: b.hours.map((h) => ({
+        dayOfWeek: h.dayOfWeek,
+        isClosed: h.isClosed,
+        openTime: h.openTime,
+        closeTime: h.closeTime,
+      })),
+    }));
+  return <DoctorRulesTab rules={rules} branches={branches} />;
 }
 
 async function SlotsContent({ doctorId }: { doctorId: string }) {

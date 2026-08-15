@@ -8,6 +8,8 @@ import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as UserService from "@/server/services/users";
+import * as BranchService from "@/server/services/branches";
+import * as SpecialtyService from "@/server/services/specialties";
 import { getDashboardStats } from "@/server/services/reports";
 import type { AgentContext } from "@/agent/types";
 import { jsonTool, dateStr, timeStr } from "./shared";
@@ -28,6 +30,11 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             name: d.profile.fullName,
             specialty: d.specialty,
             isActive: d.isActive,
+            examinationFee: d.examinationFee ? Number(d.examinationFee) : null,
+            consultationFee: d.consultationFee ? Number(d.consultationFee) : null,
+            yearsOfExperience: d.yearsOfExperience,
+            acceptsChildren: d.acceptsChildren,
+            requiresAdvanceBooking: d.requiresAdvanceBooking,
             appointments: d._count.appointments,
           })),
         };
@@ -36,24 +43,44 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
     jsonTool(
       {
         name: "create_doctor_account",
-        description: "أنشئ حساب طبيب جديد بالكامل (مصادقة + ملف + سجل طبيب).",
+        description:
+          "أنشئ حساب طبيب جديد بالكامل (مصادقة + ملف + سجل طبيب). حدّد التخصص إمّا بـ specialtyId من list_specialties أو باسم تخصص جديد في specialtyName (سيُنشأ تلقائياً).",
         schema: z.object({
           email: z.string(),
           password: z.string(),
           fullName: z.string(),
           phone: z.string().nullable(),
-          specialty: z.string(),
+          specialtyId: z.string().nullable().describe("معرّف تخصص موجود"),
+          specialtyName: z.string().nullable().describe("اسم تخصص جديد (يُنشأ إن لم يوجد)"),
           bio: z.string().nullable(),
-          consultationFee: z.number().nullable(),
+          yearsOfExperience: z.number().nullable(),
+          examinationFee: z.number().nullable().describe("سعر الكشف"),
+          consultationFee: z.number().nullable().describe("سعر الاستشارة"),
+          requiresAdvanceBooking: z.boolean().nullable(),
+          acceptsChildren: z.boolean().nullable(),
+          branchIds: z.array(z.string()).nullable().describe("معرّفات فروع عمل الطبيب"),
         }),
       },
       async (input) => {
+        const spec = await SpecialtyService.resolveSpecialtyId(ctx.clinicId, {
+          specialtyId: input.specialtyId,
+          newSpecialtyName: input.specialtyName,
+        });
+        if (!spec.ok) return { error: spec.error };
         const res = await DoctorService.createDoctorAccount({
-          ...input,
+          email: input.email,
+          password: input.password,
+          fullName: input.fullName,
           clinicId: ctx.clinicId,
           phone: input.phone ?? undefined,
+          specialtyId: spec.data,
           bio: input.bio ?? undefined,
+          yearsOfExperience: input.yearsOfExperience ?? undefined,
+          examinationFee: input.examinationFee ?? undefined,
           consultationFee: input.consultationFee ?? undefined,
+          requiresAdvanceBooking: input.requiresAdvanceBooking ?? undefined,
+          acceptsChildren: input.acceptsChildren ?? undefined,
+          branchIds: input.branchIds ?? undefined,
         });
         if (!res.ok) return { error: res.error };
         return { doctorId: res.data.id, fullName: res.data.fullName };
@@ -62,22 +89,42 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
     jsonTool(
       {
         name: "update_doctor",
-        description: "حدّث بيانات طبيب.",
+        description:
+          "حدّث بيانات طبيب. لتغيير التخصص استخدم specialtyId من list_specialties أو specialtyName لتخصص جديد.",
         schema: z.object({
           doctorId: z.string(),
-          specialty: z.string().nullable(),
+          specialtyId: z.string().nullable(),
+          specialtyName: z.string().nullable(),
           bio: z.string().nullable(),
-          consultationFee: z.number().nullable(),
+          yearsOfExperience: z.number().nullable(),
+          examinationFee: z.number().nullable().describe("سعر الكشف"),
+          consultationFee: z.number().nullable().describe("سعر الاستشارة"),
+          requiresAdvanceBooking: z.boolean().nullable(),
+          acceptsChildren: z.boolean().nullable(),
           fullName: z.string().nullable(),
           phone: z.string().nullable(),
         }),
       },
       async (input) => {
+        // Only touch specialty when the caller supplied one.
+        let specialtyId: string | undefined;
+        if (input.specialtyId || input.specialtyName) {
+          const spec = await SpecialtyService.resolveSpecialtyId(ctx.clinicId, {
+            specialtyId: input.specialtyId,
+            newSpecialtyName: input.specialtyName,
+          });
+          if (!spec.ok) return { error: spec.error };
+          specialtyId = spec.data ?? undefined;
+        }
         const res = await DoctorService.updateDoctor({
-          ...input,
-          specialty: input.specialty ?? undefined,
+          doctorId: input.doctorId,
+          specialtyId,
           bio: input.bio ?? undefined,
+          yearsOfExperience: input.yearsOfExperience ?? undefined,
+          examinationFee: input.examinationFee ?? undefined,
           consultationFee: input.consultationFee ?? undefined,
+          requiresAdvanceBooking: input.requiresAdvanceBooking ?? undefined,
+          acceptsChildren: input.acceptsChildren ?? undefined,
           fullName: input.fullName ?? undefined,
           phone: input.phone ?? undefined,
         });
@@ -178,6 +225,8 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         return {
           rules: rules.map((r) => ({
             id: r.id,
+            branchId: r.branchId,
+            branchName: r.branch?.name ?? null,
             dayOfWeek: r.dayOfWeek,
             startTime: r.startTime,
             endTime: r.endTime,
@@ -191,9 +240,10 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "create_availability_rule",
         description:
-          "أنشئ قاعدة توفر أسبوعية لطبيب معيّن وولّد الفترات لها تلقائياً.",
+          "أنشئ قاعدة توفر أسبوعية لطبيب معيّن في فرع محدّد وولّد الفترات لها. يجب أن تقع الساعات ضمن ساعات عمل الفرع في ذلك اليوم، وأن يكون الطبيب يعمل في هذا الفرع.",
         schema: z.object({
           doctorId: z.string(),
+          branchId: z.string(),
           dayOfWeek: z.nativeEnum(DayOfWeek),
           startTime: z
             .string()
@@ -204,16 +254,17 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           slotDurationMin: z.number().nullable(),
         }),
       },
-      async ({ doctorId, dayOfWeek, startTime, endTime, slotDurationMin }) => {
+      async ({ doctorId, branchId, dayOfWeek, startTime, endTime, slotDurationMin }) => {
         const res = await DoctorService.createRule({
           doctorId,
+          branchId,
           dayOfWeek,
           startTime,
           endTime,
           slotDurationMin: slotDurationMin ?? undefined,
         });
         if (!res.ok) return { error: res.error };
-        return { ruleId: res.data.id, doctorId, dayOfWeek, startTime, endTime };
+        return { ruleId: res.data.id, doctorId, branchId, dayOfWeek, startTime, endTime };
       },
     ),
     jsonTool(
@@ -300,6 +351,81 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
       async ({ slotId }) => {
         const res = await DoctorService.toggleSlotBlocked(slotId);
         return res.ok ? { slotId, toggled: true } : { error: res.error };
+      },
+    ),
+    jsonTool(
+      {
+        name: "list_all_branches",
+        description: "اعرض كل فروع العيادة (بما فيها غير النشطة) مع معرّفاتها.",
+        schema: z.object({}),
+      },
+      async () => {
+        const branches = await BranchService.listBranches(ctx.clinicId);
+        return {
+          branches: branches.map((b) => ({
+            id: b.id,
+            name: b.name,
+            isMain: b.isMain,
+            isActive: b.isActive,
+            address: b.address,
+            doctors: b._count.doctors,
+          })),
+        };
+      },
+    ),
+    jsonTool(
+      {
+        name: "create_branch",
+        description:
+          "أنشئ فرعاً جديداً للعيادة. ساعات العمل والهواتف تُدار من لوحة التحكم.",
+        schema: z.object({
+          name: z.string(),
+          address: z.string().nullable(),
+          mapsUrl: z.string().nullable(),
+          hasParking: z.boolean().nullable(),
+          parkingInfo: z.string().nullable(),
+          nearestLandmark: z.string().nullable(),
+          directions: z.string().nullable(),
+        }),
+      },
+      async (input) => {
+        const res = await BranchService.createBranch({
+          clinicId: ctx.clinicId,
+          name: input.name,
+          address: input.address ?? undefined,
+          mapsUrl: input.mapsUrl ?? undefined,
+          hasParking: input.hasParking ?? undefined,
+          parkingInfo: input.parkingInfo ?? undefined,
+          nearestLandmark: input.nearestLandmark ?? undefined,
+          directions: input.directions ?? undefined,
+        });
+        return res.ok ? { branchId: res.data.id, name: input.name } : { error: res.error };
+      },
+    ),
+    jsonTool(
+      {
+        name: "create_specialty",
+        description: "أنشئ تخصصاً جديداً في العيادة (الاسم فريد لكل عيادة).",
+        schema: z.object({ name: z.string() }),
+      },
+      async ({ name }) => {
+        const res = await SpecialtyService.createSpecialty(ctx.clinicId, name);
+        return res.ok ? { specialtyId: res.data.id, name } : { error: res.error };
+      },
+    ),
+    jsonTool(
+      {
+        name: "assign_doctor_branches",
+        description:
+          "عيّن الفروع التي يعمل بها طبيب (يستبدل التعيين الحالي بالكامل).",
+        schema: z.object({
+          doctorId: z.string(),
+          branchIds: z.array(z.string()),
+        }),
+      },
+      async ({ doctorId, branchIds }) => {
+        const res = await BranchService.setDoctorBranches(doctorId, branchIds);
+        return res.ok ? { doctorId, branchIds } : { error: res.error };
       },
     ),
     jsonTool(
