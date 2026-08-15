@@ -69,16 +69,18 @@ export default function AddDoctorModal({
               />
             </div>
 
-            {/* Phone */}
+            {/* Title (rank) */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">رقم الهاتف (اختياري)</label>
-              <input
-                name="phone"
-                type="tel"
-                dir="ltr"
-                placeholder="+966512345678"
+              <label className="text-sm font-medium text-foreground font-sans">الدرجة (اختياري)</label>
+              <select
+                name="title"
+                defaultValue=""
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
+              >
+                <option value="">غير محدد</option>
+                <option value="SPECIALIST">أخصائي</option>
+                <option value="CONSULTANT">استشاري</option>
+              </select>
             </div>
 
             {/* Create login account toggle — doctors can exist without one */}
@@ -200,6 +202,28 @@ export default function AddDoctorModal({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Qualifications */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground font-sans">المؤهلات العلمية (اختياري)</label>
+            <textarea
+              name="qualifications"
+              rows={2}
+              placeholder="بكالوريوس الطب والجراحة، ماجستير..."
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          {/* Areas of sub-specialty expertise */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground font-sans">مجالات الخبرة الدقيقة (اختياري)</label>
+            <textarea
+              name="expertiseAreas"
+              rows={2}
+              placeholder="جراحة المناظير، أمراض القلب التداخلية..."
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
           </div>
 
           {/* Bio */}

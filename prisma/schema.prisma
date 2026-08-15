@@ -69,6 +69,13 @@ enum PhoneType {
   WHATSAPP
 }
 
+// Doctor's professional rank shown on their profile.
+// SPECIALIST = أخصائي, CONSULTANT = استشاري.
+enum DoctorTitle {
+  SPECIALIST
+  CONSULTANT
+}
+
 // Social-media platforms for a clinic's public accounts.
 enum SocialPlatform {
   FACEBOOK
@@ -317,6 +324,9 @@ model Doctor {
   specialtyId            String?  @db.Uuid // FK to the clinic's Specialty list
   fullName               String
   phone                  String?
+  title                  DoctorTitle? // أخصائي / استشاري
+  qualifications         String? // المؤهلات العلمية
+  expertiseAreas         String? // مجالات الخبرة الدقيقة
   bio                    String?
   yearsOfExperience      Int?
   examinationFee         Decimal? @db.Decimal(10, 2) // سعر الكشف

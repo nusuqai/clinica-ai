@@ -7,6 +7,13 @@ import { getClinicInfo } from "@/server/services/clinicInfo";
 import { listSpecialties } from "@/server/services/specialties";
 import { jsonTool, money, timeStr } from "./shared";
 
+/** Arabic label for a doctor's rank (null when unset). */
+function doctorTitleAr(title: string | null): string | null {
+  if (title === "CONSULTANT") return "استشاري";
+  if (title === "SPECIALIST") return "أخصائي";
+  return null;
+}
+
 const DAY_LABELS_AR: Record<string, string> = {
   SUN: "الأحد",
   MON: "الإثنين",
@@ -52,7 +59,10 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
           doctors: doctors.map((d) => ({
             id: d.id,
             name: d.profile.fullName,
+            title: doctorTitleAr(d.title),
             specialty: d.specialty,
+            qualifications: d.qualifications,
+            expertiseAreas: d.expertiseAreas,
             examinationFee: money(d.examinationFee),
             consultationFee: money(d.consultationFee),
             yearsOfExperience: d.yearsOfExperience,
@@ -113,8 +123,11 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
           doctors: matched.map((d) => ({
             id: d.id,
             name: d.profile.fullName,
+            title: doctorTitleAr(d.title),
             specialty: d.specialty,
             specialtyId: d.specialtyId,
+            qualifications: d.qualifications,
+            expertiseAreas: d.expertiseAreas,
             examinationFee: money(d.examinationFee),
             consultationFee: money(d.consultationFee),
             yearsOfExperience: d.yearsOfExperience,

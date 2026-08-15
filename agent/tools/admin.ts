@@ -28,7 +28,10 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           doctors: doctors.map((d) => ({
             id: d.id,
             name: d.profile.fullName,
+            title: d.title,
             specialty: d.specialty,
+            qualifications: d.qualifications,
+            expertiseAreas: d.expertiseAreas,
             isActive: d.isActive,
             examinationFee: d.examinationFee ? Number(d.examinationFee) : null,
             consultationFee: d.consultationFee ? Number(d.consultationFee) : null,
@@ -50,8 +53,14 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           password: z.string(),
           fullName: z.string(),
           phone: z.string().nullable(),
+          title: z
+            .enum(["SPECIALIST", "CONSULTANT"])
+            .nullable()
+            .describe("درجة الطبيب: SPECIALIST=أخصائي، CONSULTANT=استشاري"),
           specialtyId: z.string().nullable().describe("معرّف تخصص موجود"),
           specialtyName: z.string().nullable().describe("اسم تخصص جديد (يُنشأ إن لم يوجد)"),
+          qualifications: z.string().nullable().describe("المؤهلات العلمية"),
+          expertiseAreas: z.string().nullable().describe("مجالات الخبرة الدقيقة"),
           bio: z.string().nullable(),
           yearsOfExperience: z.number().nullable(),
           examinationFee: z.number().nullable().describe("سعر الكشف"),
@@ -73,7 +82,10 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           fullName: input.fullName,
           clinicId: ctx.clinicId,
           phone: input.phone ?? undefined,
+          title: input.title ?? undefined,
           specialtyId: spec.data,
+          qualifications: input.qualifications ?? undefined,
+          expertiseAreas: input.expertiseAreas ?? undefined,
           bio: input.bio ?? undefined,
           yearsOfExperience: input.yearsOfExperience ?? undefined,
           examinationFee: input.examinationFee ?? undefined,
@@ -93,8 +105,14 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           "حدّث بيانات طبيب. لتغيير التخصص استخدم specialtyId من list_specialties أو specialtyName لتخصص جديد.",
         schema: z.object({
           doctorId: z.string(),
+          title: z
+            .enum(["SPECIALIST", "CONSULTANT"])
+            .nullable()
+            .describe("درجة الطبيب: SPECIALIST=أخصائي، CONSULTANT=استشاري"),
           specialtyId: z.string().nullable(),
           specialtyName: z.string().nullable(),
+          qualifications: z.string().nullable().describe("المؤهلات العلمية"),
+          expertiseAreas: z.string().nullable().describe("مجالات الخبرة الدقيقة"),
           bio: z.string().nullable(),
           yearsOfExperience: z.number().nullable(),
           examinationFee: z.number().nullable().describe("سعر الكشف"),
@@ -118,7 +136,10 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         }
         const res = await DoctorService.updateDoctor({
           doctorId: input.doctorId,
+          title: input.title ?? undefined,
           specialtyId,
+          qualifications: input.qualifications ?? undefined,
+          expertiseAreas: input.expertiseAreas ?? undefined,
           bio: input.bio ?? undefined,
           yearsOfExperience: input.yearsOfExperience ?? undefined,
           examinationFee: input.examinationFee ?? undefined,

@@ -136,6 +136,11 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-2">
+              {doctor.title && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary font-sans">
+                  {doctor.title === "CONSULTANT" ? "استشاري" : "أخصائي"}
+                </span>
+              )}
               {doctor.acceptsChildren && (
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-sans">
                   يكشف على الأطفال
@@ -145,6 +150,18 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
                 {doctor.requiresAdvanceBooking ? "يحتاج حجزاً مسبقاً" : "يقبل بدون حجز مسبق"}
               </span>
             </div>
+            {doctor.qualifications && (
+              <p className="text-sm text-muted-foreground mt-2 font-sans max-w-xl">
+                <span className="font-medium text-foreground">المؤهلات العلمية: </span>
+                {doctor.qualifications}
+              </p>
+            )}
+            {doctor.expertiseAreas && (
+              <p className="text-sm text-muted-foreground mt-1 font-sans max-w-xl">
+                <span className="font-medium text-foreground">مجالات الخبرة الدقيقة: </span>
+                {doctor.expertiseAreas}
+              </p>
+            )}
             {doctor.bio && (
               <p className="text-sm text-muted-foreground mt-2 font-sans max-w-xl">{doctor.bio}</p>
             )}

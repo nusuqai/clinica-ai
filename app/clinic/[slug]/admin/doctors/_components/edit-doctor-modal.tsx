@@ -63,13 +63,16 @@ export default function EditDoctorModal({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">الهاتف</label>
-              <input
-                name="phone"
-                defaultValue={doctor.profile.phone ?? ""}
-                dir="ltr"
+              <label className="text-sm font-medium text-foreground font-sans">الدرجة</label>
+              <select
+                name="title"
+                defaultValue={doctor.title ?? ""}
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
+              >
+                <option value="">غير محدد</option>
+                <option value="SPECIALIST">أخصائي</option>
+                <option value="CONSULTANT">استشاري</option>
+              </select>
             </div>
             <div>
               <SpecialtySelect
@@ -159,6 +162,26 @@ export default function EditDoctorModal({
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground font-sans">المؤهلات العلمية</label>
+            <textarea
+              name="qualifications"
+              rows={2}
+              defaultValue={doctor.qualifications ?? ""}
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground font-sans">مجالات الخبرة الدقيقة</label>
+            <textarea
+              name="expertiseAreas"
+              rows={2}
+              defaultValue={doctor.expertiseAreas ?? ""}
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
           </div>
 
           <div className="space-y-1.5">

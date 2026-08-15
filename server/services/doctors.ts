@@ -3,7 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, err, type Result } from "./_result";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
-import { AppointmentStatus, Role, type Doctor, type DayOfWeek } from "@prisma/client";
+import {
+  AppointmentStatus,
+  Role,
+  type Doctor,
+  type DayOfWeek,
+  type DoctorTitle,
+} from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,6 +65,9 @@ export interface CreateDoctorInput {
   clinicId: string;
   fullName: string;
   phone?: string;
+  title?: DoctorTitle | null;
+  qualifications?: string;
+  expertiseAreas?: string;
   specialtyId?: string | null;
   bio?: string;
   yearsOfExperience?: number;
@@ -76,6 +85,9 @@ export interface CreateDoctorAccountInput extends CreateDoctorInput {
 
 export interface UpdateDoctorInput {
   doctorId: string;
+  title?: DoctorTitle | null;
+  qualifications?: string | null;
+  expertiseAreas?: string | null;
   specialtyId?: string | null;
   bio?: string;
   yearsOfExperience?: number | null;
@@ -236,6 +248,9 @@ export async function createDoctor(
         clinicId: input.clinicId,
         fullName: input.fullName,
         phone: input.phone || null,
+        title: input.title ?? null,
+        qualifications: input.qualifications || null,
+        expertiseAreas: input.expertiseAreas || null,
         specialtyId: input.specialtyId ?? null,
         bio: input.bio ?? null,
         yearsOfExperience: input.yearsOfExperience ?? null,
@@ -318,6 +333,9 @@ export async function createDoctorAccount(
           profileId: userId,
           fullName: input.fullName,
           phone: input.phone || null,
+          title: input.title ?? null,
+          qualifications: input.qualifications || null,
+          expertiseAreas: input.expertiseAreas || null,
           specialtyId: input.specialtyId ?? null,
           bio: input.bio ?? null,
           yearsOfExperience: input.yearsOfExperience ?? null,
@@ -394,6 +412,13 @@ export async function updateDoctor(
         data: {
           ...(input.fullName !== undefined && { fullName: input.fullName }),
           ...(input.phone !== undefined && { phone: input.phone }),
+          ...(input.title !== undefined && { title: input.title }),
+          ...(input.qualifications !== undefined && {
+            qualifications: input.qualifications,
+          }),
+          ...(input.expertiseAreas !== undefined && {
+            expertiseAreas: input.expertiseAreas,
+          }),
           ...(input.specialtyId !== undefined && { specialtyId: input.specialtyId }),
           ...(input.bio !== undefined && { bio: input.bio }),
           ...(input.yearsOfExperience !== undefined && {

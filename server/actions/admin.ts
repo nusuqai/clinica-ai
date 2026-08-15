@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { AppointmentStatus, Role } from "@prisma/client";
+import { AppointmentStatus, DoctorTitle, Role } from "@prisma/client";
 
 import { getActiveClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
@@ -22,11 +22,18 @@ async function requireAdmin(): Promise<string> {
 
 // ─── Doctor actions ───────────────────────────────────────────────────────────
 
+// Normalize the doctor-title select into a DoctorTitle enum value or null.
+function parseDoctorTitle(formData: FormData): DoctorTitle | null {
+  const v = (formData.get("title") as string) || "";
+  return v === DoctorTitle.SPECIALIST || v === DoctorTitle.CONSULTANT ? v : null;
+}
+
 // Parse the extra doctor attributes shared by create & update forms.
 function parseDoctorAttributes(formData: FormData) {
   const num = (key: string) =>
     formData.get(key) ? Number(formData.get(key)) : undefined;
   return {
+    title: parseDoctorTitle(formData),
     yearsOfExperience: num("yearsOfExperience"),
     examinationFee: num("examinationFee"),
     consultationFee: num("consultationFee"),
@@ -50,6 +57,8 @@ export async function createDoctorAction(formData: FormData) {
     clinicId,
     fullName: formData.get("fullName") as string,
     phone: (formData.get("phone") as string) || undefined,
+    qualifications: (formData.get("qualifications") as string) || undefined,
+    expertiseAreas: (formData.get("expertiseAreas") as string) || undefined,
     specialtyId: specialtyRes.data,
     bio: (formData.get("bio") as string) || undefined,
     ...parseDoctorAttributes(formData),
@@ -97,7 +106,11 @@ export async function updateDoctorAction(formData: FormData) {
   const result = await DoctorService.updateDoctor({
     doctorId: formData.get("doctorId") as string,
     fullName: (formData.get("fullName") as string) || undefined,
-    phone: (formData.get("phone") as string) || null,
+    // `phone` is intentionally not read here: the field was removed from the
+    // form, so leaving it out preserves any existing value instead of wiping it.
+    title: attrs.title,
+    qualifications: (formData.get("qualifications") as string) || null,
+    expertiseAreas: (formData.get("expertiseAreas") as string) || null,
     specialtyId: specialtyRes.data,
     bio: (formData.get("bio") as string) || undefined,
     yearsOfExperience: attrs.yearsOfExperience ?? null,
