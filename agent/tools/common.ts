@@ -54,13 +54,20 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
         schema: z.object({}),
       },
       async () => {
-        const doctors = await DoctorService.listActiveDoctors(clinicId);
+        const [doctors, branches] = await Promise.all([
+          DoctorService.listActiveDoctors(clinicId),
+          BranchService.listBranches(clinicId, { activeOnly: true }),
+        ]);
+        const branchName = new Map(branches.map((b) => [b.id, b.name]));
         return {
           doctors: doctors.map((d) => ({
             id: d.id,
             name: d.profile.fullName,
             title: doctorTitleAr(d.title),
             specialty: d.specialty,
+            branches: d.branchIds
+              .map((id) => branchName.get(id))
+              .filter((n): n is string => !!n),
             qualifications: d.qualifications,
             expertiseAreas: d.expertiseAreas,
             examinationFee: money(d.examinationFee),
@@ -108,7 +115,11 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
         }),
       },
       async ({ specialtyId, specialty }) => {
-        const doctors = await DoctorService.listActiveDoctors(clinicId);
+        const [doctors, branches] = await Promise.all([
+          DoctorService.listActiveDoctors(clinicId),
+          BranchService.listBranches(clinicId, { activeOnly: true }),
+        ]);
+        const branchName = new Map(branches.map((b) => [b.id, b.name]));
         const q = (specialty ?? "").trim().toLowerCase();
         const matched = doctors.filter((d) =>
           specialtyId
@@ -126,6 +137,9 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
             title: doctorTitleAr(d.title),
             specialty: d.specialty,
             specialtyId: d.specialtyId,
+            branches: d.branchIds
+              .map((id) => branchName.get(id))
+              .filter((n): n is string => !!n),
             qualifications: d.qualifications,
             expertiseAreas: d.expertiseAreas,
             examinationFee: money(d.examinationFee),
@@ -140,7 +154,7 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
       {
         name: "get_doctor_working_hours",
         description:
-          "اعرض مواعيد عمل الطبيب (أيام الأسبوع وساعات العمل الثابتة) قبل عرض الفترات المتاحة. استخدمها دائماً أولاً عندما يريد المستخدم حجز موعد، حتى يختار يوماً يعمل فيه الطبيب فعلاً، ثم استخدم get_doctor_availability لعرض الفترات المتاحة في ذلك اليوم.",
+          "اعرض مواعيد عمل الطبيب (أيام الأسبوع وساعات العمل الثابتة والفرع الذي يعمل فيه في كل يوم) قبل عرض الفترات المتاحة. كل مدخل يوضّح الفرع (branch) الذي يداوم فيه الطبيب في ذلك اليوم — استعملها للإجابة عن أسئلة مثل «هل يعمل الطبيب في فرع كذا؟» أو «في أي فرع يداوم يوم كذا؟». استخدمها دائماً أولاً عندما يريد المستخدم حجز موعد، حتى يختار يوماً يعمل فيه الطبيب فعلاً، ثم استخدم get_doctor_availability لعرض الفترات المتاحة في ذلك اليوم.",
         schema: z.object({ doctorId: z.string() }),
       },
       async ({ doctorId }) => {
@@ -156,6 +170,8 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
               day: DAY_LABELS_AR[r.dayOfWeek] ?? r.dayOfWeek,
               from: r.startTime,
               to: r.endTime,
+              branchId: r.branchId,
+              branch: r.branch?.name ?? null,
             })),
         };
       },
@@ -191,6 +207,8 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
             startTime: s.startTime.toISOString(),
             endTime: s.endTime.toISOString(),
             label: timeStr(s.startTime),
+            branchId: s.branchId,
+            branch: s.branch?.name ?? null,
           })),
         };
       },

@@ -139,7 +139,15 @@ export async function listActiveDoctors(
 export async function getAvailableSlotsForBooking(
   doctorId: string,
   date: Date,
-): Promise<{ id: string; startTime: Date; endTime: Date }[]> {
+): Promise<
+  {
+    id: string;
+    startTime: Date;
+    endTime: Date;
+    branchId: string | null;
+    branch: { id: string; name: string } | null;
+  }[]
+> {
   const dayStart = new Date(date);
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(date);
@@ -154,7 +162,13 @@ export async function getAvailableSlotsForBooking(
       date: { gte: dayStart, lte: dayEnd },
       startTime: { gt: now },
     },
-    select: { id: true, startTime: true, endTime: true },
+    select: {
+      id: true,
+      startTime: true,
+      endTime: true,
+      branchId: true,
+      branch: { select: { id: true, name: true } },
+    },
     orderBy: { startTime: "asc" },
   });
 }

@@ -12,6 +12,7 @@ export interface PatientAppointment {
   cancellationReason: string | null;
   createdAt: Date;
   slot: { date: Date; startTime: Date; endTime: Date };
+  branch: { name: string } | null;
   doctor: { profile: { fullName: string }; specialty: string };
 }
 
@@ -73,6 +74,7 @@ export async function getPatientAppointments(
     },
     include: {
       slot: { select: { date: true, startTime: true, endTime: true } },
+      branch: { select: { name: true } },
       doctor: doctorNameSelect,
     },
     orderBy: { slot: { startTime: options?.upcoming ? "asc" : "desc" } },
@@ -123,6 +125,30 @@ export async function listAppointments(
     orderBy: { slot: { date: "desc" } },
   });
   return rows.map(reshapeDoctor);
+}
+
+/**
+ * Full, authoritative detail for a single appointment — the branch, doctor,
+ * fees, slot times and notes as actually persisted. Booking/reschedule tools
+ * echo this back so the confirmation reflects the saved record (not the
+ * agent's memory of what it asked for), letting the user catch any mistake.
+ */
+export async function getAppointmentDetails(appointmentId: string) {
+  return prisma.appointment.findUnique({
+    where: { id: appointmentId },
+    include: {
+      slot: { select: { date: true, startTime: true, endTime: true } },
+      branch: { select: { name: true, address: true } },
+      doctor: {
+        select: {
+          fullName: true,
+          specialty: { select: { name: true } },
+          examinationFee: true,
+          consultationFee: true,
+        },
+      },
+    },
+  });
 }
 
 // ─── Doctor Queries ───────────────────────────────────────────────────────────

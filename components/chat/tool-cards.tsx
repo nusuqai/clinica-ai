@@ -104,6 +104,10 @@ function DoctorListCard({ result }: { result: R }) {
 
 function SlotsCard({ result }: { result: R }) {
   const slots = (result.slots as R[]) ?? [];
+  const branches = [
+    ...new Set(slots.map((s) => s.branch).filter(Boolean).map(String)),
+  ];
+  const singleBranch = branches.length === 1 ? branches[0] : null;
   return (
     <CardShell
       icon={<CalendarClock className="w-4 h-4" />}
@@ -112,6 +116,7 @@ function SlotsCard({ result }: { result: R }) {
       {!!result.doctorName && (
         <p className="text-[11px] text-muted-foreground">
           {String(result.doctorName)}
+          {singleBranch ? ` — ${singleBranch}` : ""}
         </p>
       )}
       {slots.length === 0 ? (
@@ -127,6 +132,7 @@ function SlotsCard({ result }: { result: R }) {
               dir="ltr"
             >
               {String(s.label ?? s.time)}
+              {!singleBranch && s.branch ? ` · ${String(s.branch)}` : ""}
             </span>
           ))}
         </div>
@@ -136,6 +142,11 @@ function SlotsCard({ result }: { result: R }) {
 }
 
 function AppointmentCard({ result }: { result: R }) {
+  // Booking/reschedule now return start+end; keep `time` as a fallback.
+  const timeText =
+    result.startTime && result.endTime
+      ? `${String(result.startTime)} – ${String(result.endTime)}`
+      : String(result.time ?? "");
   return (
     <CardShell
       icon={<CalendarCheck className="w-4 h-4" />}
@@ -146,11 +157,32 @@ function AppointmentCard({ result }: { result: R }) {
           <p>
             الطبيب:{" "}
             <span className="font-medium">{String(result.doctorName)}</span>
+            {!!result.specialty && (
+              <span className="text-muted-foreground">
+                {" "}
+                — {String(result.specialty)}
+              </span>
+            )}
+          </p>
+        )}
+        {!!result.branch && (
+          <p>
+            الفرع:{" "}
+            <span className="font-medium">{String(result.branch)}</span>
           </p>
         )}
         {!!result.date && (
           <p dir="ltr" className="text-start">
-            {String(result.date)} — {String(result.time ?? "")}
+            {String(result.date)}
+            {timeText ? ` — ${timeText}` : ""}
+          </p>
+        )}
+        {result.examinationFee != null && (
+          <p>
+            سعر الكشف:{" "}
+            <span className="font-medium">
+              {String(result.examinationFee)}
+            </span>
           </p>
         )}
         {!!result.status && (
@@ -182,6 +214,7 @@ function AppointmentListCard({ result }: { result: R }) {
             </p>
             <p className="text-[11px] text-muted-foreground" dir="ltr">
               {String(a.date)} — {String(a.time)}
+              {a.branch ? ` · ${String(a.branch)}` : ""}
             </p>
           </div>
           <StatusPill status={String(a.status)} />
