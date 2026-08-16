@@ -73,8 +73,57 @@ export async function createDoctorAction(formData: FormData) {
     : await DoctorService.createDoctor(base);
 
   if (!result.ok) return { error: result.error };
+
+  // Availability rules drafted in the modal are created now that the doctor
+  // (and its branch assignments) exist. Kept atomic: if any rule is invalid,
+  // roll the whole doctor back so a re-submit doesn't create a duplicate.
+  const ruleError = await createDraftRules(result.data.id, formData);
+  if (ruleError) {
+    await DoctorService.deleteDoctor(result.data.id);
+    return { error: ruleError };
+  }
+
   revalidatePath("/clinic/[slug]/admin/doctors", "page");
   return { success: true };
+}
+
+// Shape drafted by the availability editor and serialized into `rules`.
+interface DraftRule {
+  branchId: string;
+  dayOfWeek: import("@prisma/client").DayOfWeek;
+  startTime: string;
+  endTime: string;
+  slotDurationMin?: number;
+}
+
+// Parses the `rules` JSON from the add form and creates each rule for the new
+// doctor. Returns an Arabic error message on the first failure, or null.
+async function createDraftRules(
+  doctorId: string,
+  formData: FormData,
+): Promise<string | null> {
+  const raw = (formData.get("rules") as string) || "";
+  if (!raw) return null;
+  let rules: DraftRule[];
+  try {
+    rules = JSON.parse(raw) as DraftRule[];
+  } catch {
+    return null; // malformed payload — treat as "no rules" rather than fail
+  }
+  if (!Array.isArray(rules)) return null;
+
+  for (const r of rules) {
+    const res = await DoctorService.createRule({
+      doctorId,
+      branchId: r.branchId,
+      dayOfWeek: r.dayOfWeek,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      slotDurationMin: r.slotDurationMin ? Number(r.slotDurationMin) : 30,
+    });
+    if (!res.ok) return `تعذّر إنشاء قاعدة التوفر: ${res.error}`;
+  }
+  return null;
 }
 
 export async function linkDoctorAccountAction(formData: FormData) {
@@ -181,6 +230,25 @@ export async function updateAppointmentStatusAction(
 }
 
 // ─── Availability Rule actions ────────────────────────────────────────────────
+
+// Loads a doctor's availability rules for the inline editor in the edit modal.
+// Scoped to the admin's clinic so a doctorId from another clinic can't be read.
+export async function getDoctorRulesAction(doctorId: string) {
+  const clinicId = await requireAdmin();
+  const doctor = await DoctorService.getDoctor(doctorId, clinicId);
+  if (!doctor) return { error: "الطبيب غير موجود" };
+  const rules = await DoctorService.listDoctorRules(doctorId);
+  return {
+    rules: rules.map((r) => ({
+      id: r.id,
+      branchId: r.branchId ?? "",
+      dayOfWeek: r.dayOfWeek,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      slotDurationMin: r.slotDurationMin,
+    })),
+  };
+}
 
 export async function createRuleAction(formData: FormData) {
   await requireAdmin();

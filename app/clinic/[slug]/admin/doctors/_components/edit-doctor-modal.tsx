@@ -7,6 +7,7 @@ import { updateDoctorAction } from "@/server/actions/admin";
 import type { DoctorWithProfile } from "@/server/services/doctors";
 import type { BranchOption } from "./add-doctor-modal";
 import SpecialtySelect, { type SpecialtyOption } from "./specialty-select";
+import AvailabilityRulesEditor from "./availability-rules-editor";
 
 interface EditDoctorModalProps {
   doctor: DoctorWithProfile;
@@ -45,7 +46,12 @@ export default function EditDoctorModal({
         <Pencil className="w-4 h-4" />
       </button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="تعديل بيانات الطبيب">
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="تعديل بيانات الطبيب"
+        width="max-w-2xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-sans">
@@ -193,6 +199,17 @@ export default function EditDoctorModal({
               className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
+
+          {/* Availability rules — live add/remove for the doctor's branches */}
+          {open && (
+            <AvailabilityRulesEditor
+              mode="live"
+              doctorId={doctor.id}
+              branches={branches.filter((b) =>
+                doctor.branchIds.includes(b.id),
+              )}
+            />
+          )}
 
           <div className="flex gap-3 pt-2">
             <button

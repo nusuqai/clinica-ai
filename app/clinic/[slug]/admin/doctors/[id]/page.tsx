@@ -42,20 +42,24 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
     listBranches(clinic.id, { activeOnly: true }),
     listSpecialtyOptions(clinic.id),
   ]);
-  const branchOptions = branchRows.map((b) => ({ id: b.id, name: b.name }));
+  const branchHours = (b: (typeof branchRows)[number]) =>
+    b.hours.map((h) => ({
+      dayOfWeek: h.dayOfWeek,
+      isClosed: h.isClosed,
+      openTime: h.openTime,
+      closeTime: h.closeTime,
+    }));
+  // Branch options for the edit modal include hours so its inline availability
+  // editor can hint each branch's opening window.
+  const branchOptions = branchRows.map((b) => ({
+    id: b.id,
+    name: b.name,
+    hours: branchHours(b),
+  }));
   // Branches this doctor works at, with hours — powers the rules editor helper.
   const doctorBranches: DoctorBranchOption[] = branchRows
     .filter((b) => doctor.branchIds.includes(b.id))
-    .map((b) => ({
-      id: b.id,
-      name: b.name,
-      hours: b.hours.map((h) => ({
-        dayOfWeek: h.dayOfWeek,
-        isClosed: h.isClosed,
-        openTime: h.openTime,
-        closeTime: h.closeTime,
-      })),
-    }));
+    .map((b) => ({ id: b.id, name: b.name, hours: branchHours(b) }));
 
   const initials = doctor.profile.fullName
     .split(" ")

@@ -16,7 +16,16 @@ export default async function AdminDoctorsPage() {
     listBranches(clinic.id, { activeOnly: true }),
     listSpecialtyOptions(clinic.id),
   ]);
-  const branches = branchRows.map((b) => ({ id: b.id, name: b.name }));
+  const branches = branchRows.map((b) => ({
+    id: b.id,
+    name: b.name,
+    hours: b.hours.map((h) => ({
+      dayOfWeek: h.dayOfWeek,
+      isClosed: h.isClosed,
+      openTime: h.openTime,
+      closeTime: h.closeTime,
+    })),
+  }));
 
   return (
     <div>

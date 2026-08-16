@@ -5,10 +5,14 @@ import { UserPlus } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import { createDoctorAction } from "@/server/actions/admin";
 import SpecialtySelect, { type SpecialtyOption } from "./specialty-select";
+import AvailabilityRulesEditor, {
+  type EditorBranchHours,
+} from "./availability-rules-editor";
 
 export interface BranchOption {
   id: string;
   name: string;
+  hours: EditorBranchHours[];
 }
 
 export default function AddDoctorModal({
@@ -21,8 +25,21 @@ export default function AddDoctorModal({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [withAccount, setWithAccount] = useState(false);
+  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
   const [isPending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Branches picked for the doctor, with their hours — the availability editor
+  // only lets rules be added for branches the doctor actually works at.
+  const selectedBranches = branches.filter((b) =>
+    selectedBranchIds.includes(b.id),
+  );
+
+  function toggleBranch(id: string, checked: boolean) {
+    setSelectedBranchIds((ids) =>
+      checked ? [...ids, id] : ids.filter((x) => x !== id),
+    );
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -35,6 +52,7 @@ export default function AddDoctorModal({
       } else {
         setOpen(false);
         formRef.current?.reset();
+        setSelectedBranchIds([]);
       }
     });
   }
@@ -196,13 +214,22 @@ export default function AddDoctorModal({
                     key={b.id}
                     className="flex items-center gap-2 text-sm font-sans border border-border rounded-xl px-3 py-2 cursor-pointer hover:bg-muted"
                   >
-                    <input type="checkbox" name="branchIds" value={b.id} />
+                    <input
+                      type="checkbox"
+                      name="branchIds"
+                      value={b.id}
+                      checked={selectedBranchIds.includes(b.id)}
+                      onChange={(e) => toggleBranch(b.id, e.target.checked)}
+                    />
                     {b.name}
                   </label>
                 ))}
               </div>
             )}
           </div>
+
+          {/* Availability rules (drafted, created with the doctor) */}
+          <AvailabilityRulesEditor mode="draft" branches={selectedBranches} />
 
           {/* Qualifications */}
           <div className="space-y-1.5">
