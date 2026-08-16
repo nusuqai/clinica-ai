@@ -45,6 +45,33 @@ function normalisePhone(phone: string): string {
   return phone.replace(/\D/g, "");
 }
 
+/**
+ * The agent (and templates) speak Markdown, but WhatsApp does not render it —
+ * a `[label](url)` link shows up literally, brackets and all. Convert the
+ * common Markdown constructs to WhatsApp's own formatting so replies read
+ * cleanly. WhatsApp auto-links bare URLs, so links become plain text.
+ */
+export function markdownToWhatsApp(text: string): string {
+  return (
+    text
+      // Images `![alt](url)` → just the url.
+      .replace(/!\[[^\]]*\]\((\S+?)\)/g, "$1")
+      // Links `[label](url)`: drop the brackets. If the label is the url (or a
+      // trimmed variant of it), keep only the url; otherwise "label: url".
+      .replace(/\[([^\]]+)\]\((\S+?)\)/g, (_m, label: string, url: string) => {
+        const l = label.trim();
+        return l === url || l === url.replace(/^https?:\/\//, "") ? url : `${l}: ${url}`;
+      })
+      // Bold `**text**` / `__text__` → WhatsApp bold `*text*`.
+      .replace(/\*\*([^*]+)\*\*/g, "*$1*")
+      .replace(/__([^_]+)__/g, "*$1*")
+      // Strikethrough `~~text~~` → WhatsApp `~text~`.
+      .replace(/~~([^~]+)~~/g, "~$1~")
+      // Headings `## text` → plain (WhatsApp has no headings).
+      .replace(/^#{1,6}\s+/gm, "")
+  );
+}
+
 interface GraphRequest {
   path: string;
   accessToken: string;
@@ -132,12 +159,12 @@ export async function sendTextMessage(
   text: string,
   creds: WhatsAppCredentials,
 ): Promise<void> {
-  for (const body of chunkText(text)) {
+  for (const body of chunkText(markdownToWhatsApp(text))) {
     await sendMessage(creds, {
       recipient_type: "individual",
       to: normalisePhone(phone),
       type: "text",
-      text: { preview_url: false, body },
+      text: { preview_url: true, body },
     });
   }
 }
