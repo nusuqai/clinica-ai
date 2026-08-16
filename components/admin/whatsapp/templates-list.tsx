@@ -21,14 +21,35 @@ import { languageLabel } from "./languages";
 import WhatsappPreview from "./whatsapp-preview";
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
-    APPROVED: { cls: "bg-green-100 text-green-700", icon: <CheckCircle2 className="w-3 h-3" />, label: "معتمد" },
-    PENDING: { cls: "bg-amber-100 text-amber-700", icon: <Clock className="w-3 h-3" />, label: "قيد المراجعة" },
-    REJECTED: { cls: "bg-red-100 text-red-700", icon: <XCircle className="w-3 h-3" />, label: "مرفوض" },
+  const map: Record<
+    string,
+    { cls: string; icon: React.ReactNode; label: string }
+  > = {
+    APPROVED: {
+      cls: "bg-green-100 text-green-700",
+      icon: <CheckCircle2 className="w-3 h-3" />,
+      label: "معتمد",
+    },
+    PENDING: {
+      cls: "bg-amber-100 text-amber-700",
+      icon: <Clock className="w-3 h-3" />,
+      label: "قيد المراجعة",
+    },
+    REJECTED: {
+      cls: "bg-red-100 text-red-700",
+      icon: <XCircle className="w-3 h-3" />,
+      label: "مرفوض",
+    },
   };
-  const m = map[status] ?? { cls: "bg-muted text-muted-foreground", icon: null, label: status };
+  const m = map[status] ?? {
+    cls: "bg-muted text-muted-foreground",
+    icon: null,
+    label: status,
+  };
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${m.cls}`}>
+    <span
+      className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${m.cls}`}
+    >
       {m.icon}
       {m.label}
     </span>
@@ -74,11 +95,17 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
     [templates],
   );
   const categories = useMemo(
-    () => Array.from(new Set(templates.map((t) => t.category))).filter(Boolean).sort(),
+    () =>
+      Array.from(new Set(templates.map((t) => t.category)))
+        .filter(Boolean)
+        .sort(),
     [templates],
   );
   const languages = useMemo(
-    () => Array.from(new Set(templates.map((t) => t.language))).filter(Boolean).sort(),
+    () =>
+      Array.from(new Set(templates.map((t) => t.language)))
+        .filter(Boolean)
+        .sort(),
     [templates],
   );
 
@@ -88,7 +115,8 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
       if (status !== ALL && t.status !== status) return false;
       if (category !== ALL && t.category !== category) return false;
       if (language !== ALL && t.language !== language) return false;
-      if (q && !(`${t.name} ${t.bodyText}`.toLowerCase().includes(q))) return false;
+      if (q && !`${t.name} ${t.bodyText}`.toLowerCase().includes(q))
+        return false;
       return true;
     });
   }, [templates, search, status, category, language]);
@@ -101,14 +129,19 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
           القوالب
         </h2>
         {!disabled && (
-          <button onClick={() => void load()} className="text-xs text-accent hover:underline">
+          <button
+            onClick={() => void load()}
+            className="text-xs text-accent hover:underline"
+          >
             تحديث
           </button>
         )}
       </div>
       <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
         {disabled ? (
-          <p className="text-xs text-muted-foreground">أدخل بيانات الاتصال لعرض القوالب.</p>
+          <p className="text-xs text-muted-foreground">
+            أدخل بيانات الاتصال لعرض القوالب.
+          </p>
         ) : loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" /> جارٍ التحميل...
@@ -130,19 +163,44 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
                   className="w-full rounded-lg border border-border bg-background ps-8 pe-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
                 />
               </div>
-              <FilterSelect value={status} onChange={setStatus} allLabel="كل الحالات" options={statuses.map((s) => ({ value: s, label: s }))} />
-              <FilterSelect value={category} onChange={setCategory} allLabel="كل الفئات" options={categories.map((c) => ({ value: c, label: c }))} />
-              <FilterSelect value={language} onChange={setLanguage} allLabel="كل اللغات" options={languages.map((l) => ({ value: l, label: languageLabel(l) }))} />
+              <FilterSelect
+                value={status}
+                onChange={setStatus}
+                allLabel="كل الحالات"
+                options={statuses.map((s) => ({ value: s, label: s }))}
+              />
+              <FilterSelect
+                value={category}
+                onChange={setCategory}
+                allLabel="كل الفئات"
+                options={categories.map((c) => ({ value: c, label: c }))}
+              />
+              <FilterSelect
+                value={language}
+                onChange={setLanguage}
+                allLabel="كل اللغات"
+                options={languages.map((l) => ({
+                  value: l,
+                  label: languageLabel(l),
+                }))}
+              />
             </div>
 
             {filtered.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4 text-center">لا توجد قوالب مطابقة للفلاتر.</p>
+              <p className="text-xs text-muted-foreground py-4 text-center">
+                لا توجد قوالب مطابقة للفلاتر.
+              </p>
             ) : (
               <div className="space-y-3">
                 {filtered.map((t) => (
-                  <div key={t.id} className="rounded-xl border border-border px-3.5 py-3">
+                  <div
+                    key={t.id}
+                    className="rounded-xl border border-border px-3.5 py-3"
+                  >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-foreground">{t.name}</span>
+                      <span className="text-sm font-medium text-foreground">
+                        {t.name}
+                      </span>
                       <div className="flex items-center gap-2">
                         <StatusBadge status={t.status} />
                         <button
@@ -163,22 +221,6 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
                       footerText={t.footerText}
                       buttons={t.buttons}
                     />
-
-                    {t.status === "APPROVED" && (
-                      <div className="mt-2">
-                        {sendFor === t.id ? (
-                          <SendToNumber template={t} onDone={() => setSendFor(null)} />
-                        ) : (
-                          <button
-                            onClick={() => setSendFor(t.id)}
-                            className="inline-flex items-center gap-1.5 text-xs text-accent hover:underline"
-                          >
-                            <Send className="w-3 h-3" />
-                            إرسال إلى رقم
-                          </button>
-                        )}
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
@@ -229,7 +271,9 @@ function SendToNumber({
     Array.from({ length: template.variableCount }, () => ""),
   );
   const [sending, setSending] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
 
   const handleSend = async () => {
     setSending(true);
@@ -266,7 +310,9 @@ function SendToNumber({
           key={i}
           value={v}
           onChange={(e) =>
-            setVariables((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
+            setVariables((prev) =>
+              prev.map((x, j) => (j === i ? e.target.value : x)),
+            )
           }
           placeholder={`القيمة ${i + 1} ({{${i + 1}}})`}
           className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
@@ -280,20 +326,31 @@ function SendToNumber({
         buttons={template.buttons}
       />
       {message && (
-        <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
+        <p
+          className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}
+        >
           {message.text}
         </p>
       )}
       <div className="flex items-center gap-2">
         <button
           onClick={handleSend}
-          disabled={sending || !phone.trim() || variables.some((v) => !v.trim())}
+          disabled={
+            sending || !phone.trim() || variables.some((v) => !v.trim())
+          }
           className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary/90 disabled:opacity-40"
         >
-          {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+          {sending ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Send className="w-3 h-3" />
+          )}
           إرسال
         </button>
-        <button onClick={onDone} className="text-xs text-muted-foreground hover:underline">
+        <button
+          onClick={onDone}
+          className="text-xs text-muted-foreground hover:underline"
+        >
           إلغاء
         </button>
       </div>
