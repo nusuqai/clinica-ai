@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Eye } from "lucide-react";
 import { requireActiveMember } from "@/lib/auth";
 import { listUsers } from "@/server/services/users";
 import { isSyntheticEmail } from "@/server/services/patients";
@@ -37,6 +38,9 @@ export default async function AdminUsersPage() {
                 <th className="text-start px-4 py-3 font-medium text-muted-foreground">
                   تاريخ التسجيل
                 </th>
+                <th className="text-end px-4 py-3 font-medium text-muted-foreground">
+                  الإجراءات
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -74,6 +78,15 @@ export default async function AdminUsersPage() {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {new Date(user.createdAt).toLocaleDateString("ar-EG")}
+                  </td>
+                  <td className="px-4 py-3 text-end">
+                    <Link
+                      href={`${base}/admin/users/${user.id}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium font-sans border border-border text-foreground hover:bg-muted transition-colors"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      عرض التفاصيل
+                    </Link>
                   </td>
                 </tr>
               ))}
