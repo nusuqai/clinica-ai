@@ -4,33 +4,13 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Mail, Lock, Loader2, Eye, EyeOff, User, Phone, ArrowLeft } from "lucide-react";
 import { startClinicSignup } from "@/server/actions/auth";
+import { PHONE_EXAMPLE, normalizePhone, isValidPhone } from "@/lib/phone";
 
 interface Props {
   slug: string;
   clinicName: string;
   /** Prefilled from the ?phone= URL param (e.g. a WhatsApp deep link). */
   initialPhone?: string;
-}
-
-/** Example of the required WhatsApp-matching phone format (country code + number). */
-const PHONE_EXAMPLE = "201014443991";
-
-/**
- * Strips anything a user might type around the digits (spaces, dashes,
- * parentheses, and a leading + or 00) so the stored number matches the
- * WhatsApp `wa_id` format exactly — international, digits only, no leading zero.
- */
-function normalizePhone(raw: string): string {
-  return raw
-    .trim()
-    .replace(/[\s()\-]/g, "")
-    .replace(/^\+/, "")
-    .replace(/^00/, "");
-}
-
-/** International format: country code first, digits only, no leading zero, 10–15 digits. */
-function isValidPhone(phone: string): boolean {
-  return /^[1-9]\d{9,14}$/.test(phone);
 }
 
 export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Props) {

@@ -4,6 +4,7 @@ import { sendEmail, type SendEmailResult } from "./resend";
 import {
   clinicApprovedInviteEmail,
   clinicCreatedInviteEmail,
+  accountInviteEmail,
   passwordResetEmail,
   emailChangeEmail,
   signupOtpEmail,
@@ -102,6 +103,29 @@ export async function sendClinicCreatedInvite(args: {
   });
   const { subject, html } = clinicCreatedInviteEmail({
     adminName: args.name,
+    clinicName: args.clinicName,
+    actionUrl: url,
+  });
+  return sendEmail({ to: args.email, subject, html });
+}
+
+/**
+ * Web-account claim invite: a WhatsApp patient set a real email on their existing
+ * account and now needs to set a password. Same recovery→/set-password bridge as
+ * the clinic invites, but with patient-facing copy.
+ */
+export async function sendAccountInvite(args: {
+  email: string;
+  name: string | null;
+  clinicName: string;
+}): Promise<SendEmailResult> {
+  const url = await generateActionUrl({
+    type: "recovery",
+    email: args.email,
+    next: "/set-password",
+  });
+  const { subject, html } = accountInviteEmail({
+    name: args.name,
     clinicName: args.clinicName,
     actionUrl: url,
   });

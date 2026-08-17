@@ -96,6 +96,30 @@ export function clinicCreatedInviteEmail(args: {
   };
 }
 
+// 4b) Web-account claim invite — a WhatsApp patient set an email and now needs to
+// set a password to enable website login.
+export function accountInviteEmail(args: {
+  name: string | null;
+  clinicName: string;
+  actionUrl: string;
+}): BuiltEmail {
+  const greeting = args.name ? `مرحباً ${esc(args.name)}` : "مرحباً";
+  return {
+    subject: `فعّل دخولك إلى الموقع — ${BRAND.name}`,
+    html: renderEmail({
+      preheader: "عيّن كلمة المرور لتسجيل الدخول إلى الموقع.",
+      clinicName: args.clinicName,
+      heading: `${greeting} 👋`,
+      bodyHtml:
+        p(`لتتمكن من تسجيل الدخول إلى حسابك على الموقع ومتابعة مواعيدك مع عيادة <strong>«${esc(args.clinicName)}»</strong>، اضغط الزر أدناه لتعيين كلمة المرور الخاصة بك.`) +
+        p("كل مواعيدك وبياناتك السابقة محفوظة وستظهر فور تسجيل دخولك.") +
+        linkFallback(args.actionUrl),
+      cta: { label: "تعيين كلمة المرور", url: args.actionUrl },
+      footnote: LINK_EXPIRY_NOTE,
+    }),
+  };
+}
+
 // 5) Password reset (recovery).
 export function passwordResetEmail(args: {
   name: string | null;

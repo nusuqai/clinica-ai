@@ -7,6 +7,8 @@ export interface ConversationSummary {
   channel: Channel;
   contactName: string;
   contactPhone?: string;
+  /** Linked patient Profile id, or null for an anonymous (unclaimed) contact. */
+  userId: string | null;
   lastMessage?: string;
   lastMessageAt?: Date;
   unreadCount: number;
@@ -33,6 +35,8 @@ export interface ConversationDetail {
   channel: Channel;
   contactName: string;
   contactPhone?: string;
+  /** Linked patient Profile id, or null for an anonymous (unclaimed) contact. */
+  userId: string | null;
   /** Most recent chat session (may be expired) — null if no message yet. */
   activeSessionId: string | null;
   aiEnabled: boolean;
@@ -87,6 +91,7 @@ export async function getConversations(
       c.whatsappPhone ??
       (c.channel === Channel.WEB ? "زائر" : "غير معروف"),
     contactPhone: c.user?.phone ?? c.whatsappPhone ?? undefined,
+    userId: c.userId,
     lastMessage: c.messages[0]?.content ?? undefined,
     lastMessageAt: c.messages[0]?.createdAt ?? undefined,
     unreadCount: c._count.messages,
@@ -162,6 +167,7 @@ export async function getConversationDetail(
       c.whatsappPhone ??
       (c.channel === Channel.WEB ? "زائر" : "غير معروف"),
     contactPhone: c.user?.phone ?? c.whatsappPhone ?? undefined,
+    userId: c.userId,
     activeSessionId: latestSession?.id ?? null,
     aiEnabled: latestSession?.aiEnabled ?? true,
     escalations: latestSession?.escalations ?? [],
