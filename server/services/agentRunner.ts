@@ -2,7 +2,10 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, SenderType, type Role } from "@prisma/client";
 import { sendTextMessage, WhatsAppApiError } from "@/lib/meta/whatsapp";
-import type { WhatsAppCredentials } from "@/lib/meta/whatsapp";
+import type {
+  WhatsAppCredentials,
+  WhatsAppRecipient,
+} from "@/lib/meta/whatsapp";
 import type { UnsupportedMediaType } from "@/lib/meta/whatsapp-inbound";
 import { showTypingIndicator } from "./whatsappTyping";
 import {
@@ -33,6 +36,20 @@ import type { TokenUsage } from "@/agent/types";
 
 const FALLBACK_REPLY = "تم تنفيذ طلبك.";
 
+/**
+ * How a WhatsApp contact is identified on an inbound message: a phone (classic)
+ * and/or a Business-Scoped User ID (`userId`, present when the phone is hidden
+ * behind a username). At least one is non-null. Used both to reply and to match
+ * the contact to a Profile.
+ */
+export interface WhatsAppContact {
+  phone: string | null;
+  userId: string | null;
+}
+
+/** A label for logs when a contact has no phone. */
+const contactLabel = (c: WhatsAppContact) => c.phone ?? c.userId ?? "unknown";
+
 const UNSUPPORTED_PREFIX = "عذراً، لا يمكننا استقبال";
 const unsupportedReply = (noun: string) =>
   `${UNSUPPORTED_PREFIX} ${noun}. الرجاء إرسال رسالتك كنص فقط. 🙏`;
@@ -51,20 +68,36 @@ const UNSUPPORTED_NOTICE_COOLDOWN_MS = 60_000;
  * contact who's been silent, and an approved template is the only option.
  */
 async function deliverReply(
-  phone: string,
+  contact: WhatsAppContact,
   reply: string,
   creds: WhatsAppCredentials,
 ): Promise<void> {
+  const to = contactLabel(contact);
+  // Reach a hidden-phone contact by their BSUID; everyone else by phone.
+  const recipient: WhatsAppRecipient = {
+    phone: contact.phone,
+    userId: contact.userId,
+  };
   try {
-    await sendTextMessage(phone, reply, creds);
+    console.log(`[wa-debug] deliverReply → sending to ${to} (${reply.length} chars)`);
+    await sendTextMessage(recipient, reply, creds);
+    console.log(`[wa-debug] deliverReply → SENT to ${to}`);
   } catch (err) {
     if (err instanceof WhatsAppApiError && err.isOutsideServiceWindow) {
       console.error(
-        `[whatsapp] reply not delivered to ${phone}: the 24-hour service window has closed — only an approved template can reach this contact`,
+        `[whatsapp] reply not delivered to ${to}: the 24-hour service window has closed — only an approved template can reach this contact`,
+      );
+      console.error(
+        `[wa-debug] NOT DELIVERED to ${to}: 24h window closed (Meta 131047) — reply is in DB/dashboard but WhatsApp rejected it`,
       );
       return;
     }
-    console.error(`[whatsapp] reply not delivered to ${phone}:`, err);
+    console.error(`[whatsapp] reply not delivered to ${to}:`, err);
+    const code = err instanceof WhatsAppApiError ? err.code : undefined;
+    console.error(
+      `[wa-debug] NOT DELIVERED to ${to}: Cloud API error code=${code} — reply is in DB/dashboard but WhatsApp did not accept it:`,
+      err,
+    );
   }
 }
 
@@ -217,14 +250,18 @@ export async function* streamWebAgent(
  */
 export async function handleUnsupportedWhatsAppMessage(
   conversationId: string,
-  phone: string,
+  contact: WhatsAppContact,
   media: UnsupportedMediaType,
   creds: WhatsAppCredentials,
 ): Promise<void> {
-  const profile = await prisma.profile.findUnique({
-    where: { phone },
-    select: { id: true },
-  });
+  // A hidden-phone contact can't be matched to a Profile by phone; the notice
+  // is channel-level and doesn't need one, so leave it unattributed in that case.
+  const profile = contact.phone
+    ? await prisma.profile.findUnique({
+        where: { phone: contact.phone },
+        select: { id: true },
+      })
+    : null;
 
   const sessionId = await resolveActiveSession(conversationId);
   // Always recorded, even when the notice below is suppressed, so the admin
@@ -249,7 +286,7 @@ export async function handleUnsupportedWhatsAppMessage(
 
   const reply = unsupportedReply(media.noun);
   await persistAgentMessage(conversationId, sessionId, reply, null);
-  await deliverReply(phone, reply, creds);
+  await deliverReply(contact, reply, creds);
 }
 
 /**
@@ -259,12 +296,13 @@ export async function handleUnsupportedWhatsAppMessage(
  */
 export async function handleWhatsAppMessage(
   conversationId: string,
-  phone: string,
+  contact: WhatsAppContact,
   userText: string,
   /** Meta message id — enables read receipts and the typing indicator. */
   messageId: string,
   creds: WhatsAppCredentials,
 ): Promise<void> {
+  const { phone, userId } = contact;
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     select: {
@@ -274,28 +312,37 @@ export async function handleWhatsAppMessage(
     },
   });
   // The conversation was just created/updated by the webhook, so this is defensive.
-  if (!conv) return;
+  if (!conv) {
+    console.warn(
+      `[wa-debug] DROP: conversation ${conversationId} not found in handleWhatsAppMessage — user message NOT stored`,
+    );
+    return;
+  }
+  console.log(`[wa-debug] handleWhatsAppMessage start convId=${conversationId}`);
   const clinicId = conv.clinicId;
 
-  let profile = await prisma.profile.findUnique({
-    where: { phone },
-    select: { id: true, fullName: true },
-  });
+  // Profiles are keyed by phone; a hidden-phone (username) contact can't be
+  // matched that way, so it runs info-only until it registers in-chat.
+  let profile = phone
+    ? await prisma.profile.findUnique({
+        where: { phone },
+        select: { id: true, fullName: true },
+      })
+    : null;
 
   // Eager onboarding: a brand-new WhatsApp number is provisioned as a PATIENT the
   // moment it writes in — as long as WhatsApp gave us a real name to attach (its
-  // fallback "name" is just the phone number, which is not a usable patient name).
-  // The account + membership therefore already exist by the time the contact asks
-  // to book, so the PATIENT tools are bound on that very message — no
-  // "you're registered, now repeat your request" round-trip. When there's no usable
-  // name we stay info-only (role null) and the agent asks for the name, then
-  // registers via register_in_clinic. Idempotent + best-effort: it only creates on
-  // the very first message and never blocks the reply if provisioning fails.
-  const usableName =
-    conv.whatsappName && conv.whatsappName !== phone
-      ? conv.whatsappName.trim()
-      : "";
-  if (!profile && usableName) {
+  // fallback "name" is just the phone/BSUID, which is not a usable patient name)
+  // AND the phone is visible (patient accounts are keyed by phone). The account +
+  // membership therefore already exist by the time the contact asks to book, so
+  // the PATIENT tools are bound on that very message — no "you're registered, now
+  // repeat your request" round-trip. Otherwise we stay info-only (role null) and
+  // the agent asks for the name, then registers via register_in_clinic. Idempotent
+  // + best-effort: it only creates on the very first message and never blocks the
+  // reply if provisioning fails.
+  const name = conv.whatsappName?.trim() ?? "";
+  const usableName = name && name !== phone && name !== userId ? name : "";
+  if (!profile && usableName && phone) {
     try {
       const { profileId } = await getOrCreatePatientByPhone({
         clinicId,
@@ -323,10 +370,23 @@ export async function handleWhatsAppMessage(
     userText,
     profile?.id ?? null,
   );
+  console.log(
+    `[wa-debug] user message STORED convId=${conversationId} sessionId=${sessionId} profileId=${profile?.id ?? "none"}`,
+  );
 
-  if (!(await isSessionAiEnabled(sessionId))) return;
+  if (!(await isSessionAiEnabled(sessionId))) {
+    console.log(
+      `[wa-debug] no reply: AI disabled for session ${sessionId} (human handoff) — message stored, no WhatsApp reply`,
+    );
+    return;
+  }
 
-  if (await clinicGateBlocks(clinicId, conversationId, sessionId)) return;
+  if (await clinicGateBlocks(clinicId, conversationId, sessionId)) {
+    console.log(
+      `[wa-debug] no reply: clinic gate blocks (AI off / out of credit) clinicId=${clinicId} — message stored, no WhatsApp reply`,
+    );
+    return;
+  }
 
   const prior = await getSessionMessages(sessionId);
 
@@ -347,7 +407,7 @@ export async function handleWhatsAppMessage(
     role,
     clinicId,
     clinicSlug: conv.clinic.slug,
-    contactPhone: phone,
+    contactPhone: phone ?? "",
     channel: Channel.WHATSAPP,
     conversationId,
     sessionId,
@@ -365,6 +425,6 @@ export async function handleWhatsAppMessage(
   const agentMsg = await persistAgentMessage(conversationId, sessionId, reply, {
     toolCalls,
   });
-  await deliverReply(phone, reply, creds);
+  await deliverReply(contact, reply, creds);
   await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage });
 }

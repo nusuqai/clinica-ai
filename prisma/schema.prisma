@@ -464,6 +464,11 @@ model Conversation {
   clinicId      String   @db.Uuid
   userId        String?  @db.Uuid
   whatsappPhone String?
+  // Meta Business-Scoped User ID (BSUID). Since the WhatsApp usernames rollout,
+  // contacts messaging with a username hidden phone arrive with only this id
+  // (format "CC.alphanumeric") and no phone — so it, not the phone, is the
+  // stable per-clinic key for those threads. Null for web + legacy WhatsApp rows.
+  whatsappUserId String?
   whatsappName  String?
   channel       Channel
   createdAt     DateTime @default(now())
@@ -476,6 +481,7 @@ model Conversation {
   escalations Escalation[]
 
   @@unique([clinicId, whatsappPhone])
+  @@unique([clinicId, whatsappUserId])
   @@unique([clinicId, userId, channel])
   @@index([clinicId])
   @@map("conversations")
