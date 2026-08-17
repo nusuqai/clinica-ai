@@ -4,10 +4,32 @@ import { revalidatePath } from "next/cache";
 import { Channel, Role, SenderType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getActiveClinicContext } from "@/lib/auth";
-import { sendTextMessage, sendTemplateMessage } from "@/lib/meta/whatsapp";
+import {
+  sendTextMessage,
+  sendTemplateMessage,
+  type WhatsAppRecipient,
+} from "@/lib/meta/whatsapp";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
 import { resolveActiveSession } from "@/server/services/agentSession";
+
+/**
+ * How to address an outbound message to a conversation's WhatsApp contact:
+ * their phone, or their BSUID when the phone is hidden behind a username.
+ * Returns null for a non-WhatsApp or unidentifiable conversation.
+ */
+function whatsappRecipient(conversation: {
+  channel: Channel;
+  whatsappPhone: string | null;
+  whatsappUserId: string | null;
+}): WhatsAppRecipient | null {
+  if (conversation.channel !== Channel.WHATSAPP) return null;
+  if (!conversation.whatsappPhone && !conversation.whatsappUserId) return null;
+  return {
+    phone: conversation.whatsappPhone,
+    userId: conversation.whatsappUserId,
+  };
+}
 
 export type SendAdminReplyFailure =
   | "unauthorized"
@@ -92,11 +114,12 @@ export async function sendAdminReply(
   }
 
   let whatsappSendFailed = false;
-  if (conversation.channel === Channel.WHATSAPP && conversation.whatsappPhone) {
+  const recipient = whatsappRecipient(conversation);
+  if (recipient) {
     try {
       const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
       if (!creds) throw new Error("WhatsApp is not configured for this clinic");
-      await sendTextMessage(conversation.whatsappPhone, content, creds);
+      await sendTextMessage(recipient, content, creds);
     } catch (err) {
       // The reply is already saved in the conversation; a failed WhatsApp
       // delivery (missing config, closed window, API error) shouldn't crash the
@@ -140,15 +163,16 @@ export async function retryWhatsappDelivery(
   }
 
   const { conversation } = message;
+  const recipient = whatsappRecipient(conversation);
   // Nothing to deliver on the web channel — treat it as already delivered.
-  if (conversation.channel !== Channel.WHATSAPP || !conversation.whatsappPhone) {
+  if (!recipient) {
     return { ok: true };
   }
 
   try {
     const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
     if (!creds) return { ok: false };
-    await sendTextMessage(conversation.whatsappPhone, message.content, creds);
+    await sendTextMessage(recipient, message.content, creds);
     return { ok: true };
   } catch (err) {
     console.error("Failed to retry WhatsApp delivery:", err);
@@ -193,7 +217,8 @@ export async function sendWhatsappTemplate(
     where: { id: conversationId, clinicId: ctx.clinic.id },
   });
   if (!conversation) return { ok: false, reason: "not_found" };
-  if (conversation.channel !== Channel.WHATSAPP || !conversation.whatsappPhone) {
+  const recipient = whatsappRecipient(conversation);
+  if (!recipient) {
     return { ok: false, reason: "not_whatsapp" };
   }
 
@@ -202,7 +227,7 @@ export async function sendWhatsappTemplate(
 
   try {
     await sendTemplateMessage(
-      conversation.whatsappPhone,
+      recipient,
       {
         name: input.name,
         languageCode: input.language,

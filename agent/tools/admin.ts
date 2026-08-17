@@ -470,14 +470,22 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             isRead: true,
           },
         });
-        if (conv.channel === Channel.WHATSAPP && conv.whatsappPhone) {
+        if (
+          conv.channel === Channel.WHATSAPP &&
+          (conv.whatsappPhone || conv.whatsappUserId)
+        ) {
           // Per-clinic credentials; a delivery failure (unconfigured clinic,
           // closed 24-hour window) must not fail the whole tool — the message
-          // is already persisted in the conversation.
+          // is already persisted in the conversation. Reach a hidden-phone
+          // (username) contact by their BSUID, everyone else by phone.
           const creds = await getClinicWhatsappCredentials(conv.clinicId);
           if (creds) {
             try {
-              await sendTextMessage(conv.whatsappPhone, content, creds);
+              await sendTextMessage(
+                { phone: conv.whatsappPhone, userId: conv.whatsappUserId },
+                content,
+                creds,
+              );
             } catch (err) {
               console.error("[agent] failed to deliver WhatsApp message:", err);
             }
