@@ -3,7 +3,10 @@ import Link from "next/link";
 import { ArrowRight, Phone, Mail, Calendar, Activity, Stethoscope } from "lucide-react";
 import { requireActiveMember } from "@/lib/auth";
 import { getDoctor, listDoctorRules, listDoctorSlots } from "@/server/services/doctors";
+import { listBranches } from "@/server/services/branches";
+import { listSpecialtyOptions } from "@/server/services/specialties";
 import { listAppointments } from "@/server/services/appointments";
+import type { DoctorBranchOption } from "./_components/rules-tab";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import RulesTab from "./_components/rules-tab";
 import SlotsTab from "./_components/slots-tab";
@@ -34,6 +37,29 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
   const base = `/clinic/${slug}`;
   const doctor = await getDoctor(id, clinic.id);
   if (!doctor) notFound();
+
+  const [branchRows, specialties] = await Promise.all([
+    listBranches(clinic.id, { activeOnly: true }),
+    listSpecialtyOptions(clinic.id),
+  ]);
+  const branchHours = (b: (typeof branchRows)[number]) =>
+    b.hours.map((h) => ({
+      dayOfWeek: h.dayOfWeek,
+      isClosed: h.isClosed,
+      openTime: h.openTime,
+      closeTime: h.closeTime,
+    }));
+  // Branch options for the edit modal include hours so its inline availability
+  // editor can hint each branch's opening window.
+  const branchOptions = branchRows.map((b) => ({
+    id: b.id,
+    name: b.name,
+    hours: branchHours(b),
+  }));
+  // Branches this doctor works at, with hours — powers the rules editor helper.
+  const doctorBranches: DoctorBranchOption[] = branchRows
+    .filter((b) => doctor.branchIds.includes(b.id))
+    .map((b) => ({ id: b.id, name: b.name, hours: branchHours(b) }));
 
   const initials = doctor.profile.fullName
     .split(" ")
@@ -94,21 +120,62 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
                   {doctor.profile.phone}
                 </span>
               )}
+              {doctor.examinationFee && (
+                <span className="text-sm text-muted-foreground font-sans">
+                  {String(doctor.examinationFee)} ر.س / كشف
+                </span>
+              )}
               {doctor.consultationFee && (
                 <span className="text-sm text-muted-foreground font-sans">
                   {String(doctor.consultationFee)} ر.س / استشارة
+                </span>
+              )}
+              {doctor.yearsOfExperience != null && (
+                <span className="text-sm text-muted-foreground font-sans">
+                  {doctor.yearsOfExperience} سنة خبرة
                 </span>
               )}
               <span className="text-sm text-muted-foreground font-sans">
                 {doctor._count.appointments} موعد إجمالاً
               </span>
             </div>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              {doctor.title && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary font-sans">
+                  {doctor.title === "CONSULTANT" ? "استشاري" : "أخصائي"}
+                </span>
+              )}
+              {doctor.acceptsChildren && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-sans">
+                  يكشف على الأطفال
+                </span>
+              )}
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-sans">
+                {doctor.requiresAdvanceBooking ? "يحتاج حجزاً مسبقاً" : "يقبل بدون حجز مسبق"}
+              </span>
+            </div>
+            {doctor.qualifications && (
+              <p className="text-sm text-muted-foreground mt-2 font-sans max-w-xl">
+                <span className="font-medium text-foreground">المؤهلات العلمية: </span>
+                {doctor.qualifications}
+              </p>
+            )}
+            {doctor.expertiseAreas && (
+              <p className="text-sm text-muted-foreground mt-1 font-sans max-w-xl">
+                <span className="font-medium text-foreground">مجالات الخبرة الدقيقة: </span>
+                {doctor.expertiseAreas}
+              </p>
+            )}
             {doctor.bio && (
               <p className="text-sm text-muted-foreground mt-2 font-sans max-w-xl">{doctor.bio}</p>
             )}
           </div>
           <div className="flex-shrink-0">
-            <EditDoctorModal doctor={doctor} />
+            <EditDoctorModal
+              doctor={doctor}
+              branches={branchOptions}
+              specialties={specialties}
+            />
           </div>
         </div>
       </div>
@@ -134,7 +201,9 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
 
       {/* Tab content — each fetches only what it needs */}
       {activeTab === "appointments" && <AppointmentsContent doctorId={id} />}
-      {activeTab === "rules" && <RulesContent doctorId={id} />}
+      {activeTab === "rules" && (
+        <RulesContent doctorId={id} branches={doctorBranches} />
+      )}
       {activeTab === "slots" && <SlotsContent doctorId={id} />}
     </div>
   );
@@ -198,9 +267,15 @@ async function AppointmentsContent({ doctorId }: { doctorId: string }) {
   );
 }
 
-async function RulesContent({ doctorId }: { doctorId: string }) {
+async function RulesContent({
+  doctorId,
+  branches,
+}: {
+  doctorId: string;
+  branches: DoctorBranchOption[];
+}) {
   const rules = await listDoctorRules(doctorId);
-  return <RulesTab doctorId={doctorId} rules={rules} />;
+  return <RulesTab doctorId={doctorId} rules={rules} branches={branches} />;
 }
 
 async function SlotsContent({ doctorId }: { doctorId: string }) {

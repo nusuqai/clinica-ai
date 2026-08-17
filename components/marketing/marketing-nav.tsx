@@ -36,7 +36,9 @@ export function MarketingNav({ isAuthenticated, continueHref }: Props) {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent">
             <Stethoscope className="h-5 w-5 text-white" />
           </div>
-          <span className="font-heading text-xl font-bold text-white">ClinicaAI</span>
+          <span className="font-heading text-xl font-bold text-white">
+            ClinicaAI
+          </span>
         </Link>
 
         <div className="hidden items-center gap-8 md:flex">
@@ -61,12 +63,6 @@ export function MarketingNav({ isAuthenticated, continueHref }: Props) {
             </Link>
           ) : (
             <>
-              <Link
-                href="/login"
-                className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition-colors hover:border-accent hover:text-accent"
-              >
-                تسجيل الدخول
-              </Link>
               <a
                 href="#request"
                 className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"

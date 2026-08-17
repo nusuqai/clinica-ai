@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { UserCircle, Stethoscope, Phone, DollarSign } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { getDoctorByProfileId } from "@/server/services/doctors";
+import { listSpecialtyOptions } from "@/server/services/specialties";
 import ProfileForm from "./_components/profile-form";
 
 export default async function DoctorProfilePage({
@@ -13,6 +14,7 @@ export default async function DoctorProfilePage({
   const ctx = await requireClinicMember(slug, ["DOCTOR"]);
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
   if (!doctor) redirect(`/clinic/${slug}/doctor`);
+  const specialties = await listSpecialtyOptions(ctx.clinic.id);
 
   const initials = doctor.profile.fullName
     .split(" ")
@@ -86,7 +88,8 @@ export default async function DoctorProfilePage({
         <ProfileForm
           fullName={doctor.profile.fullName}
           phone={doctor.profile.phone}
-          specialty={doctor.specialty}
+          specialtyId={doctor.specialtyId}
+          specialties={specialties}
           bio={doctor.bio}
           consultationFee={
             doctor.consultationFee ? String(doctor.consultationFee) : null

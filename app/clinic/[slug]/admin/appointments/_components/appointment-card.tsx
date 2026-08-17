@@ -9,9 +9,10 @@ import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
 interface AppointmentCardProps {
   appointment: AdminAppointment;
+  onOpenDetails: (appointment: AdminAppointment) => void;
 }
 
-export default function AppointmentCard({ appointment }: AppointmentCardProps) {
+export default function AppointmentCard({ appointment, onOpenDetails }: AppointmentCardProps) {
   const canMove = getAllowedTransitions(appointment.status).length > 0;
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: appointment.id,
@@ -27,10 +28,15 @@ export default function AppointmentCard({ appointment }: AppointmentCardProps) {
         position: "relative",
         zIndex: isDragging ? 10 : "auto",
       }}
+      // A click (no drag — the sensor needs 6px of movement to start dragging)
+      // opens the details popup.
+      onClick={() => {
+        if (!isDragging) onOpenDetails(appointment);
+      }}
       className={[
-        "bg-card border border-border rounded-xl p-3 shadow-sm font-sans select-none",
+        "bg-card border border-border rounded-xl p-3 shadow-sm font-sans select-none cursor-pointer",
         isDragging ? "opacity-40" : "opacity-100",
-        canMove ? "cursor-grab active:cursor-grabbing" : "opacity-90",
+        canMove ? "active:cursor-grabbing" : "opacity-90",
       ].join(" ")}
       {...listeners}
       {...attributes}

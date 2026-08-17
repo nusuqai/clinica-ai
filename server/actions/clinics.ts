@@ -6,6 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureClinicAiCredit } from "@/server/services/aiCredit";
+import {
+  sendClinicApprovedInvite,
+  sendClinicCreatedInvite,
+} from "@/lib/email/send-auth-email";
+import {
+  sendRequestReceived,
+  sendClinicRejected,
+} from "@/lib/email/send-transactional";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +63,14 @@ export async function submitClinicRequest(formData: FormData) {
       note: (formData.get("note") as string)?.trim() || null,
     },
   });
+
+  // Best-effort acknowledgement — never block the request on email delivery.
+  await sendRequestReceived({
+    email: requesterEmail,
+    requesterName,
+    clinicName: requestedClinicName,
+  }).catch(() => {});
+
   return { success: true };
 }
 
@@ -124,6 +140,10 @@ export async function approveClinicRequest(requestId: string) {
       const c = await tx.clinic.create({
         data: { name: request.requestedClinicName, slug },
       });
+      // Every clinic must have at least one branch.
+      await tx.branch.create({
+        data: { clinicId: c.id, name: "الفرع الرئيسي", isMain: true },
+      });
       await tx.clinicMember.upsert({
         where: { userId_clinicId: { userId, clinicId: c.id } },
         update: { role: Role.ADMIN },
@@ -142,9 +162,24 @@ export async function approveClinicRequest(requestId: string) {
     });
 
     await ensureClinicAiCredit(clinic.id);
+
+    // Invite the new clinic admin to set their password. Best-effort: approval
+    // already succeeded, so a mail failure must not roll it back — surface it as
+    // a soft warning the UI can show while still reporting success.
+    const invite = await sendClinicApprovedInvite({
+      email: request.requesterEmail,
+      name: request.requesterName,
+      clinicName: clinic.name,
+    }).catch((e) => ({ ok: false as const, error: e instanceof Error ? e.message : "email failed" }));
+
     revalidatePath("/platform/requests");
     revalidatePath("/platform/clinics");
-    return { success: true, clinicId: clinic.id, slug: clinic.slug };
+    return {
+      success: true,
+      clinicId: clinic.id,
+      slug: clinic.slug,
+      emailSent: invite.ok,
+    };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "فشل الموافقة على الطلب" };
   }
@@ -152,10 +187,17 @@ export async function approveClinicRequest(requestId: string) {
 
 export async function rejectClinicRequest(requestId: string) {
   const reviewer = await requirePlatform();
-  await prisma.clinicRequest.update({
+  const request = await prisma.clinicRequest.update({
     where: { id: requestId },
     data: { status: ClinicRequestStatus.REJECTED, reviewedById: reviewer.id, reviewedAt: new Date() },
   });
+
+  await sendClinicRejected({
+    email: request.requesterEmail,
+    requesterName: request.requesterName,
+    clinicName: request.requestedClinicName,
+  }).catch(() => {});
+
   revalidatePath("/platform/requests");
   return { success: true };
 }
@@ -210,6 +252,10 @@ export async function createClinic(formData: FormData) {
           accentColor: (formData.get("accentColor") as string)?.trim() || null,
         },
       });
+      // Every clinic must have at least one branch.
+      await tx.branch.create({
+        data: { clinicId: c.id, name: "الفرع الرئيسي", isMain: true },
+      });
       await tx.clinicMember.upsert({
         where: { userId_clinicId: { userId, clinicId: c.id } },
         update: { role: Role.ADMIN },
@@ -219,8 +265,16 @@ export async function createClinic(formData: FormData) {
     });
 
     await ensureClinicAiCredit(clinic.id);
+
+    // Invite the clinic admin to set their password (best-effort).
+    const invite = await sendClinicCreatedInvite({
+      email: adminEmail,
+      name: adminName,
+      clinicName: clinic.name,
+    }).catch((e) => ({ ok: false as const, error: e instanceof Error ? e.message : "email failed" }));
+
     revalidatePath("/platform/clinics");
-    return { success: true, clinicId: clinic.id, slug: clinic.slug };
+    return { success: true, clinicId: clinic.id, slug: clinic.slug, emailSent: invite.ok };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "فشل إنشاء العيادة" };
   }

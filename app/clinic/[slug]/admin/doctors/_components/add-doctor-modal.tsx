@@ -4,13 +4,41 @@ import { useState, useTransition, useRef } from "react";
 import { UserPlus } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import { createDoctorAction } from "@/server/actions/admin";
+import SpecialtySelect, { type SpecialtyOption } from "./specialty-select";
+import AvailabilityRulesEditor, {
+  type EditorBranchHours,
+} from "./availability-rules-editor";
 
-export default function AddDoctorModal() {
+export interface BranchOption {
+  id: string;
+  name: string;
+  hours: EditorBranchHours[];
+}
+
+export default function AddDoctorModal({
+  branches,
+  specialties,
+}: {
+  branches: BranchOption[];
+  specialties: SpecialtyOption[];
+}) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [withAccount, setWithAccount] = useState(false);
+  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
   const [isPending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Branches picked for the doctor, with their hours — the availability editor
+  // only lets rules be added for branches the doctor actually works at.
+  const selectedBranches = branches.filter((b) =>
+    selectedBranchIds.includes(b.id),
+  );
+
+  function toggleBranch(id: string, checked: boolean) {
+    setSelectedBranchIds((ids) =>
+      checked ? [...ids, id] : ids.filter((x) => x !== id),
+    );
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -23,6 +51,7 @@ export default function AddDoctorModal() {
       } else {
         setOpen(false);
         formRef.current?.reset();
+        setSelectedBranchIds([]);
       }
     });
   }
@@ -37,7 +66,12 @@ export default function AddDoctorModal() {
         إضافة طبيب
       </button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="إضافة طبيب جديد" width="max-w-2xl">
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="إضافة طبيب جديد"
+        width="max-w-2xl"
+      >
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-sans">
@@ -48,7 +82,9 @@ export default function AddDoctorModal() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Full name */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">الاسم الكامل *</label>
+              <label className="text-sm font-medium text-foreground font-sans">
+                الاسم الكامل *
+              </label>
               <input
                 name="fullName"
                 required
@@ -57,72 +93,63 @@ export default function AddDoctorModal() {
               />
             </div>
 
-            {/* Phone */}
+            {/* Title (rank) */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">رقم الهاتف (اختياري)</label>
-              <input
-                name="phone"
-                type="tel"
-                dir="ltr"
-                placeholder="+966512345678"
+              <label className="text-sm font-medium text-foreground font-sans">
+                الدرجة (اختياري)
+              </label>
+              <select
+                name="title"
+                defaultValue=""
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
+              >
+                <option value="">غير محدد</option>
+                <option value="SPECIALIST">أخصائي</option>
+                <option value="CONSULTANT">استشاري</option>
+              </select>
             </div>
-
-            {/* Create login account toggle — doctors can exist without one */}
-            <label className="sm:col-span-2 flex items-center gap-2 text-sm font-medium text-foreground font-sans">
-              <input
-                type="checkbox"
-                checked={withAccount}
-                onChange={(e) => setWithAccount(e.target.checked)}
-              />
-              إنشاء حساب دخول للطبيب (اختياري — يمكن ربطه لاحقاً)
-            </label>
-
-            {withAccount && (
-              <>
-                {/* Email */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground font-sans">البريد الإلكتروني *</label>
-                  <input
-                    name="email"
-                    required
-                    type="email"
-                    dir="ltr"
-                    placeholder="doctor@example.com"
-                    className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-
-                {/* Password */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground font-sans">كلمة المرور *</label>
-                  <input
-                    name="password"
-                    required
-                    type="password"
-                    minLength={8}
-                    placeholder="8 أحرف على الأقل"
-                    className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-              </>
-            )}
 
             {/* Specialty */}
+            <div>
+              <SpecialtySelect specialties={specialties} required />
+            </div>
+
+            {/* Years of experience */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">التخصص *</label>
+              <label className="text-sm font-medium text-foreground font-sans">
+                سنوات الخبرة (اختياري)
+              </label>
               <input
-                name="specialty"
-                required
-                placeholder="طب الأسرة"
+                name="yearsOfExperience"
+                type="number"
+                min={0}
+                dir="ltr"
+                placeholder="10"
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
 
-            {/* Consultation fee */}
+            {/* Examination fee */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">رسوم الاستشارة (اختياري)</label>
+              <label className="text-sm font-medium text-foreground font-sans">
+                سعر الكشف (اختياري)
+              </label>
+              <input
+                name="examinationFee"
+                type="number"
+                min={0}
+                step="0.01"
+                dir="ltr"
+                placeholder="200.00"
+                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+
+            {/* Consultation (follow-up) fee */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground font-sans">
+                سعر الاستشارة (اختياري)
+              </label>
               <input
                 name="consultationFee"
                 type="number"
@@ -135,9 +162,86 @@ export default function AddDoctorModal() {
             </div>
           </div>
 
+          {/* Flags */}
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground font-sans">
+              <input
+                type="checkbox"
+                name="requiresAdvanceBooking"
+                defaultChecked
+              />
+              يحتاج حجزاً مسبقاً
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground font-sans">
+              <input type="checkbox" name="acceptsChildren" />
+              يكشف على الأطفال
+            </label>
+          </div>
+
+          {/* Branches */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground font-sans">
+              فروع العمل
+            </label>
+            {branches.length === 0 ? (
+              <p className="text-xs text-muted-foreground font-sans">
+                لا توجد فروع. أضف فرعاً من صفحة الفروع أولاً.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                {branches.map((b) => (
+                  <label
+                    key={b.id}
+                    className="flex items-center gap-2 text-sm font-sans border border-border rounded-xl px-3 py-2 cursor-pointer hover:bg-muted"
+                  >
+                    <input
+                      type="checkbox"
+                      name="branchIds"
+                      value={b.id}
+                      checked={selectedBranchIds.includes(b.id)}
+                      onChange={(e) => toggleBranch(b.id, e.target.checked)}
+                    />
+                    {b.name}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Availability rules (drafted, created with the doctor) */}
+          <AvailabilityRulesEditor mode="draft" branches={selectedBranches} />
+
+          {/* Qualifications */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground font-sans">
+              المؤهلات العلمية (اختياري)
+            </label>
+            <textarea
+              name="qualifications"
+              rows={2}
+              placeholder="بكالوريوس الطب والجراحة، ماجستير..."
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          {/* Areas of sub-specialty expertise */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground font-sans">
+              مجالات الخبرة الدقيقة (اختياري)
+            </label>
+            <textarea
+              name="expertiseAreas"
+              rows={2}
+              placeholder="جراحة المناظير، أمراض القلب التداخلية..."
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
           {/* Bio */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground font-sans">نبذة تعريفية (اختياري)</label>
+            <label className="text-sm font-medium text-foreground font-sans">
+              نبذة تعريفية (اختياري)
+            </label>
             <textarea
               name="bio"
               rows={3}

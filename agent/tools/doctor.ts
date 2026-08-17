@@ -5,6 +5,7 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
+import { listDoctorBranchIds } from "@/server/services/branches";
 import type { AgentContext } from "@/agent/types";
 import { jsonTool, dateStr, timeStr } from "./shared";
 
@@ -190,8 +191,13 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
     jsonTool(
       {
         name: "create_availability_rule",
-        description: "أنشئ قاعدة توفر أسبوعية للطبيب الحالي وولّد الفترات لها.",
+        description:
+          "أنشئ قاعدة توفر أسبوعية للطبيب الحالي في فرع محدّد وولّد الفترات لها. يجب أن تقع الساعات ضمن ساعات عمل الفرع في ذلك اليوم.",
         schema: z.object({
+          branchId: z
+            .string()
+            .nullable()
+            .describe("معرّف الفرع (اختياري إن كان للطبيب فرع واحد فقط)"),
           dayOfWeek: z.nativeEnum(DayOfWeek),
           startTime: z
             .string()
@@ -202,16 +208,23 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
           slotDurationMin: z.number().nullable(),
         }),
       },
-      async ({ dayOfWeek, startTime, endTime, slotDurationMin }) => {
+      async ({ branchId, dayOfWeek, startTime, endTime, slotDurationMin }) => {
+        let resolvedBranchId = branchId ?? "";
+        if (!resolvedBranchId) {
+          const branchIds = await listDoctorBranchIds(doctorId);
+          if (branchIds.length === 1) resolvedBranchId = branchIds[0];
+          else return { error: "حدّد الفرع (branchId) لهذه القاعدة." };
+        }
         const res = await DoctorService.createRule({
           doctorId,
+          branchId: resolvedBranchId,
           dayOfWeek,
           startTime,
           endTime,
           slotDurationMin: slotDurationMin ?? undefined,
         });
         if (!res.ok) return { error: res.error };
-        return { ruleId: res.data.id, dayOfWeek, startTime, endTime };
+        return { ruleId: res.data.id, branchId: resolvedBranchId, dayOfWeek, startTime, endTime };
       },
     ),
     jsonTool(

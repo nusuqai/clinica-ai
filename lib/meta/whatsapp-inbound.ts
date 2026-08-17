@@ -64,9 +64,19 @@ export function extractPhoneNumberId(
 }
 
 export interface InboundEnvelope {
-  /** Sender's number, digits only — matches `Conversation.whatsappPhone`. */
-  phone: string;
-  /** WhatsApp profile name, falling back to the phone number. */
+  /**
+   * Sender's number, digits only — matches `Conversation.whatsappPhone`. Null
+   * when the contact's phone is hidden (WhatsApp username): the payload then
+   * carries only `userId` (a BSUID). At least one of phone/userId is present.
+   */
+  phone: string | null;
+  /**
+   * Meta Business-Scoped User ID (`contacts[].user_id` / `messages[].from_user_id`,
+   * format "CC.alphanumeric") — matches `Conversation.whatsappUserId`. Always
+   * present on new-format payloads; null on legacy phone-only ones.
+   */
+  userId: string | null;
+  /** WhatsApp profile name, falling back to the phone number or BSUID. */
   name: string;
   /** Meta's message id (`wamid.…`), needed to mark read / show typing. */
   messageId: string;
@@ -131,36 +141,65 @@ export function parseWebhookPayload(
         | Record<string, unknown>
         | undefined;
       const messages = value?.messages;
-      if (!Array.isArray(messages)) continue;
+      if (!Array.isArray(messages)) {
+        // Status/read receipts land here (they carry `statuses`, not `messages`).
+        const keys = value ? Object.keys(value) : [];
+        console.log(
+          `[wa-debug] parse: change has no messages[] (keys=${keys.join(",")}) — skipped`,
+        );
+        continue;
+      }
 
       // The sender id these messages came in on — the routing key to a clinic.
       const phoneNumberId = (value?.metadata as { phone_number_id?: string } | undefined)
         ?.phone_number_id;
-      if (!phoneNumberId) continue;
+      if (!phoneNumberId) {
+        console.warn(
+          "[wa-debug] parse: change value missing metadata.phone_number_id — whole change skipped",
+        );
+        continue;
+      }
 
-      // wa_id → profile name, so batched messages from different contacts each
-      // get the right display name.
+      // identity (wa_id / phone OR user_id / BSUID) → profile name, so batched
+      // messages from different contacts each get the right display name.
       const names = new Map<string, string>();
       const contacts = Array.isArray(value?.contacts) ? value.contacts : [];
       for (const contact of contacts) {
         const c = contact as Record<string, unknown>;
-        const waId = c.wa_id as string | undefined;
         const name = (c.profile as { name?: string } | undefined)?.name;
-        if (waId && name) names.set(waId, name);
+        if (!name) continue;
+        const waId = c.wa_id as string | undefined;
+        const userId = c.user_id as string | undefined;
+        if (waId) names.set(waId, name);
+        if (userId) names.set(userId, name);
       }
 
       for (const raw of messages) {
         const msg = raw as Record<string, unknown>;
-        const phone = msg.from as string | undefined;
+        // Classic payloads carry `from` (phone); since the usernames rollout a
+        // contact with a hidden phone carries only `from_user_id` (a BSUID).
+        const phone = (msg.from as string | undefined) ?? null;
+        const userId = (msg.from_user_id as string | undefined) ?? null;
         const messageId = msg.id as string | undefined;
-        if (!phone || !messageId) continue;
+        // Need the message id plus at least one way to identify/reply to the sender.
+        if (!messageId || (!phone && !userId)) {
+          console.warn(
+            `[wa-debug] parse: message missing id and/or sender identity (type=${msg.type}) — skipped, not stored`,
+          );
+          continue;
+        }
 
+        const message = classify(msg);
+        console.log(
+          `[wa-debug] parse: message phone=${phone ?? "(hidden)"} userId=${userId ?? "(none)"} id=${messageId} type=${msg.type} → kind=${message.kind}`,
+        );
         envelopes.push({
           phone,
-          name: names.get(phone) ?? phone,
+          userId,
+          name: names.get(phone ?? "") ?? names.get(userId ?? "") ?? phone ?? userId ?? "",
           messageId,
           phoneNumberId,
-          message: classify(msg),
+          message,
         });
       }
     }

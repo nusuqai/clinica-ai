@@ -2,13 +2,23 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, err, type Result } from "./_result";
-import { AppointmentStatus, Role, type Doctor, type DayOfWeek } from "@prisma/client";
+import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
+import {
+  AppointmentStatus,
+  Role,
+  type Doctor,
+  type DayOfWeek,
+  type DoctorTitle,
+} from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 // A doctor is now a standalone record with its own name/contact. We keep a
 // `profile`-shaped view (synthesized from the doctor's own fields, plus the
 // linked account when there is one) so existing UI keeps working unchanged.
+// `specialty` is synthesized from the linked Specialty row's name (empty string
+// when unassigned), so read paths that expect a specialty string keep working
+// after the free-text column was normalized into the `specialties` table.
 export type DoctorWithProfile = Doctor & {
   profile: {
     fullName: string;
@@ -16,30 +26,38 @@ export type DoctorWithProfile = Doctor & {
     avatarUrl: string | null;
     createdAt: Date;
   };
+  specialty: string;
+  branchIds: string[];
   email?: string;
   _count: { appointments: number };
 };
 
 type DoctorRow = Doctor & {
   profile: { avatarUrl: string | null; createdAt: Date } | null;
+  specialty: { name: string } | null;
+  branches: { branchId: string }[];
   _count: { appointments: number };
 };
 
 function toView(d: DoctorRow, email?: string): DoctorWithProfile {
   return {
     ...d,
+    specialty: d.specialty?.name ?? "",
     profile: {
       fullName: d.fullName,
       phone: d.phone,
       avatarUrl: d.profile?.avatarUrl ?? null,
       createdAt: d.profile?.createdAt ?? new Date(0),
     },
+    branchIds: d.branches.map((b) => b.branchId),
     ...(email !== undefined ? { email } : {}),
   };
 }
 
 const linkedProfileSelect = {
   profile: { select: { avatarUrl: true, createdAt: true } },
+  specialty: { select: { name: true } },
+  branches: { select: { branchId: true } },
   _count: { select: { appointments: true } },
 } as const;
 
@@ -47,9 +65,17 @@ export interface CreateDoctorInput {
   clinicId: string;
   fullName: string;
   phone?: string;
-  specialty: string;
+  title?: DoctorTitle | null;
+  qualifications?: string;
+  expertiseAreas?: string;
+  specialtyId?: string | null;
   bio?: string;
+  yearsOfExperience?: number;
+  examinationFee?: number;
   consultationFee?: number;
+  requiresAdvanceBooking?: boolean;
+  acceptsChildren?: boolean;
+  branchIds?: string[];
 }
 
 export interface CreateDoctorAccountInput extends CreateDoctorInput {
@@ -59,15 +85,24 @@ export interface CreateDoctorAccountInput extends CreateDoctorInput {
 
 export interface UpdateDoctorInput {
   doctorId: string;
-  specialty?: string;
+  title?: DoctorTitle | null;
+  qualifications?: string | null;
+  expertiseAreas?: string | null;
+  specialtyId?: string | null;
   bio?: string;
-  consultationFee?: number;
+  yearsOfExperience?: number | null;
+  examinationFee?: number | null;
+  consultationFee?: number | null;
+  requiresAdvanceBooking?: boolean;
+  acceptsChildren?: boolean;
   fullName?: string;
   phone?: string | null;
+  branchIds?: string[];
 }
 
 export interface CreateRuleInput {
   doctorId: string;
+  branchId: string;
   dayOfWeek: DayOfWeek;
   startTime: string;
   endTime: string;
@@ -104,7 +139,15 @@ export async function listActiveDoctors(
 export async function getAvailableSlotsForBooking(
   doctorId: string,
   date: Date,
-): Promise<{ id: string; startTime: Date; endTime: Date }[]> {
+): Promise<
+  {
+    id: string;
+    startTime: Date;
+    endTime: Date;
+    branchId: string | null;
+    branch: { id: string; name: string } | null;
+  }[]
+> {
   const dayStart = new Date(date);
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(date);
@@ -119,7 +162,13 @@ export async function getAvailableSlotsForBooking(
       date: { gte: dayStart, lte: dayEnd },
       startTime: { gt: now },
     },
-    select: { id: true, startTime: true, endTime: true },
+    select: {
+      id: true,
+      startTime: true,
+      endTime: true,
+      branchId: true,
+      branch: { select: { id: true, name: true } },
+    },
     orderBy: { startTime: "asc" },
   });
 }
@@ -213,10 +262,22 @@ export async function createDoctor(
         clinicId: input.clinicId,
         fullName: input.fullName,
         phone: input.phone || null,
-        specialty: input.specialty,
+        title: input.title ?? null,
+        qualifications: input.qualifications || null,
+        expertiseAreas: input.expertiseAreas || null,
+        specialtyId: input.specialtyId ?? null,
         bio: input.bio ?? null,
+        yearsOfExperience: input.yearsOfExperience ?? null,
+        examinationFee: input.examinationFee ?? null,
         consultationFee: input.consultationFee ?? null,
+        requiresAdvanceBooking: input.requiresAdvanceBooking ?? true,
+        acceptsChildren: input.acceptsChildren ?? false,
         isActive: true,
+        ...(input.branchIds?.length && {
+          branches: {
+            create: [...new Set(input.branchIds)].map((branchId) => ({ branchId })),
+          },
+        }),
       },
     });
     return ok({ id: doctor.id, fullName: doctor.fullName });
@@ -286,10 +347,22 @@ export async function createDoctorAccount(
           profileId: userId,
           fullName: input.fullName,
           phone: input.phone || null,
-          specialty: input.specialty,
+          title: input.title ?? null,
+          qualifications: input.qualifications || null,
+          expertiseAreas: input.expertiseAreas || null,
+          specialtyId: input.specialtyId ?? null,
           bio: input.bio ?? null,
+          yearsOfExperience: input.yearsOfExperience ?? null,
+          examinationFee: input.examinationFee ?? null,
           consultationFee: input.consultationFee ?? null,
+          requiresAdvanceBooking: input.requiresAdvanceBooking ?? true,
+          acceptsChildren: input.acceptsChildren ?? false,
           isActive: true,
+          ...(input.branchIds?.length && {
+            branches: {
+              create: [...new Set(input.branchIds)].map((branchId) => ({ branchId })),
+            },
+          }),
         },
       });
     });
@@ -347,17 +420,53 @@ export async function updateDoctor(
   input: UpdateDoctorInput,
 ): Promise<Result<void>> {
   try {
-    await prisma.doctor.update({
-      where: { id: input.doctorId },
-      data: {
-        ...(input.fullName !== undefined && { fullName: input.fullName }),
-        ...(input.phone !== undefined && { phone: input.phone }),
-        ...(input.specialty !== undefined && { specialty: input.specialty }),
-        ...(input.bio !== undefined && { bio: input.bio }),
-        ...(input.consultationFee !== undefined && {
-          consultationFee: input.consultationFee,
-        }),
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.doctor.update({
+        where: { id: input.doctorId },
+        data: {
+          ...(input.fullName !== undefined && { fullName: input.fullName }),
+          ...(input.phone !== undefined && { phone: input.phone }),
+          ...(input.title !== undefined && { title: input.title }),
+          ...(input.qualifications !== undefined && {
+            qualifications: input.qualifications,
+          }),
+          ...(input.expertiseAreas !== undefined && {
+            expertiseAreas: input.expertiseAreas,
+          }),
+          ...(input.specialtyId !== undefined && { specialtyId: input.specialtyId }),
+          ...(input.bio !== undefined && { bio: input.bio }),
+          ...(input.yearsOfExperience !== undefined && {
+            yearsOfExperience: input.yearsOfExperience,
+          }),
+          ...(input.examinationFee !== undefined && {
+            examinationFee: input.examinationFee,
+          }),
+          ...(input.consultationFee !== undefined && {
+            consultationFee: input.consultationFee,
+          }),
+          ...(input.requiresAdvanceBooking !== undefined && {
+            requiresAdvanceBooking: input.requiresAdvanceBooking,
+          }),
+          ...(input.acceptsChildren !== undefined && {
+            acceptsChildren: input.acceptsChildren,
+          }),
+        },
+      });
+      if (input.branchIds !== undefined) {
+        const unique = [...new Set(input.branchIds)];
+        await tx.doctorBranch.deleteMany({
+          where: {
+            doctorId: input.doctorId,
+            branchId: { notIn: unique.length ? unique : ["__none__"] },
+          },
+        });
+        if (unique.length) {
+          await tx.doctorBranch.createMany({
+            data: unique.map((branchId) => ({ doctorId: input.doctorId, branchId })),
+            skipDuplicates: true,
+          });
+        }
+      }
     });
     return ok(undefined);
   } catch (e) {
@@ -401,17 +510,69 @@ export async function deleteDoctor(doctorId: string): Promise<Result<void>> {
 export async function listDoctorRules(doctorId: string) {
   return prisma.availabilityRule.findMany({
     where: { doctorId },
+    include: { branch: { select: { id: true, name: true } } },
     orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
   });
+}
+
+const DAY_LABELS_AR: Record<DayOfWeek, string> = {
+  SUN: "الأحد",
+  MON: "الإثنين",
+  TUE: "الثلاثاء",
+  WED: "الأربعاء",
+  THU: "الخميس",
+  FRI: "الجمعة",
+  SAT: "السبت",
+};
+
+/**
+ * Validates a proposed availability window against the branch: the doctor must
+ * work at the branch, and (when the branch has hours configured for that day)
+ * the window must fall inside the branch's open hours. A day with NO configured
+ * hours row is treated as unconfigured and allowed. Returns an Arabic error
+ * message, or null when valid. "HH:MM" strings compare lexicographically.
+ */
+export async function validateRuleAgainstBranch(
+  doctorId: string,
+  branchId: string,
+  dayOfWeek: DayOfWeek,
+  startTime: string,
+  endTime: string,
+): Promise<string | null> {
+  if (endTime <= startTime) return "وقت النهاية يجب أن يكون بعد وقت البداية.";
+
+  if (!(await doctorWorksAtBranch(doctorId, branchId))) {
+    return "هذا الطبيب لا يعمل في هذا الفرع. أضف الفرع إلى الطبيب أولاً.";
+  }
+
+  const window = await getBranchDayWindow(branchId, dayOfWeek);
+  if (!window) return null; // branch hours not configured for this day → allow
+  const dayLabel = DAY_LABELS_AR[dayOfWeek];
+  if (window.isClosed) return `الفرع مغلق يوم ${dayLabel}. اختر يوماً آخر.`;
+  if (!window.openTime || !window.closeTime) return null; // partially configured → allow
+  if (startTime < window.openTime || endTime > window.closeTime) {
+    return `الفرع يعمل يوم ${dayLabel} من ${window.openTime} إلى ${window.closeTime} فقط.`;
+  }
+  return null;
 }
 
 export async function createRule(
   input: CreateRuleInput,
 ): Promise<Result<{ id: string }>> {
   try {
+    const validationError = await validateRuleAgainstBranch(
+      input.doctorId,
+      input.branchId,
+      input.dayOfWeek,
+      input.startTime,
+      input.endTime,
+    );
+    if (validationError) return err(validationError);
+
     const rule = await prisma.availabilityRule.create({
       data: {
         doctorId: input.doctorId,
+        branchId: input.branchId,
         dayOfWeek: input.dayOfWeek,
         startTime: input.startTime,
         endTime: input.endTime,
@@ -495,6 +656,7 @@ export async function generateSlotsForRule(
 
     const slotsToCreate: {
       doctorId: string;
+      branchId: string | null;
       ruleId: string;
       date: Date;
       startTime: Date;
@@ -512,6 +674,7 @@ export async function generateSlotsForRule(
         while (t + durationMs <= dayEndMs) {
           slotsToCreate.push({
             doctorId: rule.doctorId,
+            branchId: rule.branchId, // inherit the rule's branch
             ruleId: rule.id,
             date: slotDate,
             startTime: new Date(t),

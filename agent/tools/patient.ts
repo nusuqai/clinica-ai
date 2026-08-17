@@ -5,7 +5,31 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as AppointmentService from "@/server/services/appointments";
 import type { AgentContext } from "@/agent/types";
-import { jsonTool, dateStr, timeStr } from "./shared";
+import { jsonTool, dateStr, timeStr, money } from "./shared";
+
+/**
+ * Full confirmation card for an appointment, read straight from the DB so the
+ * reply reflects the record actually saved — doctor, branch, date, time and
+ * fee — instead of what the agent believed it was booking. Lets the user spot
+ * a wrong slot/branch immediately.
+ */
+async function appointmentCard(appointmentId: string) {
+  const a = await AppointmentService.getAppointmentDetails(appointmentId);
+  if (!a) return { appointmentId };
+  return {
+    appointmentId: a.id,
+    status: a.status,
+    doctorName: a.doctor.fullName,
+    specialty: a.doctor.specialty?.name ?? null,
+    branch: a.branch?.name ?? null,
+    branchAddress: a.branch?.address ?? null,
+    date: dateStr(a.slot.date),
+    startTime: timeStr(a.slot.startTime),
+    endTime: timeStr(a.slot.endTime),
+    examinationFee: money(a.doctor.examinationFee),
+    notes: a.patientNotes ?? null,
+  };
+}
 
 export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
   const patientId = ctx.actorId!;
@@ -28,21 +52,8 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           notes ?? undefined,
         );
         if (!res.ok) return { error: res.error };
-        const appt = await prisma.appointment.findUnique({
-          where: { id: res.data.id },
-          include: {
-            slot: { select: { date: true, startTime: true, endTime: true } },
-            doctor: { select: { specialty: true, fullName: true } },
-          },
-        });
-        return {
-          appointmentId: res.data.id,
-          status: AppointmentStatus.PENDING,
-          doctorName: appt?.doctor.fullName,
-          specialty: appt?.doctor.specialty,
-          date: appt ? dateStr(appt.slot.date) : undefined,
-          time: appt ? timeStr(appt.slot.startTime) : undefined,
-        };
+        // Echo the saved appointment in full so the user can verify every detail.
+        return await appointmentCard(res.data.id);
       },
     ),
     jsonTool(
@@ -101,10 +112,12 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           AppointmentStatus.CANCELLED,
           "إعادة جدولة",
         );
+        // Return the new appointment in full (from the saved record) so the
+        // user can confirm the reschedule landed on the slot/branch they meant.
         return {
           oldAppointmentId: appointmentId,
-          newAppointmentId: created.data.id,
-          status: AppointmentStatus.PENDING,
+          rescheduled: true,
+          ...(await appointmentCard(created.data.id)),
         };
       },
     ),
@@ -127,6 +140,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
             status: a.status,
             doctorName: a.doctor.profile.fullName,
             specialty: a.doctor.specialty,
+            branch: a.branch?.name ?? null,
             date: dateStr(a.slot.date),
             time: timeStr(a.slot.startTime),
           })),

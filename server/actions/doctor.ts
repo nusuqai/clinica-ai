@@ -7,10 +7,16 @@ import { Role, type AppointmentStatus, type DayOfWeek } from "@prisma/client";
 import { getActiveClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
+import { listDoctorBranchIds } from "@/server/services/branches";
+import { resolveSpecialtyId } from "@/server/services/specialties";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
-async function requireDoctor(): Promise<{ userId: string; doctorId: string }> {
+async function requireDoctor(): Promise<{
+  userId: string;
+  doctorId: string;
+  clinicId: string;
+}> {
   const ctx = await getActiveClinicContext();
   if (!ctx || ctx.role !== Role.DOCTOR) throw new Error("غير مصرح");
 
@@ -20,7 +26,7 @@ async function requireDoctor(): Promise<{ userId: string; doctorId: string }> {
   });
   if (!doctor) throw new Error("غير مصرح");
 
-  return { userId: ctx.user.id, doctorId: doctor.id };
+  return { userId: ctx.user.id, doctorId: doctor.id, clinicId: ctx.clinic.id };
 }
 
 // ─── Appointment actions ──────────────────────────────────────────────────────
@@ -71,13 +77,19 @@ export async function updateDoctorNotesAction(
 // ─── Profile actions ──────────────────────────────────────────────────────────
 
 export async function updateMyProfileAction(formData: FormData) {
-  const { doctorId } = await requireDoctor();
+  const { doctorId, clinicId } = await requireDoctor();
+
+  const specialtyRes = await resolveSpecialtyId(clinicId, {
+    specialtyId: (formData.get("specialtyId") as string) || null,
+    newSpecialtyName: (formData.get("newSpecialtyName") as string) || null,
+  });
+  if (!specialtyRes.ok) return { error: specialtyRes.error };
 
   const result = await DoctorService.updateDoctor({
     doctorId,
     fullName: (formData.get("fullName") as string) || undefined,
     phone: (formData.get("phone") as string) || null,
-    specialty: (formData.get("specialty") as string) || undefined,
+    specialtyId: specialtyRes.data,
     bio: (formData.get("bio") as string) || undefined,
     consultationFee: formData.get("consultationFee")
       ? Number(formData.get("consultationFee"))
@@ -95,8 +107,18 @@ export async function updateMyProfileAction(formData: FormData) {
 export async function createMyRuleAction(formData: FormData) {
   const { doctorId } = await requireDoctor();
 
+  // Branch is required; if the form omits it, fall back to the doctor's single
+  // branch when there's exactly one.
+  let branchId = (formData.get("branchId") as string) || "";
+  if (!branchId) {
+    const branchIds = await listDoctorBranchIds(doctorId);
+    if (branchIds.length === 1) branchId = branchIds[0];
+    else return { error: "اختر الفرع لهذه القاعدة." };
+  }
+
   const result = await DoctorService.createRule({
     doctorId,
+    branchId,
     dayOfWeek: formData.get("dayOfWeek") as DayOfWeek,
     startTime: formData.get("startTime") as string,
     endTime: formData.get("endTime") as string,

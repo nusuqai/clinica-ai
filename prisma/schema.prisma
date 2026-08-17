@@ -61,6 +61,32 @@ enum AiLedgerType {
   ADJUSTMENT
 }
 
+// Phone-number kinds shown on clinic/branch contact info.
+// LANDLINE = التليفون الأرضي, MOBILE = الخط العادي/موبايل.
+enum PhoneType {
+  LANDLINE
+  MOBILE
+  WHATSAPP
+}
+
+// Doctor's professional rank shown on their profile.
+// SPECIALIST = أخصائي, CONSULTANT = استشاري.
+enum DoctorTitle {
+  SPECIALIST
+  CONSULTANT
+}
+
+// Social-media platforms for a clinic's public accounts.
+enum SocialPlatform {
+  FACEBOOK
+  INSTAGRAM
+  X
+  TIKTOK
+  YOUTUBE
+  WEBSITE
+  OTHER
+}
+
 // ─── Tenancy ────────────────────────────────────────────────────────────────
 
 // A tenant. Each clinic is isolated: its own members, doctors, appointments,
@@ -69,6 +95,7 @@ model Clinic {
   id           String   @id @default(uuid()) @db.Uuid
   slug         String   @unique
   name         String
+  description  String?
   logoUrl      String?
   primaryColor String?
   accentColor  String?
@@ -77,16 +104,115 @@ model Clinic {
   updatedAt    DateTime @updatedAt
 
   members           ClinicMember[]
+  branches          Branch[]
+  phones            ClinicPhone[]
+  socials           ClinicSocial[]
+  specialties       Specialty[]
   doctors           Doctor[]
   appointments      Appointment[]
   conversations     Conversation[]
-  requestsFulfilled ClinicRequest[] @relation("RequestCreatedClinic")
+  requestsFulfilled ClinicRequest[]  @relation("RequestCreatedClinic")
   whatsappConfig    WhatsappConfig?
   aiCredit          ClinicAiCredit?
   aiUsage           AiUsageLog[]
   aiLedger          AiCreditLedger[]
 
   @@map("clinics")
+}
+
+// ─── Branches & contact info ──────────────────────────────────────────────────
+
+// A physical location of a clinic. Every clinic has at least one branch
+// (isMain). Doctors work at one or more branches (DoctorBranch), and each
+// availability rule / slot / appointment carries the branch it belongs to.
+model Branch {
+  id              String   @id @default(uuid()) @db.Uuid
+  clinicId        String   @db.Uuid
+  name            String
+  isMain          Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  address         String?
+  mapsUrl         String? // google maps link
+  latitude        Decimal? @db.Decimal(10, 7)
+  longitude       Decimal? @db.Decimal(10, 7)
+  hasParking      Boolean  @default(false)
+  parkingInfo     String?
+  nearestLandmark String? // أقرب معلم
+  directions      String? // كيفية الوصول
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  clinic            Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  phones            BranchPhone[]
+  hours             BranchHours[]
+  doctors           DoctorBranch[]
+  availabilityRules AvailabilityRule[]
+  slots             Slot[]
+  appointments      Appointment[]
+
+  @@index([clinicId])
+  @@map("branches")
+}
+
+// Phone specific to one branch.
+model BranchPhone {
+  id        String    @id @default(uuid()) @db.Uuid
+  branchId  String    @db.Uuid
+  type      PhoneType
+  number    String
+  label     String? // e.g. "استقبال", "حجز"
+  isPrimary Boolean   @default(false)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId])
+  @@map("branch_phones")
+}
+
+// Branch opening hours — one row per weekday. A day off is isClosed = true
+// (openTime/closeTime null). Doctor availability rules must fit inside the
+// branch's [openTime, closeTime] for that day.
+model BranchHours {
+  id        String    @id @default(uuid()) @db.Uuid
+  branchId  String    @db.Uuid
+  dayOfWeek DayOfWeek
+  isClosed  Boolean   @default(false)
+  openTime  String? // "HH:MM"
+  closeTime String? // "HH:MM"
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, dayOfWeek])
+  @@map("branch_hours")
+}
+
+// General clinic-level phone. The clinic's main number is the row with
+// isPrimary = true.
+model ClinicPhone {
+  id        String    @id @default(uuid()) @db.Uuid
+  clinicId  String    @db.Uuid
+  type      PhoneType
+  number    String
+  label     String?
+  isPrimary Boolean   @default(false)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId])
+  @@map("clinic_phones")
+}
+
+// A clinic's public social-media account. Clinic-level (not per-branch).
+model ClinicSocial {
+  id       String         @id @default(uuid()) @db.Uuid
+  clinicId String         @db.Uuid
+  platform SocialPlatform
+  url      String
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId])
+  @@map("clinic_socials")
 }
 
 // Per-clinic WhatsApp Cloud API (Meta official) credentials. Entered manually
@@ -178,43 +304,97 @@ model Profile {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  doctor           Doctor?
-  appointments     Appointment[]
-  conversations    Conversation[]
-  sentMessages     Message[]       @relation("SenderProfile")
+  doctor            Doctor?
+  appointments      Appointment[]
+  conversations     Conversation[]
+  sentMessages      Message[]       @relation("SenderProfile")
   clinicMemberships ClinicMember[]
-  reviewedRequests ClinicRequest[] @relation("RequestReviewer")
+  reviewedRequests  ClinicRequest[] @relation("RequestReviewer")
 
   @@map("profiles")
+}
+
+// Throttles how often a signup verification code can be emailed to an address.
+// Keyed by email (lower-cased) rather than a user id, because the account may
+// not be confirmed — or may be recreated — between requests. See the OTP resend
+// cooldown in startClinicSignup / signInToClinic.
+model OtpRequest {
+  email      String   @id
+  lastSentAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("otp_requests")
 }
 
 // A doctor is a standalone record scoped to a clinic. It can exist WITHOUT any
 // login account (profileId null) and still be linked to appointments; an account
 // can be linked later by setting profileId.
 model Doctor {
-  id              String   @id @default(uuid()) @db.Uuid
-  clinicId        String   @db.Uuid
-  profileId       String?  @unique @db.Uuid
-  fullName        String
-  phone           String?
-  specialty       String
-  bio             String?
-  consultationFee Decimal? @db.Decimal(10, 2)
-  isActive        Boolean  @default(true)
+  id                     String   @id @default(uuid()) @db.Uuid
+  clinicId               String   @db.Uuid
+  profileId              String?  @unique @db.Uuid
+  specialtyId            String?  @db.Uuid // FK to the clinic's Specialty list
+  fullName               String
+  phone                  String?
+  title                  DoctorTitle? // أخصائي / استشاري
+  qualifications         String? // المؤهلات العلمية
+  expertiseAreas         String? // مجالات الخبرة الدقيقة
+  bio                    String?
+  yearsOfExperience      Int?
+  examinationFee         Decimal? @db.Decimal(10, 2) // سعر الكشف
+  consultationFee        Decimal? @db.Decimal(10, 2) // سعر الاستشارة
+  requiresAdvanceBooking Boolean  @default(true) // يحتاج حجزاً مسبقاً؟
+  acceptsChildren        Boolean  @default(false) // يكشف على الأطفال؟
+  isActive               Boolean  @default(true)
 
   clinic            Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   profile           Profile?           @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  specialty         Specialty?         @relation(fields: [specialtyId], references: [id], onDelete: SetNull)
+  branches          DoctorBranch[]
   availabilityRules AvailabilityRule[]
   slots             Slot[]
   appointments      Appointment[]
 
   @@index([clinicId])
+  @@index([specialtyId])
   @@map("doctors")
+}
+
+// Per-clinic list of medical specialties. Names are unique within a clinic;
+// the same name can exist across different clinics. Case-insensitive
+// uniqueness is enforced at the service layer.
+model Specialty {
+  id        String   @id @default(uuid()) @db.Uuid
+  clinicId  String   @db.Uuid
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic  Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  doctors Doctor[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+  @@map("specialties")
+}
+
+// Join table: which branches a doctor works at (many-to-many).
+model DoctorBranch {
+  doctorId String @db.Uuid
+  branchId String @db.Uuid
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([doctorId, branchId])
+  @@index([branchId])
+  @@map("doctor_branches")
 }
 
 model AvailabilityRule {
   id              String    @id @default(uuid()) @db.Uuid
   doctorId        String    @db.Uuid
+  branchId        String?   @db.Uuid // branch this schedule is for (required for new rows)
   dayOfWeek       DayOfWeek
   startTime       String // "HH:MM" e.g. "14:00"
   endTime         String // "HH:MM" e.g. "17:00"
@@ -222,16 +402,19 @@ model AvailabilityRule {
   isActive        Boolean   @default(true)
   generatedUntil  DateTime? @db.Date // tracks how far ahead slots have been generated
 
-  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  doctor Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
   slots  Slot[]
 
   @@index([doctorId])
+  @@index([branchId])
   @@map("availability_rules")
 }
 
 model Slot {
   id        String   @id @default(uuid()) @db.Uuid
   doctorId  String   @db.Uuid
+  branchId  String?  @db.Uuid // copied from the rule at generation time
   ruleId    String?  @db.Uuid
   date      DateTime @db.Date
   startTime DateTime
@@ -239,16 +422,19 @@ model Slot {
   isBlocked Boolean  @default(false)
 
   doctor      Doctor            @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  branch      Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
   rule        AvailabilityRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
   appointment Appointment?
 
   @@index([doctorId, date])
+  @@index([branchId])
   @@map("slots")
 }
 
 model Appointment {
   id                 String            @id @default(uuid()) @db.Uuid
   clinicId           String            @db.Uuid
+  branchId           String?           @db.Uuid // copied from the slot at booking time
   patientId          String            @db.Uuid
   doctorId           String            @db.Uuid
   slotId             String            @unique @db.Uuid
@@ -261,11 +447,13 @@ model Appointment {
   updatedAt          DateTime          @updatedAt
 
   clinic  Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  branch  Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
   patient Profile @relation(fields: [patientId], references: [id])
   doctor  Doctor  @relation(fields: [doctorId], references: [id])
   slot    Slot    @relation(fields: [slotId], references: [id])
 
   @@index([clinicId])
+  @@index([branchId])
   @@index([patientId])
   @@index([doctorId])
   @@map("appointments")
@@ -276,6 +464,11 @@ model Conversation {
   clinicId      String   @db.Uuid
   userId        String?  @db.Uuid
   whatsappPhone String?
+  // Meta Business-Scoped User ID (BSUID). Since the WhatsApp usernames rollout,
+  // contacts messaging with a username hidden phone arrive with only this id
+  // (format "CC.alphanumeric") and no phone — so it, not the phone, is the
+  // stable per-clinic key for those threads. Null for web + legacy WhatsApp rows.
+  whatsappUserId String?
   whatsappName  String?
   channel       Channel
   createdAt     DateTime @default(now())
@@ -288,6 +481,7 @@ model Conversation {
   escalations Escalation[]
 
   @@unique([clinicId, whatsappPhone])
+  @@unique([clinicId, whatsappUserId])
   @@unique([clinicId, userId, channel])
   @@index([clinicId])
   @@map("conversations")

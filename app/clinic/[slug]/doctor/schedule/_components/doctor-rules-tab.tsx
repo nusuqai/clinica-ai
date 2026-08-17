@@ -13,6 +13,20 @@ import Modal from "@/components/admin/modal";
 import { DayOfWeek, type AvailabilityRule } from "@prisma/client";
 import { formatSlotDate } from "@/lib/slot-time";
 
+export interface DoctorBranchHours {
+  dayOfWeek: DayOfWeek;
+  isClosed: boolean;
+  openTime: string | null;
+  closeTime: string | null;
+}
+export interface DoctorBranchOption {
+  id: string;
+  name: string;
+  hours: DoctorBranchHours[];
+}
+
+type RuleRow = AvailabilityRule & { branch: { id: string; name: string } | null };
+
 const DAY_LABELS: Record<DayOfWeek, string> = {
   [DayOfWeek.SUN]: "الأحد",
   [DayOfWeek.MON]: "الاثنين",
@@ -34,16 +48,30 @@ const DAYS_ORDER: DayOfWeek[] = [
 ];
 
 interface DoctorRulesTabProps {
-  rules: AvailabilityRule[];
+  rules: RuleRow[];
+  branches: DoctorBranchOption[];
 }
 
-export default function DoctorRulesTab({ rules }: DoctorRulesTabProps) {
+export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps) {
   const router = useRouter();
   const [addOpen, setAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [selBranch, setSelBranch] = useState<string>(branches[0]?.id ?? "");
+  const [selDay, setSelDay] = useState<DayOfWeek>(DayOfWeek.SAT);
+
+  const branchWindow = (() => {
+    const branch = branches.find((b) => b.id === selBranch);
+    if (!branch) return null;
+    const row = branch.hours.find((h) => h.dayOfWeek === selDay);
+    if (!row) return { text: "لم تُحدَّد ساعات لهذا الفرع في هذا اليوم (سيُسمح بأي وقت).", ok: true };
+    if (row.isClosed) return { text: "الفرع مغلق في هذا اليوم.", ok: false };
+    if (row.openTime && row.closeTime)
+      return { text: `ساعات عمل الفرع: ${row.openTime} – ${row.closeTime}`, ok: true };
+    return { text: "ساعات هذا اليوم غير مكتملة.", ok: true };
+  })();
 
   function showSuccess(msg: string) {
     setSuccessMsg(msg);
@@ -100,12 +128,20 @@ export default function DoctorRulesTab({ rules }: DoctorRulesTabProps) {
         <p className="text-sm text-muted-foreground font-sans">{rules.length} قاعدة</p>
         <button
           onClick={() => setAddOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium font-sans hover:bg-primary/90 transition-colors"
+          disabled={branches.length === 0}
+          title={branches.length === 0 ? "لم يتم تعيينك لأي فرع بعد" : undefined}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium font-sans hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           <Plus className="w-4 h-4" />
           إضافة قاعدة
         </button>
       </div>
+
+      {branches.length === 0 && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-4 py-3 text-sm font-sans">
+          لم يتم تعيينك لأي فرع بعد. تواصل مع مسؤول العيادة لتعيين فرع عملك قبل إضافة قواعد التوفر.
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-sans">
@@ -139,6 +175,11 @@ export default function DoctorRulesTab({ rules }: DoctorRulesTabProps) {
                   <span className="text-muted-foreground font-sans text-sm" dir="ltr">
                     {rule.startTime} – {rule.endTime}
                   </span>
+                  {rule.branch && (
+                    <span className="text-xs text-primary font-sans bg-primary/10 px-2 py-0.5 rounded-full">
+                      {rule.branch.name}
+                    </span>
+                  )}
                   <span className="text-xs text-muted-foreground font-sans bg-muted px-2 py-0.5 rounded-full">
                     {rule.slotDurationMin} دقيقة / موعد
                   </span>
@@ -211,16 +252,42 @@ export default function DoctorRulesTab({ rules }: DoctorRulesTabProps) {
         <form onSubmit={handleAdd} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5 sm:col-span-2">
+              <label className="text-sm font-medium text-foreground font-sans">الفرع *</label>
+              <select
+                name="branchId"
+                required
+                value={selBranch}
+                onChange={(e) => setSelBranch(e.target.value)}
+                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
               <label className="text-sm font-medium text-foreground font-sans">يوم الأسبوع *</label>
               <select
                 name="dayOfWeek"
                 required
+                value={selDay}
+                onChange={(e) => setSelDay(e.target.value as DayOfWeek)}
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
                 {DAYS_ORDER.map((day) => (
                   <option key={day} value={day}>{DAY_LABELS[day]}</option>
                 ))}
               </select>
+              {branchWindow && (
+                <p
+                  className={[
+                    "text-xs font-sans mt-1",
+                    branchWindow.ok ? "text-muted-foreground" : "text-red-600",
+                  ].join(" ")}
+                >
+                  {branchWindow.text}
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground font-sans">وقت البداية *</label>

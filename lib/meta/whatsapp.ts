@@ -45,6 +45,33 @@ function normalisePhone(phone: string): string {
   return phone.replace(/\D/g, "");
 }
 
+/**
+ * The agent (and templates) speak Markdown, but WhatsApp does not render it —
+ * a `[label](url)` link shows up literally, brackets and all. Convert the
+ * common Markdown constructs to WhatsApp's own formatting so replies read
+ * cleanly. WhatsApp auto-links bare URLs, so links become plain text.
+ */
+export function markdownToWhatsApp(text: string): string {
+  return (
+    text
+      // Images `![alt](url)` → just the url.
+      .replace(/!\[[^\]]*\]\((\S+?)\)/g, "$1")
+      // Links `[label](url)`: drop the brackets. If the label is the url (or a
+      // trimmed variant of it), keep only the url; otherwise "label: url".
+      .replace(/\[([^\]]+)\]\((\S+?)\)/g, (_m, label: string, url: string) => {
+        const l = label.trim();
+        return l === url || l === url.replace(/^https?:\/\//, "") ? url : `${l}: ${url}`;
+      })
+      // Bold `**text**` / `__text__` → WhatsApp bold `*text*`.
+      .replace(/\*\*([^*]+)\*\*/g, "*$1*")
+      .replace(/__([^_]+)__/g, "*$1*")
+      // Strikethrough `~~text~~` → WhatsApp `~text~`.
+      .replace(/~~([^~]+)~~/g, "~$1~")
+      // Headings `## text` → plain (WhatsApp has no headings).
+      .replace(/^#{1,6}\s+/gm, "")
+  );
+}
+
 interface GraphRequest {
   path: string;
   accessToken: string;
@@ -98,6 +125,28 @@ function sendMessage(
   });
 }
 
+/**
+ * How to address an outbound message. A classic contact is reached by phone
+ * (`to`); a contact whose phone is hidden behind a WhatsApp username is reached
+ * by their Business-Scoped User ID (`recipient`) — Meta's send API accepts the
+ * BSUID there instead of a phone. A plain string is treated as a phone number
+ * for backward compatibility.
+ */
+export type WhatsAppRecipient = string | { phone?: string | null; userId?: string | null };
+
+/** Builds the addressing field(s) for a send. Prefers phone when available. */
+function recipientAddress(recipient: WhatsAppRecipient): Record<string, string> {
+  const r = typeof recipient === "string" ? { phone: recipient } : recipient;
+  if (r.phone) return { to: normalisePhone(r.phone) };
+  if (r.userId) return { recipient: r.userId };
+  // No phone and no BSUID — nothing to send to. Surface it rather than POST a
+  // malformed body that Meta would reject with an opaque error.
+  throw new WhatsAppApiError(
+    "outbound message has no recipient (neither phone nor BSUID)",
+    400,
+  );
+}
+
 /** Cloud API caps a text body at 4096 characters. */
 const MAX_BODY_LENGTH = 4096;
 
@@ -128,16 +177,17 @@ function chunkText(text: string): string[] {
  * approved template is the only option.
  */
 export async function sendTextMessage(
-  phone: string,
+  recipient: WhatsAppRecipient,
   text: string,
   creds: WhatsAppCredentials,
 ): Promise<void> {
-  for (const body of chunkText(text)) {
+  const address = recipientAddress(recipient);
+  for (const body of chunkText(markdownToWhatsApp(text))) {
     await sendMessage(creds, {
       recipient_type: "individual",
-      to: normalisePhone(phone),
+      ...address,
       type: "text",
-      text: { preview_url: false, body },
+      text: { preview_url: true, body },
     });
   }
 }
@@ -148,7 +198,7 @@ export async function sendTextMessage(
  * `{{1}}`, `{{2}}`… placeholders in order.
  */
 export async function sendTemplateMessage(
-  phone: string,
+  recipient: WhatsAppRecipient,
   template: { name: string; languageCode: string; variables?: string[] },
   creds: WhatsAppCredentials,
 ): Promise<void> {
@@ -166,7 +216,7 @@ export async function sendTemplateMessage(
       : undefined;
 
   await sendMessage(creds, {
-    to: normalisePhone(phone),
+    ...recipientAddress(recipient),
     type: "template",
     template: {
       name: template.name,

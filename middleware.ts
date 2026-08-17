@@ -13,7 +13,7 @@ const PUBLIC_ROUTES = [
 
 // A clinic's public surface: its landing page and its own login/register. Deeper
 // routes (/clinic/{slug}/admin|doctor|dashboard/...) stay authenticated.
-const PUBLIC_CLINIC_PATH = /^\/clinic\/[^/]+(\/(login|register))?\/?$/;
+const PUBLIC_CLINIC_PATH = /^\/clinic\/[^/]+(\/(login|register|verify-otp))?\/?$/;
 // Routes that accept unauthenticated guest requests (no Supabase session at
 // all) — the route handler itself scopes what a guest can do.
 const PUBLIC_API_ROUTES = ["/api/meta/whatsapp/webhook", "/api/agent/chat"];
@@ -56,6 +56,9 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isPublic =
     PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "?")) ||
+    // Emailed auth links (verify token → set session → redirect). These must run
+    // BEFORE any session exists, so they can't be gated on `user`.
+    pathname.startsWith("/auth/") ||
     PUBLIC_CLINIC_PATH.test(pathname);
   const isPublicApi = PUBLIC_API_ROUTES.some((r) => pathname.startsWith(r));
 

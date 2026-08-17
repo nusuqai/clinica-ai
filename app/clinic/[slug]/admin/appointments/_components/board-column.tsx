@@ -17,9 +17,15 @@ interface BoardColumnProps {
   status: AppointmentStatus;
   label: string;
   appointments: AdminAppointment[];
+  onOpenDetails: (appointment: AdminAppointment) => void;
 }
 
-export default function BoardColumn({ status, label, appointments }: BoardColumnProps) {
+export default function BoardColumn({
+  status,
+  label,
+  appointments,
+  onOpenDetails,
+}: BoardColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
   return (
@@ -44,7 +50,11 @@ export default function BoardColumn({ status, label, appointments }: BoardColumn
           <p className="text-xs text-muted-foreground font-sans text-center py-6">لا توجد مواعيد</p>
         )}
         {appointments.map((appt) => (
-          <AppointmentCard key={appt.id} appointment={appt} />
+          <AppointmentCard
+            key={appt.id}
+            appointment={appt}
+            onOpenDetails={onOpenDetails}
+          />
         ))}
       </div>
     </div>
