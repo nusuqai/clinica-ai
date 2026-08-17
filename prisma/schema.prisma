@@ -314,6 +314,18 @@ model Profile {
   @@map("profiles")
 }
 
+// Throttles how often a signup verification code can be emailed to an address.
+// Keyed by email (lower-cased) rather than a user id, because the account may
+// not be confirmed — or may be recreated — between requests. See the OTP resend
+// cooldown in startClinicSignup / signInToClinic.
+model OtpRequest {
+  email      String   @id
+  lastSentAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("otp_requests")
+}
+
 // A doctor is a standalone record scoped to a clinic. It can exist WITHOUT any
 // login account (profileId null) and still be linked to appointments; an account
 // can be linked later by setting profileId.
