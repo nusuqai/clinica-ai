@@ -96,31 +96,32 @@ export function useRealtimeEscalations(
 
 export function useRealtimeConversations(
   onNewMessage: (row: RealtimeMessageRow) => void,
-  onConversationChange: () => void,
 ) {
   const messageRef = useRef(onNewMessage);
   messageRef.current = onNewMessage;
-  const conversationRef = useRef(onConversationChange);
-  conversationRef.current = onConversationChange;
+
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel("conversations:all")
+      .channel("admin-inbox-messages")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "conversations" },
-        () => conversationRef.current(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          // no conversation_id filter — this admin needs every conversation's
+          // inserts to keep the sidebar accurate; the callback decides what
+          // to do with each row based on the currently open thread
+        },
         (payload) => {
           messageRef.current(payload.new as unknown as RealtimeMessageRow);
         },
       )
       .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, []); // subscribe once, never tear down/rebuild on activeId change
 }

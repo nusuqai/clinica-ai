@@ -84,16 +84,16 @@ export async function persistUserMessage(
   content: string,
   senderId: string | null,
 ): Promise<SessionMessage> {
-  const m = await prisma.message.create({
-    data: {
-      conversationId,
-      sessionId,
-      senderType: SenderType.USER,
-      senderId,
-      content,
-      isRead: true,
-    },
-  });
+    const m = await prisma.message.create({
+      data: {
+        conversationId,
+        sessionId,
+        senderType: SenderType.USER,
+        senderId,
+        content,
+        isRead: false,
+      },
+    });
   await touchConversation(conversationId);
   return {
     id: m.id,
