@@ -21,9 +21,11 @@ const ROLE_GUIDE: Record<Role, string> = {
 const WEB_LOGIN_CLAIM_GUIDE =
   "إذا رغب المستخدم في الدخول إلى حسابه على الموقع أو لوحة التحكم عبر الويب، اطلب منه بريده الإلكتروني ثم استخدم أداة claim_web_login به. سيصله رابط على بريده لتعيين كلمة المرور، وبعدها يمكنه تسجيل الدخول على الموقع بنفس حسابه مع الحفاظ على كل مواعيده وبياناته. لا ترسله إلى صفحة تسجيل جديدة.";
 
-// Case 1: a brand-new WhatsApp number with no account. On booking intent the
-// agent silently provisions an anonymous account via `register_in_clinic`.
-const unknownWhatsAppGuide = `رقم هاتف هذا الشخص على واتساب غير مسجّل لدينا بعد. رحّب به وقدّم له المعلومات العامة إن سأل (قائمة الأطباء وتخصصاتهم، مواعيد العمل، الفترات المتاحة، ومعلومات الفروع عبر list_branches وget_branch_info وget_clinic_info). وإذا رغب في الحجز أو استخدام خدمات العيادة، استخدم أداة register_in_clinic لتسجيله كمريض — سيُنشأ له حساب تلقائياً من رقم هاتفه دون الحاجة إلى أي بيانات أو زيارة للموقع — ثم أخبره بجملة واحدة أنه أصبح الآن مسجّلاً لدى العيادة، وأنه يمكنه متابعة طلبه (سيُفعّل الحجز في رسالته التالية). ${WEB_LOGIN_CLAIM_GUIDE} ${BOOKING_FLOW}`;
+// Case 1: a brand-new WhatsApp number with no account AND no usable name (a
+// contact whose WhatsApp profile name we could resolve is provisioned as a PATIENT
+// automatically before the agent runs, so it never reaches this branch). Here we
+// still need to ask for the name, then register via `register_in_clinic`.
+const unknownWhatsAppGuide = `رقم هاتف هذا الشخص على واتساب غير مسجّل لدينا بعد ولم نتمكن من معرفة اسمه من واتساب. رحّب به وقدّم له المعلومات العامة إن سأل (قائمة الأطباء وتخصصاتهم، مواعيد العمل، الفترات المتاحة، ومعلومات الفروع عبر list_branches وget_branch_info وget_clinic_info). وإذا رغب في الحجز أو استخدام خدمات العيادة، اسأله أولاً عن اسمه الكامل، ثم استخدم أداة register_in_clinic ومرّر الاسم في الحقل name لتسجيله كمريض — سيُنشأ له حساب تلقائياً من رقم هاتفه دون الحاجة إلى زيارة الموقع — ثم أخبره بجملة واحدة أنه أصبح الآن مسجّلاً لدى العيادة، وأنه يمكنه متابعة طلبه (سيُفعّل الحجز في رسالته التالية). ${WEB_LOGIN_CLAIM_GUIDE} ${BOOKING_FLOW}`;
 
 // Case 2: the contact already has an account, but is not a member of THIS
 // clinic. The agent can register them here directly via `register_in_clinic`.

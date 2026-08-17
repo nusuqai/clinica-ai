@@ -23,10 +23,17 @@ export function registerInClinicTool(ctx: AgentContext): DynamicStructuredTool {
     {
       name: "register_in_clinic",
       description:
-        "استخدمه عندما يرغب المستخدم في الحجز أو استخدام خدمات هذه العيادة وليس مسجّلاً فيها بعد — سواء كان لديه حساب لدينا أو رقمه جديد تماماً. يسجّله كمريض في هذه العيادة (وينشئ له حساباً تلقائياً إذا لم يكن لديه). بعد نجاحه، أخبره أنه أصبح مسجّلاً في العيادة وسيتمكن من إتمام طلبه.",
-      schema: z.object({}),
+        "استخدمه عندما يرغب المستخدم في الحجز أو استخدام خدمات هذه العيادة وليس مسجّلاً فيها بعد — سواء كان لديه حساب لدينا أو رقمه جديد تماماً. يسجّله كمريض في هذه العيادة (وينشئ له حساباً تلقائياً إذا لم يكن لديه). إذا لم نكن نعرف اسمه بعد فمرّر اسمه الكامل في الحقل name بعد سؤاله عنه. بعد نجاحه، أخبره أنه أصبح مسجّلاً في العيادة وسيتمكن من إتمام طلبه.",
+      schema: z.object({
+        name: z
+          .string()
+          .optional()
+          .describe(
+            "الاسم الكامل للمستخدم كما ذكره في المحادثة — مطلوب فقط إذا كان رقمه جديداً ولا نعرف اسمه بعد.",
+          ),
+      }),
     },
-    async () => {
+    async ({ name }) => {
       // Case 2 — existing account, just link it to this clinic.
       if (ctx.actorId) {
         await prisma.clinicMember.upsert({
@@ -43,14 +50,21 @@ export function registerInClinicTool(ctx: AgentContext): DynamicStructuredTool {
         return { registered: true, role: Role.PATIENT };
       }
 
-      // Case 1 — brand-new number: provision an anonymous account from the phone.
+      // Case 1 — brand-new number: provision an account from the phone. A name is
+      // required (the WhatsApp fallback name is the phone number itself, which is
+      // why eager onboarding skipped this contact); prefer the one just collected
+      // in chat, falling back to any display name we do have.
       if (!ctx.contactPhone) {
         return { error: "لا يمكن التسجيل بدون رقم هاتف." };
+      }
+      const fullName = name?.trim() || ctx.actorName?.trim() || "";
+      if (!fullName) {
+        return { error: "أحتاج إلى اسمك الكامل أولاً لإتمام التسجيل." };
       }
       await getOrCreatePatientByPhone({
         clinicId: ctx.clinicId,
         phone: ctx.contactPhone,
-        name: ctx.actorName,
+        name: fullName,
       });
       return { registered: true, role: Role.PATIENT };
     },

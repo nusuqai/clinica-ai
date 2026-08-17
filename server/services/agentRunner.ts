@@ -28,6 +28,7 @@ import {
   isDuplicateChargeError,
   ensureOpenEscalation,
 } from "./aiCredit";
+import { getOrCreatePatientByPhone } from "./patients";
 import type { TokenUsage } from "@/agent/types";
 
 const FALLBACK_REPLY = "تم تنفيذ طلبك.";
@@ -264,12 +265,50 @@ export async function handleWhatsAppMessage(
   messageId: string,
   creds: WhatsAppCredentials,
 ): Promise<void> {
-  const profile = await prisma.profile.findUnique({
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: {
+      whatsappName: true,
+      clinicId: true,
+      clinic: { select: { slug: true } },
+    },
+  });
+  // The conversation was just created/updated by the webhook, so this is defensive.
+  if (!conv) return;
+  const clinicId = conv.clinicId;
+
+  let profile = await prisma.profile.findUnique({
     where: { phone },
     select: { id: true, fullName: true },
   });
 
-  // Link the conversation to the matched account so the admin inbox + role
+  // Eager onboarding: a brand-new WhatsApp number is provisioned as a PATIENT the
+  // moment it writes in — as long as WhatsApp gave us a real name to attach (its
+  // fallback "name" is just the phone number, which is not a usable patient name).
+  // The account + membership therefore already exist by the time the contact asks
+  // to book, so the PATIENT tools are bound on that very message — no
+  // "you're registered, now repeat your request" round-trip. When there's no usable
+  // name we stay info-only (role null) and the agent asks for the name, then
+  // registers via register_in_clinic. Idempotent + best-effort: it only creates on
+  // the very first message and never blocks the reply if provisioning fails.
+  const usableName =
+    conv.whatsappName && conv.whatsappName !== phone
+      ? conv.whatsappName.trim()
+      : "";
+  if (!profile && usableName) {
+    try {
+      const { profileId } = await getOrCreatePatientByPhone({
+        clinicId,
+        phone,
+        name: usableName,
+      });
+      profile = { id: profileId, fullName: usableName };
+    } catch (err) {
+      console.error("[whatsapp] eager patient provisioning failed:", err);
+    }
+  }
+
+  // Link the conversation to the matched/created account so the admin inbox + role
   // gating stay consistent.
   if (profile) {
     await prisma.conversation
@@ -287,18 +326,6 @@ export async function handleWhatsAppMessage(
 
   if (!(await isSessionAiEnabled(sessionId))) return;
 
-  const conv = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    select: {
-      whatsappName: true,
-      clinicId: true,
-      clinic: { select: { slug: true } },
-    },
-  });
-  // The conversation was just created/updated above, so this is defensive.
-  if (!conv) return;
-  const clinicId = conv.clinicId;
-
   if (await clinicGateBlocks(clinicId, conversationId, sessionId)) return;
 
   const prior = await getSessionMessages(sessionId);
@@ -308,7 +335,7 @@ export async function handleWhatsAppMessage(
   if (profile) {
     const m = await prisma.clinicMember.findUnique({
       where: {
-        userId_clinicId: { userId: profile.id, clinicId: conv.clinicId },
+        userId_clinicId: { userId: profile.id, clinicId },
       },
       select: { role: true },
     });
@@ -324,7 +351,7 @@ export async function handleWhatsAppMessage(
     channel: Channel.WHATSAPP,
     conversationId,
     sessionId,
-    actorName: profile?.fullName ?? conv?.whatsappName ?? "",
+    actorName: profile?.fullName ?? conv.whatsappName ?? "",
   };
 
   // The agent is fully buffered (no token streaming on this channel), so show
