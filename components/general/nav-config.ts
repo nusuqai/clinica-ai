@@ -53,19 +53,27 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
       icon: Smartphone,
       children: [
         { href: "/admin/whatsapp/templates", label: "القوالب", icon: FileText },
-        { href: "/admin/whatsapp/configuration", label: "الإعدادات", icon: KeyRound },
-        { href: "/admin/whatsapp/guide", label: "دليل الإعداد", icon: BookOpen },
+        {
+          href: "/admin/whatsapp/configuration",
+          label: "الإعدادات",
+          icon: KeyRound,
+        },
+        {
+          href: "/admin/whatsapp/guide",
+          label: "دليل الإعداد",
+          icon: BookOpen,
+        },
       ],
     },
-    {
-      href: "/admin/ai",
-      label: "المساعد الذكي",
-      icon: Bot,
-      children: [
-        { href: "/admin/ai", label: "الإعدادات والرصيد", icon: Wallet },
-        { href: "/admin/ai/usage", label: "تقرير التكاليف", icon: BarChart3 },
-      ],
-    },
+    // {
+    //   href: "/admin/ai",
+    //   label: "المساعد الذكي",
+    //   icon: Bot,
+    //   children: [
+    //     { href: "/admin/ai", label: "الإعدادات والرصيد", icon: Wallet },
+    //     { href: "/admin/ai/usage", label: "تقرير التكاليف", icon: BarChart3 },
+    //   ],
+    // },
     { href: "/admin/reports", label: "التقارير", icon: BarChart3 },
   ],
 };
