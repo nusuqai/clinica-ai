@@ -2,12 +2,12 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Mail, Lock, Loader2, Eye, EyeOff, ArrowLeft } from "lucide-react";
-import { signIn } from "@/server/actions/auth";
+import { Mail, Loader2, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { forgotPassword } from "@/server/actions/auth";
 
-export default function LoginPage() {
-  const [showPassword, setShowPassword] = useState(false);
+export default function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -15,33 +15,53 @@ export default function LoginPage() {
     setError(null);
     const formData = new FormData(e.currentTarget);
     startTransition(async () => {
-      const result = await signIn(formData);
+      const result = await forgotPassword(formData);
       if (result?.error) setError(result.error);
+      else setSent(true);
     });
+  }
+
+  if (sent) {
+    return (
+      <div className="w-full max-w-md relative z-10 text-center">
+        <div className="flex justify-center mb-6">
+          <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center">
+            <CheckCircle2 className="w-8 h-8 text-accent" />
+          </div>
+        </div>
+        <h1 className="text-2xl font-heading font-bold text-primary mb-3">
+          تحقّق من بريدك الإلكتروني
+        </h1>
+        <p className="text-text/50 font-sans text-sm leading-relaxed mb-8">
+          إن كان هناك حساب مرتبط بهذا البريد، فقد أرسلنا إليه رابطاً لإعادة تعيين
+          كلمة المرور. تحقّق من صندوق الوارد (ومجلد الرسائل غير المرغوبة).
+        </p>
+        <Link
+          href="/login"
+          className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/70 transition-colors font-sans font-medium"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          العودة لتسجيل الدخول
+        </Link>
+      </div>
+    );
   }
 
   return (
     <div className="w-full max-w-md relative z-10">
-      {/* Mobile logo */}
       <div className="flex justify-center mb-8 lg:hidden">
-        <img
-          src="/logo.png"
-          alt="Clinica AI"
-          className="h-12 w-auto object-contain"
-        />
+        <img src="/logo.png" alt="Clinica AI" className="h-12 w-auto object-contain" />
       </div>
 
-      {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-heading font-bold text-primary mb-2">
-          مرحباً بعودتك 👋
+          نسيت كلمة المرور؟
         </h1>
         <p className="text-text/50 font-sans text-sm">
-          أدخل بياناتك للوصول إلى حسابك
+          أدخل بريدك الإلكتروني وسنرسل لك رابطاً لإعادة التعيين
         </p>
       </div>
 
-      {/* Error */}
       {error && (
         <div className="mb-6 flex items-start gap-3 bg-red-50 text-red-600 px-4 py-3 rounded-2xl text-sm font-sans border border-red-100">
           <span className="mt-0.5 flex-shrink-0">⚠</span>
@@ -49,9 +69,7 @@ export default function LoginPage() {
         </div>
       )}
 
-      {/* Form */}
       <form className="space-y-5" onSubmit={handleSubmit}>
-        {/* Email */}
         <div className="space-y-1.5">
           <label className="block text-sm font-medium text-text/70 font-sans">
             البريد الإلكتروني
@@ -71,46 +89,6 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Password */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="block text-sm font-medium text-text/70 font-sans">
-              كلمة المرور
-            </label>
-            <Link
-              href="/forgot-password"
-              className="text-xs text-accent hover:text-accent/70 transition-colors font-sans"
-            >
-              نسيت كلمة المرور؟
-            </Link>
-          </div>
-          <div className="relative">
-            <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-              <Lock className="h-4.5 w-4.5 text-text/30" />
-            </div>
-            <input
-              name="password"
-              type={showPassword ? "text" : "password"}
-              required
-              dir="ltr"
-              className="block w-full pr-11 pl-11 py-3.5 font-sans text-sm border border-text/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-white placeholder:text-text/30 transition-all"
-              placeholder="••••••••"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((v) => !v)}
-              className="absolute inset-y-0 left-0 pl-4 flex items-center text-text/30 hover:text-primary transition-colors"
-            >
-              {showPassword ? (
-                <EyeOff className="h-4.5 w-4.5" />
-              ) : (
-                <Eye className="h-4.5 w-4.5" />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Submit */}
         <button
           type="submit"
           disabled={isPending}
@@ -119,19 +97,19 @@ export default function LoginPage() {
           {isPending ? (
             <Loader2 className="animate-spin w-4.5 h-4.5" />
           ) : (
-            <ArrowLeft className="w-4.5 h-4.5" />
+            <Mail className="w-4.5 h-4.5" />
           )}
-          {isPending ? "جارٍ تسجيل الدخول..." : "تسجيل الدخول"}
+          {isPending ? "جارٍ الإرسال..." : "إرسال رابط إعادة التعيين"}
         </button>
       </form>
 
       <div className="mt-8 text-center">
         <Link
-          href="/"
+          href="/login"
           className="inline-flex items-center gap-1.5 text-xs text-text/30 hover:text-text/60 transition-colors font-sans"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          العودة للرئيسية
+          العودة لتسجيل الدخول
         </Link>
       </div>
     </div>

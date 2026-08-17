@@ -211,6 +211,35 @@ export async function deleteUserAction(userId: string) {
   return { success: true };
 }
 
+export async function updatePatientProfileAction(
+  userId: string,
+  formData: FormData,
+) {
+  const clinicId = await requireAdmin();
+  const result = await UserService.updatePatientProfile(userId, clinicId, {
+    fullName: (formData.get("fullName") as string) ?? undefined,
+    phone: formData.has("phone") ? (formData.get("phone") as string) : undefined,
+  });
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/clinic/[slug]/admin/users/[id]", "page");
+  revalidatePath("/clinic/[slug]/admin/users", "page");
+  return { success: true as const };
+}
+
+export async function changePatientEmailAction(
+  userId: string,
+  formData: FormData,
+) {
+  const clinicId = await requireAdmin();
+  const result = await UserService.changePatientEmail(
+    userId,
+    clinicId,
+    (formData.get("email") as string) ?? "",
+  );
+  if (!result.ok) return { error: result.error };
+  return { success: true as const };
+}
+
 // ─── Appointment actions ──────────────────────────────────────────────────────
 
 export async function updateAppointmentStatusAction(

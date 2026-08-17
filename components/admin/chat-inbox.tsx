@@ -27,6 +27,8 @@ import {
   Clock,
   FileText,
   RotateCw,
+  UserRound,
+  ExternalLink,
 } from "lucide-react";
 import { WhatsappIcon } from "@/components/icons/whatsapp-icon";
 import WhatsappTemplatePicker from "@/components/admin/whatsapp-template-picker";
@@ -448,6 +450,27 @@ export default function ChatInbox({
                 )}
               </div>
               <div className="ms-auto flex items-center gap-2">
+                {selectedConversation.userId ? (
+                  <a
+                    href={`${basePath}/admin/users/${selectedConversation.userId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-sans bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    title="فتح ملف العميل في تبويب جديد"
+                  >
+                    <UserRound className="w-3.5 h-3.5" />
+                    ملف العميل
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                ) : (
+                  <span
+                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-sans bg-muted text-muted-foreground/60 cursor-not-allowed"
+                    title="لا يوجد حساب مرتبط بعد — سيظهر الملف بعد تسجيل العميل"
+                  >
+                    <UserRound className="w-3.5 h-3.5" />
+                    ملف العميل
+                  </span>
+                )}
                 {selectedConversation.escalations.length > 0 &&
                   (() => {
                     const unresolved = selectedConversation.escalations.filter(

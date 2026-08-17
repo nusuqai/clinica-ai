@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Mail, Lock, Loader2, Eye, EyeOff, User, Phone, ArrowLeft } from "lucide-react";
-import { signUpToClinic } from "@/server/actions/auth";
+import { startClinicSignup } from "@/server/actions/auth";
+import { PHONE_EXAMPLE, normalizePhone, isValidPhone } from "@/lib/phone";
 
 interface Props {
   slug: string;
@@ -12,36 +13,17 @@ interface Props {
   initialPhone?: string;
 }
 
-/** Example of the required WhatsApp-matching phone format (country code + number). */
-const PHONE_EXAMPLE = "201014443991";
-
-/**
- * Strips anything a user might type around the digits (spaces, dashes,
- * parentheses, and a leading + or 00) so the stored number matches the
- * WhatsApp `wa_id` format exactly — international, digits only, no leading zero.
- */
-function normalizePhone(raw: string): string {
-  return raw
-    .trim()
-    .replace(/[\s()\-]/g, "")
-    .replace(/^\+/, "")
-    .replace(/^00/, "");
-}
-
-/** International format: country code first, digits only, no leading zero, 10–15 digits. */
-function isValidPhone(phone: string): boolean {
-  return /^[1-9]\d{9,14}$/.test(phone);
-}
-
 export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Props) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsLogin, setNeedsLogin] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setNeedsLogin(false);
     const formData = new FormData(e.currentTarget);
 
     const phone = normalizePhone((formData.get("phone") as string) ?? "");
@@ -62,8 +44,9 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
     }
 
     startTransition(async () => {
-      const result = await signUpToClinic(slug, formData);
+      const result = await startClinicSignup(slug, formData);
       if (result?.error) setError(result.error);
+      if (result?.needsLogin) setNeedsLogin(true);
     });
   }
 
@@ -79,9 +62,19 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
       </div>
 
       {error && (
-        <div className="mb-6 flex items-start gap-3 bg-red-50 text-red-600 px-4 py-3 rounded-2xl text-sm font-sans border border-red-100">
-          <span className="mt-0.5 flex-shrink-0">⚠</span>
-          <span>{error}</span>
+        <div className="mb-6 flex flex-col gap-2 bg-red-50 text-red-600 px-4 py-3 rounded-2xl text-sm font-sans border border-red-100">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex-shrink-0">⚠</span>
+            <span>{error}</span>
+          </div>
+          {needsLogin && (
+            <Link
+              href={`/clinic/${slug}/login`}
+              className="self-start font-semibold text-accent hover:text-accent/80 transition-colors"
+            >
+              الذهاب إلى تسجيل الدخول ←
+            </Link>
+          )}
         </div>
       )}
 

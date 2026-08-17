@@ -1,12 +1,14 @@
+import Link from "next/link";
 import { requireActiveMember } from "@/lib/auth";
 import { listUsers } from "@/server/services/users";
+import { isSyntheticEmail } from "@/server/services/patients";
 import PageHeader from "@/components/admin/page-header";
 import { RoleBadge } from "@/components/admin/status-badge";
-import UserRowActions from "./_components/user-row-actions";
 
 export default async function AdminUsersPage() {
   const { clinic } = await requireActiveMember(["ADMIN"]);
   const users = await listUsers(clinic.id);
+  const base = `/clinic/${clinic.slug}`;
 
   return (
     <div>
@@ -53,11 +55,16 @@ export default async function AdminUsersPage() {
                   key={user.id}
                   className="hover:bg-muted/30 transition-colors"
                 >
-                  <td className="px-4 py-3 font-medium text-foreground">
-                    {user.fullName}
+                  <td className="px-4 py-3 font-medium">
+                    <Link
+                      href={`${base}/admin/users/${user.id}`}
+                      className="text-foreground hover:text-primary transition-colors"
+                    >
+                      {user.fullName}
+                    </Link>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground" dir="ltr">
-                    {user.email}
+                    {isSyntheticEmail(user.email) ? "—" : user.email}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground" dir="ltr">
                     {user.phone ?? "—"}
