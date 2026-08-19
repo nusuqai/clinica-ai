@@ -27,6 +27,9 @@ enable_anonymous_sign_ins = true
 enable_signup = true
 double_confirm_changes = false
 enable_confirmations = false
+# Length of the email OTP code. Keep in sync with the hosted project's
+# Authentication → Email → "Email OTP Length" setting (also 6).
+otp_length = 6
 
 [storage]
 enabled = true
