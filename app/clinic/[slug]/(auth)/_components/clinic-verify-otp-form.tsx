@@ -3,7 +3,10 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { Loader2, ArrowLeft, ShieldCheck, RotateCw } from "lucide-react";
-import { verifyClinicSignup, resendClinicSignupOtp } from "@/server/actions/auth";
+import {
+  verifyClinicSignup,
+  resendClinicSignupOtp,
+} from "@/server/actions/auth";
 
 interface Props {
   slug: string;
@@ -76,7 +79,7 @@ export function ClinicVerifyOtpForm({
           تأكيد البريد الإلكتروني
         </h1>
         <p className="text-text/50 font-sans text-sm leading-relaxed">
-          أدخل الرمز المكوّن من 6 أرقام الذي أرسلناه إلى
+          أدخل الرمز المكوّن من 8 أرقام الذي أرسلناه إلى
           <br />
           <span dir="ltr" className="font-semibold text-text/70">
             {email}
@@ -112,17 +115,17 @@ export function ClinicVerifyOtpForm({
             autoComplete="one-time-code"
             required
             dir="ltr"
-            maxLength={6}
+            maxLength={8}
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
             className="block w-full py-4 font-sans text-2xl tracking-[0.5em] text-center font-bold border border-text/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-white text-primary placeholder:text-text/20 transition-all"
-            placeholder="••••••"
+            placeholder="••••••••"
           />
         </div>
 
         <button
           type="submit"
-          disabled={isPending || code.length < 6}
+          disabled={isPending || code.length < 8}
           className="w-full flex justify-center items-center gap-2.5 py-3.5 px-4 rounded-2xl text-sm font-semibold text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed font-sans shadow-lg shadow-primary/20"
         >
           {isPending ? (
