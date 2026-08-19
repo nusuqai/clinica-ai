@@ -52,12 +52,15 @@ export function buildSystemPrompt(ctx: AgentContext): string {
       ? " " + WEB_LOGIN_CLAIM_GUIDE
       : "";
   const guide = (ctx.role ? ROLE_GUIDE[ctx.role] : unknownGuide) + claimSuffix;
-  const now = new Date();
+  // NOTE: keep this prompt free of per-request values (timestamps, etc.). It is
+  // the stable prefix OpenAI prompt-caching keys on — any byte that changes every
+  // call shrinks the cacheable prefix and forgoes the ~50% cached-input discount.
+  // The current date/time is injected per-turn as a separate context message in
+  // `toLangChainMessages`, and is also available via the get_current_datetime tool.
   return [
     `أنت المساعد الذكي في ${CLINIC}. مهمتك تنفيذ المهام نيابةً عن المستخدم لا مجرّد الشرح.`,
     ctx.actorName ? `اسم المستخدم: ${ctx.actorName}.` : "",
     guide,
-    `التاريخ والوقت الحالي: ${now.toLocaleString("ar-EG", { dateStyle: "full", timeStyle: "short" })} (ISO: ${now.toISOString()}).`,
     "قواعد مهمة:",
     "- استخدم الأدوات المتاحة لك لتنفيذ الإجراءات؛ لا تختلق معرّفات (IDs) — احصل عليها دائماً من أداة مناسبة أولاً.",
     "- قبل أي إجراء يغيّر البيانات (حجز، إلغاء، تأكيد، حذف، تعديل) تأكّد أنك جمعت المعلومات الصحيحة.",

@@ -1,6 +1,11 @@
 import "server-only";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
-import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
+import {
+  HumanMessage,
+  AIMessage,
+  ToolMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { SenderType } from "@prisma/client";
 import { createModel } from "./model";
@@ -36,6 +41,27 @@ export type AgentStreamEvent =
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o";
 
+function intFromEnv(name: string, fallback: number): number {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback;
+}
+
+/**
+ * How many of the most-recent session messages are fed to the LLM as context.
+ * Older messages are dropped from the prompt entirely (they still live in the DB
+ * and render in the UI). Caps per-turn input tokens on long conversations.
+ */
+const HISTORY_LIMIT = intFromEnv("AGENT_HISTORY_LIMIT", 24);
+
+/**
+ * Of the kept messages, only the most-recent this-many retain their full raw
+ * tool-call results (the big JSON: slot lists, doctor lists, …). Older kept
+ * messages are collapsed to the agent's own final text — the model still sees
+ * what happened, without re-paying for stale payloads it no longer needs. The
+ * IDs a booking references live in the recent window, so accuracy is preserved.
+ */
+const TOOL_DETAIL_LIMIT = intFromEnv("AGENT_TOOL_DETAIL_LIMIT", 6);
+
 const emptyUsage = (): TokenUsage => ({
   promptTokens: 0,
   completionTokens: 0,
@@ -51,13 +77,46 @@ function buildAgent(ctx: AgentContext) {
   });
 }
 
+/** A per-turn context line carrying "now" — injected as a separate message so it
+ * stays out of the cacheable system-prompt prefix (see prompts.ts). */
+function nowContextMessage(): SystemMessage {
+  const now = new Date();
+  return new SystemMessage(
+    `التاريخ والوقت الحالي: ${now.toLocaleString("ar-EG", {
+      dateStyle: "full",
+      timeStyle: "short",
+    })} (ISO: ${now.toISOString()}).`,
+  );
+}
+
 function toLangChainMessages(prior: PriorMessage[]): BaseMessage[] {
+  // Keep only the most recent window; older messages stay in the DB/UI but are
+  // dropped from the prompt to cap per-turn input tokens.
+  const kept =
+    prior.length > HISTORY_LIMIT ? prior.slice(-HISTORY_LIMIT) : prior;
+  // Below this index, tool-calling turns are collapsed to their final text.
+  const detailFrom = Math.max(0, kept.length - TOOL_DETAIL_LIMIT);
+
   const result: BaseMessage[] = [];
-  for (const m of prior) {
+  kept.forEach((m, i) => {
     if (m.senderType === SenderType.USER) {
       result.push(new HumanMessage(m.content));
-    } else if (m.toolCalls && m.toolCalls.length > 0) {
-      // Reconstruct the full tool-calling turn so the LLM can reference
+      return;
+    }
+    if (m.toolCalls && m.toolCalls.length > 0) {
+      if (i < detailFrom) {
+        // Stale tool turn: replay the agent's own summary, not the raw payloads.
+        // The model still knows what happened; it just doesn't re-pay for slot
+        // lists / doctor dumps it no longer needs the IDs from.
+        result.push(
+          new AIMessage(
+            m.content ||
+              `(تم تنفيذ: ${m.toolCalls.map((tc) => tc.name).join("، ")})`,
+          ),
+        );
+        return;
+      }
+      // Recent tool turn: reconstruct it in full so the LLM can reference the
       // IDs (doctor ids, slot ids, etc.) returned by previous tool calls.
       result.push(
         new AIMessage({
@@ -83,10 +142,15 @@ function toLangChainMessages(prior: PriorMessage[]): BaseMessage[] {
       if (m.content) {
         result.push(new AIMessage(m.content));
       }
-    } else {
-      result.push(new AIMessage(m.content));
+      return;
     }
-  }
+    result.push(new AIMessage(m.content));
+  });
+
+  // Give the model "now" without a tool round-trip, placed just before the
+  // current (last) user turn so it doesn't disturb the cached prefix.
+  const insertAt = result.length > 0 ? result.length - 1 : 0;
+  result.splice(insertAt, 0, nowContextMessage());
   return result;
 }
 
