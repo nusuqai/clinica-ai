@@ -250,7 +250,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label="المساعد الذكي"
-        className="fixed bottom-6 end-6 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg flex items-center justify-center hover:bg-primary/90 transition-all"
+        className="fixed bottom-20 end-6 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg flex items-center justify-center hover:bg-primary/90 transition-all"
       >
         {open ? (
           <X className="w-6 h-6" />
@@ -261,7 +261,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-24 end-6 z-40 flex flex-col w-[min(36rem,calc(100vw-3rem))] h-[min(44rem,calc(100vh-8rem))] rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
+        <div className="fixed bottom-44 end-6 z-40 flex flex-col w-[min(36rem,calc(100vw-3rem))] h-[min(44rem,calc(90vh-8rem))] rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 bg-primary text-white flex-shrink-0">
             <Bot className="w-5 h-5" />
             <div>

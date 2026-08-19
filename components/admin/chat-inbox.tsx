@@ -51,13 +51,15 @@ import type {
   MessageItem,
   ConversationDetail,
 } from "@/server/services/messages";
-
+import { fetchConversations, fetchConversationDetail, markConversationRead } from "@/server/actions/conversations";
+import { string } from "zod";
 interface ChatInboxProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationDetail | null;
   messages: MessageItem[];
   /** This clinic's URL prefix, e.g. `/clinic/sunrise-dental`. */
   basePath: string;
+  clinicId: string;
 }
 
 /**
@@ -93,6 +95,7 @@ export default function ChatInbox({
   selectedConversation: initialConversation,
   messages: initialMessages,
   basePath,
+  clinicId,
 }: ChatInboxProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -180,14 +183,89 @@ export default function ChatInbox({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [threadMessages]);
 
-  const refreshConversations = useCallback(() => {
-    startListTransition(() => router.refresh());
-  }, [router]);
-
-  useRealtimeConversations(refreshConversations);
-  useRealtimeMessages(activeId, () => {
-    router.refresh();
+const refreshConversations = useCallback(() => {
+  startListTransition(async () => {
+    try {
+      const fresh = await fetchConversations(clinicId);
+      setConversations(fresh);
+    } catch (err) {
+      console.error("Failed to refresh conversations:", err);
+    }
   });
+}, [clinicId]);
+const handleRealtimeMessage = useCallback(
+  (row: RealtimeMessageRow) => {
+    // Reconcile with this admin's own optimistic bubble, whichever arrives
+    // first — this realtime event or deliver()'s own response. Matched by
+    // conversation + content since the row doesn't carry the client id;
+    // fine for the common case of one in-flight admin send at a time.
+    if (row.senderType === SenderType.ADMIN) {
+      setPending((prev) => {
+        const match = prev.find(
+          (p) =>
+            p.conversationId === row.conversationId &&
+            !p.serverId &&
+            p.content === row.content,
+        );
+        if (!match) return prev;
+        return prev.map((p) =>
+          p.clientId === match.clientId
+            ? { ...p, serverId: row.id, status: "sent" as const }
+            : p,
+        );
+      });
+    }
+
+    // Append to the thread only if it's the open conversation.
+    if (row.conversationId === activeId) {
+      setMessages((prev) =>
+        prev.some((m) => m.id === row.id)
+          ? prev
+          : [
+              ...prev,
+              {
+                id: row.id,
+                content: row.content,
+                senderType: row.senderType,
+                sessionId: row.sessionId,
+                createdAt: new Date(row.createdAt),
+                isRead: row.isRead,
+              },
+            ],
+      );
+    }
+
+    // Patch the sidebar in place — preview, timestamp, unread, order.
+    // This is the single source of truth for an existing conversation's
+    // summary row; nothing else should refetch and overwrite it for the
+    // "new message on an existing conversation" case.
+    setConversations((prev) => {
+      const idx = prev.findIndex((c) => c.id === row.conversationId);
+      if (idx === -1) {
+        // Genuinely unknown conversation (e.g. a brand-new contact) — no
+        // summary fields to patch from a bare message row, fall back once.
+        refreshConversations();
+        return prev;
+      }
+      const updated: ConversationSummary = {
+        ...prev[idx],
+        lastMessage: row.content,
+        lastMessageAt: new Date(row.createdAt),
+        unreadCount:
+          row.senderType === SenderType.USER &&
+          row.conversationId !== activeId
+            ? prev[idx].unreadCount + 1
+            : prev[idx].unreadCount,
+      };
+      const rest = prev.filter((_, i) => i !== idx);
+      return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
+    });
+  },
+  [activeId, refreshConversations],
+);
+
+useRealtimeConversations( handleRealtimeMessage);
+
 
   // EscalationProvider owns the single realtime subscription for escalations
   // (a second subscribed channel with the same name crashes the realtime
@@ -204,12 +282,39 @@ export default function ChatInbox({
     refreshConversations();
   }, [eventTick, refreshConversations]);
 
-  const handleSelectConversation = (id: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("id", id);
-    router.push(`${basePath}/admin/messages?${params.toString()}`);
-  };
+  // Client-side cache of conversation detail + messages, keyed by conversation
+// id. Lets switching back to an already-visited thread render instantly
+// instead of waiting on the server round-trip triggered by router.push.
+// ✅ correct — generic type goes in <>, initial value goes in the () call
+const conversationCache = useRef<Map<string, { detail: ConversationDetail; messages: MessageItem[] }>>(new Map());
+  // Sync when server re-renders with fresh data, and cache it for this id so
+// switching back later can skip the loading gap.
+useEffect(() => {
+  setConversations(initialConversations);
+}, [initialConversations]);
 
+useEffect(() => {
+  setMessages(initialMessages);
+  setSelectedConversation(initialConversation);
+  if (initialConversation) {
+    conversationCache.current.set(initialConversation.id, {
+      detail: initialConversation,
+      messages: initialMessages,
+    });
+  }
+}, [initialConversation, initialMessages]);
+const handleSelectConversation = (id: string) => {
+  const cached = conversationCache.current.get(id);
+  if (cached) {
+    // Instant paint from cache; router.push below still refreshes it
+    // server-side, and the effect above will reconcile once that lands.
+    setSelectedConversation(cached.detail);
+    setMessages(cached.messages);
+  }
+  const params = new URLSearchParams(searchParams.toString());
+  params.set("id", id);
+  router.push(`${basePath}/admin/messages?${params.toString()}`);
+};
   const isWhatsapp = selectedConversation?.channel === Channel.WHATSAPP;
   // Outside the 24-hour window WhatsApp refuses free-form text; the admin must
   // send an approved template instead. `nowTs` is read so this recomputes on
@@ -249,7 +354,6 @@ export default function ChatInbox({
         serverId: result.messageId,
         status: result.whatsappSendFailed ? "failed_whatsapp" : "sent",
       });
-      router.refresh();
     },
     [patchPending, router],
   );
@@ -293,7 +397,6 @@ export default function ChatInbox({
         serverId: msg.messageId,
       },
     ]);
-    router.refresh();
   };
 
   const handleRetry = (clientId: string) => {
@@ -322,18 +425,20 @@ export default function ChatInbox({
     void deliver(clientId, entry.conversationId, entry.content);
   };
 
-  const handleToggleAi = () => {
-    if (!selectedConversation?.activeSessionId) return;
-    const sessionId = selectedConversation.activeSessionId;
-    const next = !selectedConversation.aiEnabled;
-    setSelectedConversation((prev) =>
-      prev ? { ...prev, aiEnabled: next } : prev,
-    );
-    startAiToggle(async () => {
-      await setSessionAiEnabled(sessionId, next);
-      router.refresh();
-    });
-  };
+ const handleToggleAi = () => {
+  if (!selectedConversation?.activeSessionId) return;
+  const sessionId = selectedConversation.activeSessionId;
+  const conversationId = selectedConversation.id;
+  const next = !selectedConversation.aiEnabled;
+  setSelectedConversation((prev) =>
+    prev ? { ...prev, aiEnabled: next } : prev,
+  );
+  startAiToggle(async () => {
+    await setSessionAiEnabled(sessionId, next);
+    const fresh = await fetchConversationDetail(conversationId);
+    if (fresh) setSelectedConversation(fresh);
+  });
+};
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -341,6 +446,30 @@ export default function ChatInbox({
       handleSend();
     }
   };
+
+  // Ref mirror of `conversations` so the "mark read" effect below can read
+// current unread state without depending on (and rerunning on) every list update.
+const conversationsRef = useRef(conversations);
+useEffect(() => {
+  conversationsRef.current = conversations;
+}, [conversations]);
+
+// Opening a conversation reads it — zero the badge immediately (optimistic)
+// and persist server-side so a reload or another admin sees it too. Only
+// fires when there's actually something unread, so it's a no-op on repeat
+// visits to an already-read thread.
+useEffect(() => {
+  if (!activeId) return;
+  const current = conversationsRef.current.find((c) => c.id === activeId);
+  if (!current || current.unreadCount === 0) return;
+
+  setConversations((prev) =>
+    prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)),
+  );
+  void markConversationRead(activeId).catch((err) => {
+    console.error("Failed to mark conversation as read:", err);
+  });
+}, [activeId]);
 
   return (
     <div className="flex h-[calc(100vh-7rem)] bg-card border border-border rounded-2xl overflow-hidden">

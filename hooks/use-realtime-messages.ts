@@ -35,9 +35,13 @@ export function useRealtimeMessages(
           event: "INSERT",
           schema: "public",
           table: "messages",
+          filter: `conversationId=eq.${conversationId}`,  
         },
         (payload) => {
-          callbackRef.current(payload.new as unknown as RealtimeMessageRow);
+          console.log("Realtime message received:", payload); 
+          const row = payload.new as unknown as RealtimeMessageRow;
+          if (row.conversationId !== conversationId) return;
+          callbackRef.current(row);
         },
       )
       .subscribe();
@@ -92,27 +96,38 @@ export function useRealtimeEscalations(
   }, []);
 }
 
-export function useRealtimeConversations(onUpdate: () => void) {
-  const callbackRef = useRef(onUpdate);
-  callbackRef.current = onUpdate;
+export function useRealtimeConversations(
+  onNewMessage: (row: RealtimeMessageRow) => void,
+) {
+  const messageRef = useRef(onNewMessage);
+  messageRef.current = onNewMessage;
 
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel("conversations:all")
+      .channel("admin-inbox-messages")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "conversations" },
-        () => callbackRef.current(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        () => callbackRef.current(),
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          // TO DO update database to include clinicId in messages table,
+          //  then uncomment this filter to only get messages for the current clinic
+          // filter: `cliencId=eq.${clinicId}`,
+ 
+          // no conversation_id filter — this admin needs every conversation's
+          // inserts to keep the sidebar accurate; the callback decides what
+          // to do with each row based on the currently open thread
+        },
+        (payload) => {
+          messageRef.current(payload.new as unknown as RealtimeMessageRow);
+        },
       )
       .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, []); // subscribe once, never tear down/rebuild on activeId change
 }
