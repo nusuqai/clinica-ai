@@ -51,8 +51,8 @@ import type {
   MessageItem,
   ConversationDetail,
 } from "@/server/services/messages";
-import { fetchConversations, fetchConversationDetail } from "@/server/actions/conversations";
-
+import { fetchConversations, fetchConversationDetail, markConversationRead } from "@/server/actions/conversations";
+import { string } from "zod";
 interface ChatInboxProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationDetail | null;
@@ -282,12 +282,39 @@ useRealtimeConversations( handleRealtimeMessage);
     refreshConversations();
   }, [eventTick, refreshConversations]);
 
-  const handleSelectConversation = (id: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("id", id);
-    router.push(`${basePath}/admin/messages?${params.toString()}`);
-  };
+  // Client-side cache of conversation detail + messages, keyed by conversation
+// id. Lets switching back to an already-visited thread render instantly
+// instead of waiting on the server round-trip triggered by router.push.
+// ✅ correct — generic type goes in <>, initial value goes in the () call
+const conversationCache = useRef<Map<string, { detail: ConversationDetail; messages: MessageItem[] }>>(new Map());
+  // Sync when server re-renders with fresh data, and cache it for this id so
+// switching back later can skip the loading gap.
+useEffect(() => {
+  setConversations(initialConversations);
+}, [initialConversations]);
 
+useEffect(() => {
+  setMessages(initialMessages);
+  setSelectedConversation(initialConversation);
+  if (initialConversation) {
+    conversationCache.current.set(initialConversation.id, {
+      detail: initialConversation,
+      messages: initialMessages,
+    });
+  }
+}, [initialConversation, initialMessages]);
+const handleSelectConversation = (id: string) => {
+  const cached = conversationCache.current.get(id);
+  if (cached) {
+    // Instant paint from cache; router.push below still refreshes it
+    // server-side, and the effect above will reconcile once that lands.
+    setSelectedConversation(cached.detail);
+    setMessages(cached.messages);
+  }
+  const params = new URLSearchParams(searchParams.toString());
+  params.set("id", id);
+  router.push(`${basePath}/admin/messages?${params.toString()}`);
+};
   const isWhatsapp = selectedConversation?.channel === Channel.WHATSAPP;
   // Outside the 24-hour window WhatsApp refuses free-form text; the admin must
   // send an approved template instead. `nowTs` is read so this recomputes on
@@ -419,6 +446,30 @@ useRealtimeConversations( handleRealtimeMessage);
       handleSend();
     }
   };
+
+  // Ref mirror of `conversations` so the "mark read" effect below can read
+// current unread state without depending on (and rerunning on) every list update.
+const conversationsRef = useRef(conversations);
+useEffect(() => {
+  conversationsRef.current = conversations;
+}, [conversations]);
+
+// Opening a conversation reads it — zero the badge immediately (optimistic)
+// and persist server-side so a reload or another admin sees it too. Only
+// fires when there's actually something unread, so it's a no-op on repeat
+// visits to an already-read thread.
+useEffect(() => {
+  if (!activeId) return;
+  const current = conversationsRef.current.find((c) => c.id === activeId);
+  if (!current || current.unreadCount === 0) return;
+
+  setConversations((prev) =>
+    prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)),
+  );
+  void markConversationRead(activeId).catch((err) => {
+    console.error("Failed to mark conversation as read:", err);
+  });
+}, [activeId]);
 
   return (
     <div className="flex h-[calc(100vh-7rem)] bg-card border border-border rounded-2xl overflow-hidden">
