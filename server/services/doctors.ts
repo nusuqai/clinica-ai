@@ -20,7 +20,15 @@ import {
 // `specialty` is synthesized from the linked Specialty row's name (empty string
 // when unassigned), so read paths that expect a specialty string keep working
 // after the free-text column was normalized into the `specialties` table.
-export type DoctorWithProfile = Doctor & {
+// Fees are Prisma Decimal on the row; we surface them as plain numbers so the
+// view is safe to pass from Server Components to Client Components (Decimal
+// objects can't cross that boundary).
+export type DoctorWithProfile = Omit<
+  Doctor,
+  "examinationFee" | "consultationFee"
+> & {
+  examinationFee: number | null;
+  consultationFee: number | null;
   profile: {
     fullName: string;
     phone: string | null;
@@ -43,6 +51,8 @@ type DoctorRow = Doctor & {
 function toView(d: DoctorRow, email?: string): DoctorWithProfile {
   return {
     ...d,
+    examinationFee: d.examinationFee == null ? null : Number(d.examinationFee),
+    consultationFee: d.consultationFee == null ? null : Number(d.consultationFee),
     specialty: d.specialty?.name ?? "",
     profile: {
       fullName: d.fullName,
