@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { DayOfWeek } from "@prisma/client";
+import { DayOfWeek, AvailabilityMode } from "@prisma/client";
 import {
   createRuleAction,
   deleteRuleAction,
@@ -28,6 +28,12 @@ export interface RuleDraft {
   startTime: string;
   endTime: string;
   slotDurationMin: number;
+  /** SLOT_BASED (fixed times) or ORDER_BASED (queue). */
+  mode: AvailabilityMode;
+  /** Order-based: estimated minutes per patient. */
+  estimatedDurationMin: number | null;
+  /** Order-based: max bookings per day. */
+  dailyCap: number | null;
   /** Referral-only rules aren't bookable by patients directly. */
   referralOnly: boolean;
   note: string | null;
@@ -104,6 +110,10 @@ export default function AvailabilityRulesEditor(props: Props) {
   const [nDur, setNDur] = useState(30);
   const [nReferralOnly, setNReferralOnly] = useState(false);
   const [nNote, setNNote] = useState("");
+  const [nMode, setNMode] = useState<AvailabilityMode>(AvailabilityMode.SLOT_BASED);
+  const [nEstDur, setNEstDur] = useState(10);
+  const [nCap, setNCap] = useState(50);
+  const isOrder = nMode === AvailabilityMode.ORDER_BASED;
 
   const doctorId = props.mode === "live" ? props.doctorId : null;
 
@@ -151,14 +161,22 @@ export default function AvailabilityRulesEditor(props: Props) {
       startTime: nStart,
       endTime: nEnd,
       slotDurationMin: nDur,
+      mode: nMode,
+      estimatedDurationMin: isOrder ? nEstDur : null,
+      dailyCap: isOrder ? nCap : null,
       referralOnly: nReferralOnly,
       note: nNote.trim() || null,
     };
 
-    if (props.mode === "draft") {
-      setRows((rs) => [...rs, draft]);
+    function resetExtras() {
       setNReferralOnly(false);
       setNNote("");
+      setNMode(AvailabilityMode.SLOT_BASED);
+    }
+
+    if (props.mode === "draft") {
+      setRows((rs) => [...rs, draft]);
+      resetExtras();
       return;
     }
 
@@ -170,6 +188,10 @@ export default function AvailabilityRulesEditor(props: Props) {
     fd.set("startTime", draft.startTime);
     fd.set("endTime", draft.endTime);
     fd.set("slotDurationMin", String(draft.slotDurationMin));
+    fd.set("mode", draft.mode);
+    if (draft.estimatedDurationMin != null)
+      fd.set("estimatedDurationMin", String(draft.estimatedDurationMin));
+    if (draft.dailyCap != null) fd.set("dailyCap", String(draft.dailyCap));
     if (draft.referralOnly) fd.set("referralOnly", "on");
     if (draft.note) fd.set("note", draft.note);
     startTransition(async () => {
@@ -180,8 +202,7 @@ export default function AvailabilityRulesEditor(props: Props) {
       }
       const refreshed = await getDoctorRulesAction(id);
       if ("rules" in refreshed && refreshed.rules) setRows(refreshed.rules);
-      setNReferralOnly(false);
-      setNNote("");
+      resetExtras();
     });
   }
 
@@ -235,6 +256,9 @@ export default function AvailabilityRulesEditor(props: Props) {
               startTime: r.startTime,
               endTime: r.endTime,
               slotDurationMin: r.slotDurationMin,
+              mode: r.mode,
+              estimatedDurationMin: r.estimatedDurationMin,
+              dailyCap: r.dailyCap,
               referralOnly: r.referralOnly,
               note: r.note,
             })),
@@ -280,9 +304,16 @@ export default function AvailabilityRulesEditor(props: Props) {
                     <span className="text-xs text-primary font-sans bg-primary/10 px-2 py-0.5 rounded-full">
                       {branchName(rule.branchId)}
                     </span>
-                    <span className="text-xs text-muted-foreground font-sans bg-muted px-2 py-0.5 rounded-full">
-                      {rule.slotDurationMin} دقيقة / موعد
-                    </span>
+                    {rule.mode === AvailabilityMode.ORDER_BASED ? (
+                      <span className="text-xs font-medium text-indigo-700 font-sans bg-indigo-100 px-2 py-0.5 rounded-full">
+                        نظام الدور
+                        {rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : ""}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground font-sans bg-muted px-2 py-0.5 rounded-full">
+                        {rule.slotDurationMin} دقيقة / موعد
+                      </span>
+                    )}
                     {rule.referralOnly && (
                       <span className="text-xs font-medium text-amber-700 font-sans bg-amber-100 px-2 py-0.5 rounded-full">
                         تحويلات فقط
@@ -383,20 +414,63 @@ export default function AvailabilityRulesEditor(props: Props) {
 
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-xs font-medium text-muted-foreground font-sans">
-                  مدة الموعد
+                  نظام الجدولة
                 </label>
                 <select
-                  value={nDur}
-                  onChange={(e) => setNDur(Number(e.target.value))}
+                  value={nMode}
+                  onChange={(e) => setNMode(e.target.value as AvailabilityMode)}
                   className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
                 >
-                  {SLOT_DURATIONS.map((d) => (
-                    <option key={d} value={d}>
-                      {d} دقيقة
-                    </option>
-                  ))}
+                  <option value={AvailabilityMode.SLOT_BASED}>مواعيد بأوقات ثابتة</option>
+                  <option value={AvailabilityMode.ORDER_BASED}>نظام الدور (طابور)</option>
                 </select>
               </div>
+
+              {isOrder ? (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground font-sans">
+                      دقائق الكشف التقديرية
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={nEstDur}
+                      onChange={(e) => setNEstDur(Number(e.target.value))}
+                      className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground font-sans">
+                      الحد الأقصى للحجوزات
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={nCap}
+                      onChange={(e) => setNCap(Number(e.target.value))}
+                      className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground font-sans">
+                    مدة الموعد
+                  </label>
+                  <select
+                    value={nDur}
+                    onChange={(e) => setNDur(Number(e.target.value))}
+                    className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    {SLOT_DURATIONS.map((d) => (
+                      <option key={d} value={d}>
+                        {d} دقيقة
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <label className="flex items-start gap-2 sm:col-span-2 cursor-pointer">
                 <input

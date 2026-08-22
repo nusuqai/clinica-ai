@@ -112,13 +112,23 @@ export default async function PatientDashboardPage({
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <AppointmentStatusBadge status={appt.status} />
                     <p className="text-xs text-muted-foreground font-sans">
-                      {formatSlotDate(appt.slot.date, { day: "numeric", month: "short" })}
-                      {" • "}
-                      <span dir="ltr">
-                        {formatSlotTime(appt.slot.startTime)}
-                        {" – "}
-                        {formatSlotTime(appt.slot.endTime)}
-                      </span>
+                      {appt.slot ? (
+                        <>
+                          {formatSlotDate(appt.slot.date, { day: "numeric", month: "short" })}
+                          {" • "}
+                          <span dir="ltr">
+                            {formatSlotTime(appt.slot.startTime)}
+                            {" – "}
+                            {formatSlotTime(appt.slot.endTime)}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          {appt.bookingDate &&
+                            formatSlotDate(appt.bookingDate, { day: "numeric", month: "short" })}
+                          {appt.orderNumber != null && ` • دورك رقم ${appt.orderNumber}`}
+                        </>
+                      )}
                     </p>
                   </div>
                 </li>

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { AppointmentStatus, DoctorTitle, Role } from "@prisma/client";
+import { AppointmentStatus, AvailabilityMode, DoctorTitle, Role } from "@prisma/client";
 
 import { getActiveClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
@@ -10,6 +10,7 @@ import * as AppointmentService from "@/server/services/appointments";
 import * as BranchService from "@/server/services/branches";
 import * as ClinicInfoService from "@/server/services/clinicInfo";
 import * as SpecialtyService from "@/server/services/specialties";
+import * as QueueService from "@/server/services/queue";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,9 @@ interface DraftRule {
   startTime: string;
   endTime: string;
   slotDurationMin?: number;
+  mode?: import("@prisma/client").AvailabilityMode;
+  estimatedDurationMin?: number | null;
+  dailyCap?: number | null;
   referralOnly?: boolean;
   note?: string | null;
 }
@@ -122,6 +126,9 @@ async function createDraftRules(
       startTime: r.startTime,
       endTime: r.endTime,
       slotDurationMin: r.slotDurationMin ? Number(r.slotDurationMin) : 30,
+      mode: r.mode ?? undefined,
+      estimatedDurationMin: r.estimatedDurationMin ?? null,
+      dailyCap: r.dailyCap ?? null,
       referralOnly: !!r.referralOnly,
       note: r.note ?? null,
     });
@@ -279,6 +286,9 @@ export async function getDoctorRulesAction(doctorId: string) {
       startTime: r.startTime,
       endTime: r.endTime,
       slotDurationMin: r.slotDurationMin,
+      mode: r.mode,
+      estimatedDurationMin: r.estimatedDurationMin,
+      dailyCap: r.dailyCap,
       referralOnly: r.referralOnly,
       note: r.note,
     })),
@@ -299,6 +309,14 @@ export async function createRuleAction(formData: FormData) {
     slotDurationMin: formData.get("slotDurationMin")
       ? Number(formData.get("slotDurationMin"))
       : 30,
+    mode:
+      formData.get("mode") === "ORDER_BASED"
+        ? AvailabilityMode.ORDER_BASED
+        : AvailabilityMode.SLOT_BASED,
+    estimatedDurationMin: formData.get("estimatedDurationMin")
+      ? Number(formData.get("estimatedDurationMin"))
+      : null,
+    dailyCap: formData.get("dailyCap") ? Number(formData.get("dailyCap")) : null,
     referralOnly: formData.get("referralOnly") === "on",
     note: (formData.get("note") as string) || null,
   });
@@ -333,6 +351,72 @@ export async function generateSlotsAction(ruleId: string, doctorId: string) {
   if (!result.ok) return { error: result.error };
   revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
   return { success: true, count: result.data.count };
+}
+
+// ─── Order-based queue actions ────────────────────────────────────────────────
+
+// Returns the day queue for (doctor, date) scoped to the admin's clinic.
+export async function getDayQueueAction(doctorId: string, date: string) {
+  const clinicId = await requireAdmin();
+  const queue = await QueueService.getDayQueue(doctorId, new Date(date));
+  if (!queue || queue.clinicId !== clinicId) return { queue: null };
+  return {
+    queue: {
+      id: queue.id,
+      date,
+      branchName: queue.branch?.name ?? null,
+      currentOrder: queue.currentOrder,
+      nextOrder: queue.nextOrder,
+      dailyCap: queue.dailyCap,
+      trackCurrentOrder: queue.trackCurrentOrder,
+      patients: queue.appointments.map((a) => ({
+        id: a.id,
+        orderNumber: a.orderNumber,
+        patientName: a.patient.fullName,
+        phone: a.patient.phone,
+        status: a.status,
+      })),
+    },
+  };
+}
+
+async function requireQueueInClinic(queueId: string, clinicId: string) {
+  const { prisma } = await import("@/lib/prisma");
+  const q = await prisma.doctorDayQueue.findUnique({
+    where: { id: queueId },
+    select: { clinicId: true },
+  });
+  return !!q && q.clinicId === clinicId;
+}
+
+export async function advanceQueueAction(queueId: string, to: number | null) {
+  const clinicId = await requireAdmin();
+  if (!(await requireQueueInClinic(queueId, clinicId)))
+    return { error: "الطابور غير موجود" };
+  const res = await QueueService.setCurrentOrder(queueId, to);
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  return { success: true, currentOrder: res.data.currentOrder };
+}
+
+export async function toggleQueueTrackingAction(queueId: string, track: boolean) {
+  const clinicId = await requireAdmin();
+  if (!(await requireQueueInClinic(queueId, clinicId)))
+    return { error: "الطابور غير موجود" };
+  const res = await QueueService.toggleQueueTracking(queueId, track);
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  return { success: true };
+}
+
+export async function setQueueCapAction(queueId: string, cap: number | null) {
+  const clinicId = await requireAdmin();
+  if (!(await requireQueueInClinic(queueId, clinicId)))
+    return { error: "الطابور غير موجود" };
+  const res = await QueueService.setQueueCap(queueId, cap);
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  return { success: true };
 }
 
 // ─── Slot actions ─────────────────────────────────────────────────────────────

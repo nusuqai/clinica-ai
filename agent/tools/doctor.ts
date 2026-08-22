@@ -5,6 +5,7 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
+import * as QueueService from "@/server/services/queue";
 import { listDoctorBranchIds } from "@/server/services/branches";
 import type { AgentContext } from "@/agent/types";
 import { jsonTool, dateStr, timeStr } from "./shared";
@@ -82,8 +83,14 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             id: a.id,
             status: a.status,
             patientName: a.patient.fullName,
-            date: dateStr(a.slot.date),
-            time: timeStr(a.slot.startTime),
+            bookingType: a.isOrderBased ? "order" : "slot",
+            date: a.slot
+              ? dateStr(a.slot.date)
+              : a.bookingDate
+                ? dateStr(a.bookingDate)
+                : null,
+            time: a.slot ? timeStr(a.slot.startTime) : null,
+            orderNumber: a.orderNumber,
             patientNotes: a.patientNotes,
           })),
         };
@@ -123,7 +130,7 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             phone: p.phone,
             totalAppointments: p.totalAppointments,
             lastStatus: p.lastStatus,
-            lastDate: dateStr(p.lastAppointmentDate),
+            lastDate: p.lastAppointmentDate ? dateStr(p.lastAppointmentDate) : null,
           })),
         };
       },
@@ -206,6 +213,20 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             .string()
             .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),
           slotDurationMin: z.number().nullable(),
+          mode: z
+            .enum(["SLOT_BASED", "ORDER_BASED"])
+            .nullable()
+            .describe(
+              "نظام الجدولة: SLOT_BASED فترات بأوقات ثابتة (الافتراضي)، أو ORDER_BASED نظام الدور (طابور بأرقام).",
+            ),
+          estimatedDurationMin: z
+            .number()
+            .nullable()
+            .describe("لنظام الدور فقط: متوسط دقائق الكشف لكل مريض (لحساب وقت الانتظار)."),
+          dailyCap: z
+            .number()
+            .nullable()
+            .describe("لنظام الدور فقط: الحد الأقصى لعدد الحجوزات في اليوم."),
           referralOnly: z
             .boolean()
             .nullable()
@@ -218,7 +239,7 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             .describe("ملاحظة نصية على القاعدة (اختياري)"),
         }),
       },
-      async ({ branchId, dayOfWeek, startTime, endTime, slotDurationMin, referralOnly, note }) => {
+      async ({ branchId, dayOfWeek, startTime, endTime, slotDurationMin, mode, estimatedDurationMin, dailyCap, referralOnly, note }) => {
         let resolvedBranchId = branchId ?? "";
         if (!resolvedBranchId) {
           const branchIds = await listDoctorBranchIds(doctorId);
@@ -232,6 +253,9 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
           startTime,
           endTime,
           slotDurationMin: slotDurationMin ?? undefined,
+          mode: mode ?? undefined,
+          estimatedDurationMin: estimatedDurationMin ?? null,
+          dailyCap: dailyCap ?? null,
           referralOnly: referralOnly ?? false,
           note: note ?? null,
         });
@@ -242,6 +266,7 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
           dayOfWeek,
           startTime,
           endTime,
+          mode: mode ?? "SLOT_BASED",
           referralOnly: referralOnly ?? false,
         };
       },
@@ -335,6 +360,78 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
         );
         if (!res.ok) return { error: res.error };
         return { referredAppointmentId: res.data.id, referred: true };
+      },
+    ),
+    jsonTool(
+      {
+        name: "get_day_queue",
+        description:
+          "اعرض طابور الدور (نظام الدور) للطبيب الحالي في تاريخ محدّد (YYYY-MM-DD): قائمة المرضى بأرقام أدوارهم، والدور الذي يُخدم الآن، وحالة التتبّع.",
+        schema: z.object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+        }),
+      },
+      async ({ date }) => {
+        const queue = await QueueService.getDayQueue(doctorId, new Date(date));
+        if (!queue) return { date, hasQueue: false, patients: [] };
+        return {
+          date,
+          hasQueue: true,
+          queueId: queue.id,
+          branch: queue.branch?.name ?? null,
+          currentOrder: queue.currentOrder,
+          nextOrder: queue.nextOrder,
+          dailyCap: queue.dailyCap,
+          trackCurrentOrder: queue.trackCurrentOrder,
+          patients: queue.appointments.map((a) => ({
+            orderNumber: a.orderNumber,
+            patientName: a.patient.fullName,
+            status: a.status,
+            notes: a.patientNotes,
+          })),
+        };
+      },
+    ),
+    jsonTool(
+      {
+        name: "advance_queue",
+        description:
+          "قدّم الدور الحالي (نظام الدور) في طابور يوم محدّد: بدون رقم يتقدّم دوراً واحداً، أو حدّد رقم الدور المطلوب خدمته الآن.",
+        schema: z.object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+          to: z.number().nullable().describe("رقم الدور المطلوب (اختياري)"),
+        }),
+      },
+      async ({ date, to }) => {
+        const queue = await QueueService.getDayQueue(doctorId, new Date(date));
+        if (!queue) return { error: "لا يوجد طابور لهذا اليوم" };
+        const res = await QueueService.setCurrentOrder(queue.id, to ?? null, doctorId);
+        if (!res.ok) return { error: res.error };
+        return { date, currentOrder: res.data.currentOrder };
+      },
+    ),
+    jsonTool(
+      {
+        name: "set_queue_tracking",
+        description:
+          "فعّل أو أوقف تتبّع «الدور الحالي» في طابور يوم محدّد. عند الإيقاف يرى المرضى رقم دورهم فقط دون الدور الجاري.",
+        schema: z.object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+          track: z.boolean(),
+        }),
+      },
+      async ({ date, track }) => {
+        const queue = await QueueService.getDayQueue(doctorId, new Date(date));
+        if (!queue) return { error: "لا يوجد طابور لهذا اليوم" };
+        const res = await QueueService.toggleQueueTracking(queue.id, track, doctorId);
+        if (!res.ok) return { error: res.error };
+        return { date, trackCurrentOrder: track };
       },
     ),
   ];

@@ -51,13 +51,21 @@ export default function AppointmentCard({ appointment, onOpenDetails }: Appointm
       </p>
 
       <p className="text-xs text-muted-foreground mt-2">
-        {formatSlotDate(appointment.slot.date)}
+        {appointment.slot
+          ? formatSlotDate(appointment.slot.date)
+          : appointment.bookingDate
+            ? formatSlotDate(appointment.bookingDate)
+            : "—"}
       </p>
-      <p className="text-xs text-muted-foreground" dir="ltr">
-        {formatSlotTime(appointment.slot.startTime)}
-        {" – "}
-        {formatSlotTime(appointment.slot.endTime)}
-      </p>
+      {appointment.slot ? (
+        <p className="text-xs text-muted-foreground" dir="ltr">
+          {formatSlotTime(appointment.slot.startTime)}
+          {" – "}
+          {formatSlotTime(appointment.slot.endTime)}
+        </p>
+      ) : appointment.orderNumber != null ? (
+        <p className="text-xs text-muted-foreground">دور رقم {appointment.orderNumber}</p>
+      ) : null}
 
       {appointment.cancellationReason && (
         <p

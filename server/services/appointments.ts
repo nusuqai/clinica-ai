@@ -1,7 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
-import { AppointmentStatus } from "@prisma/client";
+import { AppointmentStatus, AvailabilityMode } from "@prisma/client";
+import { advanceQueueOnComplete, estimateWaitMinutes } from "./queue";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,9 +12,66 @@ export interface PatientAppointment {
   patientNotes: string | null;
   cancellationReason: string | null;
   createdAt: Date;
-  slot: { date: Date; startTime: Date; endTime: Date };
+  slot: { date: Date; startTime: Date; endTime: Date } | null;
   branch: { name: string } | null;
   doctor: { profile: { fullName: string }; specialty: string };
+  // Order-based (queue) fields — null for slot-based bookings.
+  orderNumber: number | null;
+  bookingDate: Date | null;
+  estimatedDurationMin: number | null;
+  isOrderBased: boolean;
+  currentOrder: number | null; // null when tracking is off (or slot-based)
+  estimatedWaitMin: number | null;
+}
+
+// Shared "upcoming" filter that covers both slot-based (future slot) and
+// order-based (booking date today or later) appointments.
+function upcomingAppointmentWhere() {
+  const now = new Date();
+  const today = new Date(now);
+  today.setUTCHours(0, 0, 0, 0);
+  return {
+    status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
+    OR: [
+      { slot: { startTime: { gt: now } } },
+      { bookingDate: { gte: today } },
+    ],
+  };
+}
+
+// Fields fetched to render an appointment's queue info (order-based bookings).
+const queueInfoInclude = {
+  rule: { select: { mode: true } },
+  queue: { select: { currentOrder: true, trackCurrentOrder: true } },
+} as const;
+
+type WithQueueInfo = {
+  orderNumber: number | null;
+  bookingDate: Date | null;
+  estimatedDurationMin: number | null;
+  rule: { mode: AvailabilityMode } | null;
+  queue: { currentOrder: number; trackCurrentOrder: boolean } | null;
+};
+
+// Derives the display-facing queue fields (isOrderBased, live current order,
+// estimated wait) from the persisted appointment + queue snapshot.
+function queueView(row: WithQueueInfo) {
+  const isOrderBased =
+    row.rule?.mode === AvailabilityMode.ORDER_BASED || row.orderNumber != null;
+  const tracking = row.queue?.trackCurrentOrder ?? false;
+  const currentOrder = isOrderBased && tracking ? (row.queue?.currentOrder ?? 0) : null;
+  const estimatedWaitMin =
+    isOrderBased && tracking && row.orderNumber != null
+      ? estimateWaitMinutes(row.orderNumber, currentOrder ?? 0, row.estimatedDurationMin)
+      : null;
+  return {
+    orderNumber: row.orderNumber,
+    bookingDate: row.bookingDate,
+    estimatedDurationMin: row.estimatedDurationMin,
+    isOrderBased,
+    currentOrder,
+    estimatedWaitMin,
+  };
 }
 
 export interface AdminAppointment {
@@ -26,10 +84,13 @@ export interface AdminAppointment {
   cancellationReason: string | null;
   cancelledAt: Date | null;
   createdAt: Date;
-  slot: { date: Date; startTime: Date; endTime: Date };
+  slot: { date: Date; startTime: Date; endTime: Date } | null;
   branch: { name: string } | null;
   patient: { fullName: string; phone: string | null };
   doctor: { profile: { fullName: string }; specialty: string };
+  orderNumber: number | null;
+  bookingDate: Date | null;
+  isOrderBased: boolean;
 }
 
 // The doctor carries its own name and links to a Specialty; keep the
@@ -64,10 +125,7 @@ export async function getPatientAppointments(
     where: {
       patientId,
       ...(options?.upcoming
-        ? {
-            status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
-            slot: { startTime: { gt: new Date() } },
-          }
+        ? upcomingAppointmentWhere()
         : options?.status
           ? { status: options.status }
           : {}),
@@ -76,22 +134,22 @@ export async function getPatientAppointments(
       slot: { select: { date: true, startTime: true, endTime: true } },
       branch: { select: { name: true } },
       doctor: doctorNameSelect,
+      ...queueInfoInclude,
     },
-    orderBy: { slot: { startTime: options?.upcoming ? "asc" : "desc" } },
+    orderBy: [
+      { slot: { startTime: options?.upcoming ? "asc" : "desc" } },
+      { bookingDate: options?.upcoming ? "asc" : "desc" },
+    ],
     ...(options?.limit ? { take: options.limit } : {}),
   });
-  return rows.map(reshapeDoctor);
+  return rows.map((row) => ({ ...reshapeDoctor(row), ...queueView(row) }));
 }
 
 export async function getPatientStats(patientId: string) {
   const [total, upcoming, completed, cancelled] = await Promise.all([
     prisma.appointment.count({ where: { patientId } }),
     prisma.appointment.count({
-      where: {
-        patientId,
-        status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
-        slot: { startTime: { gt: new Date() } },
-      },
+      where: { patientId, ...upcomingAppointmentWhere() },
     }),
     prisma.appointment.count({ where: { patientId, status: AppointmentStatus.COMPLETED } }),
     prisma.appointment.count({ where: { patientId, status: AppointmentStatus.CANCELLED } }),
@@ -121,10 +179,19 @@ export async function listAppointments(
       branch: { select: { name: true } },
       patient: { select: { fullName: true, phone: true } },
       doctor: doctorNameSelect,
+      ...queueInfoInclude,
     },
-    orderBy: { slot: { date: "desc" } },
+    orderBy: [{ slot: { date: "desc" } }, { bookingDate: "desc" }],
   });
-  return rows.map(reshapeDoctor);
+  return rows.map((row) => {
+    const q = queueView(row);
+    return {
+      ...reshapeDoctor(row),
+      orderNumber: q.orderNumber,
+      bookingDate: q.bookingDate,
+      isOrderBased: q.isOrderBased,
+    };
+  });
 }
 
 /**
@@ -134,7 +201,7 @@ export async function listAppointments(
  * agent's memory of what it asked for), letting the user catch any mistake.
  */
 export async function getAppointmentDetails(appointmentId: string) {
-  return prisma.appointment.findUnique({
+  const row = await prisma.appointment.findUnique({
     where: { id: appointmentId },
     include: {
       slot: { select: { date: true, startTime: true, endTime: true } },
@@ -147,8 +214,11 @@ export async function getAppointmentDetails(appointmentId: string) {
           consultationFee: true,
         },
       },
+      ...queueInfoInclude,
     },
   });
+  if (!row) return null;
+  return { ...row, ...queueView(row) };
 }
 
 // ─── Doctor Queries ───────────────────────────────────────────────────────────
@@ -161,22 +231,25 @@ export interface DoctorAppointmentView {
   cancellationReason: string | null;
   cancelledAt: Date | null;
   createdAt: Date;
-  slot: { date: Date; startTime: Date; endTime: Date };
+  slot: { date: Date; startTime: Date; endTime: Date } | null;
   patient: { fullName: string; phone: string | null };
+  orderNumber: number | null;
+  bookingDate: Date | null;
+  isOrderBased: boolean;
+  currentOrder: number | null;
+  estimatedWaitMin: number | null;
+  estimatedDurationMin: number | null;
 }
 
 export async function getDoctorAppointments(
   doctorId: string,
   options?: { status?: AppointmentStatus; upcoming?: boolean; limit?: number },
 ): Promise<DoctorAppointmentView[]> {
-  return prisma.appointment.findMany({
+  const rows = await prisma.appointment.findMany({
     where: {
       doctorId,
       ...(options?.upcoming
-        ? {
-            status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
-            slot: { startTime: { gt: new Date() } },
-          }
+        ? upcomingAppointmentWhere()
         : options?.status
           ? { status: options.status }
           : {}),
@@ -184,10 +257,15 @@ export async function getDoctorAppointments(
     include: {
       slot: { select: { date: true, startTime: true, endTime: true } },
       patient: { select: { fullName: true, phone: true } },
+      ...queueInfoInclude,
     },
-    orderBy: { slot: { startTime: options?.upcoming ? "asc" : "desc" } },
+    orderBy: [
+      { slot: { startTime: options?.upcoming ? "asc" : "desc" } },
+      { bookingDate: options?.upcoming ? "asc" : "desc" },
+    ],
     ...(options?.limit ? { take: options.limit } : {}),
   });
+  return rows.map((row) => ({ ...row, ...queueView(row) }));
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
@@ -289,6 +367,10 @@ export async function updateAppointmentStatus(
         }),
       },
     });
+    // Completing an order-based appointment advances the queue's "now serving".
+    if (status === AppointmentStatus.COMPLETED) {
+      await advanceQueueOnComplete(appointmentId);
+    }
     return ok(undefined);
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل تحديث حالة الموعد");

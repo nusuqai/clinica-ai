@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import * as DoctorService from "@/server/services/doctors";
 import * as BranchService from "@/server/services/branches";
+import * as QueueService from "@/server/services/queue";
 import { getClinicInfo } from "@/server/services/clinicInfo";
 import { listSpecialties } from "@/server/services/specialties";
 import { jsonTool, money, timeStr } from "./shared";
@@ -173,6 +174,7 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
               to: r.endTime,
               branchId: r.branchId,
               branch: r.branch?.name ?? null,
+              mode: r.mode === "ORDER_BASED" ? "order" : "slot",
             })),
         };
       },
@@ -195,6 +197,30 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
       async ({ doctorId, date }) => {
         const doctor = await DoctorService.getDoctor(doctorId, clinicId);
         if (!doctor) return { error: "الطبيب غير موجود" };
+
+        // Order-based (queue) day: report remaining capacity + live position
+        // instead of fixed slots. Book via book_order_appointment (no slotId).
+        const orderInfo = await QueueService.getOrderBookingInfo(
+          doctorId,
+          new Date(date),
+        );
+        if (orderInfo) {
+          return {
+            doctorId,
+            doctorName: doctor.profile.fullName,
+            date,
+            mode: "order",
+            branchId: orderInfo.branchId,
+            available: orderInfo.available,
+            dailyCap: orderInfo.dailyCap,
+            booked: orderInfo.booked,
+            remaining: orderInfo.remaining,
+            currentOrder: orderInfo.trackCurrentOrder ? orderInfo.currentOrder : null,
+            estimatedDurationMin: orderInfo.estimatedDurationMin,
+            nextOrderNumber: orderInfo.booked + 1,
+          };
+        }
+
         const slots = await DoctorService.getAvailableSlotsForBooking(
           doctorId,
           new Date(date),
@@ -203,6 +229,7 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
           doctorId,
           doctorName: doctor.profile.fullName,
           date,
+          mode: "slot",
           slots: slots.map((s) => ({
             id: s.id,
             startTime: s.startTime.toISOString(),

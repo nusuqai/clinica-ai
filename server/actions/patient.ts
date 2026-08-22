@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
+import * as QueueService from "@/server/services/queue";
 
 // ─── Profile mutations ────────────────────────────────────────────────────────
 
@@ -95,7 +96,55 @@ export async function getAvailableSlotsAction(
   }));
 }
 
+/**
+ * Order-based availability for a (doctor, date): null when that day is
+ * slot-based. Lets the web booking widget switch to a queue UI.
+ */
+export async function getOrderBookingInfoAction(
+  doctorId: string,
+  dateStr: string,
+): Promise<{
+  available: boolean;
+  remaining: number | null;
+  nextOrderNumber: number;
+  currentOrder: number | null;
+  estimatedDurationMin: number | null;
+} | null> {
+  const info = await QueueService.getOrderBookingInfo(doctorId, new Date(dateStr));
+  if (!info) return null;
+  return {
+    available: info.available,
+    remaining: info.remaining,
+    nextOrderNumber: info.booked + 1,
+    currentOrder: info.trackCurrentOrder ? info.currentOrder : null,
+    estimatedDurationMin: info.estimatedDurationMin,
+  };
+}
+
 // ─── Patient mutations ────────────────────────────────────────────────────────
+
+export async function bookOrderAppointmentAction(
+  doctorId: string,
+  dateStr: string,
+  patientNotes?: string,
+): Promise<{ ok: boolean; error?: string; orderNumber?: number }> {
+  const ctx = await getActiveClinicContext();
+  if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
+  if (ctx.role !== Role.PATIENT)
+    return { ok: false, error: "هذه الخدمة للمرضى فقط" };
+
+  const result = await QueueService.bookOrderAppointment(
+    ctx.user.id,
+    doctorId,
+    new Date(dateStr),
+    { notes: patientNotes },
+  );
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath("/clinic/[slug]/dashboard", "page");
+  revalidatePath("/clinic/[slug]/dashboard/appointments", "page");
+  return { ok: true, orderNumber: result.data.orderNumber };
+}
 
 export async function bookAppointmentAction(
   slotId: string,

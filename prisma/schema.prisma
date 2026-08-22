@@ -116,6 +116,7 @@ model Clinic {
   aiCredit          ClinicAiCredit?
   aiUsage           AiUsageLog[]
   aiLedger          AiCreditLedger[]
+  dayQueues         DoctorDayQueue[]
 
   @@map("clinics")
 }
@@ -149,6 +150,7 @@ model Branch {
   availabilityRules AvailabilityRule[]
   slots             Slot[]
   appointments      Appointment[]
+  dayQueues         DoctorDayQueue[]
 
   @@index([clinicId])
   @@map("branches")
@@ -355,6 +357,7 @@ model Doctor {
   slots             Slot[]
   appointments      Appointment[]      @relation("DoctorAppointments")
   referralsMade     Appointment[]      @relation("ReferredAppointments")
+  dayQueues         DoctorDayQueue[]
 
   @@index([clinicId])
   @@index([specialtyId])
@@ -392,28 +395,70 @@ model DoctorBranch {
   @@map("doctor_branches")
 }
 
+// How a doctor's availability rule schedules patients.
+enum AvailabilityMode {
+  SLOT_BASED // fixed time slots — patient picks a specific time
+  ORDER_BASED // queue / نظام الدور — sequential order numbers, no fixed times
+}
+
 model AvailabilityRule {
-  id              String    @id @default(uuid()) @db.Uuid
-  doctorId        String    @db.Uuid
-  branchId        String?   @db.Uuid // branch this schedule is for (required for new rows)
+  id              String           @id @default(uuid()) @db.Uuid
+  doctorId        String           @db.Uuid
+  branchId        String?          @db.Uuid // branch this schedule is for (required for new rows)
   dayOfWeek       DayOfWeek
-  startTime       String // "HH:MM" e.g. "14:00"
+  startTime       String // "HH:MM" e.g. "14:00" (queue session start for order-based)
   endTime         String // "HH:MM" e.g. "17:00"
-  slotDurationMin Int       @default(30)
-  isActive        Boolean   @default(true)
+  slotDurationMin Int              @default(30) // slot-based: minutes per slot
+  mode            AvailabilityMode @default(SLOT_BASED)
+  // Order-based only: estimated minutes a patient spends with the doctor (drives
+  // the wait estimate) and the max bookings allowed for the day.
+  estimatedDurationMin Int?
+  dailyCap             Int?
+  isActive        Boolean          @default(true)
   // When true, patients cannot book this rule's slots directly; they are
   // reserved for referrals made by a doctor after examining a patient.
-  referralOnly    Boolean   @default(false)
+  referralOnly    Boolean          @default(false)
   note            String? // free-text admin/doctor note about this rule
-  generatedUntil  DateTime? @db.Date // tracks how far ahead slots have been generated
+  generatedUntil  DateTime?        @db.Date // slot-based: how far ahead slots have been generated
 
-  doctor Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  slots  Slot[]
+  doctor       Doctor           @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  branch       Branch?          @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  slots        Slot[]
+  queues       DoctorDayQueue[]
+  appointments Appointment[]
 
   @@index([doctorId])
   @@index([branchId])
   @@map("availability_rules")
+}
+
+// Per (doctor, branch, day) queue state for order-based scheduling. Created
+// lazily on the first order-based booking of the day.
+model DoctorDayQueue {
+  id                   String   @id @default(uuid()) @db.Uuid
+  clinicId             String   @db.Uuid
+  doctorId             String   @db.Uuid
+  branchId             String?  @db.Uuid
+  ruleId               String?  @db.Uuid
+  date                 DateTime @db.Date
+  nextOrder            Int      @default(1) // next order number to hand out
+  currentOrder         Int      @default(0) // "now serving" — 0 = not started
+  dailyCap             Int? // snapshot from the rule
+  estimatedDurationMin Int? // snapshot from the rule
+  trackCurrentOrder    Boolean  @default(true) // false = patients see only their own number
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  clinic       Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  doctor       Doctor            @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  branch       Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  rule         AvailabilityRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  appointments Appointment[]
+
+  @@unique([doctorId, branchId, date])
+  @@index([clinicId])
+  @@index([branchId])
+  @@map("doctor_day_queues")
 }
 
 model Slot {
@@ -447,7 +492,15 @@ model Appointment {
   doctorId           String            @db.Uuid
   // Set when this appointment was created as a referral by another doctor.
   referredByDoctorId String?           @db.Uuid
-  slotId             String            @unique @db.Uuid
+  // Slot-based bookings set slotId. Order-based bookings leave it null and set
+  // ruleId + bookingDate + orderNumber + queueId instead. (Postgres allows many
+  // NULLs under a UNIQUE index, so a single unique slotId still holds.)
+  slotId             String?           @unique @db.Uuid
+  ruleId             String?           @db.Uuid // which rule/mode produced this booking
+  queueId            String?           @db.Uuid // order-based: the day queue this booking belongs to
+  bookingDate        DateTime?         @db.Date // order-based: the day (slot-based derives from slot)
+  orderNumber        Int? // order-based: queue position
+  estimatedDurationMin Int? // order-based: snapshot at booking (stable wait calc)
   status             AppointmentStatus @default(PENDING)
   patientNotes       String?
   doctorNotes        String?
@@ -458,16 +511,20 @@ model Appointment {
 
   clinic  Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   branch  Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  patient    Profile @relation(fields: [patientId], references: [id])
-  doctor     Doctor  @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  referredBy Doctor? @relation("ReferredAppointments", fields: [referredByDoctorId], references: [id])
-  slot       Slot    @relation(fields: [slotId], references: [id])
+  patient    Profile           @relation(fields: [patientId], references: [id])
+  doctor     Doctor            @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  referredBy Doctor?           @relation("ReferredAppointments", fields: [referredByDoctorId], references: [id])
+  slot       Slot?             @relation(fields: [slotId], references: [id])
+  rule       AvailabilityRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  queue      DoctorDayQueue?   @relation(fields: [queueId], references: [id], onDelete: SetNull)
 
   @@index([clinicId])
   @@index([branchId])
   @@index([patientId])
   @@index([doctorId])
   @@index([referredByDoctorId])
+  @@index([queueId])
+  @@index([doctorId, bookingDate])
   @@map("appointments")
 }
 

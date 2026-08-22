@@ -10,7 +10,7 @@ import {
   toggleMyRuleActiveAction,
 } from "@/server/actions/doctor";
 import Modal from "@/components/admin/modal";
-import { DayOfWeek, type AvailabilityRule } from "@prisma/client";
+import { DayOfWeek, AvailabilityMode, type AvailabilityRule } from "@prisma/client";
 import { formatSlotDate } from "@/lib/slot-time";
 
 export interface DoctorBranchHours {
@@ -61,6 +61,8 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [selBranch, setSelBranch] = useState<string>(branches[0]?.id ?? "");
   const [selDay, setSelDay] = useState<DayOfWeek>(DayOfWeek.SAT);
+  const [selMode, setSelMode] = useState<AvailabilityMode>(AvailabilityMode.SLOT_BASED);
+  const isOrder = selMode === AvailabilityMode.ORDER_BASED;
 
   const branchWindow = (() => {
     const branch = branches.find((b) => b.id === selBranch);
@@ -180,9 +182,19 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                       {rule.branch.name}
                     </span>
                   )}
-                  <span className="text-xs text-muted-foreground font-sans bg-muted px-2 py-0.5 rounded-full">
-                    {rule.slotDurationMin} دقيقة / موعد
-                  </span>
+                  {rule.mode === AvailabilityMode.ORDER_BASED ? (
+                    <span className="text-xs font-medium text-indigo-700 font-sans bg-indigo-100 px-2 py-0.5 rounded-full">
+                      نظام الدور
+                      {rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : ""}
+                      {rule.estimatedDurationMin != null
+                        ? ` · ~${rule.estimatedDurationMin} د/مريض`
+                        : ""}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground font-sans bg-muted px-2 py-0.5 rounded-full">
+                      {rule.slotDurationMin} دقيقة / موعد
+                    </span>
+                  )}
                   <span
                     className={[
                       "text-xs font-medium px-2 py-0.5 rounded-full font-sans",
@@ -322,17 +334,58 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-sm font-medium text-foreground font-sans">مدة الموعد</label>
+              <label className="text-sm font-medium text-foreground font-sans">نظام الجدولة</label>
               <select
-                name="slotDurationMin"
-                defaultValue="30"
+                name="mode"
+                value={selMode}
+                onChange={(e) => setSelMode(e.target.value as AvailabilityMode)}
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
-                {[15, 20, 30, 45, 60].map((d) => (
-                  <option key={d} value={d}>{d} دقيقة</option>
-                ))}
+                <option value={AvailabilityMode.SLOT_BASED}>مواعيد بأوقات ثابتة</option>
+                <option value={AvailabilityMode.ORDER_BASED}>نظام الدور (طابور)</option>
               </select>
             </div>
+            {isOrder ? (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground font-sans">
+                    دقائق الكشف التقديرية
+                  </label>
+                  <input
+                    name="estimatedDurationMin"
+                    type="number"
+                    min={1}
+                    defaultValue={10}
+                    className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground font-sans">
+                    الحد الأقصى للحجوزات
+                  </label>
+                  <input
+                    name="dailyCap"
+                    type="number"
+                    min={1}
+                    defaultValue={50}
+                    className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-1.5 sm:col-span-2">
+                <label className="text-sm font-medium text-foreground font-sans">مدة الموعد</label>
+                <select
+                  name="slotDurationMin"
+                  defaultValue="30"
+                  className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  {[15, 20, 30, 45, 60].map((d) => (
+                    <option key={d} value={d}>{d} دقيقة</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <label className="flex items-start gap-2 sm:col-span-2 cursor-pointer">
               <input
                 type="checkbox"

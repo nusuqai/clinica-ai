@@ -66,7 +66,9 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
     return appointments.filter((appt) => {
       if (doctorFilter && appt.doctorId !== doctorFilter) return false;
       if (query && !appt.patient.fullName.toLowerCase().includes(query)) return false;
-      if (dateFilter && toDateInputValue(new Date(appt.slot.date)) !== dateFilter) return false;
+      const apptDate = appt.slot?.date ?? appt.bookingDate;
+      if (dateFilter && (!apptDate || toDateInputValue(new Date(apptDate)) !== dateFilter))
+        return false;
       return true;
     });
   }, [appointments, doctorFilter, patientQuery, dateFilter]);
@@ -276,12 +278,22 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
                 {detailsAppt.branch?.name ?? "—"}
               </DetailRow>
               <DetailRow icon={Calendar} label="التاريخ">
-                {formatSlotDate(detailsAppt.slot.date)}
+                {detailsAppt.slot
+                  ? formatSlotDate(detailsAppt.slot.date)
+                  : detailsAppt.bookingDate
+                    ? formatSlotDate(detailsAppt.bookingDate)
+                    : "—"}
               </DetailRow>
-              <DetailRow icon={Clock} label="الوقت">
-                <span dir="ltr">
-                  {formatSlotTime(detailsAppt.slot.startTime)} – {formatSlotTime(detailsAppt.slot.endTime)}
-                </span>
+              <DetailRow icon={Clock} label={detailsAppt.slot ? "الوقت" : "الدور"}>
+                {detailsAppt.slot ? (
+                  <span dir="ltr">
+                    {formatSlotTime(detailsAppt.slot.startTime)} – {formatSlotTime(detailsAppt.slot.endTime)}
+                  </span>
+                ) : detailsAppt.orderNumber != null ? (
+                  <span>دور رقم {detailsAppt.orderNumber}</span>
+                ) : (
+                  "—"
+                )}
               </DetailRow>
               {detailsAppt.patientNotes && (
                 <DetailRow icon={StickyNote} label="ملاحظات المريض">

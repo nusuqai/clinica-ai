@@ -92,7 +92,9 @@ export default async function DoctorPatientsPage({
                       <td className="px-4 py-3 text-muted-foreground">
                         <span className="flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
-                          {formatSlotDate(patient.lastAppointmentDate)}
+                          {patient.lastAppointmentDate
+                            ? formatSlotDate(patient.lastAppointmentDate)
+                            : "—"}
                         </span>
                       </td>
                       <td className="px-4 py-3">

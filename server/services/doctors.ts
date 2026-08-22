@@ -5,6 +5,7 @@ import { ok, err, type Result } from "./_result";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
 import {
   AppointmentStatus,
+  AvailabilityMode,
   Role,
   type Doctor,
   type DayOfWeek,
@@ -111,6 +112,12 @@ export interface CreateRuleInput {
   referralOnly?: boolean;
   /** Free-text admin/doctor note about this rule. */
   note?: string | null;
+  /** SLOT_BASED (default) or ORDER_BASED (queue). */
+  mode?: AvailabilityMode;
+  /** Order-based only: estimated minutes per patient. */
+  estimatedDurationMin?: number | null;
+  /** Order-based only: max bookings per day. */
+  dailyCap?: number | null;
 }
 
 export type DoctorSlot = {
@@ -619,6 +626,11 @@ export async function createRule(
     );
     if (validationError) return err(validationError);
 
+    const mode = input.mode ?? AvailabilityMode.SLOT_BASED;
+    const isOrderBased = mode === AvailabilityMode.ORDER_BASED;
+    if (isOrderBased && input.dailyCap != null && input.dailyCap < 1)
+      return err("الحد الأقصى للحجوزات يجب أن يكون 1 على الأقل.");
+
     const rule = await prisma.availabilityRule.create({
       data: {
         doctorId: input.doctorId,
@@ -627,11 +639,15 @@ export async function createRule(
         startTime: input.startTime,
         endTime: input.endTime,
         slotDurationMin: input.slotDurationMin ?? 30,
+        mode,
+        estimatedDurationMin: isOrderBased ? (input.estimatedDurationMin ?? null) : null,
+        dailyCap: isOrderBased ? (input.dailyCap ?? null) : null,
         referralOnly: input.referralOnly ?? false,
         note: input.note?.trim() || null,
       },
     });
-    await generateSlotsForRule(rule.id, 30);
+    // Order-based rules have no fixed slots — bookings are queued at runtime.
+    if (!isOrderBased) await generateSlotsForRule(rule.id, 30);
     return ok({ id: rule.id });
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل إنشاء قاعدة التوفر");
@@ -831,7 +847,7 @@ export type DoctorPatient = {
   patientId: string;
   fullName: string;
   phone: string | null;
-  lastAppointmentDate: Date;
+  lastAppointmentDate: Date | null;
   lastStatus: AppointmentStatus;
   totalAppointments: number;
 };
@@ -845,7 +861,7 @@ export async function getDoctorPatients(
       patient: { select: { fullName: true, phone: true } },
       slot: { select: { date: true } },
     },
-    orderBy: { slot: { date: "desc" } },
+    orderBy: [{ slot: { date: "desc" } }, { bookingDate: "desc" }],
   });
 
   const patientMap = new Map<string, DoctorPatient>();
@@ -855,7 +871,8 @@ export async function getDoctorPatients(
         patientId: appt.patientId,
         fullName: appt.patient.fullName,
         phone: appt.patient.phone,
-        lastAppointmentDate: appt.slot.date,
+        // slot-based → slot date; order-based → booking date.
+        lastAppointmentDate: appt.slot?.date ?? appt.bookingDate,
         lastStatus: appt.status,
         totalAppointments: 1,
       });
