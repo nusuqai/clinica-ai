@@ -125,6 +125,8 @@ export async function createMyRuleAction(formData: FormData) {
     slotDurationMin: formData.get("slotDurationMin")
       ? Number(formData.get("slotDurationMin"))
       : 30,
+    referralOnly: formData.get("referralOnly") === "on",
+    note: (formData.get("note") as string) || null,
   });
   if (!result.ok) return { error: result.error };
   revalidatePath("/clinic/[slug]/doctor/schedule", "page");

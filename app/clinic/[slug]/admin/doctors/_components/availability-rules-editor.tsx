@@ -28,6 +28,9 @@ export interface RuleDraft {
   startTime: string;
   endTime: string;
   slotDurationMin: number;
+  /** Referral-only rules aren't bookable by patients directly. */
+  referralOnly: boolean;
+  note: string | null;
 }
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -99,6 +102,8 @@ export default function AvailabilityRulesEditor(props: Props) {
   const [nStart, setNStart] = useState("09:00");
   const [nEnd, setNEnd] = useState("17:00");
   const [nDur, setNDur] = useState(30);
+  const [nReferralOnly, setNReferralOnly] = useState(false);
+  const [nNote, setNNote] = useState("");
 
   const doctorId = props.mode === "live" ? props.doctorId : null;
 
@@ -146,10 +151,14 @@ export default function AvailabilityRulesEditor(props: Props) {
       startTime: nStart,
       endTime: nEnd,
       slotDurationMin: nDur,
+      referralOnly: nReferralOnly,
+      note: nNote.trim() || null,
     };
 
     if (props.mode === "draft") {
       setRows((rs) => [...rs, draft]);
+      setNReferralOnly(false);
+      setNNote("");
       return;
     }
 
@@ -161,6 +170,8 @@ export default function AvailabilityRulesEditor(props: Props) {
     fd.set("startTime", draft.startTime);
     fd.set("endTime", draft.endTime);
     fd.set("slotDurationMin", String(draft.slotDurationMin));
+    if (draft.referralOnly) fd.set("referralOnly", "on");
+    if (draft.note) fd.set("note", draft.note);
     startTransition(async () => {
       const res = await createRuleAction(fd);
       if (res?.error) {
@@ -169,6 +180,8 @@ export default function AvailabilityRulesEditor(props: Props) {
       }
       const refreshed = await getDoctorRulesAction(id);
       if ("rules" in refreshed && refreshed.rules) setRows(refreshed.rules);
+      setNReferralOnly(false);
+      setNNote("");
     });
   }
 
@@ -222,6 +235,8 @@ export default function AvailabilityRulesEditor(props: Props) {
               startTime: r.startTime,
               endTime: r.endTime,
               slotDurationMin: r.slotDurationMin,
+              referralOnly: r.referralOnly,
+              note: r.note,
             })),
           )}
         />
@@ -253,29 +268,41 @@ export default function AvailabilityRulesEditor(props: Props) {
               {rows.map((rule, idx) => (
                 <div
                   key={rule.id ?? idx}
-                  className="flex flex-wrap items-center gap-2 bg-muted/40 border border-border rounded-xl px-3 py-2"
+                  className="bg-muted/40 border border-border rounded-xl px-3 py-2"
                 >
-                  <span className="font-medium text-foreground font-sans text-sm">
-                    {DAY_LABELS[rule.dayOfWeek]}
-                  </span>
-                  <span className="text-muted-foreground font-sans text-sm" dir="ltr">
-                    {rule.startTime} – {rule.endTime}
-                  </span>
-                  <span className="text-xs text-primary font-sans bg-primary/10 px-2 py-0.5 rounded-full">
-                    {branchName(rule.branchId)}
-                  </span>
-                  <span className="text-xs text-muted-foreground font-sans bg-muted px-2 py-0.5 rounded-full">
-                    {rule.slotDurationMin} دقيقة / موعد
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeRow(idx)}
-                    disabled={isPending}
-                    title="حذف القاعدة"
-                    className="ms-auto p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-foreground font-sans text-sm">
+                      {DAY_LABELS[rule.dayOfWeek]}
+                    </span>
+                    <span className="text-muted-foreground font-sans text-sm" dir="ltr">
+                      {rule.startTime} – {rule.endTime}
+                    </span>
+                    <span className="text-xs text-primary font-sans bg-primary/10 px-2 py-0.5 rounded-full">
+                      {branchName(rule.branchId)}
+                    </span>
+                    <span className="text-xs text-muted-foreground font-sans bg-muted px-2 py-0.5 rounded-full">
+                      {rule.slotDurationMin} دقيقة / موعد
+                    </span>
+                    {rule.referralOnly && (
+                      <span className="text-xs font-medium text-amber-700 font-sans bg-amber-100 px-2 py-0.5 rounded-full">
+                        تحويلات فقط
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeRow(idx)}
+                      disabled={isPending}
+                      title="حذف القاعدة"
+                      className="ms-auto p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {rule.note && (
+                    <p className="text-xs text-muted-foreground font-sans mt-1">
+                      {rule.note}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -369,6 +396,34 @@ export default function AvailabilityRulesEditor(props: Props) {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <label className="flex items-start gap-2 sm:col-span-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={nReferralOnly}
+                  onChange={(e) => setNReferralOnly(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+                />
+                <span className="text-xs text-foreground font-sans">
+                  تحويلات فقط
+                  <span className="block text-muted-foreground">
+                    لا يحجزها المرضى مباشرةً؛ تُحجز عبر تحويل من طبيب بعد الكشف.
+                  </span>
+                </span>
+              </label>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-xs font-medium text-muted-foreground font-sans">
+                  ملاحظة (اختياري)
+                </label>
+                <input
+                  type="text"
+                  value={nNote}
+                  onChange={(e) => setNNote(e.target.value)}
+                  placeholder="مثال: تحويلات حالات القلب فقط"
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
               </div>
             </div>
 

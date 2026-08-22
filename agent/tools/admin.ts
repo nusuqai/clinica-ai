@@ -253,6 +253,8 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             endTime: r.endTime,
             slotDurationMin: r.slotDurationMin,
             isActive: r.isActive,
+            referralOnly: r.referralOnly,
+            note: r.note,
           })),
         };
       },
@@ -273,9 +275,19 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             .string()
             .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),
           slotDurationMin: z.number().nullable(),
+          referralOnly: z
+            .boolean()
+            .nullable()
+            .describe(
+              "إن كانت true فهذه القاعدة للتحويلات فقط: لا يحجزها المرضى مباشرةً، بل تُحجز عبر تحويل من طبيب.",
+            ),
+          note: z
+            .string()
+            .nullable()
+            .describe("ملاحظة نصية على القاعدة (اختياري)"),
         }),
       },
-      async ({ doctorId, branchId, dayOfWeek, startTime, endTime, slotDurationMin }) => {
+      async ({ doctorId, branchId, dayOfWeek, startTime, endTime, slotDurationMin, referralOnly, note }) => {
         const res = await DoctorService.createRule({
           doctorId,
           branchId,
@@ -283,9 +295,19 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           startTime,
           endTime,
           slotDurationMin: slotDurationMin ?? undefined,
+          referralOnly: referralOnly ?? false,
+          note: note ?? null,
         });
         if (!res.ok) return { error: res.error };
-        return { ruleId: res.data.id, doctorId, branchId, dayOfWeek, startTime, endTime };
+        return {
+          ruleId: res.data.id,
+          doctorId,
+          branchId,
+          dayOfWeek,
+          startTime,
+          endTime,
+          referralOnly: referralOnly ?? false,
+        };
       },
     ),
     jsonTool(

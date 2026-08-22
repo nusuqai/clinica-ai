@@ -193,7 +193,17 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                   >
                     {rule.isActive ? "نشطة" : "معطّلة"}
                   </span>
+                  {rule.referralOnly && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full font-sans bg-amber-100 text-amber-700">
+                      تحويلات فقط
+                    </span>
+                  )}
                 </div>
+                {rule.note && (
+                  <p className="text-xs text-muted-foreground font-sans mb-1">
+                    {rule.note}
+                  </p>
+                )}
                 {rule.generatedUntil && (
                   <p className="text-xs text-muted-foreground font-sans">
                     آخر توليد حتى:{" "}
@@ -322,6 +332,30 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                   <option key={d} value={d}>{d} دقيقة</option>
                 ))}
               </select>
+            </div>
+            <label className="flex items-start gap-2 sm:col-span-2 cursor-pointer">
+              <input
+                type="checkbox"
+                name="referralOnly"
+                className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+              />
+              <span className="text-sm text-foreground font-sans">
+                تحويلات فقط
+                <span className="block text-xs text-muted-foreground">
+                  لا يحجزها المرضى مباشرةً؛ تُحجز عبر تحويل من طبيب بعد الكشف.
+                </span>
+              </span>
+            </label>
+            <div className="space-y-1.5 sm:col-span-2">
+              <label className="text-sm font-medium text-foreground font-sans">
+                ملاحظة (اختياري)
+              </label>
+              <input
+                name="note"
+                type="text"
+                placeholder="مثال: تحويلات حالات القلب فقط"
+                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
             </div>
           </div>
           <p className="text-xs text-muted-foreground font-sans">

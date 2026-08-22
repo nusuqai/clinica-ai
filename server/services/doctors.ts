@@ -107,6 +107,10 @@ export interface CreateRuleInput {
   startTime: string;
   endTime: string;
   slotDurationMin?: number;
+  /** Reserve this rule's slots for doctor referrals (not directly bookable). */
+  referralOnly?: boolean;
+  /** Free-text admin/doctor note about this rule. */
+  note?: string | null;
 }
 
 export type DoctorSlot = {
@@ -158,6 +162,7 @@ export async function getAvailableSlotsForBooking(
     where: {
       doctorId,
       isBlocked: false,
+      referralOnly: false, // referral-only slots are not directly bookable by patients
       appointment: null,
       date: { gte: dayStart, lte: dayEnd },
       startTime: { gt: now },
@@ -168,6 +173,50 @@ export async function getAvailableSlotsForBooking(
       endTime: true,
       branchId: true,
       branch: { select: { id: true, name: true } },
+    },
+    orderBy: { startTime: "asc" },
+  });
+}
+
+/**
+ * Referral booking view: every bookable slot for a doctor on a date, INCLUDING
+ * referral-only ones (each flagged). Used by the referring-doctor flow so a
+ * doctor can place a patient into another doctor's reserved referral slots.
+ */
+export async function getReferralSlotsForBooking(
+  doctorId: string,
+  date: Date,
+): Promise<
+  {
+    id: string;
+    startTime: Date;
+    endTime: Date;
+    branchId: string | null;
+    branch: { id: string; name: string } | null;
+    referralOnly: boolean;
+  }[]
+> {
+  const dayStart = new Date(date);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(date);
+  dayEnd.setHours(23, 59, 59, 999);
+  const now = new Date();
+
+  return prisma.slot.findMany({
+    where: {
+      doctorId,
+      isBlocked: false,
+      appointment: null,
+      date: { gte: dayStart, lte: dayEnd },
+      startTime: { gt: now },
+    },
+    select: {
+      id: true,
+      startTime: true,
+      endTime: true,
+      branchId: true,
+      branch: { select: { id: true, name: true } },
+      referralOnly: true,
     },
     orderBy: { startTime: "asc" },
   });
@@ -185,6 +234,7 @@ export async function getAvailableDaysForBooking(
     where: {
       doctorId,
       isBlocked: false,
+      referralOnly: false, // referral-only slots are not directly bookable by patients
       appointment: null,
       startTime: { gt: now },
       date: { lte: until },
@@ -577,6 +627,8 @@ export async function createRule(
         startTime: input.startTime,
         endTime: input.endTime,
         slotDurationMin: input.slotDurationMin ?? 30,
+        referralOnly: input.referralOnly ?? false,
+        note: input.note?.trim() || null,
       },
     });
     await generateSlotsForRule(rule.id, 30);
@@ -661,6 +713,7 @@ export async function generateSlotsForRule(
       date: Date;
       startTime: Date;
       endTime: Date;
+      referralOnly: boolean;
     }[] = [];
 
     const cur = new Date(from);
@@ -679,6 +732,7 @@ export async function generateSlotsForRule(
             date: slotDate,
             startTime: new Date(t),
             endTime: new Date(t + durationMs),
+            referralOnly: rule.referralOnly, // inherit the rule's referral flag
           });
           t += durationMs;
         }

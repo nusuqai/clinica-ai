@@ -94,6 +94,8 @@ interface DraftRule {
   startTime: string;
   endTime: string;
   slotDurationMin?: number;
+  referralOnly?: boolean;
+  note?: string | null;
 }
 
 // Parses the `rules` JSON from the add form and creates each rule for the new
@@ -120,6 +122,8 @@ async function createDraftRules(
       startTime: r.startTime,
       endTime: r.endTime,
       slotDurationMin: r.slotDurationMin ? Number(r.slotDurationMin) : 30,
+      referralOnly: !!r.referralOnly,
+      note: r.note ?? null,
     });
     if (!res.ok) return `تعذّر إنشاء قاعدة التوفر: ${res.error}`;
   }
@@ -275,6 +279,8 @@ export async function getDoctorRulesAction(doctorId: string) {
       startTime: r.startTime,
       endTime: r.endTime,
       slotDurationMin: r.slotDurationMin,
+      referralOnly: r.referralOnly,
+      note: r.note,
     })),
   };
 }
@@ -293,6 +299,8 @@ export async function createRuleAction(formData: FormData) {
     slotDurationMin: formData.get("slotDurationMin")
       ? Number(formData.get("slotDurationMin"))
       : 30,
+    referralOnly: formData.get("referralOnly") === "on",
+    note: (formData.get("note") as string) || null,
   });
   if (!result.ok) return { error: result.error };
   revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");

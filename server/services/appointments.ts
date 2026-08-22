@@ -204,6 +204,8 @@ export async function createAppointment(
     });
     if (!slot) return err("الموعد غير موجود");
     if (slot.isBlocked) return err("هذا الموعد غير متاح");
+    if (slot.referralOnly)
+      return err("هذا الموعد مخصّص للتحويلات من الأطباء ولا يمكن حجزه مباشرةً");
     if (slot.appointment) return err("هذا الموعد محجوز بالفعل");
     if (slot.startTime < new Date()) return err("لا يمكن حجز مواعيد في الماضي");
 
@@ -224,6 +226,50 @@ export async function createAppointment(
       return err("هذا الموعد محجوز بالفعل");
     }
     return err(e instanceof Error ? e.message : "فشل حجز الموعد");
+  }
+}
+
+/**
+ * Book a patient into a slot as a referral made by a doctor. Unlike
+ * createAppointment, this is allowed to target referral-only slots (that is
+ * their purpose). The referring doctor is recorded on the appointment.
+ */
+export async function referAppointment(
+  referringDoctorId: string,
+  patientId: string,
+  slotId: string,
+  notes?: string,
+): Promise<Result<{ id: string }>> {
+  try {
+    const slot = await prisma.slot.findUnique({
+      where: { id: slotId },
+      include: { appointment: true, doctor: { select: { clinicId: true } } },
+    });
+    if (!slot) return err("الموعد غير موجود");
+    if (slot.isBlocked) return err("هذا الموعد غير متاح");
+    if (slot.appointment) return err("هذا الموعد محجوز بالفعل");
+    if (slot.startTime < new Date()) return err("لا يمكن حجز مواعيد في الماضي");
+    if (slot.doctorId === referringDoctorId)
+      return err("لا يمكن تحويل المريض إلى نفس الطبيب");
+
+    const appointment = await prisma.appointment.create({
+      data: {
+        clinicId: slot.doctor.clinicId,
+        branchId: slot.branchId, // snapshot the slot's branch onto the appointment
+        patientId,
+        doctorId: slot.doctorId,
+        referredByDoctorId: referringDoctorId,
+        slotId,
+        status: AppointmentStatus.PENDING,
+        patientNotes: notes ?? null,
+      },
+    });
+    return ok({ id: appointment.id });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("Unique constraint")) {
+      return err("هذا الموعد محجوز بالفعل");
+    }
+    return err(e instanceof Error ? e.message : "فشل تحويل الموعد");
   }
 }
 

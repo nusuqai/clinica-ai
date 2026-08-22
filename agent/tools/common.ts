@@ -165,7 +165,8 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
           doctorId,
           doctorName: doctor.profile.fullName,
           workingHours: rules
-            .filter((r) => r.isActive)
+            // Referral-only windows aren't publicly bookable, so hide them here.
+            .filter((r) => r.isActive && !r.referralOnly)
             .map((r) => ({
               day: DAY_LABELS_AR[r.dayOfWeek] ?? r.dayOfWeek,
               from: r.startTime,

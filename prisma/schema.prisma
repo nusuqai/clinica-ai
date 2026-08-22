@@ -353,7 +353,8 @@ model Doctor {
   branches          DoctorBranch[]
   availabilityRules AvailabilityRule[]
   slots             Slot[]
-  appointments      Appointment[]
+  appointments      Appointment[]      @relation("DoctorAppointments")
+  referralsMade     Appointment[]      @relation("ReferredAppointments")
 
   @@index([clinicId])
   @@index([specialtyId])
@@ -400,6 +401,10 @@ model AvailabilityRule {
   endTime         String // "HH:MM" e.g. "17:00"
   slotDurationMin Int       @default(30)
   isActive        Boolean   @default(true)
+  // When true, patients cannot book this rule's slots directly; they are
+  // reserved for referrals made by a doctor after examining a patient.
+  referralOnly    Boolean   @default(false)
+  note            String? // free-text admin/doctor note about this rule
   generatedUntil  DateTime? @db.Date // tracks how far ahead slots have been generated
 
   doctor Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
@@ -420,6 +425,9 @@ model Slot {
   startTime DateTime
   endTime   DateTime
   isBlocked Boolean  @default(false)
+  // Snapshot of the rule's referralOnly flag at generation time; keeps
+  // patient-facing booking queries fast without joining the rule.
+  referralOnly Boolean @default(false)
 
   doctor      Doctor            @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   branch      Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
@@ -437,6 +445,8 @@ model Appointment {
   branchId           String?           @db.Uuid // copied from the slot at booking time
   patientId          String            @db.Uuid
   doctorId           String            @db.Uuid
+  // Set when this appointment was created as a referral by another doctor.
+  referredByDoctorId String?           @db.Uuid
   slotId             String            @unique @db.Uuid
   status             AppointmentStatus @default(PENDING)
   patientNotes       String?
@@ -448,14 +458,16 @@ model Appointment {
 
   clinic  Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   branch  Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  patient Profile @relation(fields: [patientId], references: [id])
-  doctor  Doctor  @relation(fields: [doctorId], references: [id])
-  slot    Slot    @relation(fields: [slotId], references: [id])
+  patient    Profile @relation(fields: [patientId], references: [id])
+  doctor     Doctor  @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  referredBy Doctor? @relation("ReferredAppointments", fields: [referredByDoctorId], references: [id])
+  slot       Slot    @relation(fields: [slotId], references: [id])
 
   @@index([clinicId])
   @@index([branchId])
   @@index([patientId])
   @@index([doctorId])
+  @@index([referredByDoctorId])
   @@map("appointments")
 }
 

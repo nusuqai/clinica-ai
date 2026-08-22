@@ -206,9 +206,19 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             .string()
             .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),
           slotDurationMin: z.number().nullable(),
+          referralOnly: z
+            .boolean()
+            .nullable()
+            .describe(
+              "إن كانت true فهذه القاعدة للتحويلات فقط: لا يحجزها المرضى مباشرةً، بل تُحجز عبر تحويل من طبيب.",
+            ),
+          note: z
+            .string()
+            .nullable()
+            .describe("ملاحظة نصية على القاعدة (اختياري)"),
         }),
       },
-      async ({ branchId, dayOfWeek, startTime, endTime, slotDurationMin }) => {
+      async ({ branchId, dayOfWeek, startTime, endTime, slotDurationMin, referralOnly, note }) => {
         let resolvedBranchId = branchId ?? "";
         if (!resolvedBranchId) {
           const branchIds = await listDoctorBranchIds(doctorId);
@@ -222,9 +232,18 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
           startTime,
           endTime,
           slotDurationMin: slotDurationMin ?? undefined,
+          referralOnly: referralOnly ?? false,
+          note: note ?? null,
         });
         if (!res.ok) return { error: res.error };
-        return { ruleId: res.data.id, branchId: resolvedBranchId, dayOfWeek, startTime, endTime };
+        return {
+          ruleId: res.data.id,
+          branchId: resolvedBranchId,
+          dayOfWeek,
+          startTime,
+          endTime,
+          referralOnly: referralOnly ?? false,
+        };
       },
     ),
     jsonTool(
@@ -250,6 +269,72 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
         );
         if (!res.ok) return { error: res.error };
         return { ruleId, generated: res.data.count };
+      },
+    ),
+    jsonTool(
+      {
+        name: "list_referral_slots",
+        description:
+          "اعرض الفترات المتاحة لدى طبيب آخر في تاريخ محدّد (YYYY-MM-DD) بغرض تحويل مريض إليه، بما فيها فترات «التحويلات فقط» (كل فترة موضّح فيها إن كانت مخصّصة للتحويلات). استخدمها قبل refer_patient للحصول على معرّف الفترة (slotId).",
+        schema: z.object({
+          targetDoctorId: z.string(),
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+        }),
+      },
+      async ({ targetDoctorId, date }) => {
+        const target = await DoctorService.getDoctor(targetDoctorId, ctx.clinicId);
+        if (!target) return { error: "الطبيب المُحوَّل إليه غير موجود" };
+        const slots = await DoctorService.getReferralSlotsForBooking(
+          targetDoctorId,
+          new Date(date),
+        );
+        return {
+          targetDoctorId,
+          targetDoctorName: target.profile.fullName,
+          date,
+          slots: slots.map((s) => ({
+            id: s.id,
+            time: timeStr(s.startTime),
+            branchId: s.branchId,
+            branch: s.branch?.name ?? null,
+            referralOnly: s.referralOnly,
+          })),
+        };
+      },
+    ),
+    jsonTool(
+      {
+        name: "refer_patient",
+        description:
+          "حوِّل مريض المريض الحالي إلى طبيب آخر بحجز فترة لديه (يشمل فترات «التحويلات فقط»). حدّد المريض عبر معرّف موعده الحالي مع الطبيب الحالي (sourceAppointmentId)، ومعرّف الفترة لدى الطبيب الآخر (slotId من list_referral_slots).",
+        schema: z.object({
+          sourceAppointmentId: z
+            .string()
+            .describe("معرّف موعد المريض الحالي مع الطبيب الحالي"),
+          slotId: z.string().describe("معرّف الفترة لدى الطبيب المُحوَّل إليه"),
+          notes: z
+            .string()
+            .nullable()
+            .describe("سبب التحويل / ملاحظات للطبيب المُحوَّل إليه (اختياري)"),
+        }),
+      },
+      async ({ sourceAppointmentId, slotId, notes }) => {
+        const source = await prisma.appointment.findUnique({
+          where: { id: sourceAppointmentId },
+          select: { doctorId: true, patientId: true },
+        });
+        if (!source || source.doctorId !== doctorId)
+          return { error: "الموعد المصدر غير موجود أو لا يخصك" };
+        const res = await AppointmentService.referAppointment(
+          doctorId,
+          source.patientId,
+          slotId,
+          notes ?? undefined,
+        );
+        if (!res.ok) return { error: res.error };
+        return { referredAppointmentId: res.data.id, referred: true };
       },
     ),
   ];
