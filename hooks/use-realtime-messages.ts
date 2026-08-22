@@ -39,7 +39,6 @@ export function useRealtimeMessages(
           filter: `conversationId=eq.${conversationId}`,  
         },
         (payload) => {
-          console.log("Realtime message received:", payload); 
           const row = payload.new as unknown as RealtimeMessageRow;
           if (row.conversationId !== conversationId) return;
           callbackRef.current(row);
@@ -122,7 +121,6 @@ export function useRealtimeConversations(
           // to do with each row based on the currently open thread
         },
         (payload) => {
-          console.log("Realtime message received:", payload);
           messageRef.current(payload.new as unknown as RealtimeMessageRow);
         },
       )
