@@ -1,8 +1,7 @@
--- Referral-only availability rules + order-based (queue / نظام الدور) scheduling.
--- Bundles: per-rule referralOnly flag & free-text note, referral traceability on
--- appointments, and a full order-based booking mode (AvailabilityMode, per-rule
--- estimate/cap, nullable appointment.slotId, order-number fields, and the
--- doctor_day_queues table). Backward compatible: existing rows stay slot-based.
+-- Order-based (queue / نظام الدور) scheduling as a second per-AvailabilityRule
+-- mode alongside the existing slot-based one. Backward compatible: existing
+-- rules stay SLOT_BASED. Assumes the referral-only migration
+-- (20260822000001_add_referral_only_rules) is already applied.
 
 -- CreateEnum
 CREATE TYPE "AvailabilityMode" AS ENUM ('SLOT_BASED', 'ORDER_BASED');
@@ -13,19 +12,13 @@ ALTER TABLE "appointments" DROP CONSTRAINT "appointments_slotId_fkey";
 -- AlterTable
 ALTER TABLE "availability_rules" ADD COLUMN     "dailyCap" INTEGER,
 ADD COLUMN     "estimatedDurationMin" INTEGER,
-ADD COLUMN     "mode" "AvailabilityMode" NOT NULL DEFAULT 'SLOT_BASED',
-ADD COLUMN     "note" TEXT,
-ADD COLUMN     "referralOnly" BOOLEAN NOT NULL DEFAULT false;
-
--- AlterTable
-ALTER TABLE "slots" ADD COLUMN     "referralOnly" BOOLEAN NOT NULL DEFAULT false;
+ADD COLUMN     "mode" "AvailabilityMode" NOT NULL DEFAULT 'SLOT_BASED';
 
 -- AlterTable
 ALTER TABLE "appointments" ADD COLUMN     "bookingDate" DATE,
 ADD COLUMN     "estimatedDurationMin" INTEGER,
 ADD COLUMN     "orderNumber" INTEGER,
 ADD COLUMN     "queueId" UUID,
-ADD COLUMN     "referredByDoctorId" UUID,
 ADD COLUMN     "ruleId" UUID,
 ALTER COLUMN "slotId" DROP NOT NULL;
 
@@ -58,9 +51,6 @@ CREATE INDEX "doctor_day_queues_branchId_idx" ON "doctor_day_queues"("branchId")
 CREATE UNIQUE INDEX "doctor_day_queues_doctorId_branchId_date_key" ON "doctor_day_queues"("doctorId", "branchId", "date");
 
 -- CreateIndex
-CREATE INDEX "appointments_referredByDoctorId_idx" ON "appointments"("referredByDoctorId");
-
--- CreateIndex
 CREATE INDEX "appointments_queueId_idx" ON "appointments"("queueId");
 
 -- CreateIndex
@@ -77,9 +67,6 @@ ALTER TABLE "doctor_day_queues" ADD CONSTRAINT "doctor_day_queues_branchId_fkey"
 
 -- AddForeignKey
 ALTER TABLE "doctor_day_queues" ADD CONSTRAINT "doctor_day_queues_ruleId_fkey" FOREIGN KEY ("ruleId") REFERENCES "availability_rules"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "appointments" ADD CONSTRAINT "appointments_referredByDoctorId_fkey" FOREIGN KEY ("referredByDoctorId") REFERENCES "doctors"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "appointments" ADD CONSTRAINT "appointments_slotId_fkey" FOREIGN KEY ("slotId") REFERENCES "slots"("id") ON DELETE SET NULL ON UPDATE CASCADE;
