@@ -264,7 +264,7 @@ const handleRealtimeMessage = useCallback(
   [activeId, refreshConversations],
 );
 
-useRealtimeConversations( handleRealtimeMessage);
+useRealtimeConversations(clinicId, handleRealtimeMessage);
 
 
   // EscalationProvider owns the single realtime subscription for escalations

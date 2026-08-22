@@ -15,6 +15,7 @@ export interface RealtimeMessageRow {
   metadata: unknown;
   isRead: boolean;
   createdAt: string;
+  clinicId: string;
 }
 
 export function useRealtimeMessages(
@@ -97,6 +98,8 @@ export function useRealtimeEscalations(
 }
 
 export function useRealtimeConversations(
+
+  clinicId: string,
   onNewMessage: (row: RealtimeMessageRow) => void,
 ) {
   const messageRef = useRef(onNewMessage);
@@ -112,15 +115,14 @@ export function useRealtimeConversations(
           event: "INSERT",
           schema: "public",
           table: "messages",
-          // TO DO update database to include clinicId in messages table,
-          //  then uncomment this filter to only get messages for the current clinic
-          // filter: `cliencId=eq.${clinicId}`,
+          filter: `clinicId=eq.${clinicId}`,
  
           // no conversation_id filter — this admin needs every conversation's
           // inserts to keep the sidebar accurate; the callback decides what
           // to do with each row based on the currently open thread
         },
         (payload) => {
+          console.log("Realtime message received:", payload);
           messageRef.current(payload.new as unknown as RealtimeMessageRow);
         },
       )

@@ -97,6 +97,7 @@ export async function sendAdminReply(
         senderId: ctx.user.id,
         content,
         isRead: true,
+        clinicId: ctx.clinic.id,
       },
     });
 
@@ -250,6 +251,7 @@ export async function sendWhatsappTemplate(
         senderId: ctx.user.id,
         content: input.renderedText,
         isRead: true,
+        clinicId: ctx.clinic.id,
       },
     });
     await prisma.escalation.updateMany({

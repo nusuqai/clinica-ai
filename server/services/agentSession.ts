@@ -81,6 +81,7 @@ export async function getSessionMessages(
 export async function persistUserMessage(
   conversationId: string,
   sessionId: string,
+  clinicId: string,
   content: string,
   senderId: string | null,
 ): Promise<SessionMessage> {
@@ -92,6 +93,7 @@ export async function persistUserMessage(
         senderId,
         content,
         isRead: false,
+        clinicId,
       },
     });
   await touchConversation(conversationId);
@@ -107,6 +109,7 @@ export async function persistUserMessage(
 export async function persistAgentMessage(
   conversationId: string,
   sessionId: string,
+  clinicId: string,
   content: string,
   metadata: AgentMessageMetadata | null,
 ): Promise<SessionMessage> {
@@ -120,6 +123,7 @@ export async function persistAgentMessage(
       metadata: metadata
         ? (metadata as unknown as Prisma.InputJsonValue)
         : undefined,
+        clinicId,
     },
   });
   await touchConversation(conversationId);
