@@ -64,6 +64,7 @@ export interface RealtimeEscalationRow {
 export function useRealtimeEscalations(
   onInsert: (row: RealtimeEscalationRow) => void,
   onResolve: (row: RealtimeEscalationRow) => void,
+  clinicId: string,
 ) {
   const insertRef = useRef(onInsert);
   insertRef.current = onInsert;
@@ -76,14 +77,14 @@ export function useRealtimeEscalations(
       .channel("escalations:all")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "escalations" },
+        { event: "INSERT", schema: "public", table: "escalations", filter: `clinicId=eq.${clinicId}` },
         (payload) => {
           insertRef.current(payload.new as unknown as RealtimeEscalationRow);
         },
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "escalations" },
+        { event: "UPDATE", schema: "public", table: "escalations" , filter: `clinicId=eq.${clinicId}`},
         (payload) => {
           const row = payload.new as unknown as RealtimeEscalationRow;
           if (row.resolvedAt) resolveRef.current(row);

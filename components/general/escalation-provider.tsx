@@ -26,11 +26,13 @@ interface EscalationProviderProps {
   /** Conversation IDs that already have an unresolved escalation on load. */
   initialConversationIds: string[];
   children: React.ReactNode;
+  clinicId: string;
 }
 
 export default function EscalationProvider({
   initialConversationIds,
   children,
+  clinicId,
 }: EscalationProviderProps) {
   const router = useRouter();
   // conversationId -> number of unresolved escalations on it
@@ -72,6 +74,7 @@ export default function EscalationProvider({
       console.log("[escalation] resolve payload", row);
       bump(row, -1);
     },
+    clinicId
   );
 
   return (

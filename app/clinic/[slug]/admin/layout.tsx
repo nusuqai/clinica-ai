@@ -24,6 +24,7 @@ export default async function AdminLayout({
       initialUnresolvedEscalationConversationIds={
         initialUnresolvedEscalationConversationIds
       }
+      clinicId={ctx.clinic.id}
     >
       {children}
     </DashboardShell>

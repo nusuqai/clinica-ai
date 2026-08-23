@@ -122,11 +122,12 @@ async function clinicGateBlocks(
 ): Promise<boolean> {
   const status = await getClinicAiStatus(clinicId);
   if (!status.aiEnabled) {
-    await ensureOpenEscalation(conversationId, sessionId, "clinic_disabled");
+    await ensureOpenEscalation(clinicId,conversationId, sessionId, "clinic_disabled");
     return true;
   }
   if (!status.sufficient) {
     await ensureOpenEscalation(
+      clinicId,
       conversationId,
       sessionId,
       "insufficient_credit",

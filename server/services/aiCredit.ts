@@ -284,6 +284,7 @@ export async function setClinicAiEnabled(
  * so a top-up alone lets the agent resume.
  */
 export async function ensureOpenEscalation(
+  clinicId: string,
   conversationId: string,
   sessionId: string,
   reason: string,
@@ -294,6 +295,6 @@ export async function ensureOpenEscalation(
   });
   if (open) return;
   await prisma.escalation.create({
-    data: { conversationId, sessionId, reason },
+    data: { clinicId, conversationId, sessionId, reason },
   });
 }

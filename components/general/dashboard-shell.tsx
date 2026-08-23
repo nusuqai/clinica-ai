@@ -18,6 +18,7 @@ interface DashboardShellProps {
   userEmail: string;
   /** Admin only — conversation IDs with an unresolved escalation on load. */
   initialUnresolvedEscalationConversationIds?: string[];
+  clinicId: string;
 }
 
 export default function DashboardShell({
@@ -26,6 +27,7 @@ export default function DashboardShell({
   basePath,
   userFullName,
   userEmail,
+  clinicId,
   initialUnresolvedEscalationConversationIds = [],
 }: DashboardShellProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -81,6 +83,7 @@ export default function DashboardShell({
   return (
     <EscalationProvider
       initialConversationIds={initialUnresolvedEscalationConversationIds}
+      clinicId={clinicId}
     >
       {shell}
     </EscalationProvider>

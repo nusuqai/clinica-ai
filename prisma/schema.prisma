@@ -103,6 +103,7 @@ model Clinic {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   messages          Message[] 
+  escalations       Escalation[] 
   members           ClinicMember[]
   branches          Branch[]
   phones            ClinicPhone[]
@@ -514,18 +515,20 @@ model Escalation {
   id             String    @id @default(uuid()) @db.Uuid
   conversationId String    @db.Uuid
   sessionId      String    @db.Uuid
+  clinicId       String    @db.Uuid
   reason         String?
   createdAt      DateTime  @default(now())
   // Set when an admin re-enables the AI for the session or sends a manual
   // reply in the conversation — whichever happens first. Null = still open.
   resolvedAt     DateTime?
-
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session      ChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
   @@index([sessionId])
   @@map("escalations")
+  @@index([clinicId])
 }
 
 model Message {

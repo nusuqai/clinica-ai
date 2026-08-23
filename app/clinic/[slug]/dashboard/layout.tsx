@@ -18,6 +18,7 @@ export default async function PatientLayout({
       basePath={`/clinic/${slug}`}
       userFullName={ctx.user.profile.fullName || ctx.user.email || "مستخدم"}
       userEmail={ctx.user.email}
+      clinicId={ctx.clinic.id}
     >
       {children}
     </DashboardShell>
