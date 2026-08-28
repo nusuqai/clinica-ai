@@ -468,6 +468,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             senderId: ctx.actorId,
             content,
             isRead: true,
+            clinicId: ctx.clinicId,
           },
         });
         if (
