@@ -121,6 +121,23 @@ export async function bookOrderAppointment(
     });
     if (!doctor) return err("الطبيب غير موجود");
 
+    // Block a second open booking with the same doctor: the patient must finish
+    // (or cancel) an existing PENDING/CONFIRMED appointment first.
+    const active = await prisma.appointment.findFirst({
+      where: {
+        patientId,
+        doctorId,
+        status: {
+          in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
+        },
+      },
+      select: { id: true },
+    });
+    if (active)
+      return err(
+        "لديك حجز قائم مع هذا الطبيب لم يكتمل بعد. يرجى إتمامه أو إلغاؤه قبل حجز موعد جديد.",
+      );
+
     const rule = await getOrderRuleForDate(doctorId, day, opts?.branchId);
     if (!rule)
       return err("هذا الطبيب لا يعمل بنظام الدور في هذا اليوم");
@@ -211,6 +228,7 @@ export interface OrderBookingInfo {
   currentOrder: number;
   estimatedDurationMin: number | null;
   trackCurrentOrder: boolean;
+  sessionStart: string; // "HH:MM"
 }
 
 /**
@@ -244,6 +262,7 @@ export async function getOrderBookingInfo(
     currentOrder: queue?.currentOrder ?? 0,
     estimatedDurationMin: queue?.estimatedDurationMin ?? rule.estimatedDurationMin,
     trackCurrentOrder: queue?.trackCurrentOrder ?? true,
+    sessionStart: rule.startTime, // "HH:MM" — session start for expected-time calc
   };
 }
 
@@ -259,12 +278,14 @@ export async function getDayQueue(
     where: { doctorId, date: day, ...(branchId ? { branchId } : {}) },
     include: {
       branch: { select: { id: true, name: true } },
+      rule: { select: { startTime: true } }, // session start for expected-time calc
       appointments: {
         where: { status: { not: AppointmentStatus.CANCELLED } },
         select: {
           id: true,
           orderNumber: true,
           status: true,
+          skippedAt: true,
           patientNotes: true,
           patient: { select: { fullName: true, phone: true } },
         },
@@ -273,6 +294,157 @@ export async function getDayQueue(
     },
   });
   return queue;
+}
+
+/**
+ * Temporarily skip an order the doctor called but the patient isn't present for.
+ * Keeps the appointment PENDING (no no-show) — just flags it and, if it was the
+ * one being served, advances "now serving" to the next number. Recall restores it.
+ */
+export async function skipOrder(
+  appointmentId: string,
+  doctorId?: string,
+): Promise<Result<void>> {
+  try {
+    const appt = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: { id: true, orderNumber: true, queueId: true, doctorId: true },
+    });
+    if (!appt || appt.queueId == null || appt.orderNumber == null)
+      return err("الحجز غير موجود في الطابور");
+    if (doctorId && appt.doctorId !== doctorId) return err("غير مصرّح");
+
+    const queue = await prisma.doctorDayQueue.findUnique({
+      where: { id: appt.queueId },
+    });
+    if (!queue) return err("الطابور غير موجود");
+
+    await prisma.appointment.update({
+      where: { id: appointmentId },
+      data: { skippedAt: new Date() },
+    });
+
+    // Skipping the patient being served advances the line exactly like "next
+    // patient" — current jumps to serveNextOrder and next moves on — but the
+    // patient is flagged (recoverable via recall) instead of completed.
+    if (appt.orderNumber === queue.currentOrder) {
+      await prisma.doctorDayQueue.update({
+        where: { id: queue.id },
+        data: {
+          currentOrder: queue.serveNextOrder,
+          serveNextOrder: queue.serveNextOrder + 1,
+        },
+      });
+    }
+    return ok(undefined);
+  } catch (e) {
+    return err(e instanceof Error ? e.message : "فشل تخطّي الدور");
+  }
+}
+
+/**
+ * Recall a skipped patient who has now arrived: set "now serving" to their
+ * original order so they're served now.
+ *
+ * If the patient currently being served is a real, non-skipped patient, they are
+ * preserved as the resume point (serveNextOrder ← currentOrder) so serving
+ * returns to them once the recalled patient is done. If the current patient is
+ * itself a skipped (previously-recalled) one, serveNextOrder is left unchanged.
+ *
+ * The recalled patient's skip flag is intentionally NOT cleared here — it's
+ * cleared only when the patient is finished (completeCurrentAndAdvance) — so a
+ * subsequent recall can still tell that the current patient is a recalled one.
+ */
+export async function recallOrder(
+  appointmentId: string,
+  doctorId?: string,
+): Promise<Result<{ orderNumber: number }>> {
+  try {
+    const appt = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: { id: true, queueId: true, doctorId: true, orderNumber: true },
+    });
+    if (!appt || appt.queueId == null || appt.orderNumber == null)
+      return err("الحجز غير موجود في الطابور");
+    if (doctorId && appt.doctorId !== doctorId) return err("غير مصرّح");
+
+    const queue = await prisma.doctorDayQueue.findUnique({
+      where: { id: appt.queueId },
+    });
+    if (!queue) return err("الطابور غير موجود");
+
+    // Is the patient being served right now a non-skipped one worth resuming?
+    const currentAppt = await prisma.appointment.findFirst({
+      where: {
+        queueId: queue.id,
+        orderNumber: queue.currentOrder,
+        status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
+      },
+      select: { skippedAt: true },
+    });
+    const preserveCurrent = !!currentAppt && currentAppt.skippedAt == null;
+
+    await prisma.doctorDayQueue.update({
+      where: { id: queue.id },
+      data: {
+        currentOrder: appt.orderNumber,
+        ...(preserveCurrent ? { serveNextOrder: queue.currentOrder } : {}),
+      },
+    });
+    return ok({ orderNumber: appt.orderNumber });
+  } catch (e) {
+    return err(e instanceof Error ? e.message : "فشل إرجاع الدور");
+  }
+}
+
+/**
+ * "Next patient" / "start": marks the patient currently being served as
+ * COMPLETED (if there is one) and advances to serveNextOrder, then bumps next.
+ * From the not-started state (currentOrder 0, serveNextOrder 1) this simply
+ * starts serving order 1.
+ */
+export async function completeCurrentAndAdvance(
+  queueId: string,
+  doctorId?: string,
+): Promise<Result<{ currentOrder: number; completedAppointmentId: string | null }>> {
+  try {
+    const q = await ownedQueue(queueId, doctorId);
+    if (!q) return err("الطابور غير موجود");
+
+    let completedAppointmentId: string | null = null;
+    if (q.currentOrder >= 1) {
+      // The current patient may be a recalled one that still carries a skip flag,
+      // so don't filter on skippedAt here — complete whoever is being served and
+      // clear the flag as part of finishing them.
+      const current = await prisma.appointment.findFirst({
+        where: {
+          queueId,
+          orderNumber: q.currentOrder,
+          status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
+        },
+        select: { id: true },
+      });
+      if (current) {
+        await prisma.appointment.update({
+          where: { id: current.id },
+          data: { status: AppointmentStatus.COMPLETED, skippedAt: null },
+        });
+        completedAppointmentId = current.id;
+      }
+    }
+
+    // Serve the stored next order, then advance next by one.
+    const updated = await prisma.doctorDayQueue.update({
+      where: { id: queueId },
+      data: {
+        currentOrder: q.serveNextOrder,
+        serveNextOrder: q.serveNextOrder + 1,
+      },
+    });
+    return ok({ currentOrder: updated.currentOrder, completedAppointmentId });
+  } catch (e) {
+    return err(e instanceof Error ? e.message : "فشل الانتقال للمريض التالي");
+  }
 }
 
 async function ownedQueue(queueId: string, doctorId?: string) {

@@ -7,6 +7,7 @@ import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
 import { listDoctorBranchIds } from "@/server/services/branches";
+import { expectedOrderTime } from "@/lib/availability/queue-time";
 import type { AgentContext } from "@/agent/types";
 import { jsonTool, dateStr, timeStr } from "./shared";
 
@@ -382,13 +383,24 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
           queueId: queue.id,
           branch: queue.branch?.name ?? null,
           currentOrder: queue.currentOrder,
-          nextOrder: queue.nextOrder,
+          serveNextOrder: queue.serveNextOrder, // next order to serve
+          nextOrder: queue.nextOrder, // booking counter (next number to hand out)
           dailyCap: queue.dailyCap,
           trackCurrentOrder: queue.trackCurrentOrder,
           patients: queue.appointments.map((a) => ({
+            appointmentId: a.id,
             orderNumber: a.orderNumber,
             patientName: a.patient.fullName,
             status: a.status,
+            skipped: a.skippedAt != null,
+            expectedTime:
+              queue.rule?.startTime && a.orderNumber != null
+                ? expectedOrderTime(
+                    queue.rule.startTime,
+                    a.orderNumber,
+                    queue.estimatedDurationMin,
+                  )
+                : null,
             notes: a.patientNotes,
           })),
         };
@@ -398,20 +410,23 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "advance_queue",
         description:
-          "قدّم الدور الحالي (نظام الدور) في طابور يوم محدّد: بدون رقم يتقدّم دوراً واحداً، أو حدّد رقم الدور المطلوب خدمته الآن.",
+          "انتقل إلى المريض التالي في طابور نظام الدور ليوم محدّد: يُعلَّم المريض الذي يُخدَم الآن كمكتمل (إن وُجد) وينتقل الدور إلى التالي. ومن حالة عدم البدء يبدأ الطابور بالدور الأول. لتخطّي مريض غير حاضر بدلاً من إكماله استخدم skip_order.",
         schema: z.object({
           date: z
             .string()
             .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
-          to: z.number().nullable().describe("رقم الدور المطلوب (اختياري)"),
         }),
       },
-      async ({ date, to }) => {
+      async ({ date }) => {
         const queue = await QueueService.getDayQueue(doctorId, new Date(date));
         if (!queue) return { error: "لا يوجد طابور لهذا اليوم" };
-        const res = await QueueService.setCurrentOrder(queue.id, to ?? null, doctorId);
+        const res = await QueueService.completeCurrentAndAdvance(queue.id, doctorId);
         if (!res.ok) return { error: res.error };
-        return { date, currentOrder: res.data.currentOrder };
+        return {
+          date,
+          currentOrder: res.data.currentOrder,
+          completedAppointmentId: res.data.completedAppointmentId,
+        };
       },
     ),
     jsonTool(
@@ -432,6 +447,32 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
         const res = await QueueService.toggleQueueTracking(queue.id, track, doctorId);
         if (!res.ok) return { error: res.error };
         return { date, trackCurrentOrder: track };
+      },
+    ),
+    jsonTool(
+      {
+        name: "skip_order",
+        description:
+          "تخطَّ دور مريض مؤقتاً في نظام الدور لأنه غير حاضر عند مناداته. لا يُلغى الحجز ولا يُعلَّم كعدم حضور — يبقى قائماً ويُعاد لاحقاً بـ recall_order إن حضر. احصل على appointmentId من get_day_queue.",
+        schema: z.object({ appointmentId: z.string() }),
+      },
+      async ({ appointmentId }) => {
+        const res = await QueueService.skipOrder(appointmentId, doctorId);
+        if (!res.ok) return { error: res.error };
+        return { appointmentId, skipped: true };
+      },
+    ),
+    jsonTool(
+      {
+        name: "recall_order",
+        description:
+          "أعِد مريضاً سبق تخطّيه إلى الطابور ليُخدَم التالي (بعد الدور الجاري مباشرةً) عندما يحضر. احصل على appointmentId من get_day_queue.",
+        schema: z.object({ appointmentId: z.string() }),
+      },
+      async ({ appointmentId }) => {
+        const res = await QueueService.recallOrder(appointmentId, doctorId);
+        if (!res.ok) return { error: res.error };
+        return { appointmentId, recalled: true, orderNumber: res.data.orderNumber };
       },
     ),
   ];

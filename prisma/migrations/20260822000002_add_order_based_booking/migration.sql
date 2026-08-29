@@ -20,6 +20,10 @@ ADD COLUMN     "estimatedDurationMin" INTEGER,
 ADD COLUMN     "orderNumber" INTEGER,
 ADD COLUMN     "queueId" UUID,
 ADD COLUMN     "ruleId" UUID,
+-- Order-based queue "skip for now": temporarily pass over an order without
+-- changing its status. Set when the doctor skips a patient who isn't present;
+-- cleared on recall. Nullable, defaults to NULL.
+ADD COLUMN     "skippedAt" TIMESTAMP(3),
 ALTER COLUMN "slotId" DROP NOT NULL;
 
 -- CreateTable
@@ -32,6 +36,7 @@ CREATE TABLE "doctor_day_queues" (
     "date" DATE NOT NULL,
     "nextOrder" INTEGER NOT NULL DEFAULT 1,
     "currentOrder" INTEGER NOT NULL DEFAULT 0,
+    "serveNextOrder" INTEGER NOT NULL DEFAULT 1,
     "dailyCap" INTEGER,
     "estimatedDurationMin" INTEGER,
     "trackCurrentOrder" BOOLEAN NOT NULL DEFAULT true,

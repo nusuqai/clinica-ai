@@ -8,6 +8,7 @@ import {
   deleteRuleAction,
   getDoctorRulesAction,
 } from "@/server/actions/admin";
+import { queueCapacityHint } from "@/lib/availability/queue-capacity";
 
 export interface EditorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -452,6 +453,21 @@ export default function AvailabilityRulesEditor(props: Props) {
                       className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
+                  {(() => {
+                    const hint = queueCapacityHint(nStart, nEnd, nEstDur, nCap);
+                    if (!hint) return null;
+                    return (
+                      <p
+                        className={`sm:col-span-2 text-xs font-sans rounded-lg px-3 py-2 ${
+                          hint.tone === "warn"
+                            ? "bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900"
+                            : "bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900"
+                        }`}
+                      >
+                        {hint.text}
+                      </p>
+                    );
+                  })()}
                 </>
               ) : (
                 <div className="space-y-1 sm:col-span-2">

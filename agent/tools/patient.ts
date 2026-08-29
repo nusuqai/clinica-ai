@@ -32,6 +32,7 @@ async function appointmentCard(appointmentId: string) {
     orderNumber: a.orderNumber,
     currentOrder: a.currentOrder,
     estimatedWaitMin: a.estimatedWaitMin,
+    expectedTime: a.expectedTime, // order-based: expected examination time "HH:MM"
     examinationFee: money(a.doctor.examinationFee),
     notes: a.patientNotes ?? null,
   };
@@ -132,9 +133,14 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         });
         if (!appt || appt.patientId !== patientId)
           return { error: "الموعد غير موجود أو لا يخصك" };
+        // Book the new slot first (so a failure leaves the old one intact),
+        // excluding the appointment being rescheduled from the one-active-booking
+        // guard, then cancel the old one.
         const created = await AppointmentService.createAppointment(
           patientId,
           newSlotId,
+          undefined,
+          { excludeAppointmentId: appointmentId },
         );
         if (!created.ok) return { error: created.error };
         await AppointmentService.updateAppointmentStatus(
@@ -181,6 +187,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
             orderNumber: a.orderNumber,
             currentOrder: a.currentOrder,
             estimatedWaitMin: a.estimatedWaitMin,
+            expectedTime: a.expectedTime,
           })),
         };
       },

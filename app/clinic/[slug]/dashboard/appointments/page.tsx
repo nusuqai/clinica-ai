@@ -132,6 +132,12 @@ export default async function PatientAppointmentsPage({
                         ) : appt.orderNumber != null ? (
                           <span dir="rtl" className="text-foreground">
                             دورك رقم {appt.orderNumber}
+                            {appt.expectedTime && (
+                              <span className="text-muted-foreground">
+                                {" "}
+                                · متوقع ~{appt.expectedTime}
+                              </span>
+                            )}
                             {appt.currentOrder != null && (
                               <span className="text-muted-foreground">
                                 {" "}

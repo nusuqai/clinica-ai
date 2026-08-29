@@ -6,6 +6,7 @@ import * as BranchService from "@/server/services/branches";
 import * as QueueService from "@/server/services/queue";
 import { getClinicInfo } from "@/server/services/clinicInfo";
 import { listSpecialties } from "@/server/services/specialties";
+import { expectedOrderTime } from "@/lib/availability/queue-time";
 import { jsonTool, money, timeStr } from "./shared";
 
 /** Arabic label for a doctor's rank (null when unset). */
@@ -218,6 +219,11 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
             currentOrder: orderInfo.trackCurrentOrder ? orderInfo.currentOrder : null,
             estimatedDurationMin: orderInfo.estimatedDurationMin,
             nextOrderNumber: orderInfo.booked + 1,
+            expectedTime: expectedOrderTime(
+              orderInfo.sessionStart,
+              orderInfo.booked + 1,
+              orderInfo.estimatedDurationMin,
+            ),
           };
         }
 

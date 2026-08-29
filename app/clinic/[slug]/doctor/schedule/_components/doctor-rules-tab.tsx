@@ -12,6 +12,7 @@ import {
 import Modal from "@/components/admin/modal";
 import { DayOfWeek, AvailabilityMode, type AvailabilityRule } from "@prisma/client";
 import { formatSlotDate } from "@/lib/slot-time";
+import { queueCapacityHint } from "@/lib/availability/queue-capacity";
 
 export interface DoctorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -63,6 +64,12 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
   const [selDay, setSelDay] = useState<DayOfWeek>(DayOfWeek.SAT);
   const [selMode, setSelMode] = useState<AvailabilityMode>(AvailabilityMode.SLOT_BASED);
   const isOrder = selMode === AvailabilityMode.ORDER_BASED;
+  // Tracked only to render the live queue-capacity hint; inputs stay uncontrolled.
+  const [selStart, setSelStart] = useState("09:00");
+  const [selEnd, setSelEnd] = useState("17:00");
+  const [selEstDur, setSelEstDur] = useState(10);
+  const [selCap, setSelCap] = useState(50);
+  const capHint = isOrder ? queueCapacityHint(selStart, selEnd, selEstDur, selCap) : null;
 
   const branchWindow = (() => {
     const branch = branches.find((b) => b.id === selBranch);
@@ -246,15 +253,20 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                   />
                 </button>
 
-                <button
-                  onClick={() => handleGenerate(rule.id)}
-                  disabled={generatingId === rule.id}
-                  title="توليد مواعيد للـ 30 يوم القادمة"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium font-sans border border-border rounded-lg text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors disabled:opacity-50"
-                >
-                  <Zap className="w-3.5 h-3.5" />
-                  {generatingId === rule.id ? "جارٍ التوليد..." : "توليد مواعيد"}
-                </button>
+                {/* Queue (order-based) rules need no slot generation — the day
+                    is implicitly available and order numbers are handed out on
+                    booking, so the generate button is slot-based only. */}
+                {rule.mode !== AvailabilityMode.ORDER_BASED && (
+                  <button
+                    onClick={() => handleGenerate(rule.id)}
+                    disabled={generatingId === rule.id}
+                    title="توليد مواعيد للـ 30 يوم القادمة"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium font-sans border border-border rounded-lg text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors disabled:opacity-50"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    {generatingId === rule.id ? "جارٍ التوليد..." : "توليد مواعيد"}
+                  </button>
+                )}
 
                 <button
                   onClick={() => handleDelete(rule.id)}
@@ -318,6 +330,7 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                 type="time"
                 required
                 defaultValue="09:00"
+                onChange={(e) => setSelStart(e.target.value)}
                 dir="ltr"
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
@@ -329,6 +342,7 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                 type="time"
                 required
                 defaultValue="17:00"
+                onChange={(e) => setSelEnd(e.target.value)}
                 dir="ltr"
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
@@ -356,6 +370,7 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                     type="number"
                     min={1}
                     defaultValue={10}
+                    onChange={(e) => setSelEstDur(Number(e.target.value))}
                     className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
@@ -368,9 +383,21 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                     type="number"
                     min={1}
                     defaultValue={50}
+                    onChange={(e) => setSelCap(Number(e.target.value))}
                     className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
+                {capHint && (
+                  <p
+                    className={`sm:col-span-2 text-sm font-sans rounded-xl px-3 py-2 ${
+                      capHint.tone === "warn"
+                        ? "bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900"
+                        : "bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900"
+                    }`}
+                  >
+                    {capHint.text}
+                  </p>
+                )}
               </>
             ) : (
               <div className="space-y-1.5 sm:col-span-2">

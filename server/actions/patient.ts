@@ -8,6 +8,7 @@ import { getActiveClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
+import { expectedOrderTime } from "@/lib/availability/queue-time";
 
 // ─── Profile mutations ────────────────────────────────────────────────────────
 
@@ -79,7 +80,7 @@ export async function cancelAppointmentAction(
 
 export async function getAvailableDaysAction(
   doctorId: string,
-): Promise<string[]> {
+): Promise<DoctorService.AvailableDay[]> {
   return DoctorService.getAvailableDaysForBooking(doctorId);
 }
 
@@ -109,15 +110,22 @@ export async function getOrderBookingInfoAction(
   nextOrderNumber: number;
   currentOrder: number | null;
   estimatedDurationMin: number | null;
+  expectedTime: string | null;
 } | null> {
   const info = await QueueService.getOrderBookingInfo(doctorId, new Date(dateStr));
   if (!info) return null;
+  const nextOrderNumber = info.booked + 1;
   return {
     available: info.available,
     remaining: info.remaining,
-    nextOrderNumber: info.booked + 1,
+    nextOrderNumber,
     currentOrder: info.trackCurrentOrder ? info.currentOrder : null,
     estimatedDurationMin: info.estimatedDurationMin,
+    expectedTime: expectedOrderTime(
+      info.sessionStart,
+      nextOrderNumber,
+      info.estimatedDurationMin,
+    ),
   };
 }
 

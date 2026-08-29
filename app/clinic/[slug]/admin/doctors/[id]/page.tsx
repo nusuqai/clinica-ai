@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Phone, Mail, Calendar, Activity, Stethoscope, ListOrdered } from "lucide-react";
 import { requireActiveMember } from "@/lib/auth";
-import { getDoctor, listDoctorRules, listDoctorSlots } from "@/server/services/doctors";
+import { getDoctor, listDoctorRules, getDoctorScheduleDays } from "@/server/services/doctors";
 import { listBranches } from "@/server/services/branches";
 import { listSpecialtyOptions } from "@/server/services/specialties";
 import { listAppointments } from "@/server/services/appointments";
@@ -294,6 +294,6 @@ async function RulesContent({
 }
 
 async function SlotsContent({ doctorId }: { doctorId: string }) {
-  const slots = await listDoctorSlots(doctorId);
-  return <SlotsTab doctorId={doctorId} slots={slots} />;
+  const days = await getDoctorScheduleDays(doctorId);
+  return <SlotsTab doctorId={doctorId} days={days} />;
 }

@@ -441,8 +441,12 @@ model DoctorDayQueue {
   branchId             String?  @db.Uuid
   ruleId               String?  @db.Uuid
   date                 DateTime @db.Date
-  nextOrder            Int      @default(1) // next order number to hand out
+  nextOrder            Int      @default(1) // next order number to hand out (booking counter)
   currentOrder         Int      @default(0) // "now serving" — 0 = not started
+  // Next order to serve when the doctor clicks "next patient". Normally
+  // currentOrder+1, but a recall moves currentOrder back to a returning patient
+  // without touching this, so serving resumes here afterward.
+  serveNextOrder       Int      @default(1)
   dailyCap             Int? // snapshot from the rule
   estimatedDurationMin Int? // snapshot from the rule
   trackCurrentOrder    Boolean  @default(true) // false = patients see only their own number
@@ -502,6 +506,10 @@ model Appointment {
   orderNumber        Int? // order-based: queue position
   estimatedDurationMin Int? // order-based: snapshot at booking (stable wait calc)
   status             AppointmentStatus @default(PENDING)
+  // Order-based: set when the doctor temporarily skips this order (patient not
+  // present). Keeps status PENDING; cleared on recall. Skipped orders are passed
+  // over by the queue but not lost.
+  skippedAt          DateTime?
   patientNotes       String?
   doctorNotes        String?
   cancelledAt        DateTime?

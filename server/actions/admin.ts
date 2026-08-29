@@ -11,6 +11,7 @@ import * as BranchService from "@/server/services/branches";
 import * as ClinicInfoService from "@/server/services/clinicInfo";
 import * as SpecialtyService from "@/server/services/specialties";
 import * as QueueService from "@/server/services/queue";
+import { expectedOrderTime } from "@/lib/availability/queue-time";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -353,6 +354,33 @@ export async function generateSlotsAction(ruleId: string, doctorId: string) {
   return { success: true, count: result.data.count };
 }
 
+// Day index for the "available" tab — slot-based + queue days with cheap header
+// tallies. Per-day content is loaded lazily via the actions below.
+export async function getDoctorScheduleDaysAction(doctorId: string) {
+  await requireAdmin();
+  return DoctorService.getDoctorScheduleDays(doctorId);
+}
+
+// Loads one slot-based day's slots (with booking + block state) on demand.
+export async function getDoctorDaySlotsAction(doctorId: string, date: string) {
+  await requireAdmin();
+  const from = new Date(`${date}T00:00:00.000Z`);
+  const to = new Date(`${date}T23:59:59.999Z`);
+  const slots = await DoctorService.listDoctorSlots(doctorId, { from, to });
+  return slots.map((s) => ({
+    id: s.id,
+    startTime: s.startTime.toISOString(),
+    endTime: s.endTime.toISOString(),
+    isBlocked: s.isBlocked,
+    appointment: s.appointment
+      ? {
+          status: s.appointment.status,
+          patientName: s.appointment.patient.fullName,
+        }
+      : null,
+  }));
+}
+
 // ─── Order-based queue actions ────────────────────────────────────────────────
 
 // Returns the day queue for (doctor, date) scoped to the admin's clinic.
@@ -360,6 +388,7 @@ export async function getDayQueueAction(doctorId: string, date: string) {
   const clinicId = await requireAdmin();
   const queue = await QueueService.getDayQueue(doctorId, new Date(date));
   if (!queue || queue.clinicId !== clinicId) return { queue: null };
+  const sessionStart = queue.rule?.startTime ?? null;
   return {
     queue: {
       id: queue.id,
@@ -367,6 +396,7 @@ export async function getDayQueueAction(doctorId: string, date: string) {
       branchName: queue.branch?.name ?? null,
       currentOrder: queue.currentOrder,
       nextOrder: queue.nextOrder,
+      serveNextOrder: queue.serveNextOrder,
       dailyCap: queue.dailyCap,
       trackCurrentOrder: queue.trackCurrentOrder,
       patients: queue.appointments.map((a) => ({
@@ -375,6 +405,12 @@ export async function getDayQueueAction(doctorId: string, date: string) {
         patientName: a.patient.fullName,
         phone: a.patient.phone,
         status: a.status,
+        notes: a.patientNotes,
+        skipped: a.skippedAt != null,
+        expectedTime:
+          sessionStart != null && a.orderNumber != null
+            ? expectedOrderTime(sessionStart, a.orderNumber, queue.estimatedDurationMin)
+            : null,
       })),
     },
   };
@@ -399,6 +435,17 @@ export async function advanceQueueAction(queueId: string, to: number | null) {
   return { success: true, currentOrder: res.data.currentOrder };
 }
 
+// "Next patient": complete the current patient and advance the queue.
+export async function completeCurrentAndAdvanceAction(queueId: string) {
+  const clinicId = await requireAdmin();
+  if (!(await requireQueueInClinic(queueId, clinicId)))
+    return { error: "الطابور غير موجود" };
+  const res = await QueueService.completeCurrentAndAdvance(queueId);
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  return { success: true, currentOrder: res.data.currentOrder };
+}
+
 export async function toggleQueueTrackingAction(queueId: string, track: boolean) {
   const clinicId = await requireAdmin();
   if (!(await requireQueueInClinic(queueId, clinicId)))
@@ -417,6 +464,37 @@ export async function setQueueCapAction(queueId: string, cap: number | null) {
   if (!res.ok) return { error: res.error };
   revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
   return { success: true };
+}
+
+async function requireAppointmentInClinic(appointmentId: string, clinicId: string) {
+  const { prisma } = await import("@/lib/prisma");
+  const a = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+    select: { clinicId: true },
+  });
+  return !!a && a.clinicId === clinicId;
+}
+
+// Temporarily skip an order (patient not present); keeps it PENDING.
+export async function skipOrderAction(appointmentId: string) {
+  const clinicId = await requireAdmin();
+  if (!(await requireAppointmentInClinic(appointmentId, clinicId)))
+    return { error: "الحجز غير موجود" };
+  const res = await QueueService.skipOrder(appointmentId);
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  return { success: true };
+}
+
+// Recall a skipped patient who arrived — serve them next.
+export async function recallOrderAction(appointmentId: string) {
+  const clinicId = await requireAdmin();
+  if (!(await requireAppointmentInClinic(appointmentId, clinicId)))
+    return { error: "الحجز غير موجود" };
+  const res = await QueueService.recallOrder(appointmentId);
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  return { success: true, orderNumber: res.data.orderNumber };
 }
 
 // ─── Slot actions ─────────────────────────────────────────────────────────────

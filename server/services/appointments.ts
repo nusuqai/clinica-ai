@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
 import { AppointmentStatus, AvailabilityMode } from "@prisma/client";
 import { advanceQueueOnComplete, estimateWaitMinutes } from "./queue";
+import { expectedOrderTime } from "@/lib/availability/queue-time";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ export interface PatientAppointment {
   isOrderBased: boolean;
   currentOrder: number | null; // null when tracking is off (or slot-based)
   estimatedWaitMin: number | null;
+  expectedTime: string | null; // "HH:MM" — order-based expected examination time
 }
 
 // Shared "upcoming" filter that covers both slot-based (future slot) and
@@ -41,7 +43,7 @@ function upcomingAppointmentWhere() {
 
 // Fields fetched to render an appointment's queue info (order-based bookings).
 const queueInfoInclude = {
-  rule: { select: { mode: true } },
+  rule: { select: { mode: true, startTime: true } },
   queue: { select: { currentOrder: true, trackCurrentOrder: true } },
 } as const;
 
@@ -49,12 +51,13 @@ type WithQueueInfo = {
   orderNumber: number | null;
   bookingDate: Date | null;
   estimatedDurationMin: number | null;
-  rule: { mode: AvailabilityMode } | null;
+  rule: { mode: AvailabilityMode; startTime: string } | null;
   queue: { currentOrder: number; trackCurrentOrder: boolean } | null;
 };
 
 // Derives the display-facing queue fields (isOrderBased, live current order,
-// estimated wait) from the persisted appointment + queue snapshot.
+// estimated wait, expected examination time) from the persisted appointment +
+// queue snapshot.
 function queueView(row: WithQueueInfo) {
   const isOrderBased =
     row.rule?.mode === AvailabilityMode.ORDER_BASED || row.orderNumber != null;
@@ -64,6 +67,10 @@ function queueView(row: WithQueueInfo) {
     isOrderBased && tracking && row.orderNumber != null
       ? estimateWaitMinutes(row.orderNumber, currentOrder ?? 0, row.estimatedDurationMin)
       : null;
+  const expectedTime =
+    isOrderBased && row.orderNumber != null && row.rule?.startTime
+      ? expectedOrderTime(row.rule.startTime, row.orderNumber, row.estimatedDurationMin)
+      : null;
   return {
     orderNumber: row.orderNumber,
     bookingDate: row.bookingDate,
@@ -71,6 +78,7 @@ function queueView(row: WithQueueInfo) {
     isOrderBased,
     currentOrder,
     estimatedWaitMin,
+    expectedTime,
   };
 }
 
@@ -274,6 +282,7 @@ export async function createAppointment(
   patientId: string,
   slotId: string,
   patientNotes?: string,
+  opts?: { excludeAppointmentId?: string },
 ): Promise<Result<{ id: string }>> {
   try {
     const slot = await prisma.slot.findUnique({
@@ -286,6 +295,27 @@ export async function createAppointment(
       return err("هذا الموعد مخصّص للتحويلات من الأطباء ولا يمكن حجزه مباشرةً");
     if (slot.appointment) return err("هذا الموعد محجوز بالفعل");
     if (slot.startTime < new Date()) return err("لا يمكن حجز مواعيد في الماضي");
+
+    // Block a second open booking with the same doctor: the patient must finish
+    // (or cancel) an existing PENDING/CONFIRMED appointment first. Reschedule
+    // passes excludeAppointmentId so the booking it's replacing doesn't self-block.
+    const active = await prisma.appointment.findFirst({
+      where: {
+        patientId,
+        doctorId: slot.doctorId,
+        status: {
+          in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
+        },
+        ...(opts?.excludeAppointmentId
+          ? { id: { not: opts.excludeAppointmentId } }
+          : {}),
+      },
+      select: { id: true },
+    });
+    if (active)
+      return err(
+        "لديك حجز قائم مع هذا الطبيب لم يكتمل بعد. يرجى إتمامه أو إلغاؤه قبل حجز موعد جديد.",
+      );
 
     const appointment = await prisma.appointment.create({
       data: {
