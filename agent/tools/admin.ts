@@ -221,8 +221,14 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             status: a.status,
             patientName: a.patient.fullName,
             doctorName: a.doctor.profile.fullName,
-            date: dateStr(a.slot.date),
-            time: timeStr(a.slot.startTime),
+            bookingType: a.isOrderBased ? "order" : "slot",
+            date: a.slot
+              ? dateStr(a.slot.date)
+              : a.bookingDate
+                ? dateStr(a.bookingDate)
+                : null,
+            time: a.slot ? timeStr(a.slot.startTime) : null,
+            orderNumber: a.orderNumber,
           })),
         };
       },
@@ -252,7 +258,12 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             startTime: r.startTime,
             endTime: r.endTime,
             slotDurationMin: r.slotDurationMin,
+            mode: r.mode === "ORDER_BASED" ? "order" : "slot",
+            estimatedDurationMin: r.estimatedDurationMin,
+            dailyCap: r.dailyCap,
             isActive: r.isActive,
+            referralOnly: r.referralOnly,
+            note: r.note,
           })),
         };
       },
@@ -273,9 +284,33 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             .string()
             .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),
           slotDurationMin: z.number().nullable(),
+          mode: z
+            .enum(["SLOT_BASED", "ORDER_BASED"])
+            .nullable()
+            .describe(
+              "نظام الجدولة: SLOT_BASED فترات بأوقات ثابتة (الافتراضي)، أو ORDER_BASED نظام الدور (طابور بأرقام).",
+            ),
+          estimatedDurationMin: z
+            .number()
+            .nullable()
+            .describe("لنظام الدور فقط: متوسط دقائق الكشف لكل مريض."),
+          dailyCap: z
+            .number()
+            .nullable()
+            .describe("لنظام الدور فقط: الحد الأقصى لعدد الحجوزات في اليوم."),
+          referralOnly: z
+            .boolean()
+            .nullable()
+            .describe(
+              "إن كانت true فهذه القاعدة للتحويلات فقط: لا يحجزها المرضى مباشرةً، بل تُحجز عبر تحويل من طبيب.",
+            ),
+          note: z
+            .string()
+            .nullable()
+            .describe("ملاحظة نصية على القاعدة (اختياري)"),
         }),
       },
-      async ({ doctorId, branchId, dayOfWeek, startTime, endTime, slotDurationMin }) => {
+      async ({ doctorId, branchId, dayOfWeek, startTime, endTime, slotDurationMin, mode, estimatedDurationMin, dailyCap, referralOnly, note }) => {
         const res = await DoctorService.createRule({
           doctorId,
           branchId,
@@ -283,9 +318,23 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           startTime,
           endTime,
           slotDurationMin: slotDurationMin ?? undefined,
+          mode: mode ?? undefined,
+          estimatedDurationMin: estimatedDurationMin ?? null,
+          dailyCap: dailyCap ?? null,
+          referralOnly: referralOnly ?? false,
+          note: note ?? null,
         });
         if (!res.ok) return { error: res.error };
-        return { ruleId: res.data.id, doctorId, branchId, dayOfWeek, startTime, endTime };
+        return {
+          ruleId: res.data.id,
+          doctorId,
+          branchId,
+          dayOfWeek,
+          startTime,
+          endTime,
+          mode: mode ?? "SLOT_BASED",
+          referralOnly: referralOnly ?? false,
+        };
       },
     ),
     jsonTool(

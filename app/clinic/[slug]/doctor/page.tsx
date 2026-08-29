@@ -123,13 +123,23 @@ export default async function DoctorDashboardPage({
                         {appt.patient.fullName}
                       </p>
                       <p className="text-xs text-muted-foreground font-sans">
-                        {formatSlotDate(appt.slot.date, { day: "numeric", month: "short" })}
-                        {" · "}
-                        <span dir="ltr" className="inline">
-                          {formatSlotTime(appt.slot.startTime)}
-                          {" – "}
-                          {formatSlotTime(appt.slot.endTime)}
-                        </span>
+                        {appt.slot ? (
+                          <>
+                            {formatSlotDate(appt.slot.date, { day: "numeric", month: "short" })}
+                            {" · "}
+                            <span dir="ltr" className="inline">
+                              {formatSlotTime(appt.slot.startTime)}
+                              {" – "}
+                              {formatSlotTime(appt.slot.endTime)}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {appt.bookingDate &&
+                              formatSlotDate(appt.bookingDate, { day: "numeric", month: "short" })}
+                            {appt.orderNumber != null && ` · دور رقم ${appt.orderNumber}`}
+                          </>
+                        )}
                       </p>
                     </div>
                   </div>

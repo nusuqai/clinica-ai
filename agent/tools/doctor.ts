@@ -5,7 +5,9 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
+import * as QueueService from "@/server/services/queue";
 import { listDoctorBranchIds } from "@/server/services/branches";
+import { expectedOrderTime } from "@/lib/availability/queue-time";
 import type { AgentContext } from "@/agent/types";
 import { jsonTool, dateStr, timeStr } from "./shared";
 
@@ -82,8 +84,14 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             id: a.id,
             status: a.status,
             patientName: a.patient.fullName,
-            date: dateStr(a.slot.date),
-            time: timeStr(a.slot.startTime),
+            bookingType: a.isOrderBased ? "order" : "slot",
+            date: a.slot
+              ? dateStr(a.slot.date)
+              : a.bookingDate
+                ? dateStr(a.bookingDate)
+                : null,
+            time: a.slot ? timeStr(a.slot.startTime) : null,
+            orderNumber: a.orderNumber,
             patientNotes: a.patientNotes,
           })),
         };
@@ -123,7 +131,7 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             phone: p.phone,
             totalAppointments: p.totalAppointments,
             lastStatus: p.lastStatus,
-            lastDate: dateStr(p.lastAppointmentDate),
+            lastDate: p.lastAppointmentDate ? dateStr(p.lastAppointmentDate) : null,
           })),
         };
       },
@@ -206,9 +214,33 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             .string()
             .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),
           slotDurationMin: z.number().nullable(),
+          mode: z
+            .enum(["SLOT_BASED", "ORDER_BASED"])
+            .nullable()
+            .describe(
+              "نظام الجدولة: SLOT_BASED فترات بأوقات ثابتة (الافتراضي)، أو ORDER_BASED نظام الدور (طابور بأرقام).",
+            ),
+          estimatedDurationMin: z
+            .number()
+            .nullable()
+            .describe("لنظام الدور فقط: متوسط دقائق الكشف لكل مريض (لحساب وقت الانتظار)."),
+          dailyCap: z
+            .number()
+            .nullable()
+            .describe("لنظام الدور فقط: الحد الأقصى لعدد الحجوزات في اليوم."),
+          referralOnly: z
+            .boolean()
+            .nullable()
+            .describe(
+              "إن كانت true فهذه القاعدة للتحويلات فقط: لا يحجزها المرضى مباشرةً، بل تُحجز عبر تحويل من طبيب.",
+            ),
+          note: z
+            .string()
+            .nullable()
+            .describe("ملاحظة نصية على القاعدة (اختياري)"),
         }),
       },
-      async ({ branchId, dayOfWeek, startTime, endTime, slotDurationMin }) => {
+      async ({ branchId, dayOfWeek, startTime, endTime, slotDurationMin, mode, estimatedDurationMin, dailyCap, referralOnly, note }) => {
         let resolvedBranchId = branchId ?? "";
         if (!resolvedBranchId) {
           const branchIds = await listDoctorBranchIds(doctorId);
@@ -222,9 +254,22 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
           startTime,
           endTime,
           slotDurationMin: slotDurationMin ?? undefined,
+          mode: mode ?? undefined,
+          estimatedDurationMin: estimatedDurationMin ?? null,
+          dailyCap: dailyCap ?? null,
+          referralOnly: referralOnly ?? false,
+          note: note ?? null,
         });
         if (!res.ok) return { error: res.error };
-        return { ruleId: res.data.id, branchId: resolvedBranchId, dayOfWeek, startTime, endTime };
+        return {
+          ruleId: res.data.id,
+          branchId: resolvedBranchId,
+          dayOfWeek,
+          startTime,
+          endTime,
+          mode: mode ?? "SLOT_BASED",
+          referralOnly: referralOnly ?? false,
+        };
       },
     ),
     jsonTool(
@@ -250,6 +295,184 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
         );
         if (!res.ok) return { error: res.error };
         return { ruleId, generated: res.data.count };
+      },
+    ),
+    jsonTool(
+      {
+        name: "list_referral_slots",
+        description:
+          "اعرض الفترات المتاحة لدى طبيب آخر في تاريخ محدّد (YYYY-MM-DD) بغرض تحويل مريض إليه، بما فيها فترات «التحويلات فقط» (كل فترة موضّح فيها إن كانت مخصّصة للتحويلات). استخدمها قبل refer_patient للحصول على معرّف الفترة (slotId).",
+        schema: z.object({
+          targetDoctorId: z.string(),
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+        }),
+      },
+      async ({ targetDoctorId, date }) => {
+        const target = await DoctorService.getDoctor(targetDoctorId, ctx.clinicId);
+        if (!target) return { error: "الطبيب المُحوَّل إليه غير موجود" };
+        const slots = await DoctorService.getReferralSlotsForBooking(
+          targetDoctorId,
+          new Date(date),
+        );
+        return {
+          targetDoctorId,
+          targetDoctorName: target.profile.fullName,
+          date,
+          slots: slots.map((s) => ({
+            id: s.id,
+            time: timeStr(s.startTime),
+            branchId: s.branchId,
+            branch: s.branch?.name ?? null,
+            referralOnly: s.referralOnly,
+          })),
+        };
+      },
+    ),
+    jsonTool(
+      {
+        name: "refer_patient",
+        description:
+          "حوِّل مريض المريض الحالي إلى طبيب آخر بحجز فترة لديه (يشمل فترات «التحويلات فقط»). حدّد المريض عبر معرّف موعده الحالي مع الطبيب الحالي (sourceAppointmentId)، ومعرّف الفترة لدى الطبيب الآخر (slotId من list_referral_slots).",
+        schema: z.object({
+          sourceAppointmentId: z
+            .string()
+            .describe("معرّف موعد المريض الحالي مع الطبيب الحالي"),
+          slotId: z.string().describe("معرّف الفترة لدى الطبيب المُحوَّل إليه"),
+          notes: z
+            .string()
+            .nullable()
+            .describe("سبب التحويل / ملاحظات للطبيب المُحوَّل إليه (اختياري)"),
+        }),
+      },
+      async ({ sourceAppointmentId, slotId, notes }) => {
+        const source = await prisma.appointment.findUnique({
+          where: { id: sourceAppointmentId },
+          select: { doctorId: true, patientId: true },
+        });
+        if (!source || source.doctorId !== doctorId)
+          return { error: "الموعد المصدر غير موجود أو لا يخصك" };
+        const res = await AppointmentService.referAppointment(
+          doctorId,
+          source.patientId,
+          slotId,
+          notes ?? undefined,
+        );
+        if (!res.ok) return { error: res.error };
+        return { referredAppointmentId: res.data.id, referred: true };
+      },
+    ),
+    jsonTool(
+      {
+        name: "get_day_queue",
+        description:
+          "اعرض طابور الدور (نظام الدور) للطبيب الحالي في تاريخ محدّد (YYYY-MM-DD): قائمة المرضى بأرقام أدوارهم، والدور الذي يُخدم الآن، وحالة التتبّع.",
+        schema: z.object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+        }),
+      },
+      async ({ date }) => {
+        const queue = await QueueService.getDayQueue(doctorId, new Date(date));
+        if (!queue) return { date, hasQueue: false, patients: [] };
+        return {
+          date,
+          hasQueue: true,
+          queueId: queue.id,
+          branch: queue.branch?.name ?? null,
+          currentOrder: queue.currentOrder,
+          serveNextOrder: queue.serveNextOrder, // next order to serve
+          nextOrder: queue.nextOrder, // booking counter (next number to hand out)
+          dailyCap: queue.dailyCap,
+          trackCurrentOrder: queue.trackCurrentOrder,
+          patients: queue.appointments.map((a) => ({
+            appointmentId: a.id,
+            orderNumber: a.orderNumber,
+            patientName: a.patient.fullName,
+            status: a.status,
+            skipped: a.skippedAt != null,
+            expectedTime:
+              queue.rule?.startTime && a.orderNumber != null
+                ? expectedOrderTime(
+                    queue.rule.startTime,
+                    a.orderNumber,
+                    queue.estimatedDurationMin,
+                  )
+                : null,
+            notes: a.patientNotes,
+          })),
+        };
+      },
+    ),
+    jsonTool(
+      {
+        name: "advance_queue",
+        description:
+          "انتقل إلى المريض التالي في طابور نظام الدور ليوم محدّد: يُعلَّم المريض الذي يُخدَم الآن كمكتمل (إن وُجد) وينتقل الدور إلى التالي. ومن حالة عدم البدء يبدأ الطابور بالدور الأول. لتخطّي مريض غير حاضر بدلاً من إكماله استخدم skip_order.",
+        schema: z.object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+        }),
+      },
+      async ({ date }) => {
+        const queue = await QueueService.getDayQueue(doctorId, new Date(date));
+        if (!queue) return { error: "لا يوجد طابور لهذا اليوم" };
+        const res = await QueueService.completeCurrentAndAdvance(queue.id, doctorId);
+        if (!res.ok) return { error: res.error };
+        return {
+          date,
+          currentOrder: res.data.currentOrder,
+          completedAppointmentId: res.data.completedAppointmentId,
+        };
+      },
+    ),
+    jsonTool(
+      {
+        name: "set_queue_tracking",
+        description:
+          "فعّل أو أوقف تتبّع «الدور الحالي» في طابور يوم محدّد. عند الإيقاف يرى المرضى رقم دورهم فقط دون الدور الجاري.",
+        schema: z.object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+          track: z.boolean(),
+        }),
+      },
+      async ({ date, track }) => {
+        const queue = await QueueService.getDayQueue(doctorId, new Date(date));
+        if (!queue) return { error: "لا يوجد طابور لهذا اليوم" };
+        const res = await QueueService.toggleQueueTracking(queue.id, track, doctorId);
+        if (!res.ok) return { error: res.error };
+        return { date, trackCurrentOrder: track };
+      },
+    ),
+    jsonTool(
+      {
+        name: "skip_order",
+        description:
+          "تخطَّ دور مريض مؤقتاً في نظام الدور لأنه غير حاضر عند مناداته. لا يُلغى الحجز ولا يُعلَّم كعدم حضور — يبقى قائماً ويُعاد لاحقاً بـ recall_order إن حضر. احصل على appointmentId من get_day_queue.",
+        schema: z.object({ appointmentId: z.string() }),
+      },
+      async ({ appointmentId }) => {
+        const res = await QueueService.skipOrder(appointmentId, doctorId);
+        if (!res.ok) return { error: res.error };
+        return { appointmentId, skipped: true };
+      },
+    ),
+    jsonTool(
+      {
+        name: "recall_order",
+        description:
+          "أعِد مريضاً سبق تخطّيه إلى الطابور ليُخدَم التالي (بعد الدور الجاري مباشرةً) عندما يحضر. احصل على appointmentId من get_day_queue.",
+        schema: z.object({ appointmentId: z.string() }),
+      },
+      async ({ appointmentId }) => {
+        const res = await QueueService.recallOrder(appointmentId, doctorId);
+        if (!res.ok) return { error: res.error };
+        return { appointmentId, recalled: true, orderNumber: res.data.orderNumber };
       },
     ),
   ];
