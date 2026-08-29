@@ -88,3 +88,12 @@ export async function getOrCreatePatientByPhone(args: {
   });
   return { profileId: userId, created: true };
 }
+export async function getPatientProfileService(profileId: string | null) {
+  if (!profileId) throw new Error("Profile not found");
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { id: true, fullName: true, phone: true },
+  });
+  if (!profile) throw new Error("Profile not found");
+  return profile;
+}

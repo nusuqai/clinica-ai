@@ -7,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { getActiveClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
+import { get } from "http";
+import { getPatientProfileService } from "../services/patients";
 
 // ─── Profile mutations ────────────────────────────────────────────────────────
 
@@ -118,3 +120,7 @@ export async function bookAppointmentAction(
   revalidatePath("/");
   return { ok: true };
 }
+export async function getPatientProfileAction(
+  profileId: string | null){
+    return await getPatientProfileService(profileId);
+  }

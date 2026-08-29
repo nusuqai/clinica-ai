@@ -1,7 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, Role, SenderType, type Prisma } from "@prisma/client";
-import { size } from "zod";
 
 export interface ConversationSummary {
   id: string;
@@ -119,37 +118,23 @@ export async function getUnresolvedEscalationConversationIds(
   });
   return rows.map((r) => r.conversationId);
 }
+
 export async function getMessages(
   conversationId: string,
-  opts: { cursor?: string; limit?: number } = {},
-): Promise<{ items: MessageItem[]; nextCursor: string | null }> {
-  const limit = opts.limit ?? 30;
-
-  const rows = await prisma.message.findMany({
+): Promise<MessageItem[]> {
+  const messages = await prisma.message.findMany({
     where: { conversationId },
-    orderBy: { createdAt: "desc" }, // newest first for cursoring
-    take: limit + 1,                // fetch one extra to know if there's more
-    ...(opts.cursor && {
-      cursor: { id: opts.cursor },
-      skip: 1,                      // skip the cursor row itself
-    }),
+    orderBy: { createdAt: "asc" },
   });
 
-  const hasMore = rows.length > limit;
-  const page = hasMore ? rows.slice(0, limit) : rows;
-  const items = page.reverse();     // back to ascending for display
-
-  return {
-    items: items.map((m) => ({
-      id: m.id,
-      content: m.content,
-      senderType: m.senderType,
-      sessionId: m.sessionId,
-      createdAt: m.createdAt,
-      isRead: m.isRead,
-    })),
-    nextCursor: hasMore ? page[page.length - 1].id : null,
-  };
+  return messages.map((m) => ({
+    id: m.id,
+    content: m.content,
+    senderType: m.senderType,
+    sessionId: m.sessionId,
+    createdAt: m.createdAt,
+    isRead: m.isRead,
+  }));
 }
 
 export async function getConversationDetail(

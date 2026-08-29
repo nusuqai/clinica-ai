@@ -12,7 +12,6 @@ import {
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
 import { resolveActiveSession } from "@/server/services/agentSession";
-import { getMessages, type MessageItem } from "@/server/services/messages";
 
 /**
  * How to address an outbound message to a conversation's WhatsApp contact:
@@ -301,33 +300,4 @@ export async function setSessionAiEnabled(
   }
 
   revalidatePath("/clinic/[slug]/admin/messages", "page");
-}
-
-
-export type FetchOlderMessagesResult =
-  | { ok: true; items: MessageItem[]; nextCursor: string | null }
-  | { ok: false };
-
-/**
- * Loads the page of messages just before `cursor` — used by the inbox when
- * the admin scrolls to the top of a thread. Requires the conversation belong
- * to the caller's clinic, same as every other action in this file.
- */
-export async function fetchOlderMessages(
-  conversationId: string,
-  cursor: string,
-): Promise<FetchOlderMessagesResult> {
-  const ctx = await getActiveClinicContext();
-  if (!ctx || ctx.role !== Role.ADMIN) return { ok: false };
-
-  const conversation = await prisma.conversation.findFirst({
-    where: { id: conversationId, clinicId: ctx.clinic.id },
-  });
-  if (!conversation) return { ok: false };
-
-  const { items, nextCursor } = await getMessages(conversationId, {
-    cursor,
-    limit: 30,
-  });
-  return { ok: true, items, nextCursor };
 }

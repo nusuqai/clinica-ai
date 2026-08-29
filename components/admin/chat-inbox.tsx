@@ -52,7 +52,8 @@ import type {
   ConversationDetail,
 } from "@/server/services/messages";
 import { fetchConversations, fetchConversationDetail, markConversationRead } from "@/server/actions/conversations";
-import { fetchOlderMessages } from "@/server/actions/messages";
+import { string } from "zod";
+import { getPatientProfileAction } from "@/server/actions/patient";
 interface ChatInboxProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationDetail | null;
@@ -60,7 +61,6 @@ interface ChatInboxProps {
   /** This clinic's URL prefix, e.g. `/clinic/sunrise-dental`. */
   basePath: string;
   clinicId: string;
-  initialNextCursor: string | null;
 }
 
 /**
@@ -97,7 +97,6 @@ export default function ChatInbox({
   messages: initialMessages,
   basePath,
   clinicId,
-  initialNextCursor,
 }: ChatInboxProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -116,10 +115,6 @@ export default function ChatInbox({
   // reload — the window can lapse while the admin sits on a thread.
   const [nowTs, setNowTs] = useState(() => Date.now());
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  const [olderCursor, setOlderCursor] = useState<string | null>(null);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Sync when server re-renders with fresh data
   useEffect(
@@ -185,16 +180,8 @@ export default function ChatInbox({
   }, [messages, pending, activeId]);
 
   // Scroll to bottom when messages change
-  // useEffect(() => {
-  //   bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  // }, [threadMessages]);
-  const prevLastKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    const lastKey = threadMessages[threadMessages.length - 1]?.key ?? null;
-    if (lastKey !== prevLastKeyRef.current) {
-      prevLastKeyRef.current = lastKey;
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [threadMessages]);
 
   const refreshConversations = useCallback(() => {
@@ -208,7 +195,7 @@ export default function ChatInbox({
     });
   }, [clinicId]);
   const handleRealtimeMessage = useCallback(
-    (row: RealtimeMessageRow) => {
+    async (row: RealtimeMessageRow) => {
       // Reconcile with this admin's own optimistic bubble, whichever arrives
       // first — this realtime event or deliver()'s own response. Matched by
       // conversation + content since the row doesn't carry the client id;
@@ -253,13 +240,13 @@ export default function ChatInbox({
       // This is the single source of truth for an existing conversation's
       // summary row; nothing else should refetch and overwrite it for the
       // "new message on an existing conversation" case.
+      let isUnknownConversation = false;
+
       setConversations((prev) => {
         const idx = prev.findIndex((c) => c.id === row.conversationId);
         if (idx === -1) {
-          // Genuinely unknown conversation (e.g. a brand-new contact) — no
-          // summary fields to patch from a bare message row, fall back once.
-          refreshConversations();
-          return prev;
+          isUnknownConversation = true;
+          return prev; // leave untouched until the profile fetch resolves
         }
         const updated: ConversationSummary = {
           ...prev[idx],
@@ -274,47 +261,31 @@ export default function ChatInbox({
         const rest = prev.filter((_, i) => i !== idx);
         return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
       });
+      if (isUnknownConversation) {
+        const patientProfile = await getPatientProfileAction(row.senderId);
+        const newConv: ConversationSummary = {
+          id: row.conversationId,
+          contactName: patientProfile?.fullName ?? "مستخدم جديد",
+          lastMessage: row.content,
+          lastMessageAt: new Date(row.createdAt),
+          unreadCount: row.senderType === SenderType.USER ? 1 : 0,
+          channel: Channel.WEB,
+          hasUnresolvedEscalation: false,
+          userId: row.senderId,
+        };
+        setConversations((prev) => {
+          // Guard against a duplicate event adding it in the meantime.
+          if (prev.some((c) => c.id === row.conversationId)) return prev;
+          return [newConv, ...prev];
+        });
+      }
     },
     [activeId, refreshConversations],
   );
 
   useRealtimeConversations(clinicId, handleRealtimeMessage);
 
-  const loadOlderMessages = useCallback(async () => {
-    if (!activeId || !olderCursor || loadingOlder) return;
-    const container = scrollContainerRef.current;
-    const prevHeight = container?.scrollHeight ?? 0;
-    const prevTop = container?.scrollTop ?? 0;
 
-    setLoadingOlder(true);
-    try {
-      const result = await fetchOlderMessages(activeId, olderCursor);
-      if (!result.ok) return;
-      setMessages((prev) => [...result.items, ...prev]);
-      setOlderCursor(result.nextCursor);
-      const cached = conversationCache.current.get(activeId);
-      if (cached) {
-        conversationCache.current.set(activeId, {
-          ...cached,
-          messages: [...result.items, ...cached.messages],
-          nextCursor: result.nextCursor,
-        });
-      }
-      requestAnimationFrame(() => {
-        if (container) {
-          container.scrollTop = container.scrollHeight - prevHeight + prevTop;
-        }
-      });
-    } catch (err) {
-      console.error("Failed to load older messages:", err);
-    } finally {
-      setLoadingOlder(false);
-    }
-  }, [activeId, olderCursor, loadingOlder]);
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (e.currentTarget.scrollTop < 100) void loadOlderMessages();
-  };
   // EscalationProvider owns the single realtime subscription for escalations
   // (a second subscribed channel with the same name crashes the realtime
   // client) — react to its event counter instead of subscribing again here.
@@ -334,7 +305,7 @@ export default function ChatInbox({
   // id. Lets switching back to an already-visited thread render instantly
   // instead of waiting on the server round-trip triggered by router.push.
   // ✅ correct — generic type goes in <>, initial value goes in the () call
-  const conversationCache = useRef<Map<string, { detail: ConversationDetail; messages: MessageItem[]; nextCursor: string | null }>>(new Map());
+  const conversationCache = useRef<Map<string, { detail: ConversationDetail; messages: MessageItem[] }>>(new Map());
   // Sync when server re-renders with fresh data, and cache it for this id so
   // switching back later can skip the loading gap.
   useEffect(() => {
@@ -344,15 +315,13 @@ export default function ChatInbox({
   useEffect(() => {
     setMessages(initialMessages);
     setSelectedConversation(initialConversation);
-    setOlderCursor(initialNextCursor ?? null);
     if (initialConversation) {
       conversationCache.current.set(initialConversation.id, {
         detail: initialConversation,
         messages: initialMessages,
-        nextCursor: initialNextCursor ?? null,
       });
     }
-  }, [initialConversation, initialMessages, initialNextCursor]);
+  }, [initialConversation, initialMessages]);
   const handleSelectConversation = (id: string) => {
     const cached = conversationCache.current.get(id);
     if (cached) {
@@ -360,7 +329,6 @@ export default function ChatInbox({
       // server-side, and the effect above will reconcile once that lands.
       setSelectedConversation(cached.detail);
       setMessages(cached.messages);
-      setOlderCursor(cached.nextCursor);
     }
     const params = new URLSearchParams(searchParams.toString());
     params.set("id", id);
@@ -715,16 +683,8 @@ export default function ChatInbox({
               </div>
             </div>
 
-            <div
-              ref={scrollContainerRef}
-              onScroll={handleScroll}
-              className="flex-1 overflow-y-auto px-5 py-4 space-y-3"
-            >
-              {loadingOlder && (
-                <div className="flex justify-center py-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                </div>
-              )}
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
               {threadMessages.length === 0 && (
                 <p className="text-center text-xs text-muted-foreground font-sans py-8">
                   لا توجد رسائل في هذه المحادثة
