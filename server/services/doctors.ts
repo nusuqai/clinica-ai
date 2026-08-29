@@ -85,6 +85,7 @@ export interface CreateDoctorAccountInput extends CreateDoctorInput {
 
 export interface UpdateDoctorInput {
   doctorId: string;
+  clinicId: string;
   title?: DoctorTitle | null;
   qualifications?: string | null;
   expertiseAreas?: string | null;
@@ -107,6 +108,7 @@ export interface CreateRuleInput {
   startTime: string;
   endTime: string;
   slotDurationMin?: number;
+  clinicId: string;
 }
 
 export type DoctorSlot = {
@@ -275,7 +277,7 @@ export async function createDoctor(
         isActive: true,
         ...(input.branchIds?.length && {
           branches: {
-            create: [...new Set(input.branchIds)].map((branchId) => ({ branchId })),
+            create: [...new Set(input.branchIds)].map((branchId) => ({ branchId, clinicId: input.clinicId })),
           },
         }),
       },
@@ -360,7 +362,7 @@ export async function createDoctorAccount(
           isActive: true,
           ...(input.branchIds?.length && {
             branches: {
-              create: [...new Set(input.branchIds)].map((branchId) => ({ branchId })),
+              create: [...new Set(input.branchIds)].map((branchId) => ({ branchId, clinicId: input.clinicId })),
             },
           }),
         },
@@ -462,7 +464,7 @@ export async function updateDoctor(
         });
         if (unique.length) {
           await tx.doctorBranch.createMany({
-            data: unique.map((branchId) => ({ doctorId: input.doctorId, branchId })),
+            data: unique.map((branchId) => ({ doctorId: input.doctorId, branchId , clinicId: input.clinicId})),
             skipDuplicates: true,
           });
         }
@@ -577,6 +579,7 @@ export async function createRule(
         startTime: input.startTime,
         endTime: input.endTime,
         slotDurationMin: input.slotDurationMin ?? 30,
+        clinicId: input.clinicId,
       },
     });
     await generateSlotsForRule(rule.id, 30);
@@ -661,6 +664,7 @@ export async function generateSlotsForRule(
       date: Date;
       startTime: Date;
       endTime: Date;
+      clinicId: string;
     }[] = [];
 
     const cur = new Date(from);
@@ -679,6 +683,7 @@ export async function generateSlotsForRule(
             date: slotDate,
             startTime: new Date(t),
             endTime: new Date(t + durationMs),
+            clinicId: rule.clinicId,
           });
           t += durationMs;
         }

@@ -148,6 +148,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           acceptsChildren: input.acceptsChildren ?? undefined,
           fullName: input.fullName ?? undefined,
           phone: input.phone ?? undefined,
+          clinicId: ctx.clinicId,
         });
         return res.ok
           ? { updated: true, doctorId: input.doctorId }
@@ -283,6 +284,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           startTime,
           endTime,
           slotDurationMin: slotDurationMin ?? undefined,
+          clinicId: ctx.clinicId,
         });
         if (!res.ok) return { error: res.error };
         return { ruleId: res.data.id, doctorId, branchId, dayOfWeek, startTime, endTime };
@@ -445,7 +447,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ doctorId, branchIds }) => {
-        const res = await BranchService.setDoctorBranches(doctorId, branchIds);
+        const res = await BranchService.setDoctorBranches(doctorId, branchIds, ctx.clinicId);
         return res.ok ? { doctorId, branchIds } : { error: res.error };
       },
     ),

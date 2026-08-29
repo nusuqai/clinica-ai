@@ -23,6 +23,7 @@ export interface SessionMessage {
   senderType: SenderType;
   metadata: AgentMessageMetadata | null;
   createdAt: Date;
+  clinicId: string;
 }
 
 /**
@@ -32,6 +33,7 @@ export interface SessionMessage {
  */
 export async function resolveActiveSession(
   conversationId: string,
+  clinicId: string,
 ): Promise<string> {
   const now = new Date();
   const live = await prisma.chatSession.findFirst({
@@ -46,6 +48,7 @@ export async function resolveActiveSession(
       conversationId,
       startedAt: now,
       expiresAt: new Date(now.getTime() + SESSION_MINUTES * 60_000),
+      clinicId: clinicId,
     },
     select: { id: true },
   });
@@ -75,6 +78,7 @@ export async function getSessionMessages(
     senderType: m.senderType as SessionMessage["senderType"],
     metadata: (m.metadata as AgentMessageMetadata | null) ?? null,
     createdAt: m.createdAt,
+    clinicId: m.clinicId,
   }));
 }
 
@@ -103,6 +107,7 @@ export async function persistUserMessage(
     senderType: SenderType.USER,
     metadata: null,
     createdAt: m.createdAt,
+    clinicId: m.clinicId,
   };
 }
 
@@ -133,6 +138,7 @@ export async function persistAgentMessage(
     senderType: SenderType.AGENT,
     metadata,
     createdAt: m.createdAt,
+    clinicId: m.clinicId,
   };
 }
 

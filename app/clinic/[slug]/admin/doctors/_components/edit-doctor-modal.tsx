@@ -208,6 +208,7 @@ export default function EditDoctorModal({
               branches={branches.filter((b) =>
                 doctor.branchIds.includes(b.id),
               )}
+              clinicId={doctor.clinicId}
             />
           )}
 

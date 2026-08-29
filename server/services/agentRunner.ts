@@ -182,7 +182,7 @@ export async function* streamWebAgent(
     userId,
     membership.clinicId,
   );
-  const sessionId = await resolveActiveSession(conversationId);
+  const sessionId = await resolveActiveSession(conversationId, membership.clinicId);
   await persistUserMessage(conversationId, sessionId, membership.clinicId, userText, userId);
 
   if (!(await isSessionAiEnabled(sessionId))) {
@@ -266,7 +266,7 @@ export async function handleUnsupportedWhatsAppMessage(
       })
     : null;
 
-  const sessionId = await resolveActiveSession(conversationId);
+  const sessionId = await resolveActiveSession(conversationId, clinicId);
   // Always recorded, even when the notice below is suppressed, so the admin
   // sees every item the contact actually sent.
   await persistUserMessage(
@@ -368,7 +368,7 @@ export async function handleWhatsAppMessage(
       .catch(() => {}); // ignore unique clashes (already linked elsewhere)
   }
 
-  const sessionId = await resolveActiveSession(conversationId);
+  const sessionId = await resolveActiveSession(conversationId, clinicId);
   await persistUserMessage(
     conversationId,
     sessionId,
