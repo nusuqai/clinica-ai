@@ -87,7 +87,7 @@ export async function sendAdminReply(
 
   let message;
   try {
-    const sessionId = await resolveActiveSession(conversationId);
+    const sessionId = await resolveActiveSession(conversationId, ctx.clinic.id);
 
     message = await prisma.message.create({
       data: {
@@ -242,7 +242,7 @@ export async function sendWhatsappTemplate(
   }
 
   try {
-    const sessionId = await resolveActiveSession(conversationId);
+    const sessionId = await resolveActiveSession(conversationId, ctx.clinic.id);
     const message = await prisma.message.create({
       data: {
         conversationId,

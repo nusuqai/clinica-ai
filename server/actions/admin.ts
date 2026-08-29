@@ -77,7 +77,7 @@ export async function createDoctorAction(formData: FormData) {
   // Availability rules drafted in the modal are created now that the doctor
   // (and its branch assignments) exist. Kept atomic: if any rule is invalid,
   // roll the whole doctor back so a re-submit doesn't create a duplicate.
-  const ruleError = await createDraftRules(result.data.id, formData);
+  const ruleError = await createDraftRules(result.data.id, formData, clinicId);
   if (ruleError) {
     await DoctorService.deleteDoctor(result.data.id);
     return { error: ruleError };
@@ -101,6 +101,7 @@ interface DraftRule {
 async function createDraftRules(
   doctorId: string,
   formData: FormData,
+  clinicId: string
 ): Promise<string | null> {
   const raw = (formData.get("rules") as string) || "";
   if (!raw) return null;
@@ -120,6 +121,7 @@ async function createDraftRules(
       startTime: r.startTime,
       endTime: r.endTime,
       slotDurationMin: r.slotDurationMin ? Number(r.slotDurationMin) : 30,
+      clinicId: clinicId,
     });
     if (!res.ok) return `تعذّر إنشاء قاعدة التوفر: ${res.error}`;
   }
@@ -168,6 +170,7 @@ export async function updateDoctorAction(formData: FormData) {
     requiresAdvanceBooking: attrs.requiresAdvanceBooking,
     acceptsChildren: attrs.acceptsChildren,
     branchIds: attrs.branchIds,
+    clinicId: clinicId,
   });
 
   if (!result.ok) return { error: result.error };
@@ -279,10 +282,11 @@ export async function getDoctorRulesAction(doctorId: string) {
   };
 }
 
-export async function createRuleAction(formData: FormData) {
+export async function createRuleAction(formData: FormData, clinicId: string) {
   await requireAdmin();
   const doctorId = formData.get("doctorId") as string;
   const branchId = (formData.get("branchId") as string) || "";
+  
   if (!branchId) return { error: "اختر الفرع لهذه القاعدة." };
   const result = await DoctorService.createRule({
     doctorId,
@@ -293,6 +297,7 @@ export async function createRuleAction(formData: FormData) {
     slotDurationMin: formData.get("slotDurationMin")
       ? Number(formData.get("slotDurationMin"))
       : 30,
+    clinicId: clinicId,
   });
   if (!result.ok) return { error: result.error };
   revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");

@@ -51,6 +51,7 @@ export interface CreateBranchInput {
 export interface UpdateBranchInput
   extends Partial<Omit<CreateBranchInput, "clinicId">> {
   branchId: string;
+  clinicId: string;
 }
 
 const detailInclude = {
@@ -126,7 +127,7 @@ export async function listDoctorBranchIds(doctorId: string): Promise<string[]> {
 
 // ─── Mutations ──────────────────────────────────────────────────────────────
 
-function phoneCreateData(branchId: string, phones: BranchPhoneInput[]) {
+function phoneCreateData(branchId: string, phones: BranchPhoneInput[], clinicId: string) {
   return phones
     .filter((p) => p.number.trim())
     .map((p) => ({
@@ -135,16 +136,18 @@ function phoneCreateData(branchId: string, phones: BranchPhoneInput[]) {
       number: p.number.trim(),
       label: p.label?.trim() || null,
       isPrimary: p.isPrimary ?? false,
+      clinicId: clinicId,
     }));
 }
 
-function hoursCreateData(branchId: string, hours: BranchHoursInput[]) {
+function hoursCreateData(branchId: string, hours: BranchHoursInput[], clinicId: string) {
   return hours.map((h) => ({
     branchId,
     dayOfWeek: h.dayOfWeek,
     isClosed: h.isClosed,
     openTime: h.isClosed ? null : h.openTime?.trim() || null,
     closeTime: h.isClosed ? null : h.closeTime?.trim() || null,
+    clinicId: clinicId,
   }));
 }
 
@@ -169,10 +172,10 @@ export async function createBranch(
         },
       });
       if (input.phones?.length) {
-        await tx.branchPhone.createMany({ data: phoneCreateData(b.id, input.phones) });
+        await tx.branchPhone.createMany({ data: phoneCreateData(b.id, input.phones, input.clinicId) });
       }
       if (input.hours?.length) {
-        await tx.branchHours.createMany({ data: hoursCreateData(b.id, input.hours) });
+        await tx.branchHours.createMany({ data: hoursCreateData(b.id, input.hours, input.clinicId) });
       }
       return b;
     });
@@ -213,7 +216,7 @@ export async function updateBranch(
         await tx.branchPhone.deleteMany({ where: { branchId: input.branchId } });
         if (input.phones.length) {
           await tx.branchPhone.createMany({
-            data: phoneCreateData(input.branchId, input.phones),
+            data: phoneCreateData(input.branchId, input.phones, input.clinicId),
           });
         }
       }
@@ -221,7 +224,7 @@ export async function updateBranch(
         await tx.branchHours.deleteMany({ where: { branchId: input.branchId } });
         if (input.hours.length) {
           await tx.branchHours.createMany({
-            data: hoursCreateData(input.branchId, input.hours),
+            data: hoursCreateData(input.branchId, input.hours, input.clinicId),
           });
         }
       }
@@ -282,6 +285,7 @@ export async function setMainBranch(
 export async function setDoctorBranches(
   doctorId: string,
   branchIds: string[],
+  clinicId: string,
 ): Promise<Result<void>> {
   try {
     const unique = [...new Set(branchIds)];
@@ -290,7 +294,7 @@ export async function setDoctorBranches(
         where: { doctorId, branchId: { notIn: unique.length ? unique : ["__none__"] } },
       }),
       prisma.doctorBranch.createMany({
-        data: unique.map((branchId) => ({ doctorId, branchId })),
+        data: unique.map((branchId) => ({ doctorId, branchId, clinicId: clinicId})),
         skipDuplicates: true,
       }),
     ]);

@@ -202,7 +202,7 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
       {/* Tab content — each fetches only what it needs */}
       {activeTab === "appointments" && <AppointmentsContent doctorId={id} />}
       {activeTab === "rules" && (
-        <RulesContent doctorId={id} branches={doctorBranches} />
+        <RulesContent doctorId={id} branches={doctorBranches} clinicId={clinic.id} />
       )}
       {activeTab === "slots" && <SlotsContent doctorId={id} />}
     </div>
@@ -270,12 +270,14 @@ async function AppointmentsContent({ doctorId }: { doctorId: string }) {
 async function RulesContent({
   doctorId,
   branches,
+  clinicId,
 }: {
   doctorId: string;
   branches: DoctorBranchOption[];
+  clinicId: string;
 }) {
   const rules = await listDoctorRules(doctorId);
-  return <RulesTab doctorId={doctorId} rules={rules} branches={branches} />;
+  return <RulesTab doctorId={doctorId} rules={rules} branches={branches} clinicId={clinicId} />;
 }
 
 async function SlotsContent({ doctorId }: { doctorId: string }) {

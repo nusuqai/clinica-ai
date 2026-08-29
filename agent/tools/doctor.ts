@@ -222,6 +222,7 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
           startTime,
           endTime,
           slotDurationMin: slotDurationMin ?? undefined,
+          clinicId: ctx.clinicId,
         });
         if (!res.ok) return { error: res.error };
         return { ruleId: res.data.id, branchId: resolvedBranchId, dayOfWeek, startTime, endTime };
