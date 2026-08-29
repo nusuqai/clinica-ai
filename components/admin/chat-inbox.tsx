@@ -52,7 +52,7 @@ import type {
   ConversationDetail,
 } from "@/server/services/messages";
 import { fetchConversations, fetchConversationDetail, markConversationRead } from "@/server/actions/conversations";
-import { string } from "zod";
+import { fetchOlderMessages } from "@/server/actions/messages";
 interface ChatInboxProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationDetail | null;
@@ -60,6 +60,7 @@ interface ChatInboxProps {
   /** This clinic's URL prefix, e.g. `/clinic/sunrise-dental`. */
   basePath: string;
   clinicId: string;
+  initialNextCursor: string | null;
 }
 
 /**
@@ -96,6 +97,7 @@ export default function ChatInbox({
   messages: initialMessages,
   basePath,
   clinicId,
+  initialNextCursor,
 }: ChatInboxProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -114,6 +116,10 @@ export default function ChatInbox({
   // reload — the window can lapse while the admin sits on a thread.
   const [nowTs, setNowTs] = useState(() => Date.now());
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const [olderCursor, setOlderCursor] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Sync when server re-renders with fresh data
   useEffect(
@@ -179,49 +185,57 @@ export default function ChatInbox({
   }, [messages, pending, activeId]);
 
   // Scroll to bottom when messages change
+  // useEffect(() => {
+  //   bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  // }, [threadMessages]);
+  const prevLastKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const lastKey = threadMessages[threadMessages.length - 1]?.key ?? null;
+    if (lastKey !== prevLastKeyRef.current) {
+      prevLastKeyRef.current = lastKey;
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [threadMessages]);
 
-const refreshConversations = useCallback(() => {
-  startListTransition(async () => {
-    try {
-      const fresh = await fetchConversations(clinicId);
-      setConversations(fresh);
-    } catch (err) {
-      console.error("Failed to refresh conversations:", err);
-    }
-  });
-}, [clinicId]);
-const handleRealtimeMessage = useCallback(
-  (row: RealtimeMessageRow) => {
-    // Reconcile with this admin's own optimistic bubble, whichever arrives
-    // first — this realtime event or deliver()'s own response. Matched by
-    // conversation + content since the row doesn't carry the client id;
-    // fine for the common case of one in-flight admin send at a time.
-    if (row.senderType === SenderType.ADMIN) {
-      setPending((prev) => {
-        const match = prev.find(
-          (p) =>
-            p.conversationId === row.conversationId &&
-            !p.serverId &&
-            p.content === row.content,
-        );
-        if (!match) return prev;
-        return prev.map((p) =>
-          p.clientId === match.clientId
-            ? { ...p, serverId: row.id, status: "sent" as const }
-            : p,
-        );
-      });
-    }
+  const refreshConversations = useCallback(() => {
+    startListTransition(async () => {
+      try {
+        const fresh = await fetchConversations(clinicId);
+        setConversations(fresh);
+      } catch (err) {
+        console.error("Failed to refresh conversations:", err);
+      }
+    });
+  }, [clinicId]);
+  const handleRealtimeMessage = useCallback(
+    (row: RealtimeMessageRow) => {
+      // Reconcile with this admin's own optimistic bubble, whichever arrives
+      // first — this realtime event or deliver()'s own response. Matched by
+      // conversation + content since the row doesn't carry the client id;
+      // fine for the common case of one in-flight admin send at a time.
+      if (row.senderType === SenderType.ADMIN) {
+        setPending((prev) => {
+          const match = prev.find(
+            (p) =>
+              p.conversationId === row.conversationId &&
+              !p.serverId &&
+              p.content === row.content,
+          );
+          if (!match) return prev;
+          return prev.map((p) =>
+            p.clientId === match.clientId
+              ? { ...p, serverId: row.id, status: "sent" as const }
+              : p,
+          );
+        });
+      }
 
-    // Append to the thread only if it's the open conversation.
-    if (row.conversationId === activeId) {
-      setMessages((prev) =>
-        prev.some((m) => m.id === row.id)
-          ? prev
-          : [
+      // Append to the thread only if it's the open conversation.
+      if (row.conversationId === activeId) {
+        setMessages((prev) =>
+          prev.some((m) => m.id === row.id)
+            ? prev
+            : [
               ...prev,
               {
                 id: row.id,
@@ -232,41 +246,75 @@ const handleRealtimeMessage = useCallback(
                 isRead: row.isRead,
               },
             ],
-      );
-    }
-
-    // Patch the sidebar in place — preview, timestamp, unread, order.
-    // This is the single source of truth for an existing conversation's
-    // summary row; nothing else should refetch and overwrite it for the
-    // "new message on an existing conversation" case.
-    setConversations((prev) => {
-      const idx = prev.findIndex((c) => c.id === row.conversationId);
-      if (idx === -1) {
-        // Genuinely unknown conversation (e.g. a brand-new contact) — no
-        // summary fields to patch from a bare message row, fall back once.
-        refreshConversations();
-        return prev;
+        );
       }
-      const updated: ConversationSummary = {
-        ...prev[idx],
-        lastMessage: row.content,
-        lastMessageAt: new Date(row.createdAt),
-        unreadCount:
-          row.senderType === SenderType.USER &&
-          row.conversationId !== activeId
-            ? prev[idx].unreadCount + 1
-            : prev[idx].unreadCount,
-      };
-      const rest = prev.filter((_, i) => i !== idx);
-      return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
-    });
-  },
-  [activeId, refreshConversations],
-);
 
-useRealtimeConversations(clinicId, handleRealtimeMessage);
+      // Patch the sidebar in place — preview, timestamp, unread, order.
+      // This is the single source of truth for an existing conversation's
+      // summary row; nothing else should refetch and overwrite it for the
+      // "new message on an existing conversation" case.
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === row.conversationId);
+        if (idx === -1) {
+          // Genuinely unknown conversation (e.g. a brand-new contact) — no
+          // summary fields to patch from a bare message row, fall back once.
+          refreshConversations();
+          return prev;
+        }
+        const updated: ConversationSummary = {
+          ...prev[idx],
+          lastMessage: row.content,
+          lastMessageAt: new Date(row.createdAt),
+          unreadCount:
+            row.senderType === SenderType.USER &&
+              row.conversationId !== activeId
+              ? prev[idx].unreadCount + 1
+              : prev[idx].unreadCount,
+        };
+        const rest = prev.filter((_, i) => i !== idx);
+        return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
+      });
+    },
+    [activeId, refreshConversations],
+  );
 
+  useRealtimeConversations(clinicId, handleRealtimeMessage);
 
+  const loadOlderMessages = useCallback(async () => {
+    if (!activeId || !olderCursor || loadingOlder) return;
+    const container = scrollContainerRef.current;
+    const prevHeight = container?.scrollHeight ?? 0;
+    const prevTop = container?.scrollTop ?? 0;
+
+    setLoadingOlder(true);
+    try {
+      const result = await fetchOlderMessages(activeId, olderCursor);
+      if (!result.ok) return;
+      setMessages((prev) => [...result.items, ...prev]);
+      setOlderCursor(result.nextCursor);
+      const cached = conversationCache.current.get(activeId);
+      if (cached) {
+        conversationCache.current.set(activeId, {
+          ...cached,
+          messages: [...result.items, ...cached.messages],
+          nextCursor: result.nextCursor,
+        });
+      }
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight - prevHeight + prevTop;
+        }
+      });
+    } catch (err) {
+      console.error("Failed to load older messages:", err);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [activeId, olderCursor, loadingOlder]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop < 100) void loadOlderMessages();
+  };
   // EscalationProvider owns the single realtime subscription for escalations
   // (a second subscribed channel with the same name crashes the realtime
   // client) — react to its event counter instead of subscribing again here.
@@ -283,38 +331,41 @@ useRealtimeConversations(clinicId, handleRealtimeMessage);
   }, [eventTick, refreshConversations]);
 
   // Client-side cache of conversation detail + messages, keyed by conversation
-// id. Lets switching back to an already-visited thread render instantly
-// instead of waiting on the server round-trip triggered by router.push.
-// ✅ correct — generic type goes in <>, initial value goes in the () call
-const conversationCache = useRef<Map<string, { detail: ConversationDetail; messages: MessageItem[] }>>(new Map());
+  // id. Lets switching back to an already-visited thread render instantly
+  // instead of waiting on the server round-trip triggered by router.push.
+  // ✅ correct — generic type goes in <>, initial value goes in the () call
+  const conversationCache = useRef<Map<string, { detail: ConversationDetail; messages: MessageItem[]; nextCursor: string | null }>>(new Map());
   // Sync when server re-renders with fresh data, and cache it for this id so
-// switching back later can skip the loading gap.
-useEffect(() => {
-  setConversations(initialConversations);
-}, [initialConversations]);
+  // switching back later can skip the loading gap.
+  useEffect(() => {
+    setConversations(initialConversations);
+  }, [initialConversations]);
 
-useEffect(() => {
-  setMessages(initialMessages);
-  setSelectedConversation(initialConversation);
-  if (initialConversation) {
-    conversationCache.current.set(initialConversation.id, {
-      detail: initialConversation,
-      messages: initialMessages,
-    });
-  }
-}, [initialConversation, initialMessages]);
-const handleSelectConversation = (id: string) => {
-  const cached = conversationCache.current.get(id);
-  if (cached) {
-    // Instant paint from cache; router.push below still refreshes it
-    // server-side, and the effect above will reconcile once that lands.
-    setSelectedConversation(cached.detail);
-    setMessages(cached.messages);
-  }
-  const params = new URLSearchParams(searchParams.toString());
-  params.set("id", id);
-  router.push(`${basePath}/admin/messages?${params.toString()}`);
-};
+  useEffect(() => {
+    setMessages(initialMessages);
+    setSelectedConversation(initialConversation);
+    setOlderCursor(initialNextCursor ?? null);
+    if (initialConversation) {
+      conversationCache.current.set(initialConversation.id, {
+        detail: initialConversation,
+        messages: initialMessages,
+        nextCursor: initialNextCursor ?? null,
+      });
+    }
+  }, [initialConversation, initialMessages, initialNextCursor]);
+  const handleSelectConversation = (id: string) => {
+    const cached = conversationCache.current.get(id);
+    if (cached) {
+      // Instant paint from cache; router.push below still refreshes it
+      // server-side, and the effect above will reconcile once that lands.
+      setSelectedConversation(cached.detail);
+      setMessages(cached.messages);
+      setOlderCursor(cached.nextCursor);
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("id", id);
+    router.push(`${basePath}/admin/messages?${params.toString()}`);
+  };
   const isWhatsapp = selectedConversation?.channel === Channel.WHATSAPP;
   // Outside the 24-hour window WhatsApp refuses free-form text; the admin must
   // send an approved template instead. `nowTs` is read so this recomputes on
@@ -425,20 +476,20 @@ const handleSelectConversation = (id: string) => {
     void deliver(clientId, entry.conversationId, entry.content);
   };
 
- const handleToggleAi = () => {
-  if (!selectedConversation?.activeSessionId) return;
-  const sessionId = selectedConversation.activeSessionId;
-  const conversationId = selectedConversation.id;
-  const next = !selectedConversation.aiEnabled;
-  setSelectedConversation((prev) =>
-    prev ? { ...prev, aiEnabled: next } : prev,
-  );
-  startAiToggle(async () => {
-    await setSessionAiEnabled(sessionId, next);
-    const fresh = await fetchConversationDetail(conversationId);
-    if (fresh) setSelectedConversation(fresh);
-  });
-};
+  const handleToggleAi = () => {
+    if (!selectedConversation?.activeSessionId) return;
+    const sessionId = selectedConversation.activeSessionId;
+    const conversationId = selectedConversation.id;
+    const next = !selectedConversation.aiEnabled;
+    setSelectedConversation((prev) =>
+      prev ? { ...prev, aiEnabled: next } : prev,
+    );
+    startAiToggle(async () => {
+      await setSessionAiEnabled(sessionId, next);
+      const fresh = await fetchConversationDetail(conversationId);
+      if (fresh) setSelectedConversation(fresh);
+    });
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -448,28 +499,28 @@ const handleSelectConversation = (id: string) => {
   };
 
   // Ref mirror of `conversations` so the "mark read" effect below can read
-// current unread state without depending on (and rerunning on) every list update.
-const conversationsRef = useRef(conversations);
-useEffect(() => {
-  conversationsRef.current = conversations;
-}, [conversations]);
+  // current unread state without depending on (and rerunning on) every list update.
+  const conversationsRef = useRef(conversations);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
-// Opening a conversation reads it — zero the badge immediately (optimistic)
-// and persist server-side so a reload or another admin sees it too. Only
-// fires when there's actually something unread, so it's a no-op on repeat
-// visits to an already-read thread.
-useEffect(() => {
-  if (!activeId) return;
-  const current = conversationsRef.current.find((c) => c.id === activeId);
-  if (!current || current.unreadCount === 0) return;
+  // Opening a conversation reads it — zero the badge immediately (optimistic)
+  // and persist server-side so a reload or another admin sees it too. Only
+  // fires when there's actually something unread, so it's a no-op on repeat
+  // visits to an already-read thread.
+  useEffect(() => {
+    if (!activeId) return;
+    const current = conversationsRef.current.find((c) => c.id === activeId);
+    if (!current || current.unreadCount === 0) return;
 
-  setConversations((prev) =>
-    prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)),
-  );
-  void markConversationRead(activeId).catch((err) => {
-    console.error("Failed to mark conversation as read:", err);
-  });
-}, [activeId]);
+    setConversations((prev) =>
+      prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)),
+    );
+    void markConversationRead(activeId).catch((err) => {
+      console.error("Failed to mark conversation as read:", err);
+    });
+  }, [activeId]);
 
   return (
     <div className="flex h-[calc(100vh-7rem)] bg-card border border-border rounded-2xl overflow-hidden">
@@ -664,8 +715,16 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto px-5 py-4 space-y-3"
+            >
+              {loadingOlder && (
+                <div className="flex justify-center py-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
               {threadMessages.length === 0 && (
                 <p className="text-center text-xs text-muted-foreground font-sans py-8">
                   لا توجد رسائل في هذه المحادثة
