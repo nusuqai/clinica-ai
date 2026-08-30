@@ -119,22 +119,27 @@ export async function getUnresolvedEscalationConversationIds(
   return rows.map((r) => r.conversationId);
 }
 
+// server/services/messages.ts
 export async function getMessages(
   conversationId: string,
-): Promise<MessageItem[]> {
-  const messages = await prisma.message.findMany({
+  opts: { cursor?: string; limit?: number } = {},
+): Promise<{ messages: MessageItem[]; nextCursor: string | null }> {
+  const { cursor, limit = 10 } = opts;
+
+  const rows = await prisma.message.findMany({
     where: { conversationId },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" }, // newest first — easiest to page "backwards" from
+    take: limit,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
 
-  return messages.map((m) => ({
-    id: m.id,
-    content: m.content,
-    senderType: m.senderType,
-    sessionId: m.sessionId,
-    createdAt: m.createdAt,
-    isRead: m.isRead,
-  }));
+  const hasMore = rows.length === limit;
+  const page = rows.reverse(); // back to ascending for rendering
+
+  return {
+    messages: page, // your existing row → MessageItem mapper
+    nextCursor: hasMore ? page[0].id : null, // oldest id in this batch = anchor for the next "older" fetch
+  };
 }
 
 export async function getConversationDetail(

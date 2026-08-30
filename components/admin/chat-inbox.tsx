@@ -51,13 +51,15 @@ import type {
   MessageItem,
   ConversationDetail,
 } from "@/server/services/messages";
-import { fetchConversations, fetchConversationDetail, markConversationRead } from "@/server/actions/conversations";
+import { fetchConversations, fetchConversationDetail, markConversationRead, fetchOlderMessages } from "@/server/actions/conversations";
 import { string } from "zod";
 import { getPatientProfileAction } from "@/server/actions/patient";
 interface ChatInboxProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationDetail | null;
   messages: MessageItem[];
+  initialCursor: string | null;
+
   /** This clinic's URL prefix, e.g. `/clinic/sunrise-dental`. */
   basePath: string;
   clinicId: string;
@@ -95,6 +97,7 @@ export default function ChatInbox({
   conversations: initialConversations,
   selectedConversation: initialConversation,
   messages: initialMessages,
+  initialCursor,
   basePath,
   clinicId,
 }: ChatInboxProps) {
@@ -116,17 +119,52 @@ export default function ChatInbox({
   const [nowTs, setNowTs] = useState(() => Date.now());
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  //cursor stats
+  const [cursor, setCursor] = useState(initialCursor);
+  const [hasMoreOlder, setHasMoreOlder] = useState(initialCursor !== null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Sync when server re-renders with fresh data
   useEffect(
     () => setConversations(initialConversations),
     [initialConversations],
   );
-  useEffect(() => setMessages(initialMessages), [initialMessages]);
-  useEffect(
-    () => setSelectedConversation(initialConversation),
-    [initialConversation],
-  );
+  // useEffect(() => setMessages(initialMessages), [initialMessages]);
+  const activeConversationIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    setConversations(initialConversations);
+  }, [initialConversations]);
 
+  useEffect(() => {
+    setSelectedConversation(initialConversation);
+
+    if (!initialConversation) {
+      activeConversationIdRef.current = null;
+      return;
+    }
+
+    const isNewConversation =
+      initialConversation.id !== activeConversationIdRef.current;
+    activeConversationIdRef.current = initialConversation.id;
+
+    if (isNewConversation) {
+      // Switching threads — safe to fully replace with the fresh page.
+      setMessages(initialMessages);
+      setCursor(initialCursor);
+      setHasMoreOlder(initialCursor !== null);
+    } else {
+      // Same thread re-rendering (e.g. after router.refresh()) — merge in
+      // anything new instead of dropping messages loaded via infinite scroll.
+      setMessages((prev) => {
+        const known = new Set(prev.map((m) => m.id));
+        const additions = initialMessages.filter((m) => !known.has(m.id));
+        if (additions.length === 0) return prev;
+        return [...prev, ...additions].sort(
+          (a, b) => +new Date(a.createdAt) - +new Date(b.createdAt),
+        );
+      });
+    }
+  }, [initialConversation, initialMessages, initialCursor]);
   // An optimistic bubble is retired once its real row shows up in the server
   // props. Failed and in-flight ones stay put — they're the only record of the
   // message the admin typed.
@@ -180,8 +218,13 @@ export default function ChatInbox({
   }, [messages, pending, activeId]);
 
   // Scroll to bottom when messages change
+  const prevLastKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const lastKey = threadMessages[threadMessages.length - 1]?.key ?? null;
+    if (lastKey !== prevLastKeyRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevLastKeyRef.current = lastKey;
   }, [threadMessages]);
 
   const refreshConversations = useCallback(() => {
@@ -234,6 +277,12 @@ export default function ChatInbox({
               },
             ],
         );
+        if (row.senderType === SenderType.USER) {
+          void markConversationRead(activeId).catch((err) => {
+            console.error("Failed to mark conversation as read:", err);
+          });
+        }
+
       }
 
       // Patch the sidebar in place — preview, timestamp, unread, order.
@@ -280,7 +329,7 @@ export default function ChatInbox({
         });
       }
     },
-    [activeId, refreshConversations],
+    [activeId],
   );
 
   useRealtimeConversations(clinicId, handleRealtimeMessage);
@@ -291,6 +340,8 @@ export default function ChatInbox({
   // client) — react to its event counter instead of subscribing again here.
   // Escalations don't always come with a new message (e.g. resolving one by
   // re-enabling the AI doesn't), so they need their own refresh trigger.
+
+  //TO DO need to be revisited for checking the refresh
   const { eventTick } = useEscalationAlerts();
   const isFirstEventTick = useRef(true);
   useEffect(() => {
@@ -305,23 +356,23 @@ export default function ChatInbox({
   // id. Lets switching back to an already-visited thread render instantly
   // instead of waiting on the server round-trip triggered by router.push.
   // ✅ correct — generic type goes in <>, initial value goes in the () call
-  const conversationCache = useRef<Map<string, { detail: ConversationDetail; messages: MessageItem[] }>>(new Map());
+  const conversationCache = useRef<Map<string, { detail: ConversationDetail; messages: MessageItem[], cursor: string | null }>>(new Map());
   // Sync when server re-renders with fresh data, and cache it for this id so
   // switching back later can skip the loading gap.
-  useEffect(() => {
-    setConversations(initialConversations);
-  }, [initialConversations]);
+  // useEffect(() => {
+  //   setConversations(initialConversations);
+  // }, [initialConversations]);
 
   useEffect(() => {
-    setMessages(initialMessages);
-    setSelectedConversation(initialConversation);
-    if (initialConversation) {
-      conversationCache.current.set(initialConversation.id, {
-        detail: initialConversation,
-        messages: initialMessages,
-      });
-    }
-  }, [initialConversation, initialMessages]);
+    const id = activeConversationIdRef.current;
+    if (!id) return;
+    const existing = conversationCache.current.get(id);
+    conversationCache.current.set(id, {
+      detail: existing?.detail ?? selectedConversation!,
+      messages,
+      cursor,
+    });
+  }, [messages, cursor]);
   const handleSelectConversation = (id: string) => {
     const cached = conversationCache.current.get(id);
     if (cached) {
@@ -329,6 +380,9 @@ export default function ChatInbox({
       // server-side, and the effect above will reconcile once that lands.
       setSelectedConversation(cached.detail);
       setMessages(cached.messages);
+      setCursor(cached.cursor);
+      setHasMoreOlder(cached.cursor !== null);
+      activeConversationIdRef.current = id;
     }
     const params = new URLSearchParams(searchParams.toString());
     params.set("id", id);
@@ -489,6 +543,43 @@ export default function ChatInbox({
       console.error("Failed to mark conversation as read:", err);
     });
   }, [activeId]);
+  // useEffect(() => {
+  //   setCursor(initialCursor);
+  //   setHasMoreOlder(initialCursor !== null);
+  // }, [activeId, initialCursor]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!activeId || !cursor || loadingOlder) return;
+    const container = scrollContainerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+
+    setLoadingOlder(true);
+    try {
+      const { messages: older, nextCursor } = await fetchOlderMessages(activeId, cursor);
+      setMessages((prev) => [...older, ...prev]);
+      setCursor(nextCursor);
+      setHasMoreOlder(nextCursor !== null);
+
+      // Prepending shifts scrollHeight — restore the visual position so the
+      // viewport doesn't jump to the top of the newly-loaded batch.
+      requestAnimationFrame(() => {
+        if (!container) return;
+        container.scrollTop = container.scrollHeight - prevScrollHeight;
+      });
+    } catch (err) {
+      console.error("Failed to load older messages:", err);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [activeId, cursor, loadingOlder]);
+
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container || loadingOlder || !hasMoreOlder) return;
+    if (container.scrollTop < 100) {
+      void loadOlderMessages();
+    }
+  }, [loadOlderMessages, loadingOlder, hasMoreOlder]);
 
   return (
     <div className="flex h-[calc(100vh-7rem)] bg-card border border-border rounded-2xl overflow-hidden">
@@ -684,11 +775,15 @@ export default function ChatInbox({
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-              {threadMessages.length === 0 && (
-                <p className="text-center text-xs text-muted-foreground font-sans py-8">
-                  لا توجد رسائل في هذه المحادثة
-                </p>
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto px-5 py-4 space-y-3"
+            >
+              {loadingOlder && (
+                <div className="flex justify-center py-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                </div>
               )}
               {threadMessages.map((msg, idx) => {
                 const prev = threadMessages[idx - 1];

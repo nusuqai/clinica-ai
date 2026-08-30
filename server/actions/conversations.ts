@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   getConversations,
   getConversationDetail,
+  getMessages,
 } from "@/server/services/messages";
 import type {
   ConversationSummary,
@@ -28,4 +29,14 @@ export async function markConversationRead(conversationId: string) {
     where: { conversationId, senderType: SenderType.USER, isRead: false },
     data: { isRead: true },
   });
+}
+
+export async function fetchOlderMessages(conversationId: string, cursor: string) {
+  const { clinic } = await requireActiveMember(["ADMIN"]);
+  // reuse whatever ownership check getConversationDetail does, so an admin
+  // can't page through another clinic's conversation by guessing an id
+  const owned = await getConversationDetail(conversationId, clinic.id);
+  if (!owned) throw new Error("Conversation not found");
+
+  return getMessages(conversationId, { cursor, limit: 10 });
 }
