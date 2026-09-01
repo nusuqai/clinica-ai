@@ -212,5 +212,84 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         return { updated: true, fullName, phone };
       },
     ),
+    jsonTool(
+      {
+        name: "confirm_appointment",
+        description:
+          "أكّد موعداً معلّقاً (قيد الانتظار) للمريض الحالي بعد رسالة تذكير الحجز — يحوّل حالته إلى مؤكّد.",
+        schema: z.object({ appointmentId: z.string() }),
+      },
+      async ({ appointmentId }) => {
+        const appt = await prisma.appointment.findUnique({
+          where: { id: appointmentId },
+          select: { patientId: true, status: true },
+        });
+        if (!appt || appt.patientId !== patientId)
+          return { error: "الموعد غير موجود أو لا يخصك" };
+        if (appt.status !== AppointmentStatus.PENDING)
+          return { error: "لا يمكن تأكيد هذا الموعد (ليس في حالة انتظار)" };
+        const res = await AppointmentService.updateAppointmentStatus(
+          appointmentId,
+          AppointmentStatus.CONFIRMED,
+        );
+        if (!res.ok) return { error: res.error };
+        return await appointmentCard(appointmentId);
+      },
+    ),
+    jsonTool(
+      {
+        name: "submit_appointment_feedback",
+        description:
+          "سجّل تقييم المريض بعد زيارته. استخدمها عندما يرد المريض على رسالة طلب التقييم. إن لم يُحدَّد معرّف الموعد، يُسجَّل التقييم على آخر موعد مكتمل بانتظار التقييم. rating رقم من 1 إلى 5 (اختياري) و/أو تعليق نصّي.",
+        schema: z.object({
+          appointmentId: z
+            .string()
+            .nullable()
+            .describe("معرّف الموعد (اختياري — يُستنتج آخر موعد بانتظار التقييم إن تُرك فارغاً)"),
+          rating: z.number().int().min(1).max(5).nullable(),
+          comment: z.string().nullable(),
+        }),
+      },
+      async ({ appointmentId, rating, comment }) => {
+        if (rating === null && (comment === null || comment.trim() === ""))
+          return { error: "لا يوجد تقييم لتسجيله (أضف تقييماً رقمياً أو تعليقاً)" };
+
+        // Resolve which completed appointment this feedback is for: the given id
+        // (must belong to the patient and be awaiting feedback), or the most
+        // recent completed one that was asked for feedback and has none yet.
+        const appt = appointmentId
+          ? await prisma.appointment.findFirst({
+              where: {
+                id: appointmentId,
+                patientId,
+                status: AppointmentStatus.COMPLETED,
+                feedback: null,
+              },
+              select: { id: true, clinicId: true },
+            })
+          : await prisma.appointment.findFirst({
+              where: {
+                patientId,
+                status: AppointmentStatus.COMPLETED,
+                feedbackRequestedAt: { not: null },
+                feedback: null,
+              },
+              orderBy: { feedbackRequestedAt: "desc" },
+              select: { id: true, clinicId: true },
+            });
+        if (!appt) return { error: "لا يوجد موعد مكتمل بانتظار التقييم" };
+
+        await prisma.appointmentFeedback.create({
+          data: {
+            appointmentId: appt.id,
+            clinicId: appt.clinicId,
+            patientId,
+            rating: rating ?? null,
+            comment: comment?.trim() || null,
+          },
+        });
+        return { appointmentId: appt.id, saved: true, rating, comment };
+      },
+    ),
   ];
 }
