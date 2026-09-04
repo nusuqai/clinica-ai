@@ -63,20 +63,22 @@ async function customerConversationWhere(
 
 export async function getConversations(
   clinicId: string,
-): Promise<ConversationSummary[]> {
+  options?: { cursor?: string | null; limit?: number },
+): Promise<{ conversations: ConversationSummary[]; nextCursor: string | null }> {
+  const limit = options?.limit ?? 30;
   const baseWhere = await customerConversationWhere(clinicId);
-  const conversations = await prisma.conversation.findMany({
+
+  const rows = await prisma.conversation.findMany({
     where: {
       ...baseWhere,
       messages: { some: {} },
     },
-    orderBy: { updatedAt: "desc" },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: limit + 1,
+    ...(options?.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
     include: {
       user: { select: { fullName: true, phone: true } },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-      },
+      messages: { orderBy: { createdAt: "desc" }, take: 1 },
       _count: {
         select: {
           messages: { where: { isRead: false, senderType: SenderType.USER } },
@@ -86,22 +88,25 @@ export async function getConversations(
     },
   });
 
-  return conversations.map((c) => ({
-    id: c.id,
-    channel: c.channel,
-    contactName:
-      c.user?.fullName ??
-      c.whatsappName ??
-      c.whatsappPhone ??
-      (c.channel === Channel.WEB ? "زائر" : "غير معروف"),
-    contactPhone: c.user?.phone ?? c.whatsappPhone ?? undefined,
-    userId: c.userId,
-    lastMessage: c.messages[0]?.content ?? undefined,
-    lastMessageAt: c.messages[0]?.createdAt ?? undefined,
-    unreadCount: c._count.messages,
-    hasUnresolvedEscalation: c._count.escalations > 0,
-  }));
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? page[page.length - 1].id : null;
+
+  return {
+    conversations: page.map((c) => ({
+      id: c.id,
+      contactName: c.user?.fullName ?? "مستخدم جديد",
+      lastMessage: c.messages[0]?.content ?? null,
+      lastMessageAt: c.messages[0]?.createdAt ?? c.updatedAt,
+      unreadCount: c._count.messages,
+      hasUnresolvedEscalation: c._count.escalations > 0,
+      channel: c.channel,
+      userId: c.userId,
+    })),
+    nextCursor,
+  };
 }
+
 
 /** Conversation IDs with at least one unresolved escalation — used to seed
  * the admin-wide alert state (sidebar bell) on first load. */

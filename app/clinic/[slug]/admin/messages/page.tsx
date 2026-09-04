@@ -13,25 +13,24 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface PageProps {
-  searchParams: Promise<{ id?: string , page: number}>;
-  
+  searchParams: Promise<{ id?: string; page: number }>;
 }
 
-// app/.../admin/messages/page.tsx
 export default async function AdminMessagesPage({ searchParams }: PageProps) {
   const { id: rawId } = await searchParams;
   const id = rawId && UUID_RE.test(rawId) ? rawId : undefined;
 
   const { clinic } = await requireActiveMember(["ADMIN"]);
-  const [conversations, selectedConversation, messagesPage] = await Promise.all([
-    getConversations(clinic.id),
+  const [conversationsPage, selectedConversation, messagesPage] = await Promise.all([
+    getConversations(clinic.id, { limit: 30 }),
     id ? getConversationDetail(id, clinic.id) : Promise.resolve(null),
     id ? getMessages(id, { limit: 10 }) : Promise.resolve({ messages: [], nextCursor: null }),
   ]);
 
   return (
     <ChatInbox
-      conversations={conversations}
+      conversations={conversationsPage.conversations}
+      initialConversationsCursor={conversationsPage.nextCursor}
       selectedConversation={selectedConversation}
       messages={messagesPage.messages}
       initialCursor={messagesPage.nextCursor}

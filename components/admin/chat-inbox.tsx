@@ -59,7 +59,7 @@ interface ChatInboxProps {
   selectedConversation: ConversationDetail | null;
   messages: MessageItem[];
   initialCursor: string | null;
-
+  initialConversationsCursor: string | null;
   /** This clinic's URL prefix, e.g. `/clinic/sunrise-dental`. */
   basePath: string;
   clinicId: string;
@@ -95,6 +95,7 @@ interface RenderedMessage {
 
 export default function ChatInbox({
   conversations: initialConversations,
+  initialConversationsCursor,
   selectedConversation: initialConversation,
   messages: initialMessages,
   initialCursor,
@@ -124,6 +125,11 @@ export default function ChatInbox({
   const [hasMoreOlder, setHasMoreOlder] = useState(initialCursor !== null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [conversationsCursor, setConversationsCursor] = useState(initialConversationsCursor);
+  const [hasMoreConversations, setHasMoreConversations] = useState(initialConversationsCursor !== null);
+  const [loadingMoreConversations, setLoadingMoreConversations] = useState(false);
+  const conversationsListRef = useRef<HTMLUListElement>(null);
+
   // Sync when server re-renders with fresh data
   useEffect(
     () => setConversations(initialConversations),
@@ -185,6 +191,52 @@ export default function ChatInbox({
     const id = setInterval(() => setNowTs(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
+    const loadMoreConversations = useCallback(async () => {
+    if (!conversationsCursor || loadingMoreConversations) return;
+    setLoadingMoreConversations(true);
+    try {
+      const { conversations: older, nextCursor } = await fetchConversations(clinicId, {
+        cursor: conversationsCursor,
+      });
+      setConversations((prev) => {
+        const known = new Set(prev.map((c) => c.id));
+        return [...prev, ...older.filter((c) => !known.has(c.id))];
+      });
+      setConversationsCursor(nextCursor);
+      setHasMoreConversations(nextCursor !== null);
+    } catch (err) {
+      console.error("Failed to load more conversations:", err);
+    } finally {
+      setLoadingMoreConversations(false);
+    }
+  }, [clinicId, conversationsCursor, loadingMoreConversations]);
+
+  const handleConversationsScroll = useCallback(() => {
+    const el = conversationsListRef.current;
+    if (!el || loadingMoreConversations || !hasMoreConversations) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+      void loadMoreConversations();
+    }
+  }, [loadMoreConversations, loadingMoreConversations, hasMoreConversations]);
+
+  // refreshConversations (called from the escalation eventTick effect) should
+  // reset to a clean first page rather than silently dropping the cursor.
+  const refreshConversations = useCallback(() => {
+    startListTransition(async () => {
+      try {
+        const { conversations: fresh, nextCursor } = await fetchConversations(clinicId);
+        setConversations(fresh);
+        setConversationsCursor(nextCursor);
+        setHasMoreConversations(nextCursor !== null);
+      } catch (err) {
+        console.error("Failed to refresh conversations:", err);
+      }
+    });
+  }, [clinicId]);
+    useEffect(() => {
+    setConversationsCursor(initialConversationsCursor);
+    setHasMoreConversations(initialConversationsCursor !== null);
+  }, [initialConversationsCursor]);
 
   // Server rows plus this thread's optimistic bubbles. A pending entry that
   // already has a row hides that row, so a message that failed to reach
@@ -227,16 +279,6 @@ export default function ChatInbox({
     prevLastKeyRef.current = lastKey;
   }, [threadMessages]);
 
-  const refreshConversations = useCallback(() => {
-    startListTransition(async () => {
-      try {
-        const fresh = await fetchConversations(clinicId);
-        setConversations(fresh);
-      } catch (err) {
-        console.error("Failed to refresh conversations:", err);
-      }
-    });
-  }, [clinicId]);
   const handleRealtimeMessage = useCallback(
     async (row: RealtimeMessageRow) => {
       // Reconcile with this admin's own optimistic bubble, whichever arrives

@@ -14,8 +14,9 @@ import { SenderType } from "@prisma/client";
 
 export async function fetchConversations(
   clinicId: string,
-): Promise<ConversationSummary[]> {
-  return getConversations(clinicId);
+  options?: { cursor?: string | null; limit?: number },
+) {
+  return getConversations(clinicId, options);
 }
 
 export async function fetchConversationDetail(
