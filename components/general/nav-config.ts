@@ -19,6 +19,7 @@ import {
   MapPin,
   Building2,
   Tags,
+  BellRing,
 } from "lucide-react";
 import type { NavItem } from "./sidebar";
 
@@ -53,6 +54,11 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
       icon: Smartphone,
       children: [
         { href: "/admin/whatsapp/templates", label: "القوالب", icon: FileText },
+        {
+          href: "/admin/whatsapp/automation",
+          label: "التذكيرات والتقييم",
+          icon: BellRing,
+        },
         {
           href: "/admin/whatsapp/configuration",
           label: "الإعدادات",

@@ -15,8 +15,11 @@ const PUBLIC_ROUTES = [
 // routes (/clinic/{slug}/admin|doctor|dashboard/...) stay authenticated.
 const PUBLIC_CLINIC_PATH = /^\/clinic\/[^/]+(\/(login|register|verify-otp))?\/?$/;
 // Routes that accept unauthenticated guest requests (no Supabase session at
-// all) — the route handler itself scopes what a guest can do.
-const PUBLIC_API_ROUTES = ["/api/meta/whatsapp/webhook", "/api/agent/chat"];
+// all) — the route handler itself scopes what a guest can do. `/api/inngest` is
+// called by Inngest (sync + function invocations) with no Supabase session; it
+// is secured instead by Inngest's request-signature verification (signing key),
+// so it must bypass the auth redirect or the sync request lands on /login.
+const PUBLIC_API_ROUTES = ["/api/meta/whatsapp/webhook", "/api/agent/chat", "/api/inngest"];
 
 export async function middleware(request: NextRequest) {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {

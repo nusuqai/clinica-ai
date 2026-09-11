@@ -407,7 +407,8 @@ export async function completeCurrentAndAdvance(
       if (current) {
         await prisma.appointment.update({
           where: { id: current.id },
-          data: { status: AppointmentStatus.COMPLETED, skippedAt: null },
+          // completedAt anchors the post-visit feedback delay in the sweep.
+          data: { status: AppointmentStatus.COMPLETED, completedAt: new Date(), skippedAt: null },
         });
         completedAppointmentId = current.id;
       }
