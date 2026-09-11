@@ -113,10 +113,6 @@ export async function middleware(request: NextRequest) {
   // `slug` param, and every revalidatePath("/clinic/[slug]/…") keep working.
   const rewriteUrl = request.nextUrl.clone();
   rewriteUrl.pathname = `/clinic/${tenant}${pathname === "/" ? "" : pathname}`;
-  console.log(
-    `[mw] host=${request.headers.get("host")} tenant=${tenant} ${pathname} -> ${rewriteUrl.pathname}`
-  );
-
   // Set the clinic on the REQUEST as well as the response. Server components in
   // this very request (requireActiveMember → getActiveClinicContext) read it
   // from the incoming cookies, so a response-only cookie would leave the first
