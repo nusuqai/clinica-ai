@@ -64,8 +64,12 @@ async function customerConversationWhere(
 export async function getConversations(
   clinicId: string,
 ): Promise<ConversationSummary[]> {
+  const baseWhere = await customerConversationWhere(clinicId);
   const conversations = await prisma.conversation.findMany({
-    where: await customerConversationWhere(clinicId),
+    where: {
+      ...baseWhere,
+      messages: { some: {} },
+    },
     orderBy: { updatedAt: "desc" },
     include: {
       user: { select: { fullName: true, phone: true } },

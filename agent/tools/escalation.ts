@@ -27,6 +27,7 @@ export function escalationTool(ctx: AgentContext): DynamicStructuredTool {
         }),
         prisma.escalation.create({
           data: {
+            clinicId: ctx.clinicId,
             conversationId: ctx.conversationId,
             sessionId: ctx.sessionId,
             reason: reason ?? null,

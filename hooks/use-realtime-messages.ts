@@ -15,6 +15,7 @@ export interface RealtimeMessageRow {
   metadata: unknown;
   isRead: boolean;
   createdAt: string;
+  clinicId: string;
 }
 
 export function useRealtimeMessages(
@@ -35,9 +36,12 @@ export function useRealtimeMessages(
           event: "INSERT",
           schema: "public",
           table: "messages",
+          filter: `conversationId=eq.${conversationId}`,  
         },
         (payload) => {
-          callbackRef.current(payload.new as unknown as RealtimeMessageRow);
+          const row = payload.new as unknown as RealtimeMessageRow;
+          if (row.conversationId !== conversationId) return;
+          callbackRef.current(row);
         },
       )
       .subscribe();
@@ -60,6 +64,7 @@ export interface RealtimeEscalationRow {
 export function useRealtimeEscalations(
   onInsert: (row: RealtimeEscalationRow) => void,
   onResolve: (row: RealtimeEscalationRow) => void,
+  clinicId: string,
 ) {
   const insertRef = useRef(onInsert);
   insertRef.current = onInsert;
@@ -72,14 +77,14 @@ export function useRealtimeEscalations(
       .channel("escalations:all")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "escalations" },
+        { event: "INSERT", schema: "public", table: "escalations", filter: `clinicId=eq.${clinicId}` },
         (payload) => {
           insertRef.current(payload.new as unknown as RealtimeEscalationRow);
         },
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "escalations" },
+        { event: "UPDATE", schema: "public", table: "escalations" , filter: `clinicId=eq.${clinicId}`},
         (payload) => {
           const row = payload.new as unknown as RealtimeEscalationRow;
           if (row.resolvedAt) resolveRef.current(row);
@@ -92,27 +97,38 @@ export function useRealtimeEscalations(
   }, []);
 }
 
-export function useRealtimeConversations(onUpdate: () => void) {
-  const callbackRef = useRef(onUpdate);
-  callbackRef.current = onUpdate;
+export function useRealtimeConversations(
+
+  clinicId: string,
+  onNewMessage: (row: RealtimeMessageRow) => void,
+) {
+  const messageRef = useRef(onNewMessage);
+  messageRef.current = onNewMessage;
 
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel("conversations:all")
+      .channel("admin-inbox-messages")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "conversations" },
-        () => callbackRef.current(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        () => callbackRef.current(),
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `clinicId=eq.${clinicId}`,
+ 
+          // no conversation_id filter — this admin needs every conversation's
+          // inserts to keep the sidebar accurate; the callback decides what
+          // to do with each row based on the currently open thread
+        },
+        (payload) => {
+          messageRef.current(payload.new as unknown as RealtimeMessageRow);
+        },
       )
       .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, []); // subscribe once, never tear down/rebuild on activeId change
 }

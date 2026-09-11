@@ -254,6 +254,7 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
           startTime,
           endTime,
           slotDurationMin: slotDurationMin ?? undefined,
+          clinicId: ctx.clinicId,
           mode: mode ?? undefined,
           estimatedDurationMin: estimatedDurationMin ?? null,
           dailyCap: dailyCap ?? null,

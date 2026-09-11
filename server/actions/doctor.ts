@@ -100,6 +100,7 @@ export async function updateMyProfileAction(formData: FormData) {
     consultationFee: formData.get("consultationFee")
       ? Number(formData.get("consultationFee"))
       : undefined,
+    clinicId,
   });
 
   if (!result.ok) return { error: result.error };
@@ -111,7 +112,7 @@ export async function updateMyProfileAction(formData: FormData) {
 // ─── Availability Rule actions ────────────────────────────────────────────────
 
 export async function createMyRuleAction(formData: FormData) {
-  const { doctorId } = await requireDoctor();
+  const { doctorId, clinicId } = await requireDoctor();
 
   // Branch is required; if the form omits it, fall back to the doctor's single
   // branch when there's exactly one.
@@ -131,6 +132,7 @@ export async function createMyRuleAction(formData: FormData) {
     slotDurationMin: formData.get("slotDurationMin")
       ? Number(formData.get("slotDurationMin"))
       : 30,
+      clinicId,
     mode:
       formData.get("mode") === "ORDER_BASED"
         ? AvailabilityMode.ORDER_BASED

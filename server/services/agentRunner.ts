@@ -122,11 +122,12 @@ async function clinicGateBlocks(
 ): Promise<boolean> {
   const status = await getClinicAiStatus(clinicId);
   if (!status.aiEnabled) {
-    await ensureOpenEscalation(conversationId, sessionId, "clinic_disabled");
+    await ensureOpenEscalation(clinicId,conversationId, sessionId, "clinic_disabled");
     return true;
   }
   if (!status.sufficient) {
     await ensureOpenEscalation(
+      clinicId,
       conversationId,
       sessionId,
       "insufficient_credit",
@@ -181,8 +182,8 @@ export async function* streamWebAgent(
     userId,
     membership.clinicId,
   );
-  const sessionId = await resolveActiveSession(conversationId);
-  await persistUserMessage(conversationId, sessionId, userText, userId);
+  const sessionId = await resolveActiveSession(conversationId, membership.clinicId);
+  await persistUserMessage(conversationId, sessionId, membership.clinicId, userText, userId);
 
   if (!(await isSessionAiEnabled(sessionId))) {
     yield { type: "handoff" };
@@ -224,6 +225,7 @@ export async function* streamWebAgent(
   const agentMsg = await persistAgentMessage(
     conversationId,
     sessionId,
+    membership.clinicId,
     finalText || FALLBACK_REPLY,
     {
       toolCalls,
@@ -249,6 +251,7 @@ export async function* streamWebAgent(
  * not an agent opinion.
  */
 export async function handleUnsupportedWhatsAppMessage(
+  clinicId: string,
   conversationId: string,
   contact: WhatsAppContact,
   media: UnsupportedMediaType,
@@ -263,13 +266,15 @@ export async function handleUnsupportedWhatsAppMessage(
       })
     : null;
 
-  const sessionId = await resolveActiveSession(conversationId);
+  const sessionId = await resolveActiveSession(conversationId, clinicId);
   // Always recorded, even when the notice below is suppressed, so the admin
   // sees every item the contact actually sent.
   await persistUserMessage(
     conversationId,
     sessionId,
+    clinicId,
     media.placeholder,
+    
     profile?.id ?? null,
   );
 
@@ -285,7 +290,7 @@ export async function handleUnsupportedWhatsAppMessage(
   if (recentReply?.content.startsWith(UNSUPPORTED_PREFIX)) return;
 
   const reply = unsupportedReply(media.noun);
-  await persistAgentMessage(conversationId, sessionId, reply, null);
+  await persistAgentMessage(conversationId, sessionId, clinicId, reply, null);
   await deliverReply(contact, reply, creds);
 }
 
@@ -363,10 +368,11 @@ export async function handleWhatsAppMessage(
       .catch(() => {}); // ignore unique clashes (already linked elsewhere)
   }
 
-  const sessionId = await resolveActiveSession(conversationId);
+  const sessionId = await resolveActiveSession(conversationId, clinicId);
   await persistUserMessage(
     conversationId,
     sessionId,
+    clinicId,
     userText,
     profile?.id ?? null,
   );
@@ -422,7 +428,7 @@ export async function handleWhatsAppMessage(
   const { text, toolCalls, usage } = await runAgentToText(ctx, toPrior(prior));
   const reply = text || FALLBACK_REPLY;
 
-  const agentMsg = await persistAgentMessage(conversationId, sessionId, reply, {
+  const agentMsg = await persistAgentMessage(conversationId, sessionId, clinicId, reply, {
     toolCalls,
   });
   await deliverReply(contact, reply, creds);

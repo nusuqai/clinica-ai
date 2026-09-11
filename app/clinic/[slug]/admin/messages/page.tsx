@@ -43,6 +43,7 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
           selectedConversation={selectedConversation}
           messages={messages}
           basePath={`/clinic/${clinic.slug}`}
+          clinicId={clinic.id}
         />
       </Suspense>
     </div>

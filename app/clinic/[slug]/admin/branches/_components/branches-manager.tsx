@@ -130,7 +130,7 @@ const labelCls = "text-sm font-medium text-foreground font-sans";
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export default function BranchesManager({ branches }: { branches: BranchView[] }) {
+export default function BranchesManager({ branches, clinicId }: { branches: BranchView[]; clinicId: string }) {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BranchView | null>(null);
@@ -191,7 +191,7 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
     const payload = buildPayload();
     startTransition(async () => {
       const res = editing
-        ? await updateBranchAction({ branchId: editing.id, ...payload })
+        ? await updateBranchAction({ branchId: editing.id, clinicId: clinicId, ...payload })
         : await createBranchAction(payload);
       if (res?.error) setError(res.error);
       else {

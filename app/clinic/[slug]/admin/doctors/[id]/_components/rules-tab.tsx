@@ -52,9 +52,10 @@ interface RulesTabProps {
   doctorId: string;
   rules: RuleRow[];
   branches: DoctorBranchOption[];
+  clinicId: string;
 }
 
-export default function RulesTab({ doctorId, rules, branches }: RulesTabProps) {
+export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesTabProps) {
   const router = useRouter();
   const [addOpen, setAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +96,7 @@ export default function RulesTab({ doctorId, rules, branches }: RulesTabProps) {
     const formData = new FormData(e.currentTarget);
     formData.set("doctorId", doctorId);
     startTransition(async () => {
-      const res = await createRuleAction(formData);
+      const res = await createRuleAction(formData, clinicId);
       if (res?.error) { setError(res.error); return; }
       setAddOpen(false);
       showSuccess("تم إنشاء القاعدة وتوليد المواعيد");

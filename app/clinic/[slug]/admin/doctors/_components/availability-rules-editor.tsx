@@ -84,7 +84,8 @@ function branchWindow(
 
 type Props =
   | { mode: "draft"; branches: EditorBranch[] }
-  | { mode: "live"; doctorId: string; branches: EditorBranch[] };
+  | { mode: "live"; doctorId: string; branches: EditorBranch[]; clinicId: string };
+  
 
 /**
  * Inline availability-rules editor embedded in the add/edit doctor modals so
@@ -196,7 +197,7 @@ export default function AvailabilityRulesEditor(props: Props) {
     if (draft.referralOnly) fd.set("referralOnly", "on");
     if (draft.note) fd.set("note", draft.note);
     startTransition(async () => {
-      const res = await createRuleAction(fd);
+      const res = await createRuleAction(fd, props.clinicId);
       if (res?.error) {
         setError(res.error);
         return;

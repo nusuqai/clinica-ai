@@ -87,7 +87,7 @@ export async function sendAdminReply(
 
   let message;
   try {
-    const sessionId = await resolveActiveSession(conversationId);
+    const sessionId = await resolveActiveSession(conversationId, ctx.clinic.id);
 
     message = await prisma.message.create({
       data: {
@@ -97,6 +97,7 @@ export async function sendAdminReply(
         senderId: ctx.user.id,
         content,
         isRead: true,
+        clinicId: ctx.clinic.id,
       },
     });
 
@@ -241,7 +242,7 @@ export async function sendWhatsappTemplate(
   }
 
   try {
-    const sessionId = await resolveActiveSession(conversationId);
+    const sessionId = await resolveActiveSession(conversationId, ctx.clinic.id);
     const message = await prisma.message.create({
       data: {
         conversationId,
@@ -250,6 +251,7 @@ export async function sendWhatsappTemplate(
         senderId: ctx.user.id,
         content: input.renderedText,
         isRead: true,
+        clinicId: ctx.clinic.id,
       },
     });
     await prisma.escalation.updateMany({

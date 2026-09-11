@@ -23,6 +23,7 @@ export interface SessionMessage {
   senderType: SenderType;
   metadata: AgentMessageMetadata | null;
   createdAt: Date;
+  clinicId: string;
 }
 
 /**
@@ -32,6 +33,7 @@ export interface SessionMessage {
  */
 export async function resolveActiveSession(
   conversationId: string,
+  clinicId: string,
 ): Promise<string> {
   const now = new Date();
   const live = await prisma.chatSession.findFirst({
@@ -46,6 +48,7 @@ export async function resolveActiveSession(
       conversationId,
       startedAt: now,
       expiresAt: new Date(now.getTime() + SESSION_MINUTES * 60_000),
+      clinicId: clinicId,
     },
     select: { id: true },
   });
@@ -75,25 +78,28 @@ export async function getSessionMessages(
     senderType: m.senderType as SessionMessage["senderType"],
     metadata: (m.metadata as AgentMessageMetadata | null) ?? null,
     createdAt: m.createdAt,
+    clinicId: m.clinicId,
   }));
 }
 
 export async function persistUserMessage(
   conversationId: string,
   sessionId: string,
+  clinicId: string,
   content: string,
   senderId: string | null,
 ): Promise<SessionMessage> {
-  const m = await prisma.message.create({
-    data: {
-      conversationId,
-      sessionId,
-      senderType: SenderType.USER,
-      senderId,
-      content,
-      isRead: true,
-    },
-  });
+    const m = await prisma.message.create({
+      data: {
+        conversationId,
+        sessionId,
+        senderType: SenderType.USER,
+        senderId,
+        content,
+        isRead: false,
+        clinicId,
+      },
+    });
   await touchConversation(conversationId);
   return {
     id: m.id,
@@ -101,12 +107,14 @@ export async function persistUserMessage(
     senderType: SenderType.USER,
     metadata: null,
     createdAt: m.createdAt,
+    clinicId: m.clinicId,
   };
 }
 
 export async function persistAgentMessage(
   conversationId: string,
   sessionId: string,
+  clinicId: string,
   content: string,
   metadata: AgentMessageMetadata | null,
 ): Promise<SessionMessage> {
@@ -120,6 +128,7 @@ export async function persistAgentMessage(
       metadata: metadata
         ? (metadata as unknown as Prisma.InputJsonValue)
         : undefined,
+        clinicId,
     },
   });
   await touchConversation(conversationId);
@@ -129,6 +138,7 @@ export async function persistAgentMessage(
     senderType: SenderType.AGENT,
     metadata,
     createdAt: m.createdAt,
+    clinicId: m.clinicId,
   };
 }
 

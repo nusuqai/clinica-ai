@@ -150,6 +150,7 @@ async function processMessage(
       `[wa-debug] routing → unsupported-media handler convId=${conversation.id}`,
     );
     await handleUnsupportedWhatsAppMessage(
+      creds.clinicId,
       conversation.id,
       { phone, userId },
       message,

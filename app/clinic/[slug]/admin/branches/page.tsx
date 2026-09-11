@@ -39,7 +39,7 @@ export default async function AdminBranchesPage() {
   return (
     <div>
       <PageHeader title="الفروع" subtitle={`${branches.length} فرع`} />
-      <BranchesManager branches={views} />
+      <BranchesManager branches={views} clinicId={clinic.id} />
     </div>
   );
 }
