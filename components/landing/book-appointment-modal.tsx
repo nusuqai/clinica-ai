@@ -1,12 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { X, Clock, CheckCircle, AlertCircle, LogIn } from "lucide-react";
+import {
+  X,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  LogIn,
+  ChevronDown,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import {
   bookAppointmentAction,
+  bookOrderAppointmentAction,
   getAvailableDaysAction,
   getAvailableSlotsAction,
+  getOrderBookingInfoAction,
 } from "@/server/actions/patient";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
@@ -22,6 +32,32 @@ interface Slot {
   startTime: string;
   endTime: string;
 }
+
+type Mode = "SLOT_BASED" | "ORDER_BASED";
+
+interface AvailableDay {
+  date: string;
+  mode: Mode;
+}
+
+interface OrderInfo {
+  available: boolean;
+  remaining: number | null;
+  nextOrderNumber: number;
+  currentOrder: number | null;
+  estimatedDurationMin: number | null;
+  expectedTime: string | null;
+}
+
+/** Per-day payload, loaded lazily when a day is opened and cached in state. */
+type DayData =
+  | { kind: "slots"; slots: Slot[] }
+  | { kind: "queue"; info: OrderInfo };
+
+/** What the patient has chosen to book, carried into the confirm step. */
+type Selection =
+  | { mode: "SLOT_BASED"; date: string; slot: Slot }
+  | { mode: "ORDER_BASED"; date: string; info: OrderInfo };
 
 interface Props {
   doctor: Doctor;
@@ -39,12 +75,10 @@ function formatTime(iso: string) {
   return formatSlotTime(iso, { hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
-function formatDayChip(dateStr: string) {
-  return {
-    weekday: formatSlotDate(dateStr, { weekday: "short" }),
-    day: formatSlotDate(dateStr, { day: "numeric" }),
-    month: formatSlotDate(dateStr, { month: "short" }),
-  };
+/** Estimated wait for the joining patient, or null when it can't be computed. */
+function queueWait(info: OrderInfo): number | null {
+  if (info.estimatedDurationMin == null || info.currentOrder == null) return null;
+  return Math.max(0, info.nextOrderNumber - info.currentOrder) * info.estimatedDurationMin;
 }
 
 export function BookAppointmentModal({
@@ -58,21 +92,26 @@ export function BookAppointmentModal({
 }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const needsAuth = !isAuthenticated || !isPatient;
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [selectedDate, setSelectedDate] = useState("");
-  const [availableDays, setAvailableDays] = useState<string[]>([]);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
   const [daysLoading, setDaysLoading] = useState(true);
   const [daysError, setDaysError] = useState("");
-  const [slots, setSlots] = useState<Slot[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+
+  // Accordion: at most one open day; each day's data is fetched on first open.
+  const [openDate, setOpenDate] = useState<string | null>(null);
+  const [dayData, setDayData] = useState<Record<string, DayData>>({});
+  const [dayLoading, setDayLoading] = useState<Record<string, boolean>>({});
+  const [dayError, setDayError] = useState<Record<string, string>>({});
+
+  const [selection, setSelection] = useState<Selection | null>(null);
   const [notes, setNotes] = useState("");
-  const [slotsLoading, setSlotsLoading] = useState(false);
-  const [slotsError, setSlotsError] = useState("");
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState(false);
+  const [bookedOrder, setBookedOrder] = useState<number | null>(null);
   const [bookingError, setBookingError] = useState("");
 
-  // Load doctor's available days once, up-front
+  // Load the doctor's available days once, up-front. Only dates + mode — each
+  // day's slots/queue are loaded lazily on open so opening the list stays fast.
   useEffect(() => {
     if (needsAuth) return;
     let cancelled = false;
@@ -107,12 +146,10 @@ export function BookAppointmentModal({
     };
   }, []);
 
-  // Close on overlay click
   function handleOverlayClick(e: React.MouseEvent) {
     if (e.target === overlayRef.current) onClose();
   }
 
-  // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -121,40 +158,62 @@ export function BookAppointmentModal({
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  async function fetchSlots(date: string) {
-    setSlotsLoading(true);
-    setSlotsError("");
-    setSlots([]);
-    setSelectedSlot(null);
+  async function toggleDay(date: string, mode: Mode) {
+    // Collapse if already open.
+    if (openDate === date) {
+      setOpenDate(null);
+      return;
+    }
+    setOpenDate(date);
+    // Already loaded or in flight — nothing to fetch.
+    if (dayData[date] || dayLoading[date]) return;
+
+    setDayLoading((m) => ({ ...m, [date]: true }));
+    setDayError((m) => ({ ...m, [date]: "" }));
     try {
-      const result = await getAvailableSlotsAction(doctor.id, date);
-      setSlots(result);
-      if (result.length === 0)
-        setSlotsError("لا توجد مواعيد متاحة في هذا اليوم");
+      if (mode === "ORDER_BASED") {
+        const info = await getOrderBookingInfoAction(doctor.id, date);
+        if (!info) {
+          setDayError((m) => ({ ...m, [date]: "تعذّر تحميل حالة الطابور" }));
+        } else {
+          setDayData((m) => ({ ...m, [date]: { kind: "queue", info } }));
+        }
+      } else {
+        const slots = await getAvailableSlotsAction(doctor.id, date);
+        setDayData((m) => ({ ...m, [date]: { kind: "slots", slots } }));
+        if (slots.length === 0)
+          setDayError((m) => ({ ...m, [date]: "لا توجد مواعيد متاحة في هذا اليوم" }));
+      }
     } catch {
-      setSlotsError("تعذر تحميل المواعيد، يرجى المحاولة مجدداً");
+      setDayError((m) => ({ ...m, [date]: "تعذّر التحميل، يرجى المحاولة مجدداً" }));
     } finally {
-      setSlotsLoading(false);
+      setDayLoading((m) => ({ ...m, [date]: false }));
     }
   }
 
-  function handleDateChange(date: string) {
-    setSelectedDate(date);
-    if (date) fetchSlots(date);
-  }
-
   function handleBook() {
-    if (!selectedSlot) return;
+    if (!selection) return;
     setBookingError("");
     startTransition(async () => {
-      const res = await bookAppointmentAction(
-        selectedSlot.id,
-        notes || undefined,
-      );
-      if (res.ok) {
-        setSuccess(true);
+      if (selection.mode === "SLOT_BASED") {
+        const res = await bookAppointmentAction(
+          selection.slot.id,
+          notes || undefined,
+        );
+        if (res.ok) setSuccess(true);
+        else setBookingError(res.error ?? "حدث خطأ غير متوقع");
       } else {
-        setBookingError(res.error ?? "حدث خطأ غير متوقع");
+        const res = await bookOrderAppointmentAction(
+          doctor.id,
+          selection.date,
+          notes || undefined,
+        );
+        if (res.ok) {
+          setBookedOrder(res.orderNumber ?? null);
+          setSuccess(true);
+        } else {
+          setBookingError(res.error ?? "حدث خطأ غير متوقع");
+        }
       }
     });
   }
@@ -171,9 +230,9 @@ export function BookAppointmentModal({
       onClick={handleOverlayClick}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
     >
-      <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+      <div className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary font-heading text-sm font-bold text-white">
               {initials}
@@ -196,7 +255,7 @@ export function BookAppointmentModal({
         </div>
 
         {/* Body */}
-        <div className="px-6 py-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
           {/* Not logged in */}
           {needsAuth && (
             <div className="flex flex-col items-center gap-4 py-4 text-center">
@@ -228,7 +287,7 @@ export function BookAppointmentModal({
             </div>
           )}
 
-          {/* Step 1 — Date picker */}
+          {/* Step 1 — Day accordion */}
           {!needsAuth && step === 1 && !success && (
             <div className="flex flex-col gap-5">
               <div>
@@ -236,8 +295,7 @@ export function BookAppointmentModal({
                   اختر يوم الموعد
                 </p>
                 <p className="font-sans text-sm text-text/50">
-                  هذه هي الأيام المتاحة لدى الطبيب — اختر يوماً لعرض الأوقات
-                  المتاحة
+                  اضغط على اليوم لعرض الأوقات المتاحة أو حالة الدور
                 </p>
               </div>
 
@@ -255,77 +313,127 @@ export function BookAppointmentModal({
               )}
 
               {!daysLoading && availableDays.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {availableDays.map((dateStr) => {
-                    const { weekday, day, month } = formatDayChip(dateStr);
-                    const isSelected = selectedDate === dateStr;
+                <div className="flex flex-col gap-2">
+                  {availableDays.map(({ date, mode }) => {
+                    const isOpen = openDate === date;
+                    const data = dayData[date];
+                    const loading = dayLoading[date];
+                    const errorMsg = dayError[date];
                     return (
-                      <button
-                        key={dateStr}
-                        onClick={() => handleDateChange(dateStr)}
-                        className={`flex shrink-0 flex-col items-center gap-0.5 rounded-xl border px-4 py-2.5 text-center transition-all ${
-                          isSelected
-                            ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-                            : "border-border bg-background text-text hover:border-accent/50"
-                        }`}
+                      <div
+                        key={date}
+                        className="overflow-hidden rounded-xl border border-border"
                       >
-                        <span className="font-sans text-xs opacity-70">
-                          {weekday}
-                        </span>
-                        <span className="font-heading text-base font-bold">
-                          {day}
-                        </span>
-                        <span className="font-sans text-[11px] opacity-70">
-                          {month}
-                        </span>
-                      </button>
+                        {/* Day header */}
+                        <button
+                          onClick={() => toggleDay(date, mode)}
+                          className="flex w-full items-center justify-between gap-2 px-4 py-3 text-start transition-colors hover:bg-muted/60"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="font-sans text-sm font-medium text-text">
+                              {formatSlotDate(date, {
+                                weekday: "long",
+                                day: "numeric",
+                                month: "long",
+                              })}
+                            </span>
+                            {mode === "ORDER_BASED" && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 font-sans text-[11px] font-medium text-accent">
+                                <Users className="h-3 w-3" />
+                                طابور
+                              </span>
+                            )}
+                          </span>
+                          <ChevronDown
+                            className={`h-4 w-4 shrink-0 text-text/40 transition-transform ${
+                              isOpen ? "rotate-180" : ""
+                            }`}
+                          />
+                        </button>
+
+                        {/* Day body — lazy content */}
+                        {isOpen && (
+                          <div className="border-t border-border px-4 py-3">
+                            {loading && (
+                              <div className="flex items-center justify-center py-4">
+                                <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                              </div>
+                            )}
+
+                            {errorMsg && !loading && (
+                              <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                                <AlertCircle className="h-4 w-4 shrink-0" />
+                                {errorMsg}
+                              </div>
+                            )}
+
+                            {/* Slot-based day */}
+                            {!loading &&
+                              data?.kind === "slots" &&
+                              data.slots.length > 0 && (
+                                <>
+                                  <p className="mb-2 flex items-center gap-1.5 font-sans text-xs font-medium text-text/60">
+                                    <Clock className="h-3.5 w-3.5" />
+                                    اختر وقت الموعد
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    {data.slots.map((slot) => {
+                                      const isSel =
+                                        selection?.mode === "SLOT_BASED" &&
+                                        selection.slot.id === slot.id;
+                                      return (
+                                        <button
+                                          key={slot.id}
+                                          onClick={() =>
+                                            setSelection({
+                                              mode: "SLOT_BASED",
+                                              date,
+                                              slot,
+                                            })
+                                          }
+                                          className={`rounded-lg border px-3 py-2 text-center font-sans text-sm font-medium transition-all ${
+                                            isSel
+                                              ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
+                                              : "border-border bg-background text-text hover:border-accent/50"
+                                          }`}
+                                        >
+                                          {formatTime(slot.startTime)}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </>
+                              )}
+
+                            {/* Order-based (queue) day */}
+                            {!loading && data?.kind === "queue" && (
+                              <QueueBox
+                                info={data.info}
+                                selected={
+                                  selection?.mode === "ORDER_BASED" &&
+                                  selection.date === date
+                                }
+                                onSelect={() =>
+                                  setSelection({
+                                    mode: "ORDER_BASED",
+                                    date,
+                                    info: data.info,
+                                  })
+                                }
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
               )}
 
-              {/* Slots */}
-              {slotsLoading && (
-                <div className="flex items-center justify-center py-6">
-                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                </div>
-              )}
-
-              {slotsError && !slotsLoading && (
-                <div className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  {slotsError}
-                </div>
-              )}
-
-              {slots.length > 0 && (
-                <div>
-                  <p className="mb-3 flex items-center gap-1.5 font-sans text-sm font-medium text-text/70">
-                    <Clock className="h-4 w-4" />
-                    اختر وقت الموعد
-                  </p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {slots.map((slot) => (
-                      <button
-                        key={slot.id}
-                        onClick={() => setSelectedSlot(slot)}
-                        className={`rounded-xl border px-3 py-2.5 text-center font-sans text-sm font-medium transition-all ${
-                          selectedSlot?.id === slot.id
-                            ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-                            : "border-border bg-background text-text hover:border-accent/50"
-                        }`}
-                      >
-                        {formatTime(slot.startTime)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {selectedSlot && (
+              {selection && (
                 <button
                   onClick={() => setStep(2)}
-                  className="mt-2 w-full rounded-xl bg-primary py-3 font-medium text-white transition-opacity hover:opacity-90"
+                  className="mt-1 w-full rounded-xl bg-primary py-3 font-medium text-white transition-opacity hover:opacity-90"
                 >
                   التالي — إضافة ملاحظات
                 </button>
@@ -334,7 +442,7 @@ export function BookAppointmentModal({
           )}
 
           {/* Step 2 — Notes + confirm */}
-          {!needsAuth && step === 2 && !success && (
+          {!needsAuth && step === 2 && !success && selection && (
             <div className="flex flex-col gap-5">
               {/* Summary */}
               <div className="rounded-xl bg-muted px-4 py-3">
@@ -343,11 +451,9 @@ export function BookAppointmentModal({
                 </p>
                 <div className="mt-2 flex flex-col gap-1">
                   <div className="flex items-center justify-between">
-                    <span className="font-sans text-sm text-text/70">
-                      التاريخ
-                    </span>
+                    <span className="font-sans text-sm text-text/70">التاريخ</span>
                     <span className="font-sans text-sm font-medium text-text">
-                      {formatSlotDate(selectedDate, {
+                      {formatSlotDate(selection.date, {
                         weekday: "long",
                         year: "numeric",
                         month: "long",
@@ -355,15 +461,36 @@ export function BookAppointmentModal({
                       })}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-sans text-sm text-text/70">
-                      الوقت
-                    </span>
-                    <span className="font-sans text-sm font-medium text-text">
-                      {selectedSlot && formatTime(selectedSlot.startTime)} —{" "}
-                      {selectedSlot && formatTime(selectedSlot.endTime)}
-                    </span>
-                  </div>
+                  {selection.mode === "SLOT_BASED" ? (
+                    <div className="flex items-center justify-between">
+                      <span className="font-sans text-sm text-text/70">الوقت</span>
+                      <span className="font-sans text-sm font-medium text-text">
+                        {formatTime(selection.slot.startTime)} —{" "}
+                        {formatTime(selection.slot.endTime)}
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="font-sans text-sm text-text/70">
+                          نظام الحجز
+                        </span>
+                        <span className="font-sans text-sm font-medium text-text">
+                          الدور — رقمك {selection.info.nextOrderNumber}
+                        </span>
+                      </div>
+                      {selection.info.expectedTime && (
+                        <div className="flex items-center justify-between">
+                          <span className="font-sans text-sm text-text/70">
+                            الوقت المتوقع
+                          </span>
+                          <span className="font-sans text-sm font-medium text-text">
+                            ~{selection.info.expectedTime}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
                   {doctor.fee && (
                     <div className="flex items-center justify-between">
                       <span className="font-sans text-sm text-text/70">
@@ -413,7 +540,11 @@ export function BookAppointmentModal({
                   disabled={isPending}
                   className="flex-1 rounded-xl bg-accent py-3 font-medium text-white transition-opacity disabled:opacity-60 hover:opacity-90"
                 >
-                  {isPending ? "جارٍ الحجز..." : "تأكيد الحجز"}
+                  {isPending
+                    ? "جارٍ الحجز..."
+                    : selection.mode === "ORDER_BASED"
+                      ? "تأكيد حجز الدور"
+                      : "تأكيد الحجز"}
                 </button>
               </div>
             </div>
@@ -427,11 +558,21 @@ export function BookAppointmentModal({
               </div>
               <div>
                 <p className="font-heading text-xl font-bold text-text">
-                  تم الحجز بنجاح!
+                  {bookedOrder != null ? "تم حجز دورك!" : "تم الحجز بنجاح!"}
                 </p>
-                <p className="mt-1 font-sans text-sm text-text/50">
-                  موعدك مع {doctor.name} في انتظار التأكيد من العيادة
-                </p>
+                {bookedOrder != null ? (
+                  <p className="mt-1 font-sans text-sm text-text/60">
+                    رقمك في الطابور:{" "}
+                    <span className="font-bold text-accent">{bookedOrder}</span>
+                    <span className="mt-0.5 block text-text/50">
+                      في انتظار التأكيد من العيادة
+                    </span>
+                  </p>
+                ) : (
+                  <p className="mt-1 font-sans text-sm text-text/50">
+                    موعدك مع {doctor.name} في انتظار التأكيد من العيادة
+                  </p>
+                )}
               </div>
               <div className="flex w-full flex-col gap-2">
                 <Link
@@ -451,6 +592,65 @@ export function BookAppointmentModal({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Queue status + a single "join queue" action for an order-based day. */
+function QueueBox({
+  info,
+  selected,
+  onSelect,
+}: {
+  info: OrderInfo;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  if (!info.available) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+        <AlertCircle className="h-4 w-4 shrink-0" />
+        اكتمل عدد الحجوزات المتاحة لهذا اليوم
+      </div>
+    );
+  }
+  const wait = queueWait(info);
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="rounded-lg bg-accent/5 px-3 py-2.5">
+        <p className="font-sans text-sm text-text">
+          سيكون دورك رقم{" "}
+          <span className="font-bold text-accent">{info.nextOrderNumber}</span>
+        </p>
+        <div className="mt-1 flex flex-col gap-0.5 font-sans text-xs text-text/60">
+          {info.expectedTime && (
+            <span className="text-text/80">
+              الوقت المتوقع للكشف: ~{info.expectedTime}
+            </span>
+          )}
+          {info.currentOrder != null && (
+            <span>
+              {info.currentOrder > 0
+                ? `يُخدَم الآن رقم ${info.currentOrder}`
+                : "لم يبدأ الكشف بعد"}
+            </span>
+          )}
+          {wait != null && <span>الانتظار التقديري: ~{wait} دقيقة</span>}
+          {info.remaining != null && (
+            <span>المتبقّي اليوم: {info.remaining} حجز</span>
+          )}
+        </div>
+      </div>
+      <button
+        onClick={onSelect}
+        className={`w-full rounded-lg border px-3 py-2.5 text-center font-sans text-sm font-medium transition-all ${
+          selected
+            ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
+            : "border-accent/40 bg-background text-accent hover:bg-accent/5"
+        }`}
+      >
+        {selected ? "✓ تم اختيار الدور" : "احجز دوري"}
+      </button>
     </div>
   );
 }

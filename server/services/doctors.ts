@@ -5,6 +5,7 @@ import { ok, err, type Result } from "./_result";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
 import {
   AppointmentStatus,
+  AvailabilityMode,
   Role,
   type Doctor,
   type DayOfWeek,
@@ -19,7 +20,15 @@ import {
 // `specialty` is synthesized from the linked Specialty row's name (empty string
 // when unassigned), so read paths that expect a specialty string keep working
 // after the free-text column was normalized into the `specialties` table.
-export type DoctorWithProfile = Doctor & {
+// Fees are Prisma Decimal on the row; we surface them as plain numbers so the
+// view is safe to pass from Server Components to Client Components (Decimal
+// objects can't cross that boundary).
+export type DoctorWithProfile = Omit<
+  Doctor,
+  "examinationFee" | "consultationFee"
+> & {
+  examinationFee: number | null;
+  consultationFee: number | null;
   profile: {
     fullName: string;
     phone: string | null;
@@ -42,6 +51,8 @@ type DoctorRow = Doctor & {
 function toView(d: DoctorRow, email?: string): DoctorWithProfile {
   return {
     ...d,
+    examinationFee: d.examinationFee == null ? null : Number(d.examinationFee),
+    consultationFee: d.consultationFee == null ? null : Number(d.consultationFee),
     specialty: d.specialty?.name ?? "",
     profile: {
       fullName: d.fullName,
@@ -109,6 +120,16 @@ export interface CreateRuleInput {
   endTime: string;
   slotDurationMin?: number;
   clinicId: string;
+  /** Reserve this rule's slots for doctor referrals (not directly bookable). */
+  referralOnly?: boolean;
+  /** Free-text admin/doctor note about this rule. */
+  note?: string | null;
+  /** SLOT_BASED (default) or ORDER_BASED (queue). */
+  mode?: AvailabilityMode;
+  /** Order-based only: estimated minutes per patient. */
+  estimatedDurationMin?: number | null;
+  /** Order-based only: max bookings per day. */
+  dailyCap?: number | null;
 }
 
 export type DoctorSlot = {
@@ -160,6 +181,7 @@ export async function getAvailableSlotsForBooking(
     where: {
       doctorId,
       isBlocked: false,
+      referralOnly: false, // referral-only slots are not directly bookable by patients
       appointment: null,
       date: { gte: dayStart, lte: dayEnd },
       startTime: { gt: now },
@@ -175,18 +197,78 @@ export async function getAvailableSlotsForBooking(
   });
 }
 
+/**
+ * Referral booking view: every bookable slot for a doctor on a date, INCLUDING
+ * referral-only ones (each flagged). Used by the referring-doctor flow so a
+ * doctor can place a patient into another doctor's reserved referral slots.
+ */
+export async function getReferralSlotsForBooking(
+  doctorId: string,
+  date: Date,
+): Promise<
+  {
+    id: string;
+    startTime: Date;
+    endTime: Date;
+    branchId: string | null;
+    branch: { id: string; name: string } | null;
+    referralOnly: boolean;
+  }[]
+> {
+  const dayStart = new Date(date);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(date);
+  dayEnd.setHours(23, 59, 59, 999);
+  const now = new Date();
+
+  return prisma.slot.findMany({
+    where: {
+      doctorId,
+      isBlocked: false,
+      appointment: null,
+      date: { gte: dayStart, lte: dayEnd },
+      startTime: { gt: now },
+    },
+    select: {
+      id: true,
+      startTime: true,
+      endTime: true,
+      branchId: true,
+      branch: { select: { id: true, name: true } },
+      referralOnly: true,
+    },
+    orderBy: { startTime: "asc" },
+  });
+}
+
+export interface AvailableDay {
+  /** YYYY-MM-DD */
+  date: string;
+  mode: AvailabilityMode;
+}
+
+/**
+ * Days a patient can book with a doctor, each tagged with its scheduling mode so
+ * the booking UI knows whether to load time-slots or a queue view:
+ *  - SLOT_BASED days come from generated (unbooked, non-blocked) Slot rows.
+ *  - ORDER_BASED days are synthesized from active queue rules — they have no
+ *    Slot rows; a day is offered when it's a matching weekday within the window,
+ *    not in the past, and the day's queue hasn't hit its cap.
+ */
 export async function getAvailableDaysForBooking(
   doctorId: string,
   daysAhead = 60,
-): Promise<string[]> {
+): Promise<AvailableDay[]> {
   const now = new Date();
   const until = new Date(now);
   until.setDate(until.getDate() + daysAhead);
 
+  // ── Slot-based days ─────────────────────────────────────────────────────────
   const slots = await prisma.slot.findMany({
     where: {
       doctorId,
       isBlocked: false,
+      referralOnly: false, // referral-only slots are not directly bookable by patients
       appointment: null,
       startTime: { gt: now },
       date: { lte: until },
@@ -195,8 +277,69 @@ export async function getAvailableDaysForBooking(
     distinct: ["date"],
     orderBy: { date: "asc" },
   });
+  const byDate = new Map<string, AvailabilityMode>();
+  for (const s of slots) {
+    byDate.set(s.date.toISOString().split("T")[0], AvailabilityMode.SLOT_BASED);
+  }
 
-  return slots.map((s) => s.date.toISOString().split("T")[0]);
+  // ── Order-based (queue) days ────────────────────────────────────────────────
+  const orderRules = await prisma.availabilityRule.findMany({
+    where: {
+      doctorId,
+      isActive: true,
+      mode: AvailabilityMode.ORDER_BASED,
+      referralOnly: false, // referral-only rules aren't directly bookable
+      branchId: { not: null }, // queue booking requires a concrete branch
+    },
+    select: { dayOfWeek: true, dailyCap: true, branchId: true, endTime: true },
+  });
+
+  if (orderRules.length > 0) {
+    const todayUTC = new Date(now);
+    todayUTC.setUTCHours(0, 0, 0, 0);
+    const todayStr = todayUTC.toISOString().split("T")[0];
+
+    // Preload the window's day queues once so cap checks don't hit the DB per day.
+    const queues = await prisma.doctorDayQueue.findMany({
+      where: { doctorId, date: { gte: todayUTC, lte: until } },
+      select: { date: true, branchId: true, nextOrder: true, dailyCap: true },
+    });
+    const queueByKey = new Map<string, { booked: number; cap: number | null }>();
+    for (const q of queues) {
+      const key = `${q.date.toISOString().split("T")[0]}|${q.branchId ?? ""}`;
+      queueByKey.set(key, { booked: q.nextOrder - 1, cap: q.dailyCap });
+    }
+
+    for (const rule of orderRules) {
+      const targetDay = DAY_MAP[rule.dayOfWeek];
+      const cur = new Date(todayUTC);
+      while (cur <= until) {
+        if (cur.getUTCDay() === targetDay) {
+          const dateStr = cur.toISOString().split("T")[0];
+          // Skip today once the session's end time has passed.
+          let include = true;
+          if (dateStr === todayStr) {
+            const [eh, em] = rule.endTime.split(":").map(Number);
+            const endMs = new Date(cur).setUTCHours(eh, em, 0, 0);
+            if (now.getTime() >= endMs) include = false;
+          }
+          if (include && !byDate.has(dateStr)) {
+            const q = queueByKey.get(`${dateStr}|${rule.branchId ?? ""}`);
+            const cap = q?.cap ?? rule.dailyCap;
+            const booked = q?.booked ?? 0;
+            if (cap == null || booked < cap) {
+              byDate.set(dateStr, AvailabilityMode.ORDER_BASED);
+            }
+          }
+        }
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+    }
+  }
+
+  return [...byDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, mode]) => ({ date, mode }));
 }
 
 export async function listDoctors(
@@ -571,6 +714,11 @@ export async function createRule(
     );
     if (validationError) return err(validationError);
 
+    const mode = input.mode ?? AvailabilityMode.SLOT_BASED;
+    const isOrderBased = mode === AvailabilityMode.ORDER_BASED;
+    if (isOrderBased && input.dailyCap != null && input.dailyCap < 1)
+      return err("الحد الأقصى للحجوزات يجب أن يكون 1 على الأقل.");
+
     const rule = await prisma.availabilityRule.create({
       data: {
         doctorId: input.doctorId,
@@ -580,9 +728,15 @@ export async function createRule(
         endTime: input.endTime,
         slotDurationMin: input.slotDurationMin ?? 30,
         clinicId: input.clinicId,
+        mode,
+        estimatedDurationMin: isOrderBased ? (input.estimatedDurationMin ?? null) : null,
+        dailyCap: isOrderBased ? (input.dailyCap ?? null) : null,
+        referralOnly: input.referralOnly ?? false,
+        note: input.note?.trim() || null,
       },
     });
-    await generateSlotsForRule(rule.id, 30);
+    // Order-based rules have no fixed slots — bookings are queued at runtime.
+    if (!isOrderBased) await generateSlotsForRule(rule.id, 30);
     return ok({ id: rule.id });
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل إنشاء قاعدة التوفر");
@@ -638,6 +792,11 @@ export async function generateSlotsForRule(
     });
     if (!rule) return err("القاعدة غير موجودة");
 
+    // Order-based (queue) rules have no fixed slots — the day is implicitly
+    // available and order numbers are handed out lazily on booking. Nothing to
+    // generate; creating Slot rows here would wrongly turn the rule slot-based.
+    if (rule.mode === AvailabilityMode.ORDER_BASED) return ok({ count: 0 });
+
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
@@ -665,6 +824,7 @@ export async function generateSlotsForRule(
       startTime: Date;
       endTime: Date;
       clinicId: string;
+      referralOnly: boolean;
     }[] = [];
 
     const cur = new Date(from);
@@ -684,6 +844,7 @@ export async function generateSlotsForRule(
             startTime: new Date(t),
             endTime: new Date(t + durationMs),
             clinicId: rule.clinicId,
+            referralOnly: rule.referralOnly, // inherit the rule's referral flag
           });
           t += durationMs;
         }
@@ -744,6 +905,73 @@ export async function listDoctorSlots(
   }) as Promise<DoctorSlot[]>;
 }
 
+export interface ScheduleDaySummary {
+  /** YYYY-MM-DD */
+  date: string;
+  mode: AvailabilityMode;
+  /** Slot-based days: per-status slot tallies for the collapsed header. */
+  slotCounts?: { available: number; booked: number; blocked: number };
+  /** Order-based days: bookings so far and the day's cap. */
+  queue?: { booked: number; cap: number | null };
+}
+
+/**
+ * Lightweight day index for the doctor's "available" admin tab, covering the
+ * next 30 days. Slot-based days come from generated Slot rows; order-based days
+ * come from DoctorDayQueue rows (which exist once the day has at least one queue
+ * booking). Only cheap header tallies are computed here — the per-day slot rows
+ * / queue patients are loaded lazily when a day is opened.
+ */
+export async function getDoctorScheduleDays(
+  doctorId: string,
+  daysAhead = 30,
+): Promise<ScheduleDaySummary[]> {
+  const from = new Date();
+  from.setUTCHours(0, 0, 0, 0);
+  const to = new Date(from);
+  to.setUTCDate(to.getUTCDate() + daysAhead);
+
+  const byDate = new Map<string, ScheduleDaySummary>();
+
+  // Slot-based days — one lightweight row per slot (no patient payload).
+  const slots = await prisma.slot.findMany({
+    where: { doctorId, date: { gte: from, lte: to } },
+    select: { date: true, isBlocked: true, appointment: { select: { id: true } } },
+  });
+  for (const s of slots) {
+    const key = s.date.toISOString().split("T")[0];
+    let day = byDate.get(key);
+    if (!day) {
+      day = {
+        date: key,
+        mode: AvailabilityMode.SLOT_BASED,
+        slotCounts: { available: 0, booked: 0, blocked: 0 },
+      };
+      byDate.set(key, day);
+    }
+    if (s.appointment) day.slotCounts!.booked++;
+    else if (s.isBlocked) day.slotCounts!.blocked++;
+    else day.slotCounts!.available++;
+  }
+
+  // Order-based days — days that already have a queue (i.e. at least one booking).
+  const queues = await prisma.doctorDayQueue.findMany({
+    where: { doctorId, date: { gte: from, lte: to } },
+    select: { date: true, nextOrder: true, dailyCap: true },
+  });
+  for (const q of queues) {
+    const key = q.date.toISOString().split("T")[0];
+    if (byDate.has(key)) continue; // a slot day already owns this date (rare overlap)
+    byDate.set(key, {
+      date: key,
+      mode: AvailabilityMode.ORDER_BASED,
+      queue: { booked: q.nextOrder - 1, cap: q.dailyCap },
+    });
+  }
+
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
 // ─── Doctor Dashboard Queries ─────────────────────────────────────────────────
 
 export async function getDoctorStats(doctorId: string) {
@@ -782,7 +1010,7 @@ export type DoctorPatient = {
   patientId: string;
   fullName: string;
   phone: string | null;
-  lastAppointmentDate: Date;
+  lastAppointmentDate: Date | null;
   lastStatus: AppointmentStatus;
   totalAppointments: number;
 };
@@ -796,7 +1024,7 @@ export async function getDoctorPatients(
       patient: { select: { fullName: true, phone: true } },
       slot: { select: { date: true } },
     },
-    orderBy: { slot: { date: "desc" } },
+    orderBy: [{ slot: { date: "desc" } }, { bookingDate: "desc" }],
   });
 
   const patientMap = new Map<string, DoctorPatient>();
@@ -806,7 +1034,8 @@ export async function getDoctorPatients(
         patientId: appt.patientId,
         fullName: appt.patient.fullName,
         phone: appt.patient.phone,
-        lastAppointmentDate: appt.slot.date,
+        // slot-based → slot date; order-based → booking date.
+        lastAppointmentDate: appt.slot?.date ?? appt.bookingDate,
         lastStatus: appt.status,
         totalAppointments: 1,
       });

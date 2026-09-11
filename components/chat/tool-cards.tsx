@@ -103,6 +103,44 @@ function DoctorListCard({ result }: { result: R }) {
 }
 
 function SlotsCard({ result }: { result: R }) {
+  // Order-based (queue) day: show remaining capacity + live position, not slots.
+  if (result.mode === "order") {
+    return (
+      <CardShell
+        icon={<CalendarClock className="w-4 h-4" />}
+        title={`الدور المتاح${result.date ? ` — ${result.date}` : ""}`}
+      >
+        {!!result.doctorName && (
+          <p className="text-[11px] text-muted-foreground">
+            {String(result.doctorName)} — نظام الدور
+          </p>
+        )}
+        {result.available ? (
+          <div className="space-y-0.5 text-xs text-foreground">
+            <p>
+              رقم دورك القادم:{" "}
+              <span className="font-medium">{String(result.nextOrderNumber)}</span>
+            </p>
+            {result.remaining != null && (
+              <p className="text-[11px] text-muted-foreground">
+                الأماكن المتبقية اليوم: {String(result.remaining)}
+              </p>
+            )}
+            {result.currentOrder != null && (
+              <p className="text-[11px] text-muted-foreground">
+                يُخدم الآن الدور رقم: {String(result.currentOrder)}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            اكتمل عدد الحجوزات لهذا اليوم.
+          </p>
+        )}
+      </CardShell>
+    );
+  }
+
   const slots = (result.slots as R[]) ?? [];
   const branches = [
     ...new Set(slots.map((s) => s.branch).filter(Boolean).map(String)),
@@ -177,6 +215,21 @@ function AppointmentCard({ result }: { result: R }) {
             {timeText ? ` — ${timeText}` : ""}
           </p>
         )}
+        {result.bookingType === "order" && result.orderNumber != null && (
+          <p>
+            رقم الدور:{" "}
+            <span className="font-medium">{String(result.orderNumber)}</span>
+            {result.currentOrder != null && (
+              <span className="text-muted-foreground">
+                {" "}
+                (يُخدم الآن: {String(result.currentOrder)}
+                {result.estimatedWaitMin != null &&
+                  ` · انتظار ~${String(result.estimatedWaitMin)} د`}
+                )
+              </span>
+            )}
+          </p>
+        )}
         {result.examinationFee != null && (
           <p>
             سعر الكشف:{" "}
@@ -213,7 +266,12 @@ function AppointmentListCard({ result }: { result: R }) {
               {String(a.doctorName ?? a.patientName ?? "")}
             </p>
             <p className="text-[11px] text-muted-foreground" dir="ltr">
-              {String(a.date)} — {String(a.time)}
+              {String(a.date ?? "")}
+              {a.time
+                ? ` — ${String(a.time)}`
+                : a.orderNumber != null
+                  ? ` — دور رقم ${String(a.orderNumber)}`
+                  : ""}
               {a.branch ? ` · ${String(a.branch)}` : ""}
             </p>
           </div>
@@ -287,6 +345,11 @@ const TOOL_LABELS: Record<string, string> = {
   toggle_rule_active: "تفعيل/تعطيل قاعدة التوفر",
   list_doctor_slots: "عرض مواعيد الطبيب",
   toggle_slot_blocked: "تفعيل/تعطيل حجب الموعد",
+  get_day_queue: "عرض طابور الدور",
+  advance_queue: "تقديم الدور الحالي",
+  set_queue_tracking: "تفعيل/إيقاف تتبّع الدور",
+  list_referral_slots: "عرض فترات التحويل",
+  refer_patient: "تحويل المريض لطبيب آخر",
   send_message_to_conversation: "إرسال رسالة للمحادثة",
   cancel_appointment: "إلغاء الموعد",
   update_my_profile: "تحديث الملف الشخصي",
@@ -321,6 +384,7 @@ const REGISTRY: Record<string, (r: R) => React.ReactNode> = {
   list_all_doctors: (r) => <DoctorListCard result={r} />,
   get_doctor_availability: (r) => <SlotsCard result={r} />,
   book_appointment: (r) => <AppointmentCard result={r} />,
+  book_order_appointment: (r) => <AppointmentCard result={r} />,
   reschedule_appointment: (r) => <AppointmentCard result={r} />,
   list_my_appointments: (r) => <AppointmentListCard result={r} />,
   list_all_appointments: (r) => <AppointmentListCard result={r} />,

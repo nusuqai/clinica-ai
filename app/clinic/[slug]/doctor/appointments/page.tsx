@@ -145,12 +145,24 @@ export default async function DoctorAppointmentsPage({
                       </div>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {formatSlotDate(appt.slot.date)}
+                      {appt.slot
+                        ? formatSlotDate(appt.slot.date)
+                        : appt.bookingDate
+                          ? formatSlotDate(appt.bookingDate)
+                          : "—"}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground" dir="ltr">
-                      {formatSlotTime(appt.slot.startTime)}
-                      {" – "}
-                      {formatSlotTime(appt.slot.endTime)}
+                      {appt.slot ? (
+                        <>
+                          {formatSlotTime(appt.slot.startTime)}
+                          {" – "}
+                          {formatSlotTime(appt.slot.endTime)}
+                        </>
+                      ) : appt.orderNumber != null ? (
+                        <span dir="rtl">دور رقم {appt.orderNumber}</span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <AppointmentStatusBadge status={appt.status} />

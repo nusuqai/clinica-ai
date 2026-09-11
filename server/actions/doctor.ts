@@ -2,7 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { Role, type AppointmentStatus, type DayOfWeek } from "@prisma/client";
+import {
+  AvailabilityMode,
+  Role,
+  type AppointmentStatus,
+  type DayOfWeek,
+} from "@prisma/client";
+import * as QueueService from "@/server/services/queue";
 
 import { getActiveClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
@@ -127,6 +133,16 @@ export async function createMyRuleAction(formData: FormData) {
       ? Number(formData.get("slotDurationMin"))
       : 30,
       clinicId,
+    mode:
+      formData.get("mode") === "ORDER_BASED"
+        ? AvailabilityMode.ORDER_BASED
+        : AvailabilityMode.SLOT_BASED,
+    estimatedDurationMin: formData.get("estimatedDurationMin")
+      ? Number(formData.get("estimatedDurationMin"))
+      : null,
+    dailyCap: formData.get("dailyCap") ? Number(formData.get("dailyCap")) : null,
+    referralOnly: formData.get("referralOnly") === "on",
+    note: (formData.get("note") as string) || null,
   });
   if (!result.ok) return { error: result.error };
   revalidatePath("/clinic/[slug]/doctor/schedule", "page");
@@ -185,6 +201,47 @@ export async function toggleMySlotBlockedAction(slotId: string) {
 
   const result = await DoctorService.toggleSlotBlocked(slotId);
   if (!result.ok) return { error: result.error };
+  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
+  return { success: true };
+}
+
+// ─── Order-based queue (doctor's own) ─────────────────────────────────────────
+
+export async function getMyDayQueueAction(date: string) {
+  const { doctorId } = await requireDoctor();
+  const queue = await QueueService.getDayQueue(doctorId, new Date(date));
+  if (!queue) return { queue: null };
+  return {
+    queue: {
+      id: queue.id,
+      date,
+      branchName: queue.branch?.name ?? null,
+      currentOrder: queue.currentOrder,
+      nextOrder: queue.nextOrder,
+      dailyCap: queue.dailyCap,
+      trackCurrentOrder: queue.trackCurrentOrder,
+      patients: queue.appointments.map((a) => ({
+        id: a.id,
+        orderNumber: a.orderNumber,
+        patientName: a.patient.fullName,
+        status: a.status,
+      })),
+    },
+  };
+}
+
+export async function advanceMyQueueAction(queueId: string, to: number | null) {
+  const { doctorId } = await requireDoctor();
+  const res = await QueueService.setCurrentOrder(queueId, to, doctorId);
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
+  return { success: true, currentOrder: res.data.currentOrder };
+}
+
+export async function toggleMyQueueTrackingAction(queueId: string, track: boolean) {
+  const { doctorId } = await requireDoctor();
+  const res = await QueueService.toggleQueueTracking(queueId, track, doctorId);
+  if (!res.ok) return { error: res.error };
   revalidatePath("/clinic/[slug]/doctor/schedule", "page");
   return { success: true };
 }

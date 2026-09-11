@@ -116,12 +116,41 @@ export default async function PatientAppointmentsPage({
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{appt.doctor.specialty}</td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {formatSlotDate(appt.slot.date)}
+                        {appt.slot
+                          ? formatSlotDate(appt.slot.date)
+                          : appt.bookingDate
+                            ? formatSlotDate(appt.bookingDate)
+                            : "—"}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground" dir="ltr">
-                        {formatSlotTime(appt.slot.startTime)}
-                        {" – "}
-                        {formatSlotTime(appt.slot.endTime)}
+                        {appt.slot ? (
+                          <>
+                            {formatSlotTime(appt.slot.startTime)}
+                            {" – "}
+                            {formatSlotTime(appt.slot.endTime)}
+                          </>
+                        ) : appt.orderNumber != null ? (
+                          <span dir="rtl" className="text-foreground">
+                            دورك رقم {appt.orderNumber}
+                            {appt.expectedTime && (
+                              <span className="text-muted-foreground">
+                                {" "}
+                                · متوقع ~{appt.expectedTime}
+                              </span>
+                            )}
+                            {appt.currentOrder != null && (
+                              <span className="text-muted-foreground">
+                                {" "}
+                                (الآن: {appt.currentOrder}
+                                {appt.estimatedWaitMin != null &&
+                                  ` · ~${appt.estimatedWaitMin} د`}
+                                )
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <AppointmentStatusBadge status={appt.status} />

@@ -4,6 +4,7 @@ import { AppointmentStatus } from "@prisma/client";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as AppointmentService from "@/server/services/appointments";
+import * as QueueService from "@/server/services/queue";
 import type { AgentContext } from "@/agent/types";
 import { jsonTool, dateStr, timeStr, money } from "./shared";
 
@@ -23,9 +24,15 @@ async function appointmentCard(appointmentId: string) {
     specialty: a.doctor.specialty?.name ?? null,
     branch: a.branch?.name ?? null,
     branchAddress: a.branch?.address ?? null,
-    date: dateStr(a.slot.date),
-    startTime: timeStr(a.slot.startTime),
-    endTime: timeStr(a.slot.endTime),
+    // Slot-based bookings carry a fixed time; order-based carry a queue number.
+    bookingType: a.isOrderBased ? "order" : "slot",
+    date: a.slot ? dateStr(a.slot.date) : a.bookingDate ? dateStr(a.bookingDate) : null,
+    startTime: a.slot ? timeStr(a.slot.startTime) : null,
+    endTime: a.slot ? timeStr(a.slot.endTime) : null,
+    orderNumber: a.orderNumber,
+    currentOrder: a.currentOrder,
+    estimatedWaitMin: a.estimatedWaitMin,
+    expectedTime: a.expectedTime, // order-based: expected examination time "HH:MM"
     examinationFee: money(a.doctor.examinationFee),
     notes: a.patientNotes ?? null,
   };
@@ -53,6 +60,30 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         );
         if (!res.ok) return { error: res.error };
         // Echo the saved appointment in full so the user can verify every detail.
+        return await appointmentCard(res.data.id);
+      },
+    ),
+    jsonTool(
+      {
+        name: "book_order_appointment",
+        description:
+          "احجز دوراً (نظام الطابور) للمريض الحالي لدى طبيب يعمل بنظام الدور في تاريخ محدّد (YYYY-MM-DD). لا يوجد وقت ثابت؛ يحصل المريض على رقم دور. استخدم get_doctor_availability أولاً للتأكد أن اليوم بنظام الدور (mode=order) وأن هناك أماكن متاحة.",
+        schema: z.object({
+          doctorId: z.string(),
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+          notes: z.string().nullable().describe("ملاحظات المريض (اختياري)"),
+        }),
+      },
+      async ({ doctorId, date, notes }) => {
+        const res = await QueueService.bookOrderAppointment(
+          patientId,
+          doctorId,
+          new Date(date),
+          { notes: notes ?? undefined },
+        );
+        if (!res.ok) return { error: res.error };
         return await appointmentCard(res.data.id);
       },
     ),
@@ -102,9 +133,14 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         });
         if (!appt || appt.patientId !== patientId)
           return { error: "الموعد غير موجود أو لا يخصك" };
+        // Book the new slot first (so a failure leaves the old one intact),
+        // excluding the appointment being rescheduled from the one-active-booking
+        // guard, then cancel the old one.
         const created = await AppointmentService.createAppointment(
           patientId,
           newSlotId,
+          undefined,
+          { excludeAppointmentId: appointmentId },
         );
         if (!created.ok) return { error: created.error };
         await AppointmentService.updateAppointmentStatus(
@@ -141,8 +177,17 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
             doctorName: a.doctor.profile.fullName,
             specialty: a.doctor.specialty,
             branch: a.branch?.name ?? null,
-            date: dateStr(a.slot.date),
-            time: timeStr(a.slot.startTime),
+            bookingType: a.isOrderBased ? "order" : "slot",
+            date: a.slot
+              ? dateStr(a.slot.date)
+              : a.bookingDate
+                ? dateStr(a.bookingDate)
+                : null,
+            time: a.slot ? timeStr(a.slot.startTime) : null,
+            orderNumber: a.orderNumber,
+            currentOrder: a.currentOrder,
+            estimatedWaitMin: a.estimatedWaitMin,
+            expectedTime: a.expectedTime,
           })),
         };
       },

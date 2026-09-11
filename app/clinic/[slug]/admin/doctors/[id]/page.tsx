@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Phone, Mail, Calendar, Activity, Stethoscope } from "lucide-react";
+import { ArrowRight, Phone, Mail, Calendar, Activity, Stethoscope, ListOrdered } from "lucide-react";
 import { requireActiveMember } from "@/lib/auth";
-import { getDoctor, listDoctorRules, listDoctorSlots } from "@/server/services/doctors";
+import { getDoctor, listDoctorRules, getDoctorScheduleDays } from "@/server/services/doctors";
 import { listBranches } from "@/server/services/branches";
 import { listSpecialtyOptions } from "@/server/services/specialties";
 import { listAppointments } from "@/server/services/appointments";
@@ -10,6 +10,7 @@ import type { DoctorBranchOption } from "./_components/rules-tab";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import RulesTab from "./_components/rules-tab";
 import SlotsTab from "./_components/slots-tab";
+import QueuePanel from "./_components/queue-panel";
 import EditDoctorModal from "../_components/edit-doctor-modal";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
@@ -17,6 +18,7 @@ const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
   { key: "rules", label: "قواعد التوفر", icon: Activity },
   { key: "slots", label: "المواعيد المتاحة", icon: Stethoscope },
+  { key: "queue", label: "الدور", icon: ListOrdered },
 ] as const;
 
 type Tab = (typeof TABS)[number]["key"];
@@ -205,6 +207,7 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
         <RulesContent doctorId={id} branches={doctorBranches} clinicId={clinic.id} />
       )}
       {activeTab === "slots" && <SlotsContent doctorId={id} />}
+      {activeTab === "queue" && <QueuePanel doctorId={id} />}
     </div>
   );
 }
@@ -244,12 +247,24 @@ async function AppointmentsContent({ doctorId }: { doctorId: string }) {
                 <tr key={appt.id} className="hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3 font-medium text-foreground">{appt.patient.fullName}</td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {formatSlotDate(appt.slot.date)}
+                    {appt.slot
+                      ? formatSlotDate(appt.slot.date)
+                      : appt.bookingDate
+                        ? formatSlotDate(appt.bookingDate)
+                        : "—"}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground" dir="ltr">
-                    {formatSlotTime(appt.slot.startTime)}
-                    {" – "}
-                    {formatSlotTime(appt.slot.endTime)}
+                    {appt.slot ? (
+                      <>
+                        {formatSlotTime(appt.slot.startTime)}
+                        {" – "}
+                        {formatSlotTime(appt.slot.endTime)}
+                      </>
+                    ) : appt.orderNumber != null ? (
+                      <span dir="rtl">دور رقم {appt.orderNumber}</span>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <AppointmentStatusBadge status={appt.status} />
@@ -281,6 +296,6 @@ async function RulesContent({
 }
 
 async function SlotsContent({ doctorId }: { doctorId: string }) {
-  const slots = await listDoctorSlots(doctorId);
-  return <SlotsTab doctorId={doctorId} slots={slots} />;
+  const days = await getDoctorScheduleDays(doctorId);
+  return <SlotsTab doctorId={doctorId} days={days} />;
 }
