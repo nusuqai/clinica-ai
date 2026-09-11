@@ -18,11 +18,7 @@ import { FooterSection } from "@/components/landing/footer-section";
 
 // Public per-clinic landing page. Every active clinic gets one at
 // /clinic/{slug}; visitors book here and sign up scoped to this clinic.
-export default async function ClinicLandingPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+export default async function ClinicLandingPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
 
   const clinic = await prisma.clinic.findFirst({
@@ -132,9 +128,7 @@ export default async function ClinicLandingPage({
               doctors={serialisedDoctors}
               isAuthenticated={isAuthenticated}
               isPatient={isPatient}
-              appointmentsHref={
-                isPatient ? `${dashboardHref}/appointments` : undefined
-              }
+              appointmentsHref={isPatient ? `${dashboardHref}/appointments` : undefined}
               loginHref={loginHref}
               registerHref={registerHref}
             />
@@ -143,10 +137,7 @@ export default async function ClinicLandingPage({
 
         <FeaturesSection />
         <SpecialtiesSection specialties={specialties} />
-        <StatsSection
-          doctorCount={doctorCount}
-          appointmentCount={appointmentCount}
-        />
+        <StatsSection doctorCount={doctorCount} appointmentCount={appointmentCount} />
         <FAQSection />
       </main>
 

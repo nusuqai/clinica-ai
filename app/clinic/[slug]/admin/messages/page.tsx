@@ -9,8 +9,7 @@ import {
   markConversationRead,
 } from "@/server/services/messages";
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface PageProps {
   searchParams: Promise<{ id?: string }>;
@@ -35,7 +34,7 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex h-full flex-col">
       <PageHeader title="الرسائل" subtitle="إدارة محادثات المرضى عبر واتساب والويب" />
       <Suspense>
         <ChatInbox
@@ -43,6 +42,7 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
           selectedConversation={selectedConversation}
           messages={messages}
           basePath={`/clinic/${clinic.slug}`}
+          clinicId={clinic.id}
         />
       </Suspense>
     </div>

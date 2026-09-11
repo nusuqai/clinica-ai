@@ -2,12 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import {
-  AvailabilityMode,
-  Role,
-  type AppointmentStatus,
-  type DayOfWeek,
-} from "@prisma/client";
+import { AvailabilityMode, Role, type AppointmentStatus, type DayOfWeek } from "@prisma/client";
 import * as QueueService from "@/server/services/queue";
 
 import { getActiveClinicContext } from "@/lib/auth";
@@ -40,7 +35,7 @@ async function requireDoctor(): Promise<{
 export async function updateAppointmentStatusAsDoctorAction(
   appointmentId: string,
   status: AppointmentStatus,
-  cancellationReason?: string,
+  cancellationReason?: string
 ) {
   const { doctorId } = await requireDoctor();
 
@@ -52,7 +47,7 @@ export async function updateAppointmentStatusAsDoctorAction(
   const result = await AppointmentService.updateAppointmentStatus(
     appointmentId,
     status,
-    cancellationReason,
+    cancellationReason
   );
   if (!result.ok) return { error: result.error };
   revalidatePath("/clinic/[slug]/doctor/appointments", "page");
@@ -60,10 +55,7 @@ export async function updateAppointmentStatusAsDoctorAction(
   return { success: true };
 }
 
-export async function updateDoctorNotesAction(
-  appointmentId: string,
-  doctorNotes: string,
-) {
+export async function updateDoctorNotesAction(appointmentId: string, doctorNotes: string) {
   const { doctorId } = await requireDoctor();
 
   const appt = await prisma.appointment.findFirst({
@@ -100,6 +92,7 @@ export async function updateMyProfileAction(formData: FormData) {
     consultationFee: formData.get("consultationFee")
       ? Number(formData.get("consultationFee"))
       : undefined,
+    clinicId,
   });
 
   if (!result.ok) return { error: result.error };
@@ -111,7 +104,7 @@ export async function updateMyProfileAction(formData: FormData) {
 // ─── Availability Rule actions ────────────────────────────────────────────────
 
 export async function createMyRuleAction(formData: FormData) {
-  const { doctorId } = await requireDoctor();
+  const { doctorId, clinicId } = await requireDoctor();
 
   // Branch is required; if the form omits it, fall back to the doctor's single
   // branch when there's exactly one.
@@ -128,9 +121,8 @@ export async function createMyRuleAction(formData: FormData) {
     dayOfWeek: formData.get("dayOfWeek") as DayOfWeek,
     startTime: formData.get("startTime") as string,
     endTime: formData.get("endTime") as string,
-    slotDurationMin: formData.get("slotDurationMin")
-      ? Number(formData.get("slotDurationMin"))
-      : 30,
+    slotDurationMin: formData.get("slotDurationMin") ? Number(formData.get("slotDurationMin")) : 30,
+    clinicId,
     mode:
       formData.get("mode") === "ORDER_BASED"
         ? AvailabilityMode.ORDER_BASED

@@ -44,19 +44,15 @@ const SILENT_TYPES = new Set([
  * signature verification, to look up which clinic's app secret to verify with.
  * Present on message payloads and status receipts alike.
  */
-export function extractPhoneNumberId(
-  payload: Record<string, unknown>,
-): string | undefined {
+export function extractPhoneNumberId(payload: Record<string, unknown>): string | undefined {
   const entries = Array.isArray(payload.entry) ? payload.entry : [];
   for (const entry of entries) {
     const changes = (entry as Record<string, unknown>)?.changes;
     if (!Array.isArray(changes)) continue;
     for (const change of changes) {
       const value = (change as Record<string, unknown>)?.value as
-        | Record<string, unknown>
-        | undefined;
-      const id = (value?.metadata as { phone_number_id?: string } | undefined)
-        ?.phone_number_id;
+        Record<string, unknown> | undefined;
+      const id = (value?.metadata as { phone_number_id?: string } | undefined)?.phone_number_id;
       if (id) return id;
     }
   }
@@ -100,11 +96,8 @@ function classify(msg: Record<string, unknown>): InboundWhatsAppMessage {
   if (type === "interactive") {
     const interactive = msg.interactive as Record<string, unknown> | undefined;
     const reply = (interactive?.button_reply ?? interactive?.list_reply) as
-      | { title?: string }
-      | undefined;
-    return reply?.title?.trim()
-      ? { kind: "text", text: reply.title.trim() }
-      : { kind: "ignore" };
+      { title?: string } | undefined;
+    return reply?.title?.trim() ? { kind: "text", text: reply.title.trim() } : { kind: "ignore" };
   }
 
   // Quick-reply button on a template we sent.
@@ -126,9 +119,7 @@ function classify(msg: Record<string, unknown>): InboundWhatsAppMessage {
  * `statuses` rather than `messages`, and are skipped — there is no `messages`
  * array to iterate on those payloads.
  */
-export function parseWebhookPayload(
-  payload: Record<string, unknown>,
-): InboundEnvelope[] {
+export function parseWebhookPayload(payload: Record<string, unknown>): InboundEnvelope[] {
   const envelopes: InboundEnvelope[] = [];
   const entries = Array.isArray(payload.entry) ? payload.entry : [];
 
@@ -138,14 +129,13 @@ export function parseWebhookPayload(
 
     for (const change of changes) {
       const value = (change as Record<string, unknown>)?.value as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       const messages = value?.messages;
       if (!Array.isArray(messages)) {
         // Status/read receipts land here (they carry `statuses`, not `messages`).
         const keys = value ? Object.keys(value) : [];
         console.log(
-          `[wa-debug] parse: change has no messages[] (keys=${keys.join(",")}) — skipped`,
+          `[wa-debug] parse: change has no messages[] (keys=${keys.join(",")}) — skipped`
         );
         continue;
       }
@@ -155,7 +145,7 @@ export function parseWebhookPayload(
         ?.phone_number_id;
       if (!phoneNumberId) {
         console.warn(
-          "[wa-debug] parse: change value missing metadata.phone_number_id — whole change skipped",
+          "[wa-debug] parse: change value missing metadata.phone_number_id — whole change skipped"
         );
         continue;
       }
@@ -184,14 +174,14 @@ export function parseWebhookPayload(
         // Need the message id plus at least one way to identify/reply to the sender.
         if (!messageId || (!phone && !userId)) {
           console.warn(
-            `[wa-debug] parse: message missing id and/or sender identity (type=${msg.type}) — skipped, not stored`,
+            `[wa-debug] parse: message missing id and/or sender identity (type=${msg.type}) — skipped, not stored`
           );
           continue;
         }
 
         const message = classify(msg);
         console.log(
-          `[wa-debug] parse: message phone=${phone ?? "(hidden)"} userId=${userId ?? "(none)"} id=${messageId} type=${msg.type} → kind=${message.kind}`,
+          `[wa-debug] parse: message phone=${phone ?? "(hidden)"} userId=${userId ?? "(none)"} id=${messageId} type=${msg.type} → kind=${message.kind}`
         );
         envelopes.push({
           phone,

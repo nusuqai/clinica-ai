@@ -27,7 +27,10 @@ export default function UserRowActions({ userId, currentRole, isSelf }: UserRowA
     setError(null);
     startTransition(async () => {
       const res = await updateUserRoleAction(userId, newRole);
-      if (res?.error) { setError(res.error); setRole(currentRole); }
+      if (res?.error) {
+        setError(res.error);
+        setRole(currentRole);
+      }
     });
   }
 
@@ -45,21 +48,23 @@ export default function UserRowActions({ userId, currentRole, isSelf }: UserRowA
         value={role}
         disabled={isSelf || isPending}
         onChange={(e) => handleRoleChange(e.target.value as Role)}
-        className="text-sm border border-border rounded-lg px-2 py-1 bg-background text-foreground font-sans disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        className="rounded-lg border border-border bg-background px-2 py-1 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
       >
         {roles.map((r) => (
-          <option key={r.value} value={r.value}>{r.label}</option>
+          <option key={r.value} value={r.value}>
+            {r.label}
+          </option>
         ))}
       </select>
       <button
         onClick={handleDelete}
         disabled={isSelf || isPending}
         title="حذف المستخدم"
-        className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
       >
-        <Trash2 className="w-4 h-4" />
+        <Trash2 className="h-4 w-4" />
       </button>
-      {error && <p className="text-xs text-red-500 font-sans">{error}</p>}
+      {error && <p className="font-sans text-xs text-red-500">{error}</p>}
     </div>
   );
 }

@@ -1,12 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import {
-  CalendarDays,
-  Clock,
-  CheckCircle,
-  Users,
-  ChevronLeft,
-} from "lucide-react";
+import { CalendarDays, Clock, CheckCircle, Users, ChevronLeft } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { getDoctorStats, getDoctorByProfileId } from "@/server/services/doctors";
 import { getDoctorAppointments } from "@/server/services/appointments";
@@ -29,17 +23,14 @@ export default async function DoctorDashboardPage({
     getDoctorAppointments(doctor.id, { upcoming: true, limit: 5 }),
   ]);
 
-  const firstName =
-    (ctx.user.profile.fullName || doctor.fullName)?.split(" ")[0] ?? "دكتور";
+  const firstName = (ctx.user.profile.fullName || doctor.fullName)?.split(" ")[0] ?? "دكتور";
 
   return (
     <div>
       {/* Welcome header */}
       <div className="mb-8">
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          أهلاً، {firstName} 👋
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1 font-sans">
+        <h1 className="font-heading text-2xl font-bold text-foreground">أهلاً، {firstName} 👋</h1>
+        <p className="mt-1 font-sans text-sm text-muted-foreground">
           {new Date().toLocaleDateString("ar-EG", {
             weekday: "long",
             day: "numeric",
@@ -50,25 +41,15 @@ export default async function DoctorDashboardPage({
       </div>
 
       {/* KPI grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
           label="مواعيد اليوم"
           value={stats.todayCount}
           icon={CalendarDays}
           color="primary"
         />
-        <StatCard
-          label="قيد الانتظار"
-          value={stats.pendingCount}
-          icon={Clock}
-          color="amber"
-        />
-        <StatCard
-          label="مكتملة"
-          value={stats.completedCount}
-          icon={CheckCircle}
-          color="green"
-        />
+        <StatCard label="قيد الانتظار" value={stats.pendingCount} icon={Clock} color="amber" />
+        <StatCard label="مكتملة" value={stats.completedCount} icon={CheckCircle} color="green" />
         <StatCard
           label="إجمالي المرضى"
           value={stats.uniquePatientsCount}
@@ -78,31 +59,27 @@ export default async function DoctorDashboardPage({
       </div>
 
       {/* Upcoming appointments */}
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
-            <h2 className="font-heading font-semibold text-foreground">
-              المواعيد القادمة
-            </h2>
-            <p className="text-xs text-muted-foreground font-sans mt-0.5">
+            <h2 className="font-heading font-semibold text-foreground">المواعيد القادمة</h2>
+            <p className="mt-0.5 font-sans text-xs text-muted-foreground">
               {upcoming.length === 0 ? "لا توجد مواعيد قادمة" : `${upcoming.length} موعد`}
             </p>
           </div>
           <Link
             href={`${base}/doctor/appointments`}
-            className="inline-flex items-center gap-1 text-sm text-primary font-sans font-medium hover:underline"
+            className="inline-flex items-center gap-1 font-sans text-sm font-medium text-primary hover:underline"
           >
             عرض الكل
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="h-4 w-4" />
           </Link>
         </div>
 
         {upcoming.length === 0 ? (
           <div className="py-16 text-center">
-            <CalendarDays className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
-            <p className="text-muted-foreground font-sans text-sm">
-              لا توجد مواعيد قادمة
-            </p>
+            <CalendarDays className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
+            <p className="font-sans text-sm text-muted-foreground">لا توجد مواعيد قادمة</p>
           </div>
         ) : (
           <ul className="divide-y divide-border">
@@ -110,19 +87,19 @@ export default async function DoctorDashboardPage({
               return (
                 <li
                   key={appt.id}
-                  className="flex items-center justify-between px-6 py-4 hover:bg-muted/30 transition-colors"
+                  className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-muted/30"
                 >
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-bold text-primary font-sans">
+                  <div className="flex min-w-0 items-center gap-4">
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                      <span className="font-sans text-sm font-bold text-primary">
                         {appt.patient.fullName.charAt(0)}
                       </span>
                     </div>
                     <div className="min-w-0">
-                      <p className="font-medium text-foreground font-sans truncate">
+                      <p className="truncate font-sans font-medium text-foreground">
                         {appt.patient.fullName}
                       </p>
-                      <p className="text-xs text-muted-foreground font-sans">
+                      <p className="font-sans text-xs text-muted-foreground">
                         {appt.slot ? (
                           <>
                             {formatSlotDate(appt.slot.date, { day: "numeric", month: "short" })}
@@ -152,8 +129,12 @@ export default async function DoctorDashboardPage({
       </div>
 
       {/* Quick links */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-6">
-        <QuickLink href={`${base}/doctor/appointments`} label="إدارة المواعيد" icon={CalendarDays} />
+      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <QuickLink
+          href={`${base}/doctor/appointments`}
+          label="إدارة المواعيد"
+          icon={CalendarDays}
+        />
         <QuickLink href={`${base}/doctor/schedule`} label="جدول العمل" icon={Clock} />
         <QuickLink href={`${base}/doctor/patients`} label="قائمة المرضى" icon={Users} />
       </div>
@@ -183,15 +164,15 @@ function StatCard({
   };
 
   return (
-    <div className="bg-card border border-border rounded-2xl p-5 flex items-center gap-4">
+    <div className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5">
       <div
-        className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${colorMap[color]}`}
+        className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl ${colorMap[color]}`}
       >
-        <Icon className="w-6 h-6" />
+        <Icon className="h-6 w-6" />
       </div>
       <div>
-        <p className="text-2xl font-bold font-heading text-foreground">{value}</p>
-        <p className="text-sm text-muted-foreground font-sans">{label}</p>
+        <p className="font-heading text-2xl font-bold text-foreground">{value}</p>
+        <p className="font-sans text-sm text-muted-foreground">{label}</p>
       </div>
     </div>
   );
@@ -209,13 +190,13 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3 hover:border-primary/50 hover:bg-primary/5 transition-all group"
+      className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:bg-primary/5"
     >
-      <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 group-hover:bg-primary/10 transition-colors">
-        <Icon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-muted transition-colors group-hover:bg-primary/10">
+        <Icon className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
       </div>
-      <span className="text-sm font-medium text-foreground font-sans">{label}</span>
-      <ChevronLeft className="w-4 h-4 text-muted-foreground mr-auto group-hover:text-primary transition-colors" />
+      <span className="font-sans text-sm font-medium text-foreground">{label}</span>
+      <ChevronLeft className="mr-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
     </Link>
   );
 }

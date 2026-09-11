@@ -14,9 +14,7 @@ export function Field({
 }) {
   return (
     <div>
-      <label className="block text-xs text-muted-foreground mb-1 font-sans">
-        {label}
-      </label>
+      <label className="mb-1 block font-sans text-xs text-muted-foreground">{label}</label>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}

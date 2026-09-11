@@ -26,7 +26,7 @@ export default async function WhatsAppConfigurationPage({
           href={`/clinic/${slug}/admin/whatsapp/guide`}
           className="inline-flex items-center gap-2 text-sm text-accent hover:underline"
         >
-          <BookOpen className="w-4 h-4" />
+          <BookOpen className="h-4 w-4" />
           لا تعرف من أين تحصل على هذه القيم؟ اطّلع على دليل الإعداد
         </Link>
         <ConnectionConfig initialConfig={config} appUrl={appUrl} />

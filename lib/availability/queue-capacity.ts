@@ -41,7 +41,7 @@ export function queueCapacityHint(
   startTime: string,
   endTime: string,
   estDur: number,
-  cap: number,
+  cap: number
 ): QueueCapacityHint | null {
   const start = toMinutes(startTime);
   const end = toMinutes(endTime);

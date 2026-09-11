@@ -18,15 +18,11 @@ interface Props {
  * Token the clinic pastes back into Meta.
  */
 export default function ConnectionConfig({ initialConfig, appUrl }: Props) {
-  const [phoneNumberId, setPhoneNumberId] = useState(
-    initialConfig?.phoneNumberId ?? "",
-  );
+  const [phoneNumberId, setPhoneNumberId] = useState(initialConfig?.phoneNumberId ?? "");
   const [wabaId, setWabaId] = useState(initialConfig?.wabaId ?? "");
   const [accessToken, setAccessToken] = useState("");
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
-    null,
-  );
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   // The webhook + verify tokens the clinic must paste into Meta. Known once the
   // config exists (either loaded, or returned by the first save).
   const [tokens, setTokens] = useState<{
@@ -38,7 +34,7 @@ export default function ConnectionConfig({ initialConfig, appUrl }: Props) {
           webhookToken: initialConfig.webhookToken,
           verifyToken: initialConfig.verifyToken,
         }
-      : null,
+      : null
   );
 
   const handleSave = async () => {
@@ -62,17 +58,15 @@ export default function ConnectionConfig({ initialConfig, appUrl }: Props) {
     }
   };
 
-  const webhookUrl = tokens
-    ? `${appUrl}/api/meta/whatsapp/webhook/${tokens.webhookToken}`
-    : "";
+  const webhookUrl = tokens ? `${appUrl}/api/meta/whatsapp/webhook/${tokens.webhookToken}` : "";
 
   return (
     <div>
-      <h2 className="text-sm font-semibold text-foreground font-sans mb-3 flex items-center gap-2">
-        <KeyRound className="w-4 h-4 text-accent" />
+      <h2 className="mb-3 flex items-center gap-2 font-sans text-sm font-semibold text-foreground">
+        <KeyRound className="h-4 w-4 text-accent" />
         بيانات الاتصال (Meta Cloud API)
       </h2>
-      <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
         <Field
           label="Phone Number ID"
           value={phoneNumberId}
@@ -86,7 +80,7 @@ export default function ConnectionConfig({ initialConfig, appUrl }: Props) {
           placeholder="مثال: 2292332154910536"
         />
         <div>
-          <label className="block text-xs text-muted-foreground mb-1 font-sans">
+          <label className="mb-1 block font-sans text-xs text-muted-foreground">
             Access Token (System User)
             {initialConfig?.hasToken && (
               <span className="text-green-600"> — تم حفظ رمز، اتركه فارغًا للإبقاء عليه</span>
@@ -103,9 +97,7 @@ export default function ConnectionConfig({ initialConfig, appUrl }: Props) {
         </div>
 
         {message && (
-          <p
-            className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}
-          >
+          <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
             {message.text}
           </p>
         )}
@@ -113,22 +105,17 @@ export default function ConnectionConfig({ initialConfig, appUrl }: Props) {
         <button
           onClick={handleSave}
           disabled={saving || !phoneNumberId.trim() || !wabaId.trim()}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40"
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
         >
-          {saving ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4" />
-          )}
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           حفظ
         </button>
 
         {tokens && (
           <div className="mt-2 space-y-3 border-t border-border pt-4">
-            <p className="text-xs text-muted-foreground font-sans">
-              انسخ هذين القيمتين والصقهما في إعداد الويبهوك داخل تطبيق ميتا الخاص
-              بالعيادة (اشترك في حقل <span dir="ltr">messages</span>). حافظ على
-              سرية رابط الويبهوك.
+            <p className="font-sans text-xs text-muted-foreground">
+              انسخ هذين القيمتين والصقهما في إعداد الويبهوك داخل تطبيق ميتا الخاص بالعيادة (اشترك في
+              حقل <span dir="ltr">messages</span>). حافظ على سرية رابط الويبهوك.
             </p>
             <CopyRow label="Callback URL" value={webhookUrl} />
             <CopyRow label="Verify Token" value={tokens.verifyToken} />
@@ -152,9 +139,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   };
   return (
     <div>
-      <label className="block text-xs text-muted-foreground mb-1 font-sans">
-        {label}
-      </label>
+      <label className="mb-1 block font-sans text-xs text-muted-foreground">{label}</label>
       <div className="flex items-stretch gap-2">
         <input
           readOnly
@@ -165,9 +150,13 @@ function CopyRow({ label, value }: { label: string; value: string }) {
         />
         <button
           onClick={copy}
-          className="flex-shrink-0 inline-flex items-center gap-1 rounded-lg border border-border px-2.5 text-xs text-muted-foreground hover:bg-muted"
+          className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 text-xs text-muted-foreground hover:bg-muted"
         >
-          {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? (
+            <Check className="h-3.5 w-3.5 text-green-600" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
           {copied ? "تم" : "نسخ"}
         </button>
       </div>

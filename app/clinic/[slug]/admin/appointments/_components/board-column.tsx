@@ -29,12 +29,12 @@ export default function BoardColumn({
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
   return (
-    <div className="flex flex-col w-72 flex-shrink-0">
+    <div className="flex w-72 flex-shrink-0 flex-col">
       <div
-        className={`flex items-center justify-between px-3 py-2 border-t-4 bg-muted/40 rounded-t-xl ${COLUMN_ACCENTS[status]}`}
+        className={`flex items-center justify-between rounded-t-xl border-t-4 bg-muted/40 px-3 py-2 ${COLUMN_ACCENTS[status]}`}
       >
-        <h3 className="font-heading font-bold text-sm text-foreground">{label}</h3>
-        <span className="text-xs font-sans font-medium text-muted-foreground bg-background border border-border rounded-full px-2 py-0.5">
+        <h3 className="font-heading text-sm font-bold text-foreground">{label}</h3>
+        <span className="rounded-full border border-border bg-background px-2 py-0.5 font-sans text-xs font-medium text-muted-foreground">
           {appointments.length}
         </span>
       </div>
@@ -42,19 +42,15 @@ export default function BoardColumn({
       <div
         ref={setNodeRef}
         className={[
-          "flex-1 flex flex-col gap-2 p-2 min-h-[200px] rounded-b-xl border border-t-0 border-border transition-colors",
+          "flex min-h-[200px] flex-1 flex-col gap-2 rounded-b-xl border border-t-0 border-border p-2 transition-colors",
           isOver ? "bg-primary/5" : "bg-muted/10",
         ].join(" ")}
       >
         {appointments.length === 0 && (
-          <p className="text-xs text-muted-foreground font-sans text-center py-6">لا توجد مواعيد</p>
+          <p className="py-6 text-center font-sans text-xs text-muted-foreground">لا توجد مواعيد</p>
         )}
         {appointments.map((appt) => (
-          <AppointmentCard
-            key={appt.id}
-            appointment={appt}
-            onOpenDetails={onOpenDetails}
-          />
+          <AppointmentCard key={appt.id} appointment={appt} onOpenDetails={onOpenDetails} />
         ))}
       </div>
     </div>

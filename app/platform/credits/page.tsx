@@ -24,10 +24,10 @@ export default async function PlatformCreditsPage() {
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {stats.map((s) => (
           <div key={s.label} className="rounded-2xl border border-border bg-card p-5">
-            <p className="text-2xl font-bold font-heading text-foreground" dir="ltr">
+            <p className="font-heading text-2xl font-bold text-foreground" dir="ltr">
               {s.value}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground font-sans">{s.label}</p>
+            <p className="mt-1 font-sans text-sm text-muted-foreground">{s.label}</p>
           </div>
         ))}
       </div>
@@ -38,7 +38,7 @@ export default async function PlatformCreditsPage() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-heading font-semibold text-foreground">{c.name}</p>
-                <p className="text-xs text-muted-foreground font-sans" dir="ltr">
+                <p className="font-sans text-xs text-muted-foreground" dir="ltr">
                   /{c.slug}
                 </p>
               </div>
@@ -53,7 +53,7 @@ export default async function PlatformCreditsPage() {
                   {c.aiEnabled ? "المساعد مفعّل" : "المساعد موقوف"}
                 </span>
                 <div className="text-right">
-                  <p className="text-xs text-muted-foreground font-sans">الرصيد</p>
+                  <p className="font-sans text-xs text-muted-foreground">الرصيد</p>
                   <p
                     className={`font-semibold ${c.lowBalance ? "text-red-600" : "text-foreground"}`}
                     dir="ltr"
@@ -62,7 +62,7 @@ export default async function PlatformCreditsPage() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-muted-foreground font-sans">
+                  <p className="font-sans text-xs text-muted-foreground">
                     إنفاق {overview.windowDays}ي
                   </p>
                   <p className="font-semibold text-foreground" dir="ltr">
@@ -75,7 +75,7 @@ export default async function PlatformCreditsPage() {
           </div>
         ))}
         {overview.clinics.length === 0 && (
-          <p className="text-sm text-muted-foreground font-sans">لا توجد عيادات.</p>
+          <p className="font-sans text-sm text-muted-foreground">لا توجد عيادات.</p>
         )}
       </div>
     </div>

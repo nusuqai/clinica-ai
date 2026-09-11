@@ -13,7 +13,7 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-se-sm bg-primary px-3.5 py-2 text-sm text-white font-sans leading-relaxed">
+        <div className="max-w-[80%] rounded-2xl rounded-se-sm bg-primary px-3.5 py-2 font-sans text-sm leading-relaxed text-white">
           {message.content}
         </div>
       </div>
@@ -24,30 +24,26 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
     <div className="flex justify-start gap-2">
       <div
         className={[
-          "mt-0.5 w-7 h-7 flex-shrink-0 rounded-full flex items-center justify-center",
+          "mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full",
           isAdmin ? "bg-primary/15" : "bg-accent/15",
         ].join(" ")}
       >
         {isAdmin ? (
-          <Headset className="w-4 h-4 text-primary" />
+          <Headset className="h-4 w-4 text-primary" />
         ) : (
-          <Bot className="w-4 h-4 text-accent" />
+          <Bot className="h-4 w-4 text-accent" />
         )}
       </div>
       <div className="max-w-[85%] space-y-1">
-        {isAdmin && (
-          <p className="text-[10px] font-medium text-primary">أحد الموظفين</p>
-        )}
+        {isAdmin && <p className="text-[10px] font-medium text-primary">أحد الموظفين</p>}
         {(message.content || message.streaming) && (
-          <div className="rounded-2xl rounded-ss-sm bg-muted px-3.5 py-2 text-sm text-foreground font-sans leading-relaxed prose prose-sm prose-neutral dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {message.content}
-            </ReactMarkdown>
+          <div className="prose prose-sm prose-neutral max-w-none rounded-2xl rounded-ss-sm bg-muted px-3.5 py-2 font-sans text-sm leading-relaxed text-foreground dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
             {message.streaming && !message.content && (
               <span className="inline-flex gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce" />
-                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0.15s]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0.3s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:0.15s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:0.3s]" />
               </span>
             )}
           </div>

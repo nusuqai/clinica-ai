@@ -3,10 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MessageCircle, X, Send, Loader2, Bot } from "lucide-react";
 import ChatMessageView from "./chat-message";
-import {
-  getWebChatMessages,
-  getGuestChatMessages,
-} from "@/server/actions/chat";
+import { getWebChatMessages, getGuestChatMessages } from "@/server/actions/chat";
 import { useRealtimeMessages } from "@/hooks/use-realtime-messages";
 import { SenderType } from "@prisma/client";
 import type { ChatMessage, ClientToolCall } from "./types";
@@ -24,7 +21,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
   const [conversationId, setConversationId] = useState<string | null>(() =>
     guest && typeof window !== "undefined"
       ? window.localStorage.getItem(GUEST_CONVERSATION_KEY)
-      : null,
+      : null
   );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -77,10 +74,8 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
                   ? "admin"
                   : "agent",
             content: m.content,
-            toolCalls:
-              (m.metadata?.toolCalls as ClientToolCall[] | undefined) ??
-              undefined,
-          })),
+            toolCalls: (m.metadata?.toolCalls as ClientToolCall[] | undefined) ?? undefined,
+          }))
         );
       });
       return;
@@ -98,10 +93,8 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
                 ? "admin"
                 : "agent",
           content: m.content,
-          toolCalls:
-            (m.metadata?.toolCalls as ClientToolCall[] | undefined) ??
-            undefined,
-        })),
+          toolCalls: (m.metadata?.toolCalls as ClientToolCall[] | undefined) ?? undefined,
+        }))
       );
     });
   }, [open, loaded, guest, conversationId]);
@@ -158,9 +151,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          guest ? { message: text, conversationId } : { message: text },
-        ),
+        body: JSON.stringify(guest ? { message: text, conversationId } : { message: text }),
       });
       if (!res.ok || !res.body) throw new Error("network");
 
@@ -250,37 +241,28 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label="المساعد الذكي"
-        className="fixed bottom-6 end-6 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg flex items-center justify-center hover:bg-primary/90 transition-all"
+        className="fixed bottom-20 end-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-all hover:bg-primary/90"
       >
-        {open ? (
-          <X className="w-6 h-6" />
-        ) : (
-          <MessageCircle className="w-6 h-6" />
-        )}
+        {open ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
       </button>
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-24 end-6 z-40 flex flex-col w-[min(36rem,calc(100vw-3rem))] h-[min(44rem,calc(100vh-8rem))] rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 bg-primary text-white flex-shrink-0">
-            <Bot className="w-5 h-5" />
+        <div className="fixed bottom-44 end-6 z-40 flex h-[min(44rem,calc(90vh-8rem))] w-[min(36rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl">
+          <div className="flex flex-shrink-0 items-center gap-2 bg-primary px-4 py-3 text-white">
+            <Bot className="h-5 w-5" />
             <div>
-              <p className="text-sm font-heading font-semibold">
-                المساعد الذكي
-              </p>
-              <p className="text-[11px] text-white/70">
-                يساعدك على إنجاز مهامك
-              </p>
+              <p className="font-heading text-sm font-semibold">المساعد الذكي</p>
+              <p className="text-[11px] text-white/70">يساعدك على إنجاز مهامك</p>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3" dir="rtl">
+          <div className="flex-1 space-y-3 overflow-y-auto px-3 py-4" dir="rtl">
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-2 h-full text-center text-muted-foreground px-6">
-                <Bot className="w-10 h-10 opacity-30" />
-                <p className="text-xs font-sans">
-                  مرحباً! كيف يمكنني مساعدتك اليوم؟ يمكنني حجز المواعيد والإجابة
-                  عن استفساراتك.
+              <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
+                <Bot className="h-10 w-10 opacity-30" />
+                <p className="font-sans text-xs">
+                  مرحباً! كيف يمكنني مساعدتك اليوم؟ يمكنني حجز المواعيد والإجابة عن استفساراتك.
                 </p>
               </div>
             )}
@@ -290,7 +272,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
             <div ref={bottomRef} />
           </div>
 
-          <div className="px-3 py-3 border-t border-border flex-shrink-0">
+          <div className="flex-shrink-0 border-t border-border px-3 py-3">
             <div className="flex items-end gap-2">
               <textarea
                 ref={textareaRef}
@@ -306,17 +288,17 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
                 rows={1}
                 disabled={streaming}
                 dir="rtl"
-                className="flex-1 resize-none rounded-xl border border-border bg-card px-3 py-2 text-sm font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50 max-h-40 overflow-y-auto leading-relaxed"
+                className="max-h-40 flex-1 resize-none overflow-y-auto rounded-xl border border-border bg-card px-3 py-2 font-sans text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
               />
               <button
                 onClick={send}
                 disabled={streaming || !input.trim()}
-                className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-40"
+                className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
               >
                 {streaming ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Send className="w-4 h-4" />
+                  <Send className="h-4 w-4" />
                 )}
               </button>
             </div>

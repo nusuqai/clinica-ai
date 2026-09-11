@@ -44,26 +44,19 @@ async function staffUserIds(clinicId: string): Promise<string[]> {
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export async function getDashboardStats(
-  clinicId: string,
-): Promise<DashboardStats> {
-  const [
-    totalUsers,
-    totalDoctors,
-    totalPatients,
-    appointmentCounts,
-    totalConversations,
-  ] = await Promise.all([
-    prisma.clinicMember.count({ where: { clinicId } }),
-    prisma.doctor.count({ where: { clinicId } }),
-    prisma.clinicMember.count({ where: { clinicId, role: Role.PATIENT } }),
-    prisma.appointment.groupBy({
-      by: ["status"],
-      where: { clinicId },
-      _count: { status: true },
-    }),
-    prisma.conversation.count({ where: { clinicId } }),
-  ]);
+export async function getDashboardStats(clinicId: string): Promise<DashboardStats> {
+  const [totalUsers, totalDoctors, totalPatients, appointmentCounts, totalConversations] =
+    await Promise.all([
+      prisma.clinicMember.count({ where: { clinicId } }),
+      prisma.doctor.count({ where: { clinicId } }),
+      prisma.clinicMember.count({ where: { clinicId, role: Role.PATIENT } }),
+      prisma.appointment.groupBy({
+        by: ["status"],
+        where: { clinicId },
+        _count: { status: true },
+      }),
+      prisma.conversation.count({ where: { clinicId } }),
+    ]);
 
   const countByStatus = Object.fromEntries(
     appointmentCounts.map((r) => [r.status, r._count.status])
@@ -103,10 +96,7 @@ export async function getDoctorLoad(clinicId: string): Promise<DoctorLoad[]> {
   }));
 }
 
-export async function getRecentActivity(
-  clinicId: string,
-  limit = 10,
-): Promise<RecentActivity[]> {
+export async function getRecentActivity(clinicId: string, limit = 10): Promise<RecentActivity[]> {
   const staffIds = await staffUserIds(clinicId);
 
   const [recentAppointments, recentMessages] = await Promise.all([

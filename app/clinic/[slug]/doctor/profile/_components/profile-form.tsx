@@ -46,42 +46,38 @@ export default function ProfileForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-sans">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
           {error}
         </div>
       )}
       {success && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-4 py-3 text-sm font-sans">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
           تم تحديث الملف الشخصي بنجاح
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground font-sans">
-            الاسم الكامل *
-          </label>
+          <label className="font-sans text-sm font-medium text-foreground">الاسم الكامل *</label>
           <input
             name="fullName"
             type="text"
             required
             defaultValue={fullName}
             placeholder="د. محمد أحمد"
-            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground font-sans">
-            رقم الهاتف
-          </label>
+          <label className="font-sans text-sm font-medium text-foreground">رقم الهاتف</label>
           <input
             name="phone"
             type="tel"
             defaultValue={phone ?? ""}
             placeholder="+966 5XXXXXXXX"
             dir="ltr"
-            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
 
@@ -90,7 +86,7 @@ export default function ProfileForm({
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground font-sans">
+          <label className="font-sans text-sm font-medium text-foreground">
             رسوم الاستشارة (ر.س)
           </label>
           <input
@@ -101,20 +97,18 @@ export default function ProfileForm({
             defaultValue={consultationFee ?? ""}
             placeholder="150"
             dir="ltr"
-            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
 
         <div className="space-y-1.5 sm:col-span-2">
-          <label className="text-sm font-medium text-foreground font-sans">
-            نبذة عنك
-          </label>
+          <label className="font-sans text-sm font-medium text-foreground">نبذة عنك</label>
           <textarea
             name="bio"
             rows={4}
             defaultValue={bio ?? ""}
             placeholder="اكتب نبذة مختصرة عن خبرتك وتخصصك..."
-            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+            className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
       </div>
@@ -123,7 +117,7 @@ export default function ProfileForm({
         <button
           type="submit"
           disabled={isPending}
-          className="px-6 py-2.5 bg-primary text-white rounded-xl text-sm font-medium font-sans hover:bg-primary/90 transition-colors disabled:opacity-60"
+          className="rounded-xl bg-primary px-6 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
         >
           {isPending ? "جارٍ الحفظ..." : "حفظ التغييرات"}
         </button>

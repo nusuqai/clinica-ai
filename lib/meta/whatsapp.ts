@@ -28,7 +28,7 @@ export class WhatsAppApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: number,
+    readonly code?: number
   ) {
     super(message);
     this.name = "WhatsAppApiError";
@@ -106,7 +106,7 @@ async function graphFetch({
     throw new WhatsAppApiError(
       error?.message ?? `WhatsApp Cloud API ${res.status}`,
       res.status,
-      error?.code,
+      error?.code
     );
   }
 
@@ -116,7 +116,7 @@ async function graphFetch({
 /** POSTs to the sender's `/messages` endpoint. */
 function sendMessage(
   creds: WhatsAppCredentials,
-  message: Record<string, unknown>,
+  message: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   return graphFetch({
     path: `${creds.phoneNumberId}/messages`,
@@ -141,10 +141,7 @@ function recipientAddress(recipient: WhatsAppRecipient): Record<string, string> 
   if (r.userId) return { recipient: r.userId };
   // No phone and no BSUID — nothing to send to. Surface it rather than POST a
   // malformed body that Meta would reject with an opaque error.
-  throw new WhatsAppApiError(
-    "outbound message has no recipient (neither phone nor BSUID)",
-    400,
-  );
+  throw new WhatsAppApiError("outbound message has no recipient (neither phone nor BSUID)", 400);
 }
 
 /** Cloud API caps a text body at 4096 characters. */
@@ -179,7 +176,7 @@ function chunkText(text: string): string[] {
 export async function sendTextMessage(
   recipient: WhatsAppRecipient,
   text: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppCredentials
 ): Promise<void> {
   const address = recipientAddress(recipient);
   for (const body of chunkText(markdownToWhatsApp(text))) {
@@ -200,7 +197,7 @@ export async function sendTextMessage(
 export async function sendTemplateMessage(
   recipient: WhatsAppRecipient,
   template: { name: string; languageCode: string; variables?: string[] },
-  creds: WhatsAppCredentials,
+  creds: WhatsAppCredentials
 ): Promise<void> {
   const components =
     template.variables && template.variables.length > 0
@@ -233,7 +230,7 @@ export async function sendTemplateMessage(
  */
 export async function markReadAndStartTyping(
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppCredentials
 ): Promise<void> {
   await graphFetch({
     path: `${creds.phoneNumberId}/messages`,
@@ -250,12 +247,7 @@ export async function markReadAndStartTyping(
 // ─── Template management (WABA node) ─────────────────────────────────────────
 
 export type TemplateStatus =
-  | "APPROVED"
-  | "PENDING"
-  | "REJECTED"
-  | "PAUSED"
-  | "DISABLED"
-  | (string & {});
+  "APPROVED" | "PENDING" | "REJECTED" | "PAUSED" | "DISABLED" | (string & {});
 
 export type TemplateCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION";
 
@@ -311,13 +303,11 @@ function extractComponents(components: RawComponent[] | undefined): {
   buttons: TemplateButton[];
   variableCount: number;
 } {
-  const find = (type: string) =>
-    components?.find((c) => c.type?.toUpperCase() === type);
+  const find = (type: string) => components?.find((c) => c.type?.toUpperCase() === type);
 
   const header = find("HEADER");
   // Only TEXT headers carry text we can render; media headers have no `text`.
-  const headerText =
-    header?.format?.toUpperCase() === "TEXT" ? (header.text ?? "") : "";
+  const headerText = header?.format?.toUpperCase() === "TEXT" ? (header.text ?? "") : "";
   const bodyText = find("BODY")?.text ?? "";
   const footerText = find("FOOTER")?.text ?? "";
 
@@ -350,7 +340,7 @@ function extractComponents(components: RawComponent[] | undefined): {
 /** Lists all message templates for a WABA, with their approval status. */
 export async function listMessageTemplates(
   accessToken: string,
-  wabaId: string,
+  wabaId: string
 ): Promise<MessageTemplate[]> {
   const json = await graphFetch({
     path: `${wabaId}/message_templates`,
@@ -362,8 +352,9 @@ export async function listMessageTemplates(
   const data = Array.isArray(json.data) ? json.data : [];
   return data.map((raw) => {
     const t = raw as Record<string, unknown>;
-    const { headerText, bodyText, footerText, buttons, variableCount } =
-      extractComponents(t.components as RawComponent[] | undefined);
+    const { headerText, bodyText, footerText, buttons, variableCount } = extractComponents(
+      t.components as RawComponent[] | undefined
+    );
     return {
       id: String(t.id ?? ""),
       name: String(t.name ?? ""),
@@ -417,7 +408,7 @@ function toApiButton(b: TemplateButton): Record<string, unknown> {
 export async function createMessageTemplate(
   accessToken: string,
   wabaId: string,
-  input: CreateTemplateInput,
+  input: CreateTemplateInput
 ): Promise<{ id: string; status: string }> {
   // Component order matters to Meta: HEADER, BODY, FOOTER, BUTTONS.
   const components: Record<string, unknown>[] = [];
@@ -463,7 +454,7 @@ export async function createMessageTemplate(
 export async function deleteMessageTemplate(
   accessToken: string,
   wabaId: string,
-  name: string,
+  name: string
 ): Promise<void> {
   await graphFetch({
     path: `${wabaId}/message_templates`,

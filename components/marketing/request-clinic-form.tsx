@@ -73,9 +73,9 @@ export function RequestClinicForm() {
         name="note"
         rows={3}
         placeholder="أخبرنا المزيد عن عيادتك (اختياري)"
-        className={`${inputCls} sm:col-span-2 resize-none`}
+        className={`${inputCls} resize-none sm:col-span-2`}
       />
-      <div className="sm:col-span-2 flex flex-col items-center gap-3">
+      <div className="flex flex-col items-center gap-3 sm:col-span-2">
         <button
           type="submit"
           disabled={pending}

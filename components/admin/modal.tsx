@@ -11,13 +11,7 @@ interface ModalProps {
   width?: string;
 }
 
-export default function Modal({
-  open,
-  onClose,
-  title,
-  children,
-  width = "max-w-lg",
-}: ModalProps) {
+export default function Modal({ open, onClose, title, children, width = "max-w-lg" }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -33,20 +27,18 @@ export default function Modal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div
-        className={`relative w-full ${width} bg-card border border-border rounded-2xl shadow-xl overflow-hidden`}
+        className={`relative w-full ${width} overflow-hidden rounded-2xl border border-border bg-card shadow-xl`}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h2 className="font-heading font-bold text-lg text-foreground">
-            {title}
-          </h2>
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <h2 className="font-heading text-lg font-bold text-foreground">{title}</h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto max-h-[80vh]">{children}</div>
+        <div className="max-h-[80vh] overflow-y-auto p-6">{children}</div>
       </div>
     </div>
   );

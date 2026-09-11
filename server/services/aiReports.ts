@@ -7,8 +7,7 @@ import { getClinicAiStatus } from "./aiCredit";
 // path in aiCredit.ts stays on Prisma.Decimal end-to-end and never uses these.
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const num = (v: { toNumber(): number } | null | undefined) =>
-  v ? v.toNumber() : 0;
+const num = (v: { toNumber(): number } | null | undefined) => (v ? v.toNumber() : 0);
 
 export interface LabelValue {
   label: string;
@@ -33,7 +32,7 @@ export interface ClinicAiUsageReport {
 
 export async function getClinicAiUsage(
   clinicId: string,
-  windowDays = 30,
+  windowDays = 30
 ): Promise<ClinicAiUsageReport> {
   const since = new Date(Date.now() - windowDays * DAY_MS);
   const status = await getClinicAiStatus(clinicId);
@@ -102,9 +101,7 @@ export interface PlatformAiOverview {
   lowBalanceCount: number;
 }
 
-export async function getPlatformAiOverview(
-  windowDays = 30,
-): Promise<PlatformAiOverview> {
+export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAiOverview> {
   const since = new Date(Date.now() - windowDays * DAY_MS);
 
   const [clinics, spendRows] = await Promise.all([
@@ -132,9 +129,7 @@ export async function getPlatformAiOverview(
     }),
   ]);
 
-  const spendByClinic = new Map(
-    spendRows.map((r) => [r.clinicId, num(r._sum.chargedCost)]),
-  );
+  const spendByClinic = new Map(spendRows.map((r) => [r.clinicId, num(r._sum.chargedCost)]));
 
   let totalBalance = 0;
   let totalSpendWindow = 0;

@@ -8,23 +8,13 @@ import { prisma } from "@/lib/prisma";
 import { redirectToUserClinic, roleHome, ACTIVE_CLINIC_COOKIE } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/secret-box";
-import {
-  sendPasswordReset,
-  sendClinicSignupOtp,
-} from "@/lib/email/send-auth-email";
-import {
-  otpCooldownRemaining,
-  recordOtpSent,
-} from "@/server/services/otpThrottle";
+import { sendPasswordReset, sendClinicSignupOtp } from "@/lib/email/send-auth-email";
+import { otpCooldownRemaining, recordOtpSent } from "@/server/services/otpThrottle";
 
 // Ensure the identity Profile row exists. It's normally created by the Supabase
 // auth DB trigger, but that can lag a beat right after sign-up, so we retry once
 // and fall back to creating it ourselves.
-async function ensureProfile(
-  userId: string,
-  fullName: string,
-  phone: string | null,
-) {
+async function ensureProfile(userId: string, fullName: string, phone: string | null) {
   let profile = await prisma.profile.findUnique({ where: { id: userId } });
   if (!profile) {
     await new Promise((r) => setTimeout(r, 500));
@@ -109,10 +99,7 @@ export async function signIn(formData: FormData) {
 async function findAuthUserByEmail(email: string) {
   const admin = createAdminClient();
   const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  return (
-    data?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase()) ??
-    null
-  );
+  return data?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase()) ?? null;
 }
 
 // ─── Per-clinic auth ──────────────────────────────────────────────────────────
@@ -306,7 +293,7 @@ export async function verifyClinicSignup(slug: string, formData: FormData) {
   await ensureProfile(
     data.user.id,
     (meta.full_name as string) ?? "",
-    (meta.phone as string) ?? null,
+    (meta.phone as string) ?? null
   );
   await prisma.clinicMember.upsert({
     where: { userId_clinicId: { userId: data.user.id, clinicId: clinic.id } },

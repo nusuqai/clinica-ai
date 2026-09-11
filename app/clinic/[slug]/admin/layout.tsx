@@ -12,8 +12,9 @@ export default async function AdminLayout({
   const { slug } = await params;
   const ctx = await requireClinicMember(slug, ["ADMIN"]);
 
-  const initialUnresolvedEscalationConversationIds =
-    await getUnresolvedEscalationConversationIds(ctx.clinic.id);
+  const initialUnresolvedEscalationConversationIds = await getUnresolvedEscalationConversationIds(
+    ctx.clinic.id
+  );
 
   return (
     <DashboardShell
@@ -21,9 +22,8 @@ export default async function AdminLayout({
       basePath={`/clinic/${slug}`}
       userFullName={ctx.user.profile.fullName || ctx.user.email || "مسؤول"}
       userEmail={ctx.user.email}
-      initialUnresolvedEscalationConversationIds={
-        initialUnresolvedEscalationConversationIds
-      }
+      initialUnresolvedEscalationConversationIds={initialUnresolvedEscalationConversationIds}
+      clinicId={ctx.clinic.id}
     >
       {children}
     </DashboardShell>

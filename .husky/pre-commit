@@ -1,0 +1,25 @@
+# Abort the commit if ANY command below exits non-zero.
+set -e
+
+# Remember which files were staged BEFORE formatting.
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+
+echo "🎨  Formatting (npm run format)..."
+npm run format
+
+# Re-stage only the files that were already staged, so their formatting is
+# committed while any file left unstaged stays unstaged.
+if [ -n "$STAGED" ]; then
+  printf '%s\n' "$STAGED" | xargs -r git add --
+fi
+
+echo "🧬  Validating Prisma schema..."
+npm run prisma:validate
+
+echo "🔎  Type-checking (tsc --noEmit)..."
+npm run typecheck
+
+echo "🧹  Linting (next lint)..."
+npm run lint
+
+echo "✅  All pre-commit checks passed."

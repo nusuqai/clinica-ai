@@ -63,9 +63,7 @@ export interface TokenSourceAppointment {
  * phrase and `appointment_date` comes from the booking date. All times are
  * formatted as the stored wall-clock (timeZone: "UTC") — see lib/slot-time.ts.
  */
-export function buildTokenContext(
-  appt: TokenSourceAppointment,
-): Record<AppointmentToken, string> {
+export function buildTokenContext(appt: TokenSourceAppointment): Record<AppointmentToken, string> {
   const orderPhrase = appt.orderNumber != null ? `رقم الدور ${appt.orderNumber}` : "";
   const dateSource = appt.slot?.date ?? appt.bookingDate;
 
@@ -90,7 +88,7 @@ export function buildTokenContext(
  */
 export function buildTemplateVariables(
   variableMap: string[],
-  context: Record<AppointmentToken, string>,
+  context: Record<AppointmentToken, string>
 ): string[] {
   return variableMap.map((token) => context[token as AppointmentToken] ?? "");
 }

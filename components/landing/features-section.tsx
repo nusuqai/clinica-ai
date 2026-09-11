@@ -31,9 +31,7 @@ export function FeaturesSection() {
           <h2 className="font-heading text-3xl font-extrabold text-primary lg:text-4xl">
             لماذا تختار ClinicaAI؟
           </h2>
-          <p className="mt-3 font-sans text-base text-text/60">
-            تجربة حجز طبية مصممة لراحتك وثقتك
-          </p>
+          <p className="mt-3 font-sans text-base text-text/60">تجربة حجز طبية مصممة لراحتك وثقتك</p>
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -47,9 +45,7 @@ export function FeaturesSection() {
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10">
                   <Icon className="h-6 w-6 text-accent" />
                 </div>
-                <h3 className="font-heading text-base font-bold text-text">
-                  {feature.title}
-                </h3>
+                <h3 className="font-heading text-base font-bold text-text">{feature.title}</h3>
                 <p className="mt-2 font-sans text-sm leading-relaxed text-text/60">
                   {feature.description}
                 </p>

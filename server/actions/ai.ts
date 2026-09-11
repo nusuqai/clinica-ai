@@ -16,14 +16,13 @@ type ActionError = {
 async function requireAdminClinic() {
   const ctx = await getActiveClinicContext();
   if (!ctx) return { ok: false as const, reason: "unauthorized" as const };
-  if (ctx.role !== Role.ADMIN)
-    return { ok: false as const, reason: "forbidden" as const };
+  if (ctx.role !== Role.ADMIN) return { ok: false as const, reason: "forbidden" as const };
   return { ok: true as const, ctx };
 }
 
 /** Clinic admin: turn the clinic's AI agent on/off globally (all conversations). */
 export async function toggleClinicAiAction(
-  enabled: boolean,
+  enabled: boolean
 ): Promise<{ ok: true; enabled: boolean } | ActionError> {
   const auth = await requireAdminClinic();
   if (!auth.ok) return auth;

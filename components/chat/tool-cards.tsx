@@ -25,22 +25,20 @@ function CardShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mt-1.5 rounded-xl border border-border bg-card overflow-hidden text-start">
-      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border">
+    <div className="mt-1.5 overflow-hidden rounded-xl border border-border bg-card text-start">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2">
         <span className="text-accent">{icon}</span>
-        <span className="text-xs font-heading font-semibold text-foreground">
-          {title}
-        </span>
+        <span className="font-heading text-xs font-semibold text-foreground">{title}</span>
       </div>
-      <div className="p-3 space-y-2">{children}</div>
+      <div className="space-y-2 p-3">{children}</div>
     </div>
   );
 }
 
 function ErrorCard({ message }: { message: string }) {
   return (
-    <div className="mt-1.5 flex items-center gap-2 rounded-xl bg-red-50 text-red-600 px-3 py-2 text-xs font-sans">
-      <XCircle className="w-4 h-4 flex-shrink-0" />
+    <div className="mt-1.5 flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 font-sans text-xs text-red-600">
+      <XCircle className="h-4 w-4 flex-shrink-0" />
       <span>{message}</span>
     </div>
   );
@@ -62,9 +60,7 @@ function StatusPill({ status }: { status: string }) {
         ? "bg-red-100 text-red-600"
         : "bg-amber-100 text-amber-700";
   return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${color}`}
-    >
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${color}`}>
       {STATUS_AR[status] ?? status}
     </span>
   );
@@ -77,24 +73,18 @@ type R = Record<string, unknown>;
 function DoctorListCard({ result }: { result: R }) {
   const doctors = (result.doctors as R[]) ?? [];
   return (
-    <CardShell icon={<Stethoscope className="w-4 h-4" />} title="الأطباء">
+    <CardShell icon={<Stethoscope className="h-4 w-4" />} title="الأطباء">
       {doctors.length === 0 && (
         <p className="text-xs text-muted-foreground">لا يوجد أطباء مطابقون.</p>
       )}
       {doctors.map((d, i) => (
         <div key={i} className="flex items-center justify-between gap-2">
           <div>
-            <p className="text-xs font-medium text-foreground">
-              {String(d.name)}
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              {String(d.specialty)}
-            </p>
+            <p className="text-xs font-medium text-foreground">{String(d.name)}</p>
+            <p className="text-[11px] text-muted-foreground">{String(d.specialty)}</p>
           </div>
           {d.fee != null && (
-            <span className="text-[11px] text-accent font-medium">
-              {String(d.fee)} ج.م
-            </span>
+            <span className="text-[11px] font-medium text-accent">{String(d.fee)} ج.م</span>
           )}
         </div>
       ))}
@@ -107,7 +97,7 @@ function SlotsCard({ result }: { result: R }) {
   if (result.mode === "order") {
     return (
       <CardShell
-        icon={<CalendarClock className="w-4 h-4" />}
+        icon={<CalendarClock className="h-4 w-4" />}
         title={`الدور المتاح${result.date ? ` — ${result.date}` : ""}`}
       >
         {!!result.doctorName && (
@@ -118,8 +108,7 @@ function SlotsCard({ result }: { result: R }) {
         {result.available ? (
           <div className="space-y-0.5 text-xs text-foreground">
             <p>
-              رقم دورك القادم:{" "}
-              <span className="font-medium">{String(result.nextOrderNumber)}</span>
+              رقم دورك القادم: <span className="font-medium">{String(result.nextOrderNumber)}</span>
             </p>
             {result.remaining != null && (
               <p className="text-[11px] text-muted-foreground">
@@ -133,9 +122,7 @@ function SlotsCard({ result }: { result: R }) {
             )}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground">
-            اكتمل عدد الحجوزات لهذا اليوم.
-          </p>
+          <p className="text-xs text-muted-foreground">اكتمل عدد الحجوزات لهذا اليوم.</p>
         )}
       </CardShell>
     );
@@ -143,12 +130,17 @@ function SlotsCard({ result }: { result: R }) {
 
   const slots = (result.slots as R[]) ?? [];
   const branches = [
-    ...new Set(slots.map((s) => s.branch).filter(Boolean).map(String)),
+    ...new Set(
+      slots
+        .map((s) => s.branch)
+        .filter(Boolean)
+        .map(String)
+    ),
   ];
   const singleBranch = branches.length === 1 ? branches[0] : null;
   return (
     <CardShell
-      icon={<CalendarClock className="w-4 h-4" />}
+      icon={<CalendarClock className="h-4 w-4" />}
       title={`المواعيد المتاحة${result.date ? ` — ${result.date}` : ""}`}
     >
       {!!result.doctorName && (
@@ -158,9 +150,7 @@ function SlotsCard({ result }: { result: R }) {
         </p>
       )}
       {slots.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          لا توجد مواعيد متاحة في هذا اليوم.
-        </p>
+        <p className="text-xs text-muted-foreground">لا توجد مواعيد متاحة في هذا اليوم.</p>
       ) : (
         <div className="flex flex-wrap gap-1.5">
           {slots.map((s, i) => (
@@ -186,27 +176,19 @@ function AppointmentCard({ result }: { result: R }) {
       ? `${String(result.startTime)} – ${String(result.endTime)}`
       : String(result.time ?? "");
   return (
-    <CardShell
-      icon={<CalendarCheck className="w-4 h-4" />}
-      title="تفاصيل الموعد"
-    >
+    <CardShell icon={<CalendarCheck className="h-4 w-4" />} title="تفاصيل الموعد">
       <div className="space-y-1 text-xs text-foreground">
         {!!result.doctorName && (
           <p>
-            الطبيب:{" "}
-            <span className="font-medium">{String(result.doctorName)}</span>
+            الطبيب: <span className="font-medium">{String(result.doctorName)}</span>
             {!!result.specialty && (
-              <span className="text-muted-foreground">
-                {" "}
-                — {String(result.specialty)}
-              </span>
+              <span className="text-muted-foreground"> — {String(result.specialty)}</span>
             )}
           </p>
         )}
         {!!result.branch && (
           <p>
-            الفرع:{" "}
-            <span className="font-medium">{String(result.branch)}</span>
+            الفرع: <span className="font-medium">{String(result.branch)}</span>
           </p>
         )}
         {!!result.date && (
@@ -217,8 +199,7 @@ function AppointmentCard({ result }: { result: R }) {
         )}
         {result.bookingType === "order" && result.orderNumber != null && (
           <p>
-            رقم الدور:{" "}
-            <span className="font-medium">{String(result.orderNumber)}</span>
+            رقم الدور: <span className="font-medium">{String(result.orderNumber)}</span>
             {result.currentOrder != null && (
               <span className="text-muted-foreground">
                 {" "}
@@ -232,15 +213,12 @@ function AppointmentCard({ result }: { result: R }) {
         )}
         {result.examinationFee != null && (
           <p>
-            سعر الكشف:{" "}
-            <span className="font-medium">
-              {String(result.examinationFee)}
-            </span>
+            سعر الكشف: <span className="font-medium">{String(result.examinationFee)}</span>
           </p>
         )}
         {!!result.status && (
           <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground text-[11px]">الحالة:</span>
+            <span className="text-[11px] text-muted-foreground">الحالة:</span>
             <StatusPill status={String(result.status)} />
           </div>
         )}
@@ -252,10 +230,8 @@ function AppointmentCard({ result }: { result: R }) {
 function AppointmentListCard({ result }: { result: R }) {
   const appts = (result.appointments as R[]) ?? [];
   return (
-    <CardShell icon={<ListChecks className="w-4 h-4" />} title="المواعيد">
-      {appts.length === 0 && (
-        <p className="text-xs text-muted-foreground">لا توجد مواعيد.</p>
-      )}
+    <CardShell icon={<ListChecks className="h-4 w-4" />} title="المواعيد">
+      {appts.length === 0 && <p className="text-xs text-muted-foreground">لا توجد مواعيد.</p>}
       {appts.map((a, i) => (
         <div
           key={i}
@@ -283,9 +259,7 @@ function AppointmentListCard({ result }: { result: R }) {
 }
 
 function StatsCard({ result }: { result: R }) {
-  const entries = Object.entries(result).filter(
-    ([, v]) => typeof v === "number",
-  );
+  const entries = Object.entries(result).filter(([, v]) => typeof v === "number");
   const LABELS: Record<string, string> = {
     total: "الإجمالي",
     upcoming: "قادمة",
@@ -307,16 +281,12 @@ function StatsCard({ result }: { result: R }) {
     totalConversations: "المحادثات",
   };
   return (
-    <CardShell icon={<BarChart3 className="w-4 h-4" />} title="الإحصائيات">
+    <CardShell icon={<BarChart3 className="h-4 w-4" />} title="الإحصائيات">
       <div className="grid grid-cols-2 gap-2">
         {entries.map(([k, v]) => (
           <div key={k} className="rounded-lg bg-muted/50 px-2 py-1.5">
-            <p className="text-sm font-heading font-bold text-foreground">
-              {String(v)}
-            </p>
-            <p className="text-[10px] text-muted-foreground">
-              {LABELS[k] ?? k}
-            </p>
+            <p className="font-heading text-sm font-bold text-foreground">{String(v)}</p>
+            <p className="text-[10px] text-muted-foreground">{LABELS[k] ?? k}</p>
           </div>
         ))}
       </div>
@@ -358,19 +328,17 @@ const TOOL_LABELS: Record<string, string> = {
 function GenericToolCard({ name, result }: { name: string; result: R }) {
   if (result.escalated) {
     return (
-      <div className="mt-1.5 flex items-center gap-2 rounded-xl bg-accent/10 text-accent px-3 py-2 text-xs font-sans">
-        <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+      <div className="mt-1.5 flex items-center gap-2 rounded-xl bg-accent/10 px-3 py-2 font-sans text-xs text-accent">
+        <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
         <span>تم تحويل المحادثة إلى موظف بشري، سيتم التواصل معك قريباً.</span>
       </div>
     );
   }
   return (
-    <CardShell icon={<Wrench className="w-4 h-4" />} title="تم التنفيذ">
+    <CardShell icon={<Wrench className="h-4 w-4" />} title="تم التنفيذ">
       <div className="flex items-center gap-2 text-xs text-foreground">
-        <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
-        <span className="text-muted-foreground">
-          {TOOL_LABELS[name] ?? name}
-        </span>
+        <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" />
+        <span className="text-muted-foreground">{TOOL_LABELS[name] ?? name}</span>
       </div>
     </CardShell>
   );
@@ -396,20 +364,8 @@ const REGISTRY: Record<string, (r: R) => React.ReactNode> = {
 export function ToolCallCard({ call }: { call: ClientToolCall }) {
   const result = call.result ?? {};
   if (call.status === "error") {
-    return (
-      <ErrorCard
-        message={String(result.error ?? "حدث خطأ أثناء تنفيذ العملية")}
-      />
-    );
+    return <ErrorCard message={String(result.error ?? "حدث خطأ أثناء تنفيذ العملية")} />;
   }
   const render = REGISTRY[call.name];
-  return (
-    <>
-      {render ? (
-        render(result)
-      ) : (
-        <GenericToolCard name={call.name} result={result} />
-      )}
-    </>
-  );
+  return <>{render ? render(result) : <GenericToolCard name={call.name} result={result} />}</>;
 }

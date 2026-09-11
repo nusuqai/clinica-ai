@@ -30,18 +30,13 @@ export const metadata: Metadata = {
   icons: { icon: "/logo.png" },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="ar"
-      dir="rtl"
-      className={`${tajawal.variable} ${cairo.variable} ${amiri.variable}`}
-    >
-      <body suppressHydrationWarning className="font-sans text-text antialiased selection:bg-accent/30 selection:text-primary max-w-[100vw] overflow-x-hidden min-h-screen flex flex-col">
+    <html lang="ar" dir="rtl" className={`${tajawal.variable} ${cairo.variable} ${amiri.variable}`}>
+      <body
+        suppressHydrationWarning
+        className="flex min-h-screen max-w-[100vw] flex-col overflow-x-hidden font-sans text-text antialiased selection:bg-accent/30 selection:text-primary"
+      >
         {children}
         <div className="noise-overlay" />
       </body>

@@ -2,17 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Plus,
-  Pencil,
-  Trash2,
-  Star,
-  MapPin,
-  Phone,
-  Car,
-  Navigation,
-  X,
-} from "lucide-react";
+import { Plus, Pencil, Trash2, Star, MapPin, Phone, Car, Navigation, X } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import {
   createBranchAction,
@@ -130,7 +120,13 @@ const labelCls = "text-sm font-medium text-foreground font-sans";
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export default function BranchesManager({ branches }: { branches: BranchView[] }) {
+export default function BranchesManager({
+  branches,
+  clinicId,
+}: {
+  branches: BranchView[];
+  clinicId: string;
+}) {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BranchView | null>(null);
@@ -191,7 +187,7 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
     const payload = buildPayload();
     startTransition(async () => {
       const res = editing
-        ? await updateBranchAction({ branchId: editing.id, ...payload })
+        ? await updateBranchAction({ branchId: editing.id, clinicId: clinicId, ...payload })
         : await createBranchAction(payload);
       if (res?.error) setError(res.error);
       else {
@@ -214,7 +210,10 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
   function addPhone() {
     setForm((f) => ({
       ...f,
-      phones: [...f.phones, { type: PhoneType.MOBILE, number: "", label: null, isPrimary: f.phones.length === 0 }],
+      phones: [
+        ...f.phones,
+        { type: PhoneType.MOBILE, number: "", label: null, isPrimary: f.phones.length === 0 },
+      ],
     }));
   }
   function updatePhone(i: number, patch: Partial<BranchPhoneView>) {
@@ -234,69 +233,71 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
 
   return (
     <div>
-      <div className="flex justify-end mb-4">
+      <div className="mb-4 flex justify-end">
         <button
           onClick={openCreate}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium font-sans hover:bg-primary/90 transition-colors"
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="h-4 w-4" />
           إضافة فرع
         </button>
       </div>
 
       {branches.length === 0 ? (
-        <div className="bg-card border border-border rounded-2xl py-16 text-center">
-          <p className="text-muted-foreground font-sans">لا توجد فروع بعد. أضف فرعاً لتبدأ.</p>
+        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+          <p className="font-sans text-muted-foreground">لا توجد فروع بعد. أضف فرعاً لتبدأ.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {branches.map((b) => (
-            <div key={b.id} className="bg-card border border-border rounded-2xl p-5">
-              <div className="flex items-start justify-between gap-3 mb-3">
+            <div key={b.id} className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-heading font-bold text-foreground">{b.name}</h3>
                     {b.isMain && (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-sans">
-                        <Star className="w-3 h-3" /> رئيسي
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-sans text-xs font-medium text-amber-700">
+                        <Star className="h-3 w-3" /> رئيسي
                       </span>
                     )}
                     <span
                       className={[
-                        "text-xs font-medium px-2 py-0.5 rounded-full font-sans",
-                        b.isActive ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500",
+                        "rounded-full px-2 py-0.5 font-sans text-xs font-medium",
+                        b.isActive
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-gray-100 text-gray-500",
                       ].join(" ")}
                     >
                       {b.isActive ? "نشط" : "معطّل"}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground font-sans mt-1">
+                  <p className="mt-1 font-sans text-xs text-muted-foreground">
                     {b.doctorCount} طبيب
                   </p>
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex flex-shrink-0 items-center gap-1">
                   <button
                     onClick={() => openEdit(b)}
                     title="تعديل"
-                    className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                    className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
                   >
-                    <Pencil className="w-4 h-4" />
+                    <Pencil className="h-4 w-4" />
                   </button>
                   {!b.isMain && (
                     <button
                       onClick={() => runAction(() => setMainBranchAction(b.id))}
                       disabled={isPending}
                       title="تعيين كفرع رئيسي"
-                      className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-50 transition-colors"
+                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-amber-50 hover:text-amber-500"
                     >
-                      <Star className="w-4 h-4" />
+                      <Star className="h-4 w-4" />
                     </button>
                   )}
                   <button
                     onClick={() => runAction(() => setBranchActiveAction(b.id, !b.isActive))}
                     disabled={isPending}
                     title={b.isActive ? "تعطيل" : "تفعيل"}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-xs font-sans"
+                    className="rounded-lg p-1.5 font-sans text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     {b.isActive ? "تعطيل" : "تفعيل"}
                   </button>
@@ -305,41 +306,41 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
                       onClick={() =>
                         runAction(
                           () => deleteBranchAction(b.id),
-                          "سيتم حذف هذا الفرع نهائياً. هل تريد المتابعة؟",
+                          "سيتم حذف هذا الفرع نهائياً. هل تريد المتابعة؟"
                         )
                       }
                       disabled={isPending}
                       title="حذف"
-                      className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   )}
                 </div>
               </div>
 
-              <div className="space-y-1.5 text-sm text-muted-foreground font-sans">
+              <div className="space-y-1.5 font-sans text-sm text-muted-foreground">
                 {b.address && (
                   <p className="flex items-start gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                    <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                     {b.address}
                   </p>
                 )}
                 {b.phones.length > 0 && (
                   <p className="flex items-center gap-1.5" dir="ltr">
-                    <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+                    <Phone className="h-3.5 w-3.5 flex-shrink-0" />
                     {(b.phones.find((p) => p.isPrimary) ?? b.phones[0]).number}
                   </p>
                 )}
                 {b.hasParking && (
                   <p className="flex items-center gap-1.5">
-                    <Car className="w-3.5 h-3.5 flex-shrink-0" />
+                    <Car className="h-3.5 w-3.5 flex-shrink-0" />
                     يوجد موقف سيارات
                   </p>
                 )}
                 {b.nearestLandmark && (
                   <p className="flex items-center gap-1.5">
-                    <Navigation className="w-3.5 h-3.5 flex-shrink-0" />
+                    <Navigation className="h-3.5 w-3.5 flex-shrink-0" />
                     {b.nearestLandmark}
                   </p>
                 )}
@@ -360,12 +361,12 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
       >
         <form onSubmit={handleSubmit} className="space-y-5">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-sans">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
               {error}
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
               <label className={labelCls}>اسم الفرع *</label>
               <input
@@ -413,8 +414,8 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
           </div>
 
           {/* Parking */}
-          <div className="border border-border rounded-xl p-4 space-y-3">
-            <label className="flex items-center gap-2 text-sm font-medium text-foreground font-sans">
+          <div className="space-y-3 rounded-xl border border-border p-4">
+            <label className="flex items-center gap-2 font-sans text-sm font-medium text-foreground">
               <input
                 type="checkbox"
                 checked={form.hasParking}
@@ -433,26 +434,26 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
           </div>
 
           {/* Phones */}
-          <div className="border border-border rounded-xl p-4 space-y-3">
+          <div className="space-y-3 rounded-xl border border-border p-4">
             <div className="flex items-center justify-between">
               <span className={labelCls}>أرقام هواتف الفرع</span>
               <button
                 type="button"
                 onClick={addPhone}
-                className="inline-flex items-center gap-1 text-sm text-primary font-sans hover:underline"
+                className="inline-flex items-center gap-1 font-sans text-sm text-primary hover:underline"
               >
-                <Plus className="w-3.5 h-3.5" /> إضافة رقم
+                <Plus className="h-3.5 w-3.5" /> إضافة رقم
               </button>
             </div>
             {form.phones.length === 0 && (
-              <p className="text-xs text-muted-foreground font-sans">لا توجد أرقام مضافة.</p>
+              <p className="font-sans text-xs text-muted-foreground">لا توجد أرقام مضافة.</p>
             )}
             {form.phones.map((p, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2">
                 <select
                   value={p.type}
                   onChange={(e) => updatePhone(i, { type: e.target.value as PhoneType })}
-                  className="border border-border rounded-xl px-2 py-2 text-sm bg-background font-sans"
+                  className="rounded-xl border border-border bg-background px-2 py-2 font-sans text-sm"
                 >
                   {PHONE_TYPES.map((t) => (
                     <option key={t.value} value={t.value}>
@@ -465,15 +466,15 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
                   onChange={(e) => updatePhone(i, { number: e.target.value })}
                   placeholder="الرقم"
                   dir="ltr"
-                  className="flex-1 min-w-[120px] border border-border rounded-xl px-3 py-2 text-sm bg-background font-sans"
+                  className="min-w-[120px] flex-1 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
                 />
                 <input
                   value={p.label ?? ""}
                   onChange={(e) => updatePhone(i, { label: e.target.value || null })}
                   placeholder="وصف (استقبال…)"
-                  className="w-28 border border-border rounded-xl px-3 py-2 text-sm bg-background font-sans"
+                  className="w-28 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
                 />
-                <label className="flex items-center gap-1 text-xs font-sans text-muted-foreground">
+                <label className="flex items-center gap-1 font-sans text-xs text-muted-foreground">
                   <input
                     type="checkbox"
                     checked={p.isPrimary}
@@ -484,30 +485,31 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
                 <button
                   type="button"
                   onClick={() => removePhone(i)}
-                  className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50"
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="h-4 w-4" />
                 </button>
               </div>
             ))}
           </div>
 
           {/* Working hours */}
-          <div className="border border-border rounded-xl p-4 space-y-2">
+          <div className="space-y-2 rounded-xl border border-border p-4">
             <span className={labelCls}>ساعات العمل</span>
-            <p className="text-xs text-muted-foreground font-sans">
-              اترك اليوم بدون تحديد إن لم ترغب في تقييده. تُستخدم هذه الساعات للتحقق من مواعيد الأطباء.
+            <p className="font-sans text-xs text-muted-foreground">
+              اترك اليوم بدون تحديد إن لم ترغب في تقييده. تُستخدم هذه الساعات للتحقق من مواعيد
+              الأطباء.
             </p>
-            <div className="space-y-2 mt-2">
+            <div className="mt-2 space-y-2">
               {DAYS.map((d) => {
                 const s = form.hours[d.key];
                 return (
                   <div key={d.key} className="flex flex-wrap items-center gap-2">
-                    <span className="w-16 text-sm font-sans text-foreground">{d.label}</span>
+                    <span className="w-16 font-sans text-sm text-foreground">{d.label}</span>
                     <select
                       value={s.mode}
                       onChange={(e) => setDay(d.key, { mode: e.target.value as DayMode })}
-                      className="border border-border rounded-xl px-2 py-1.5 text-sm bg-background font-sans"
+                      className="rounded-xl border border-border bg-background px-2 py-1.5 font-sans text-sm"
                     >
                       <option value="unset">غير محدد</option>
                       <option value="open">مفتوح</option>
@@ -520,15 +522,15 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
                           value={s.openTime}
                           onChange={(e) => setDay(d.key, { openTime: e.target.value })}
                           dir="ltr"
-                          className="border border-border rounded-xl px-2 py-1.5 text-sm bg-background font-sans"
+                          className="rounded-xl border border-border bg-background px-2 py-1.5 font-sans text-sm"
                         />
-                        <span className="text-muted-foreground text-sm">–</span>
+                        <span className="text-sm text-muted-foreground">–</span>
                         <input
                           type="time"
                           value={s.closeTime}
                           onChange={(e) => setDay(d.key, { closeTime: e.target.value })}
                           dir="ltr"
-                          className="border border-border rounded-xl px-2 py-1.5 text-sm bg-background font-sans"
+                          className="rounded-xl border border-border bg-background px-2 py-1.5 font-sans text-sm"
                         />
                       </>
                     )}
@@ -542,14 +544,14 @@ export default function BranchesManager({ branches }: { branches: BranchView[] }
             <button
               type="submit"
               disabled={isPending}
-              className="flex-1 bg-primary text-white rounded-xl py-2.5 text-sm font-medium font-sans hover:bg-primary/90 transition-colors disabled:opacity-60"
+              className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               {isPending ? "جارٍ الحفظ..." : editing ? "حفظ التعديلات" : "إضافة الفرع"}
             </button>
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="px-4 border border-border rounded-xl text-sm font-medium font-sans text-foreground hover:bg-muted transition-colors"
+              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
               إلغاء
             </button>

@@ -19,7 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
  */
 export function handleVerification(
   request: NextRequest,
-  verifyToken: string | undefined,
+  verifyToken: string | undefined
 ): NextResponse {
   const params = request.nextUrl.searchParams;
   const mode = params.get("hub.mode");

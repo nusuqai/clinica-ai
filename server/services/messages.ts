@@ -50,9 +50,7 @@ export interface ConversationDetail {
 // Conversations of this clinic that belong to customers, not staff. Admins (and
 // doctors) also get the AI chat bubble; their own conversation with it is not a
 // customer contact and must not appear in the inbox.
-async function customerConversationWhere(
-  clinicId: string,
-): Promise<Prisma.ConversationWhereInput> {
+async function customerConversationWhere(clinicId: string): Promise<Prisma.ConversationWhereInput> {
   const staff = await prisma.clinicMember.findMany({
     where: { clinicId, role: { in: [Role.DOCTOR, Role.ADMIN] } },
     select: { userId: true },
@@ -61,11 +59,13 @@ async function customerConversationWhere(
   return { clinicId, OR: [{ userId: null }, { userId: { notIn: staffIds } }] };
 }
 
-export async function getConversations(
-  clinicId: string,
-): Promise<ConversationSummary[]> {
+export async function getConversations(clinicId: string): Promise<ConversationSummary[]> {
+  const baseWhere = await customerConversationWhere(clinicId);
   const conversations = await prisma.conversation.findMany({
-    where: await customerConversationWhere(clinicId),
+    where: {
+      ...baseWhere,
+      messages: { some: {} },
+    },
     orderBy: { updatedAt: "desc" },
     include: {
       user: { select: { fullName: true, phone: true } },
@@ -101,9 +101,7 @@ export async function getConversations(
 
 /** Conversation IDs with at least one unresolved escalation — used to seed
  * the admin-wide alert state (sidebar bell) on first load. */
-export async function getUnresolvedEscalationConversationIds(
-  clinicId: string,
-): Promise<string[]> {
+export async function getUnresolvedEscalationConversationIds(clinicId: string): Promise<string[]> {
   const rows = await prisma.escalation.findMany({
     where: {
       resolvedAt: null,
@@ -115,9 +113,7 @@ export async function getUnresolvedEscalationConversationIds(
   return rows.map((r) => r.conversationId);
 }
 
-export async function getMessages(
-  conversationId: string,
-): Promise<MessageItem[]> {
+export async function getMessages(conversationId: string): Promise<MessageItem[]> {
   const messages = await prisma.message.findMany({
     where: { conversationId },
     orderBy: { createdAt: "asc" },
@@ -135,7 +131,7 @@ export async function getMessages(
 
 export async function getConversationDetail(
   id: string,
-  clinicId: string,
+  clinicId: string
 ): Promise<ConversationDetail | null> {
   const c = await prisma.conversation.findFirst({
     where: { id, ...(await customerConversationWhere(clinicId)) },
@@ -175,9 +171,7 @@ export async function getConversationDetail(
   };
 }
 
-export async function markConversationRead(
-  conversationId: string,
-): Promise<void> {
+export async function markConversationRead(conversationId: string): Promise<void> {
   await prisma.message.updateMany({
     where: { conversationId, isRead: false, senderType: SenderType.USER },
     data: { isRead: true },

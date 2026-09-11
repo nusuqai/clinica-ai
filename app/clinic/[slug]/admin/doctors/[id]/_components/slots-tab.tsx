@@ -1,14 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import {
-  Ban,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  ListOrdered,
-  Users,
-} from "lucide-react";
+import { Ban, CheckCircle, ChevronDown, ChevronRight, ListOrdered, Users } from "lucide-react";
 import {
   toggleSlotBlockedAction,
   getDoctorDaySlotsAction,
@@ -130,8 +123,8 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
 
   if (days.length === 0) {
     return (
-      <div className="bg-card border border-border rounded-2xl py-16 text-center">
-        <p className="text-muted-foreground font-sans">
+      <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <p className="font-sans text-muted-foreground">
           لا توجد أيام متاحة. أضف قواعد توفر (مواعيد ثابتة أو نظام الدور) أولاً.
         </p>
       </div>
@@ -148,22 +141,17 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
 
         // Slot header counts stay fresh after a block toggle by deriving from the
         // loaded rows when available, otherwise the server-provided summary.
-        const counts = daySlots[date]
-          ? slotCountsFrom(daySlots[date])
-          : day.slotCounts;
+        const counts = daySlots[date] ? slotCountsFrom(daySlots[date]) : day.slotCounts;
 
         return (
-          <div
-            key={date}
-            className="bg-card border border-border rounded-2xl overflow-hidden"
-          >
+          <div key={date} className="overflow-hidden rounded-2xl border border-border bg-card">
             {/* Collapsible header */}
             <button
               onClick={() => toggleDay(day)}
-              className="w-full flex items-center justify-between px-5 py-3 bg-muted/30 hover:bg-muted/50 transition-colors text-start"
+              className="flex w-full items-center justify-between bg-muted/30 px-5 py-3 text-start transition-colors hover:bg-muted/50"
             >
-              <div className="flex items-center gap-3 min-w-0 flex-wrap">
-                <span className="text-sm font-medium text-foreground font-sans">
+              <div className="flex min-w-0 flex-wrap items-center gap-3">
+                <span className="font-sans text-sm font-medium text-foreground">
                   {formatSlotDate(dateObj, {
                     weekday: "long",
                     day: "numeric",
@@ -173,30 +161,31 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
                 </span>
 
                 {isQueue ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-px text-[10px] font-medium text-primary font-sans">
-                    <ListOrdered className="w-3 h-3" />
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-px font-sans text-[10px] font-medium text-primary">
+                    <ListOrdered className="h-3 w-3" />
                     نظام الدور
                     {day.queue && (
                       <span className="tabular-nums">
-                        {" "}· {day.queue.booked} حجز
+                        {" "}
+                        · {day.queue.booked} حجز
                         {day.queue.cap != null ? ` / ${day.queue.cap}` : ""}
                       </span>
                     )}
                   </span>
                 ) : (
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className="flex flex-shrink-0 items-center gap-1.5">
                     {counts && counts.available > 0 && (
-                      <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-px rounded-full font-sans">
+                      <span className="rounded-full bg-emerald-50 px-1.5 py-px font-sans text-[10px] font-medium text-emerald-600">
                         {counts.available} متاح
                       </span>
                     )}
                     {counts && counts.booked > 0 && (
-                      <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-px rounded-full font-sans">
+                      <span className="rounded-full bg-blue-50 px-1.5 py-px font-sans text-[10px] font-medium text-blue-600">
                         {counts.booked} محجوز
                       </span>
                     )}
                     {counts && counts.blocked > 0 && (
-                      <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1.5 py-px rounded-full font-sans">
+                      <span className="rounded-full bg-gray-100 px-1.5 py-px font-sans text-[10px] font-medium text-gray-500">
                         {counts.blocked} محظور
                       </span>
                     )}
@@ -204,9 +193,9 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
                 )}
               </div>
               {isOpen ? (
-                <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
               ) : (
-                <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
               )}
             </button>
 
@@ -220,9 +209,7 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
                 )}
 
                 {error[date] && !loading[date] && (
-                  <p className="px-5 py-4 text-sm text-red-600 font-sans">
-                    {error[date]}
-                  </p>
+                  <p className="px-5 py-4 font-sans text-sm text-red-600">{error[date]}</p>
                 )}
 
                 {/* Slot-based day → time slots */}
@@ -259,7 +246,7 @@ function SlotList({
 }) {
   if (slots.length === 0) {
     return (
-      <p className="px-5 py-4 text-sm text-muted-foreground font-sans">
+      <p className="px-5 py-4 font-sans text-sm text-muted-foreground">
         لا توجد مواعيد في هذا اليوم.
       </p>
     );
@@ -270,29 +257,26 @@ function SlotList({
         const isBooked = !!slot.appointment;
         const isBlocked = slot.isBlocked;
         return (
-          <div
-            key={slot.id}
-            className="flex items-center justify-between px-5 py-3 gap-3"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-sm font-sans text-foreground" dir="ltr">
+          <div key={slot.id} className="flex items-center justify-between gap-3 px-5 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="font-sans text-sm text-foreground" dir="ltr">
                 {formatSlotTime(slot.startTime)} – {formatSlotTime(slot.endTime)}
               </span>
               {isBooked && (
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
                   <AppointmentStatusBadge status={slot.appointment!.status} />
-                  <span className="text-sm text-muted-foreground font-sans truncate">
+                  <span className="truncate font-sans text-sm text-muted-foreground">
                     {slot.appointment!.patientName}
                   </span>
                 </div>
               )}
               {!isBooked && !isBlocked && (
-                <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-sans">
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-sans text-xs font-medium text-emerald-600">
                   متاح
                 </span>
               )}
               {isBlocked && (
-                <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full font-sans">
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 font-sans text-xs font-medium text-gray-500">
                   محظور
                 </span>
               )}
@@ -304,17 +288,13 @@ function SlotList({
                 disabled={isPending}
                 title={isBlocked ? "إتاحة الموعد" : "حظر الموعد"}
                 className={[
-                  "flex-shrink-0 p-1.5 rounded-lg transition-colors disabled:opacity-40",
+                  "flex-shrink-0 rounded-lg p-1.5 transition-colors disabled:opacity-40",
                   isBlocked
                     ? "text-emerald-600 hover:bg-emerald-50"
-                    : "text-muted-foreground hover:text-red-500 hover:bg-red-50",
+                    : "text-muted-foreground hover:bg-red-50 hover:text-red-500",
                 ].join(" ")}
               >
-                {isBlocked ? (
-                  <CheckCircle className="w-4 h-4" />
-                ) : (
-                  <Ban className="w-4 h-4" />
-                )}
+                {isBlocked ? <CheckCircle className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
               </button>
             )}
           </div>
@@ -330,15 +310,14 @@ function QueueList({ queue }: { queue: QueueData }) {
   return (
     <div>
       {/* Day summary */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-5 py-3 bg-muted/20 text-xs text-muted-foreground font-sans">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 bg-muted/20 px-5 py-3 font-sans text-xs text-muted-foreground">
         <span>
-          الحجوزات:{" "}
-          <span className="text-foreground font-medium tabular-nums">{booked}</span>
+          الحجوزات: <span className="font-medium tabular-nums text-foreground">{booked}</span>
           {queue.dailyCap != null && ` / ${queue.dailyCap}`}
         </span>
         <span>
           يُخدم الآن:{" "}
-          <span className="text-foreground font-medium tabular-nums">
+          <span className="font-medium tabular-nums text-foreground">
             {queue.currentOrder || "—"}
           </span>
         </span>
@@ -347,7 +326,7 @@ function QueueList({ queue }: { queue: QueueData }) {
       </div>
 
       {queue.patients.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-muted-foreground font-sans">
+        <p className="px-5 py-4 font-sans text-sm text-muted-foreground">
           لا يوجد مرضى في الطابور.
         </p>
       ) : (
@@ -357,9 +336,7 @@ function QueueList({ queue }: { queue: QueueData }) {
             // treat them as current and don't show the "مؤجّل" state on them.
             const isCurrent = p.orderNumber === queue.currentOrder;
             const isDone =
-              !p.skipped &&
-              p.orderNumber != null &&
-              p.orderNumber < queue.currentOrder;
+              !p.skipped && p.orderNumber != null && p.orderNumber < queue.currentOrder;
             const showSkipped = p.skipped && !isCurrent;
             return (
               <div
@@ -369,10 +346,10 @@ function QueueList({ queue }: { queue: QueueData }) {
                   isCurrent ? "bg-primary/5" : showSkipped ? "bg-amber-50/60" : "",
                 ].join(" ")}
               >
-                <div className="flex items-start gap-3 min-w-0">
+                <div className="flex min-w-0 items-start gap-3">
                   <span
                     className={[
-                      "inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold font-heading tabular-nums flex-shrink-0",
+                      "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full font-heading text-sm font-bold tabular-nums",
                       isCurrent
                         ? "bg-primary text-white"
                         : showSkipped
@@ -386,23 +363,22 @@ function QueueList({ queue }: { queue: QueueData }) {
                   </span>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-foreground font-sans truncate">
+                      <p className="truncate font-sans text-sm font-medium text-foreground">
                         {p.patientName}
                       </p>
                       {showSkipped && (
-                        <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-px rounded-full font-sans flex-shrink-0">
+                        <span className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 py-px font-sans text-[10px] font-medium text-amber-700">
                           مؤجّل
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-sans">
+                    <div className="flex items-center gap-2 font-sans text-xs text-muted-foreground">
                       {p.phone && <span dir="ltr">{p.phone}</span>}
                       {p.expectedTime && <span>متوقع ~{p.expectedTime}</span>}
                     </div>
                     {p.notes && (
-                      <p className="mt-0.5 text-xs text-muted-foreground font-sans">
-                        <span className="text-foreground/70">ملاحظة:</span>{" "}
-                        {p.notes}
+                      <p className="mt-0.5 font-sans text-xs text-muted-foreground">
+                        <span className="text-foreground/70">ملاحظة:</span> {p.notes}
                       </p>
                     )}
                   </div>

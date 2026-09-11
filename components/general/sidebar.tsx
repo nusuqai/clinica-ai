@@ -3,15 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import {
-  LucideIcon,
-  ChevronRight,
-  ChevronDown,
-  X,
-  LogOut,
-  Stethoscope,
-  Bell,
-} from "lucide-react";
+import { LucideIcon, ChevronRight, ChevronDown, X, LogOut, Stethoscope, Bell } from "lucide-react";
 import { signOut } from "@/server/actions/auth";
 import { useEscalationAlerts } from "./escalation-provider";
 
@@ -57,7 +49,7 @@ export default function Sidebar({
       {/* Desktop sidebar */}
       <aside
         className={[
-          "hidden md:flex flex-col h-full bg-primary text-white transition-[width] duration-300 ease-in-out flex-shrink-0 border-s border-white/5",
+          "hidden h-full flex-shrink-0 flex-col border-s border-white/5 bg-primary text-white transition-[width] duration-300 ease-in-out md:flex",
           collapsed ? "w-[72px]" : "w-64",
         ].join(" ")}
       >
@@ -76,18 +68,16 @@ export default function Sidebar({
       {/* Mobile drawer */}
       <aside
         className={[
-          "fixed inset-y-0 end-0 z-30 flex flex-col w-72 bg-primary text-white md:hidden transition-transform duration-300 ease-in-out",
-          mobileOpen
-            ? "translate-x-0"
-            : "translate-x-full rtl:-translate-x-full",
+          "fixed inset-y-0 end-0 z-30 flex w-72 flex-col bg-primary text-white transition-transform duration-300 ease-in-out md:hidden",
+          mobileOpen ? "translate-x-0" : "translate-x-full rtl:-translate-x-full",
         ].join(" ")}
       >
         <button
           onClick={onMobileClose}
-          className="absolute top-4 start-4 p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+          className="absolute start-4 top-4 rounded-lg p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
           aria-label="إغلاق القائمة"
         >
-          <X className="w-5 h-5" />
+          <X className="h-5 w-5" />
         </button>
         <SidebarContent
           navItems={navItems}
@@ -139,22 +129,19 @@ function SidebarContent({
     if (href === "/" || !pathname.startsWith(href + "/")) return false;
     // A more specific href also matches → let that one win instead.
     return !allHrefs.some(
-      (h) =>
-        h !== href &&
-        h.startsWith(href) &&
-        (pathname === h || pathname.startsWith(h + "/")),
+      (h) => h !== href && h.startsWith(href) && (pathname === h || pathname.startsWith(h + "/"))
     );
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 h-16 border-b border-white/10 flex-shrink-0">
-        <div className="w-9 h-9 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0">
-          <Stethoscope className="w-5 h-5 text-accent" />
+      <div className="flex h-16 flex-shrink-0 items-center gap-3 border-b border-white/10 px-4">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent/20">
+          <Stethoscope className="h-5 w-5 text-accent" />
         </div>
         {!collapsed && (
-          <span className="font-heading font-bold text-lg text-white tracking-wide truncate">
+          <span className="truncate font-heading text-lg font-bold tracking-wide text-white">
             Clinica AI
           </span>
         )}
@@ -162,15 +149,15 @@ function SidebarContent({
 
       {/* Role badge */}
       {!collapsed && (
-        <div className="px-4 pt-4 pb-2">
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-accent/20 text-accent font-sans">
+        <div className="px-4 pb-2 pt-4">
+          <span className="inline-flex items-center rounded-full bg-accent/20 px-2.5 py-0.5 font-sans text-xs font-medium text-accent">
             {roleLabel}
           </span>
         </div>
       )}
 
       {/* Nav items */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
         {navItems.map((item) =>
           item.children && item.children.length > 0 ? (
             <NavGroup
@@ -189,30 +176,28 @@ function SidebarContent({
               active={isHrefActive(item.href)}
               showAlert={item.href.endsWith("/admin/messages") && hasUnresolved}
             />
-          ),
+          )
         )}
       </nav>
 
       {/* Bottom: user info + sign out */}
-      <div className="flex-shrink-0 border-t border-white/10 p-3 space-y-1">
+      <div className="flex-shrink-0 space-y-1 border-t border-white/10 p-3">
         {/* User info */}
         <div
           className={[
-            "flex items-center gap-3 px-2 py-2 rounded-xl",
+            "flex items-center gap-3 rounded-xl px-2 py-2",
             collapsed ? "justify-center" : "",
           ].join(" ")}
         >
-          <div className="w-8 h-8 rounded-full bg-accent/30 flex items-center justify-center flex-shrink-0">
-            <span className="text-xs font-bold text-accent font-sans">
-              {initials}
-            </span>
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-accent/30">
+            <span className="font-sans text-xs font-bold text-accent">{initials}</span>
           </div>
           {!collapsed && (
             <div className="overflow-hidden">
-              <p className="text-sm font-medium text-white truncate font-sans leading-tight">
+              <p className="truncate font-sans text-sm font-medium leading-tight text-white">
                 {userFullName}
               </p>
-              <p className="text-xs text-white/40 truncate font-sans" dir="ltr">
+              <p className="truncate font-sans text-xs text-white/40" dir="ltr">
                 {userEmail}
               </p>
             </div>
@@ -225,11 +210,11 @@ function SidebarContent({
             type="submit"
             title={collapsed ? "تسجيل الخروج" : undefined}
             className={[
-              "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-sans text-sm text-white/60 hover:bg-red-500/15 hover:text-red-400 transition-all duration-150",
+              "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 font-sans text-sm text-white/60 transition-all duration-150 hover:bg-red-500/15 hover:text-red-400",
               collapsed ? "justify-center" : "",
             ].join(" ")}
           >
-            <LogOut className="w-5 h-5 flex-shrink-0" />
+            <LogOut className="h-5 w-5 flex-shrink-0" />
             {!collapsed && <span>تسجيل الخروج</span>}
           </button>
         </form>
@@ -238,13 +223,13 @@ function SidebarContent({
         <button
           onClick={onToggleCollapse}
           className={[
-            "hidden md:flex w-full items-center gap-3 px-3 py-2 rounded-xl font-sans text-xs text-white/30 hover:text-white/60 hover:bg-white/5 transition-all duration-150",
+            "hidden w-full items-center gap-3 rounded-xl px-3 py-2 font-sans text-xs text-white/30 transition-all duration-150 hover:bg-white/5 hover:text-white/60 md:flex",
             collapsed ? "justify-center" : "",
           ].join(" ")}
         >
           <ChevronRight
             className={[
-              "w-4 h-4 flex-shrink-0 transition-transform duration-300",
+              "h-4 w-4 flex-shrink-0 transition-transform duration-300",
               collapsed ? "rotate-180" : "rotate-0",
             ].join(" ")}
           />
@@ -273,45 +258,37 @@ function NavLeaf({
   return (
     <Link
       href={href}
-      title={
-        collapsed
-          ? showAlert
-            ? `${label} — يوجد طلب تصعيد غير محلول`
-            : label
-          : undefined
-      }
+      title={collapsed ? (showAlert ? `${label} — يوجد طلب تصعيد غير محلول` : label) : undefined}
       className={[
-        "flex items-center gap-3 px-3 py-2.5 rounded-xl font-sans text-sm transition-all duration-150 group relative",
-        indented ? "ps-9 py-2" : "",
+        "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 font-sans text-sm transition-all duration-150",
+        indented ? "py-2 ps-9" : "",
         active
-          ? "bg-accent/15 text-accent font-medium"
-          : "text-white/70 hover:bg-white/8 hover:text-white",
+          ? "bg-accent/15 font-medium text-accent"
+          : "hover:bg-white/8 text-white/70 hover:text-white",
       ].join(" ")}
     >
       {active && (
-        <span className="absolute end-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-accent rounded-full" />
+        <span className="absolute end-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-full bg-accent" />
       )}
       <span className="relative flex-shrink-0">
         <Icon
           className={[
-            indented ? "w-4 h-4" : "w-5 h-5",
+            indented ? "h-4 w-4" : "h-5 w-5",
             "transition-colors",
             active ? "text-accent" : "text-white/50 group-hover:text-white/80",
           ].join(" ")}
         />
         {showAlert && (
-          <span className="absolute -top-1 -end-1 flex w-2.5 h-2.5">
-            <span className="animate-ping absolute inline-flex w-full h-full rounded-full bg-red-400 opacity-75" />
-            <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-red-500 border border-primary" />
+          <span className="absolute -end-1 -top-1 flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full border border-primary bg-red-500" />
           </span>
         )}
       </span>
       {!collapsed && (
-        <span className="truncate flex items-center gap-1.5">
+        <span className="flex items-center gap-1.5 truncate">
           {label}
-          {showAlert && (
-            <Bell className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-          )}
+          {showAlert && <Bell className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />}
         </span>
       )}
     </Link>
@@ -356,31 +333,29 @@ function NavGroup({
         onClick={handleHeaderClick}
         title={collapsed ? label : undefined}
         className={[
-          "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-sans text-sm transition-all duration-150 group relative",
+          "group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 font-sans text-sm transition-all duration-150",
           childActive
-            ? "bg-accent/15 text-accent font-medium"
-            : "text-white/70 hover:bg-white/8 hover:text-white",
+            ? "bg-accent/15 font-medium text-accent"
+            : "hover:bg-white/8 text-white/70 hover:text-white",
         ].join(" ")}
       >
         {childActive && (
-          <span className="absolute end-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-accent rounded-full" />
+          <span className="absolute end-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-full bg-accent" />
         )}
         <span className="relative flex-shrink-0">
           <Icon
             className={[
-              "w-5 h-5 transition-colors",
-              childActive
-                ? "text-accent"
-                : "text-white/50 group-hover:text-white/80",
+              "h-5 w-5 transition-colors",
+              childActive ? "text-accent" : "text-white/50 group-hover:text-white/80",
             ].join(" ")}
           />
         </span>
         {!collapsed && (
           <>
-            <span className="truncate flex-1 text-start">{label}</span>
+            <span className="flex-1 truncate text-start">{label}</span>
             <ChevronDown
               className={[
-                "w-4 h-4 flex-shrink-0 transition-transform duration-200",
+                "h-4 w-4 flex-shrink-0 transition-transform duration-200",
                 open ? "rotate-180" : "rotate-0",
               ].join(" ")}
             />

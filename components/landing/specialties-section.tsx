@@ -1,13 +1,4 @@
-import {
-  HeartPulse,
-  Bone,
-  Baby,
-  Brain,
-  Eye,
-  Stethoscope,
-  Ear,
-  Pill,
-} from "lucide-react";
+import { HeartPulse, Bone, Baby, Brain, Eye, Stethoscope, Ear, Pill } from "lucide-react";
 
 const SPECIALTY_ICONS: Record<string, typeof HeartPulse> = {
   قلب: HeartPulse,
@@ -56,12 +47,8 @@ export function SpecialtiesSection({ specialties }: Props) {
                   <Icon className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <p className="font-sans text-sm font-semibold text-text">
-                    {spec.name}
-                  </p>
-                  <p className="mt-0.5 font-sans text-xs text-text/50">
-                    {spec.count} طبيب
-                  </p>
+                  <p className="font-sans text-sm font-semibold text-text">{spec.name}</p>
+                  <p className="mt-0.5 font-sans text-xs text-text/50">{spec.count} طبيب</p>
                 </div>
               </a>
             );

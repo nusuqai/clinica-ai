@@ -11,9 +11,7 @@ import { prisma } from "@/lib/prisma";
  * Auth user id for an email (case-insensitive), or null if none. Does NOT scan —
  * a single indexed lookup on `auth.users`.
  */
-export async function findAuthUserIdByEmail(
-  email: string,
-): Promise<string | null> {
+export async function findAuthUserIdByEmail(email: string): Promise<string | null> {
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT id::text AS id
     FROM auth.users

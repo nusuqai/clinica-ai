@@ -173,9 +173,7 @@ async function mintSignupOtp(args: {
 
   // The user already exists — remove the stale unconfirmed account and retry.
   const { data: list } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  const existing = list?.users.find(
-    (u) => u.email?.toLowerCase() === args.email.toLowerCase(),
-  );
+  const existing = list?.users.find((u) => u.email?.toLowerCase() === args.email.toLowerCase());
   if (existing) await admin.auth.admin.deleteUser(existing.id);
 
   const second = await gen();

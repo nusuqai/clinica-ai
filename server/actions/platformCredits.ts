@@ -3,11 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { requirePlatformAdmin } from "@/lib/auth";
-import {
-  topUpClinicCredit,
-  adjustClinicCredit,
-  setClinicMarkup,
-} from "@/server/services/aiCredit";
+import { topUpClinicCredit, adjustClinicCredit, setClinicMarkup } from "@/server/services/aiCredit";
 
 const CREDITS_PATH = "/platform/credits";
 
@@ -42,7 +38,7 @@ export async function topUpClinicAction(input: {
       input.clinicId,
       amount,
       admin.id,
-      input.note?.trim() || undefined,
+      input.note?.trim() || undefined
     );
     revalidatePath(CREDITS_PATH);
     return { ok: true, balance: balance.toFixed(4) };
@@ -67,7 +63,7 @@ export async function adjustClinicBalanceAction(input: {
       input.clinicId,
       amount,
       admin.id,
-      input.note?.trim() || undefined,
+      input.note?.trim() || undefined
     );
     revalidatePath(CREDITS_PATH);
     return { ok: true, balance: balance.toFixed(4) };

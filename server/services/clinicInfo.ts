@@ -50,9 +50,7 @@ export async function getClinicInfo(clinicId: string): Promise<ClinicInfo | null
 
 // ─── Mutations ──────────────────────────────────────────────────────────────
 
-export async function updateClinicInfo(
-  input: UpdateClinicInfoInput,
-): Promise<Result<void>> {
+export async function updateClinicInfo(input: UpdateClinicInfoInput): Promise<Result<void>> {
   try {
     await prisma.$transaction(async (tx) => {
       await tx.clinic.update({

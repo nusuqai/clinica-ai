@@ -18,6 +18,7 @@ interface DashboardShellProps {
   userEmail: string;
   /** Admin only — conversation IDs with an unresolved escalation on load. */
   initialUnresolvedEscalationConversationIds?: string[];
+  clinicId: string;
 }
 
 export default function DashboardShell({
@@ -26,6 +27,7 @@ export default function DashboardShell({
   basePath,
   userFullName,
   userEmail,
+  clinicId,
   initialUnresolvedEscalationConversationIds = [],
 }: DashboardShellProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -65,7 +67,7 @@ export default function DashboardShell({
         onMobileClose={() => setMobileOpen(false)}
       />
 
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar title={pageTitle} onMenuClick={() => setMobileOpen(true)} />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
@@ -81,6 +83,7 @@ export default function DashboardShell({
   return (
     <EscalationProvider
       initialConversationIds={initialUnresolvedEscalationConversationIds}
+      clinicId={clinicId}
     >
       {shell}
     </EscalationProvider>

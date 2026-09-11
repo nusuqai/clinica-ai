@@ -18,7 +18,10 @@ export default function DoctorRowActions({ doctorId, isActive }: DoctorRowAction
     setActive((v) => !v);
     startTransition(async () => {
       const res = await setDoctorActiveAction(doctorId, !active);
-      if (res?.error) { setError(res.error); setActive(active); }
+      if (res?.error) {
+        setError(res.error);
+        setActive(active);
+      }
     });
   }
 
@@ -52,11 +55,11 @@ export default function DoctorRowActions({ doctorId, isActive }: DoctorRowAction
         onClick={handleDelete}
         disabled={isPending}
         title="حذف الطبيب"
-        className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
       >
-        <Trash2 className="w-4 h-4" />
+        <Trash2 className="h-4 w-4" />
       </button>
-      {error && <p className="text-xs text-red-500 font-sans">{error}</p>}
+      {error && <p className="font-sans text-xs text-red-500">{error}</p>}
     </div>
   );
 }

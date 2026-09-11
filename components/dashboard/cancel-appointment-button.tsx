@@ -10,10 +10,7 @@ interface Props {
   status: AppointmentStatus;
 }
 
-const cancellable: AppointmentStatus[] = [
-  AppointmentStatus.PENDING,
-  AppointmentStatus.CONFIRMED,
-];
+const cancellable: AppointmentStatus[] = [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED];
 
 export function CancelAppointmentButton({ appointmentId, status }: Props) {
   const [isPending, startTransition] = useTransition();
@@ -26,7 +23,7 @@ export function CancelAppointmentButton({ appointmentId, status }: Props) {
     return (
       <button
         onClick={() => setConfirmed(true)}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 font-sans"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 font-sans text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
       >
         <X className="h-3.5 w-3.5" />
         إلغاء الموعد
@@ -47,20 +44,20 @@ export function CancelAppointmentButton({ appointmentId, status }: Props) {
             });
           }}
           disabled={isPending}
-          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity disabled:opacity-60 hover:opacity-90 font-sans"
+          className="rounded-lg bg-red-600 px-3 py-1.5 font-sans text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
         >
           {isPending ? "جارٍ الإلغاء..." : "تأكيد الإلغاء"}
         </button>
         <button
           onClick={() => setConfirmed(false)}
           disabled={isPending}
-          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted font-sans"
+          className="rounded-lg border border-border px-3 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
         >
           تراجع
         </button>
       </div>
       {error && (
-        <div className="flex items-center gap-1 text-xs text-red-600 font-sans">
+        <div className="flex items-center gap-1 font-sans text-xs text-red-600">
           <AlertCircle className="h-3 w-3 shrink-0" />
           {error}
         </div>

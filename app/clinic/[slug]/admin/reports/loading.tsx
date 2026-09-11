@@ -6,11 +6,11 @@ export default function Loading() {
       <PageHeaderSkeleton />
       <StatCardGridSkeleton count={4} columns="grid-cols-2 md:grid-cols-4" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="bg-card border border-border rounded-2xl p-6">
-            <Skeleton className="h-4 w-40 mb-6" />
-            <div className="grid grid-cols-2 gap-3 mb-6">
+          <div key={i} className="rounded-2xl border border-border bg-card p-6">
+            <Skeleton className="mb-6 h-4 w-40" />
+            <div className="mb-6 grid grid-cols-2 gap-3">
               {Array.from({ length: 4 }).map((_, j) => (
                 <Skeleton key={j} className="h-14 w-full rounded-xl" />
               ))}
@@ -20,8 +20,8 @@ export default function Loading() {
         ))}
       </div>
 
-      <div className="bg-card border border-border rounded-2xl p-6">
-        <Skeleton className="h-4 w-48 mb-6" />
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <Skeleton className="mb-6 h-4 w-48" />
         <Skeleton className="h-32 w-full rounded-lg" />
       </div>
     </div>

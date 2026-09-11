@@ -85,7 +85,7 @@ export interface SaveBindingInput {
  * is one the sweep can resolve. This is why the sweep can trust bindings blindly.
  */
 export async function saveAppointmentTemplateBindingAction(
-  input: SaveBindingInput,
+  input: SaveBindingInput
 ): Promise<{ ok: true } | ActionError> {
   const auth = await requireAdminClinic();
   if (!auth.ok) return auth;
@@ -111,7 +111,7 @@ export async function saveAppointmentTemplateBindingAction(
     };
   }
   const template = templates.find(
-    (t) => t.name === input.templateName && t.language === input.languageCode,
+    (t) => t.name === input.templateName && t.language === input.languageCode
   );
   if (!template) {
     return { ok: false, reason: "error", message: "القالب غير موجود" };
@@ -158,7 +158,7 @@ export async function saveAppointmentTemplateBindingAction(
 
 /** Removes a binding entirely (turns the flow off for that purpose). */
 export async function deleteAppointmentTemplateBindingAction(
-  purpose: AppointmentTemplatePurpose,
+  purpose: AppointmentTemplatePurpose
 ): Promise<{ ok: true } | ActionError> {
   const auth = await requireAdminClinic();
   if (!auth.ok) return auth;

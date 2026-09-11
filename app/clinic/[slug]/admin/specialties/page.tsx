@@ -1,9 +1,7 @@
 import { requireActiveMember } from "@/lib/auth";
 import { listSpecialties } from "@/server/services/specialties";
 import PageHeader from "@/components/admin/page-header";
-import SpecialtiesManager, {
-  type SpecialtyView,
-} from "./_components/specialties-manager";
+import SpecialtiesManager, { type SpecialtyView } from "./_components/specialties-manager";
 
 export default async function AdminSpecialtiesPage() {
   const { clinic } = await requireActiveMember(["ADMIN"]);

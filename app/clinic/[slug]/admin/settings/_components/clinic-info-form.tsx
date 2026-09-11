@@ -82,19 +82,19 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-3xl">
+    <form onSubmit={handleSubmit} className="max-w-3xl space-y-6">
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-sans">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
           {error}
         </div>
       )}
       {saved && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-4 py-3 text-sm font-sans">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
           تم حفظ التغييرات
         </div>
       )}
 
-      <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
         <div className="space-y-1.5">
           <label className={labelCls}>اسم العيادة</label>
           <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
@@ -111,7 +111,7 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
       </div>
 
       {/* Phones */}
-      <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
+      <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
         <div className="flex items-center justify-between">
           <span className={labelCls}>أرقام الهواتف العامة</span>
           <button
@@ -122,23 +122,23 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
                 { type: PhoneType.MOBILE, number: "", label: null, isPrimary: p.length === 0 },
               ])
             }
-            className="inline-flex items-center gap-1 text-sm text-primary font-sans hover:underline"
+            className="inline-flex items-center gap-1 font-sans text-sm text-primary hover:underline"
           >
-            <Plus className="w-3.5 h-3.5" /> إضافة رقم
+            <Plus className="h-3.5 w-3.5" /> إضافة رقم
           </button>
         </div>
-        <p className="text-xs text-muted-foreground font-sans">
+        <p className="font-sans text-xs text-muted-foreground">
           الرقم المعلّم كـ«أساسي» هو الرقم الرئيسي للعيادة.
         </p>
         {phones.length === 0 && (
-          <p className="text-xs text-muted-foreground font-sans">لا توجد أرقام مضافة.</p>
+          <p className="font-sans text-xs text-muted-foreground">لا توجد أرقام مضافة.</p>
         )}
         {phones.map((p, i) => (
           <div key={i} className="flex flex-wrap items-center gap-2">
             <select
               value={p.type}
               onChange={(e) => updatePhone(i, { type: e.target.value as PhoneType })}
-              className="border border-border rounded-xl px-2 py-2 text-sm bg-background font-sans"
+              className="rounded-xl border border-border bg-background px-2 py-2 font-sans text-sm"
             >
               {PHONE_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>
@@ -151,15 +151,15 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
               onChange={(e) => updatePhone(i, { number: e.target.value })}
               placeholder="الرقم"
               dir="ltr"
-              className="flex-1 min-w-[120px] border border-border rounded-xl px-3 py-2 text-sm bg-background font-sans"
+              className="min-w-[120px] flex-1 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
             />
             <input
               value={p.label ?? ""}
               onChange={(e) => updatePhone(i, { label: e.target.value || null })}
               placeholder="وصف"
-              className="w-28 border border-border rounded-xl px-3 py-2 text-sm bg-background font-sans"
+              className="w-28 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
             />
-            <label className="flex items-center gap-1 text-xs font-sans text-muted-foreground">
+            <label className="flex items-center gap-1 font-sans text-xs text-muted-foreground">
               <input
                 type="checkbox"
                 checked={p.isPrimary}
@@ -170,16 +170,16 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
             <button
               type="button"
               onClick={() => setPhones((prev) => prev.filter((_, idx) => idx !== i))}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50"
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         ))}
       </div>
 
       {/* Socials */}
-      <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
+      <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
         <div className="flex items-center justify-between">
           <span className={labelCls}>حسابات التواصل الاجتماعي</span>
           <button
@@ -187,13 +187,13 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
             onClick={() =>
               setSocials((s) => [...s, { platform: SocialPlatform.FACEBOOK, url: "" }])
             }
-            className="inline-flex items-center gap-1 text-sm text-primary font-sans hover:underline"
+            className="inline-flex items-center gap-1 font-sans text-sm text-primary hover:underline"
           >
-            <Plus className="w-3.5 h-3.5" /> إضافة حساب
+            <Plus className="h-3.5 w-3.5" /> إضافة حساب
           </button>
         </div>
         {socials.length === 0 && (
-          <p className="text-xs text-muted-foreground font-sans">لا توجد حسابات مضافة.</p>
+          <p className="font-sans text-xs text-muted-foreground">لا توجد حسابات مضافة.</p>
         )}
         {socials.map((s, i) => (
           <div key={i} className="flex flex-wrap items-center gap-2">
@@ -202,11 +202,11 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
               onChange={(e) =>
                 setSocials((prev) =>
                   prev.map((x, idx) =>
-                    idx === i ? { ...x, platform: e.target.value as SocialPlatform } : x,
-                  ),
+                    idx === i ? { ...x, platform: e.target.value as SocialPlatform } : x
+                  )
                 )
               }
-              className="border border-border rounded-xl px-2 py-2 text-sm bg-background font-sans"
+              className="rounded-xl border border-border bg-background px-2 py-2 font-sans text-sm"
             >
               {PLATFORMS.map((pl) => (
                 <option key={pl.value} value={pl.value}>
@@ -218,19 +218,19 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
               value={s.url}
               onChange={(e) =>
                 setSocials((prev) =>
-                  prev.map((x, idx) => (idx === i ? { ...x, url: e.target.value } : x)),
+                  prev.map((x, idx) => (idx === i ? { ...x, url: e.target.value } : x))
                 )
               }
               placeholder="https://…"
               dir="ltr"
-              className="flex-1 min-w-[160px] border border-border rounded-xl px-3 py-2 text-sm bg-background font-sans"
+              className="min-w-[160px] flex-1 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
             />
             <button
               type="button"
               onClick={() => setSocials((prev) => prev.filter((_, idx) => idx !== i))}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50"
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         ))}
@@ -239,7 +239,7 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
       <button
         type="submit"
         disabled={isPending}
-        className="bg-primary text-white rounded-xl px-6 py-2.5 text-sm font-medium font-sans hover:bg-primary/90 transition-colors disabled:opacity-60"
+        className="rounded-xl bg-primary px-6 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
       >
         {isPending ? "جارٍ الحفظ..." : "حفظ التغييرات"}
       </button>

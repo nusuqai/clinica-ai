@@ -3,10 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast, Toaster } from "sonner";
-import {
-  useRealtimeEscalations,
-  RealtimeEscalationRow,
-} from "@/hooks/use-realtime-messages";
+import { useRealtimeEscalations, RealtimeEscalationRow } from "@/hooks/use-realtime-messages";
 
 interface EscalationAlertsValue {
   hasUnresolved: boolean;
@@ -26,18 +23,18 @@ interface EscalationProviderProps {
   /** Conversation IDs that already have an unresolved escalation on load. */
   initialConversationIds: string[];
   children: React.ReactNode;
+  clinicId: string;
 }
 
 export default function EscalationProvider({
   initialConversationIds,
   children,
+  clinicId,
 }: EscalationProviderProps) {
   const router = useRouter();
   // conversationId -> number of unresolved escalations on it
   const countsRef = useRef(new Map<string, number>());
-  const [hasUnresolved, setHasUnresolved] = useState(
-    initialConversationIds.length > 0,
-  );
+  const [hasUnresolved, setHasUnresolved] = useState(initialConversationIds.length > 0);
   const [eventTick, setEventTick] = useState(0);
 
   useEffect(() => {
@@ -72,6 +69,7 @@ export default function EscalationProvider({
       console.log("[escalation] resolve payload", row);
       bump(row, -1);
     },
+    clinicId
   );
 
   return (

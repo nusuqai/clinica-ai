@@ -3,11 +3,7 @@ import { AppointmentStatus, Channel, SenderType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { inngest, type AppointmentNotifyData } from "@/lib/inngest/client";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
-import {
-  sendTemplateMessage,
-  WhatsAppApiError,
-  type WhatsAppRecipient,
-} from "@/lib/meta/whatsapp";
+import { sendTemplateMessage, WhatsAppApiError, type WhatsAppRecipient } from "@/lib/meta/whatsapp";
 import { effectiveEndUtc, effectiveStartUtc } from "@/lib/appointment-timing";
 import { buildTemplateVariables, buildTokenContext } from "@/lib/appointment-templates";
 
@@ -206,7 +202,7 @@ export const appointmentsSweep = inngest.createFunction(
           data: { appointmentId: r.id, clinicId: r.clinicId, purpose: "CONFIRM_REMINDER" as const },
           // Dedupe repeat emits within a sweep-retry; the DB flag guards ticks.
           id: `remind-${r.id}`,
-        })),
+        }))
       );
     }
 
@@ -218,12 +214,12 @@ export const appointmentsSweep = inngest.createFunction(
           name: "appointment/notify" as const,
           data: { appointmentId: r.id, clinicId: r.clinicId, purpose: "FEEDBACK_REQUEST" as const },
           id: `feedback-${r.id}`,
-        })),
+        }))
       );
     }
 
     return { noShows, reminders: reminders.length, feedback: feedback.length };
-  },
+  }
 );
 
 // ─── The throttled sender ───────────────────────────────────────────────────
@@ -243,10 +239,7 @@ function conversationRecipient(conv: {
  * conversation the agent already has context for. Returns null if there is no
  * way to reach them on WhatsApp (no existing thread and no phone on file).
  */
-async function getWhatsappThread(
-  clinicId: string,
-  patient: { id: string; phone: string | null },
-) {
+async function getWhatsappThread(clinicId: string, patient: { id: string; phone: string | null }) {
   const existing = await prisma.conversation.findFirst({
     where: { clinicId, userId: patient.id, channel: Channel.WHATSAPP },
     select: { id: true, whatsappPhone: true, whatsappUserId: true },
@@ -347,7 +340,7 @@ export const appointmentNotify = inngest.createFunction(
         await sendTemplateMessage(
           recipient,
           { name: binding.templateName, languageCode: binding.languageCode, variables },
-          { phoneNumberId: creds.phoneNumberId, accessToken: creds.accessToken },
+          { phoneNumberId: creds.phoneNumberId, accessToken: creds.accessToken }
         );
       } catch (err) {
         // A permanent Meta rejection (unknown template, bad number) will never
@@ -366,11 +359,13 @@ export const appointmentNotify = inngest.createFunction(
       if (thread) {
         await prisma.message.create({
           data: {
+            clinicId,
             conversationId: thread.id,
             senderType: SenderType.AGENT,
             content: PURPOSE_LABEL[purpose],
             metadata: {
               automation: purpose,
+              appointmentId,
               template: binding.templateName,
               language: binding.languageCode,
               variables,
@@ -388,13 +383,13 @@ export const appointmentNotify = inngest.createFunction(
     });
 
     return { appointmentId, purpose, result };
-  },
+  }
 );
 
 /** Stamps the purpose-specific dedupe flag so the message is never re-sent. */
 async function markHandled(
   appointmentId: string,
-  purpose: "CONFIRM_REMINDER" | "FEEDBACK_REQUEST",
+  purpose: "CONFIRM_REMINDER" | "FEEDBACK_REQUEST"
 ): Promise<void> {
   await prisma.appointment.update({
     where: { id: appointmentId },

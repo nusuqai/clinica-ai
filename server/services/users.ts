@@ -52,7 +52,7 @@ export async function listUsers(clinicId: string): Promise<AdminUser[]> {
   ]);
 
   const emailMap = new Map<string, string>(
-    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""]),
+    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""])
   );
 
   return members.map((m) => ({
@@ -72,7 +72,7 @@ export async function listUsers(clinicId: string): Promise<AdminUser[]> {
  */
 export async function getClinicUser(
   userId: string,
-  clinicId: string,
+  clinicId: string
 ): Promise<ClinicUserDetail | null> {
   const member = await prisma.clinicMember.findUnique({
     where: { userId_clinicId: { userId, clinicId } },
@@ -108,7 +108,7 @@ export async function getClinicUser(
 export async function updatePatientProfile(
   userId: string,
   clinicId: string,
-  input: { fullName?: string; phone?: string | null },
+  input: { fullName?: string; phone?: string | null }
 ): Promise<Result<void>> {
   const member = await prisma.clinicMember.findUnique({
     where: { userId_clinicId: { userId, clinicId } },
@@ -150,7 +150,7 @@ export async function updatePatientProfile(
 export async function changePatientEmail(
   userId: string,
   clinicId: string,
-  newEmailRaw: string,
+  newEmailRaw: string
 ): Promise<Result<void>> {
   const member = await prisma.clinicMember.findUnique({
     where: { userId_clinicId: { userId, clinicId } },
@@ -188,7 +188,7 @@ export async function changePatientEmail(
 export async function updateUserRole(
   userId: string,
   clinicId: string,
-  role: Role,
+  role: Role
 ): Promise<Result<void>> {
   try {
     await prisma.clinicMember.upsert({

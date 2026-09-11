@@ -21,8 +21,11 @@ import {
 
 const CONFIG_PATH = "/clinic/[slug]/admin/whatsapp";
 
-type ActionError =
-  | { ok: false; reason: "unauthorized" | "forbidden" | "not_configured" | "error"; message?: string };
+type ActionError = {
+  ok: false;
+  reason: "unauthorized" | "forbidden" | "not_configured" | "error";
+  message?: string;
+};
 
 async function requireAdminClinic() {
   const ctx = await getActiveClinicContext();
@@ -46,9 +49,7 @@ export async function saveWhatsappConfigAction(input: {
   phoneNumberId: string;
   wabaId: string;
   accessToken?: string;
-}): Promise<
-  { ok: true; webhookToken: string; verifyToken: string } | ActionError
-> {
+}): Promise<{ ok: true; webhookToken: string; verifyToken: string } | ActionError> {
   const auth = await requireAdminClinic();
   if (!auth.ok) return auth;
 
@@ -57,10 +58,7 @@ export async function saveWhatsappConfigAction(input: {
   }
 
   try {
-    const { webhookToken, verifyToken } = await saveWhatsappConfig(
-      auth.ctx.clinic.id,
-      input,
-    );
+    const { webhookToken, verifyToken } = await saveWhatsappConfig(auth.ctx.clinic.id, input);
     revalidatePath(CONFIG_PATH, "page");
     return { ok: true, webhookToken, verifyToken };
   } catch (err) {
@@ -116,7 +114,11 @@ export async function createTemplateAction(input: {
   // Meta requires the name to be lowercase letters, digits and underscores.
   const name = input.name.trim().toLowerCase().replace(/\s+/g, "_");
   if (!/^[a-z0-9_]+$/.test(name)) {
-    return { ok: false, reason: "error", message: "Template name may only contain letters, digits and underscores" };
+    return {
+      ok: false,
+      reason: "error",
+      message: "Template name may only contain letters, digits and underscores",
+    };
   }
   if (!input.bodyText.trim()) {
     return { ok: false, reason: "error", message: "Template body is required" };
@@ -156,9 +158,7 @@ export async function createTemplateAction(input: {
   }
 }
 
-export async function deleteTemplateAction(
-  name: string,
-): Promise<{ ok: true } | ActionError> {
+export async function deleteTemplateAction(name: string): Promise<{ ok: true } | ActionError> {
   const auth = await requireAdminClinic();
   if (!auth.ok) return auth;
 
@@ -203,7 +203,7 @@ export async function sendTemplateToNumberAction(input: {
     await sendTemplateMessage(
       phone,
       { name: input.name, languageCode: input.language, variables: input.variables },
-      creds,
+      creds
     );
     return { ok: true };
   } catch (err) {

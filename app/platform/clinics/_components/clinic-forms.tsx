@@ -49,10 +49,10 @@ export function CreateClinicForm() {
         <input name="primaryColor" placeholder="#0B1F3A" className={inputCls} dir="ltr" />
         <input name="accentColor" placeholder="#00C2CB" className={inputCls} dir="ltr" />
       </div>
-      <p className="sm:col-span-2 text-xs text-muted-foreground">
+      <p className="text-xs text-muted-foreground sm:col-span-2">
         سيتم إنشاء حساب لمدير العيادة (أو استخدام حسابه الحالي) وتعيينه مسؤولاً عن هذه العيادة.
       </p>
-      <div className="sm:col-span-2 flex items-center gap-3">
+      <div className="flex items-center gap-3 sm:col-span-2">
         <button
           type="submit"
           disabled={pending}
@@ -115,9 +115,7 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
           }}
           className={[
             "rounded-full px-3 py-1 text-xs font-medium",
-            clinic.isActive
-              ? "bg-emerald-100 text-emerald-700"
-              : "bg-gray-100 text-gray-500",
+            clinic.isActive ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500",
           ].join(" ")}
         >
           {clinic.isActive ? "نشطة" : "معطّلة"}

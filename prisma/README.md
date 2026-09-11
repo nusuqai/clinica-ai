@@ -24,9 +24,9 @@ Error: The underlying table for model `chat_sessions` does not exist.
 ```
 
 **Why this happens:** `prisma migrate dev` doesn't just run your new migration — it spins up
-a throwaway "shadow" database and replays *every* migration file in `prisma/migrations/`
+a throwaway "shadow" database and replays _every_ migration file in `prisma/migrations/`
 against it from scratch, purely to validate the migration history and compute the diff for
-the next migration. If any *earlier* migration doesn't reproduce cleanly on a truly empty
+the next migration. If any _earlier_ migration doesn't reproduce cleanly on a truly empty
 database — e.g. because something in this project's history was created outside of a
 tracked migration file (a manual change via the Supabase dashboard/SQL editor, a
 Supabase-managed trigger/policy, etc.) — the shadow replay breaks, even though the real

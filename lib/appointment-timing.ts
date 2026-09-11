@@ -41,7 +41,7 @@ function tzOffsetMs(timeZone: string, atUtc: Date): number {
     get("day"),
     get("hour"),
     get("minute"),
-    get("second"),
+    get("second")
   );
   return asUtc - atUtc.getTime();
 }
@@ -57,7 +57,7 @@ function zonedWallTimeToUtc(
   day: number,
   hour: number,
   minute: number,
-  timeZone: string,
+  timeZone: string
 ): Date {
   const guess = Date.UTC(year, month1 - 1, day, hour, minute, 0);
   const off1 = tzOffsetMs(timeZone, new Date(guess));
@@ -89,7 +89,7 @@ export function effectiveStartUtc(appt: TimedAppointment, timeZone: string): Dat
       s.getUTCDate(),
       s.getUTCHours(),
       s.getUTCMinutes(),
-      timeZone,
+      timeZone
     );
   }
   if (appt.bookingDate && appt.rule) {
@@ -101,7 +101,7 @@ export function effectiveStartUtc(appt: TimedAppointment, timeZone: string): Dat
       d.getUTCDate(),
       hour,
       minute,
-      timeZone,
+      timeZone
     );
   }
   return null;
@@ -117,7 +117,7 @@ export function effectiveEndUtc(appt: TimedAppointment, timeZone: string): Date 
       e.getUTCDate(),
       e.getUTCHours(),
       e.getUTCMinutes(),
-      timeZone,
+      timeZone
     );
   }
   if (appt.bookingDate && appt.rule) {
@@ -129,7 +129,7 @@ export function effectiveEndUtc(appt: TimedAppointment, timeZone: string): Date 
       d.getUTCDate(),
       hour,
       minute,
-      timeZone,
+      timeZone
     );
   }
   return null;

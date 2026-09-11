@@ -21,10 +21,7 @@ export default async function BookAppointmentPage() {
 
   return (
     <div>
-      <PageHeader
-        title="احجز موعداً"
-        subtitle="اختر الطبيب المناسب وحدد وقت الزيارة"
-      />
+      <PageHeader title="احجز موعداً" subtitle="اختر الطبيب المناسب وحدد وقت الزيارة" />
       <DoctorsClient
         doctors={serialisedDoctors}
         isAuthenticated={true}

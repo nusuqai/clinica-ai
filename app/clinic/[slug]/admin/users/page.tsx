@@ -13,56 +13,39 @@ export default async function AdminUsersPage() {
 
   return (
     <div>
-      <PageHeader
-        title="المستخدمون"
-        subtitle={`${users.length} مستخدم مسجّل`}
-      />
+      <PageHeader title="المستخدمون" subtitle={`${users.length} مستخدم مسجّل`} />
 
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm font-sans">
+          <table className="w-full font-sans text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">
-                  الاسم
-                </th>
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                <th className="px-4 py-3 text-start font-medium text-muted-foreground">الاسم</th>
+                <th className="px-4 py-3 text-start font-medium text-muted-foreground">
                   البريد الإلكتروني
                 </th>
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">
-                  الهاتف
-                </th>
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">
-                  الدور
-                </th>
-                <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                <th className="px-4 py-3 text-start font-medium text-muted-foreground">الهاتف</th>
+                <th className="px-4 py-3 text-start font-medium text-muted-foreground">الدور</th>
+                <th className="px-4 py-3 text-start font-medium text-muted-foreground">
                   تاريخ التسجيل
                 </th>
-                <th className="text-end px-4 py-3 font-medium text-muted-foreground">
-                  الإجراءات
-                </th>
+                <th className="px-4 py-3 text-end font-medium text-muted-foreground">الإجراءات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {users.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="text-center py-12 text-muted-foreground"
-                  >
+                  <td colSpan={6} className="py-12 text-center text-muted-foreground">
                     لا يوجد مستخدمون
                   </td>
                 </tr>
               )}
               {users.map((user) => (
-                <tr
-                  key={user.id}
-                  className="hover:bg-muted/30 transition-colors"
-                >
+                <tr key={user.id} className="transition-colors hover:bg-muted/30">
                   <td className="px-4 py-3 font-medium">
                     <Link
                       href={`${base}/admin/users/${user.id}`}
-                      className="text-foreground hover:text-primary transition-colors"
+                      className="text-foreground transition-colors hover:text-primary"
                     >
                       {user.fullName}
                     </Link>
@@ -82,9 +65,9 @@ export default async function AdminUsersPage() {
                   <td className="px-4 py-3 text-end">
                     <Link
                       href={`${base}/admin/users/${user.id}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium font-sans border border-border text-foreground hover:bg-muted transition-colors"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 font-sans text-xs font-medium text-foreground transition-colors hover:bg-muted"
                     >
-                      <Eye className="w-3.5 h-3.5" />
+                      <Eye className="h-3.5 w-3.5" />
                       عرض التفاصيل
                     </Link>
                   </td>

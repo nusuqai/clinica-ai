@@ -3,7 +3,7 @@
 All transactional + auth emails (clinic-request acknowledgement, approval invite,
 rejection, admin-created invite, password reset, email change) are sent through
 **[Resend](https://resend.com)**. Supabase still owns and validates every auth
-token — we only take over *delivery* so the emails are branded, Arabic RTL, and
+token — we only take over _delivery_ so the emails are branded, Arabic RTL, and
 not subject to Supabase's testing-only rate limits.
 
 ## How it works
@@ -54,7 +54,7 @@ Dashboard → **Authentication → URL Configuration → Redirect URLs**, add:
 > Note: because we generate links against our own `/auth/confirm` route via
 > `generateLink`, the main requirement is that Supabase custom-SMTP is **not**
 > needed for these flows — Resend does the sending. Keep custom SMTP configured
-> too (or a Send Email hook) if you want Supabase's *own* automatic emails
+> too (or a Send Email hook) if you want Supabase's _own_ automatic emails
 > (e.g. default signup confirmation) routed through Resend as well.
 
 ### 4. Environment

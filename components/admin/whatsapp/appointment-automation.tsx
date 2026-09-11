@@ -32,13 +32,13 @@ const PURPOSES: PurposeMeta[] = [
     purpose: "CONFIRM_REMINDER",
     title: "تذكير تأكيد الموعد",
     hint: "يُرسَل قبل الموعد ليؤكّد المريض حجزه. اربطه بقالب يحتوي أزرار (تأكيد / إلغاء).",
-    icon: <BellRing className="w-4 h-4 text-accent" />,
+    icon: <BellRing className="h-4 w-4 text-accent" />,
   },
   {
     purpose: "FEEDBACK_REQUEST",
     title: "طلب التقييم بعد الزيارة",
     hint: "يُرسَل بعد اكتمال الزيارة لطلب رأي المريض في الخدمة.",
-    icon: <MessageSquareHeart className="w-4 h-4 text-accent" />,
+    icon: <MessageSquareHeart className="h-4 w-4 text-accent" />,
   },
 ];
 
@@ -68,7 +68,7 @@ export default function AppointmentAutomation({ configured }: { configured: bool
 
   if (!configured) {
     return (
-      <div className="bg-card border border-border rounded-2xl p-5">
+      <div className="rounded-2xl border border-border bg-card p-5">
         <p className="text-xs text-muted-foreground">
           فعِّل اتصال واتساب أولاً من صفحة الإعدادات لتتمكّن من ربط قوالب التذكير والتقييم.
         </p>
@@ -78,14 +78,14 @@ export default function AppointmentAutomation({ configured }: { configured: bool
 
   return (
     <div className="space-y-5">
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        اربط كل نوع رسالة بأحد قوالبك المعتمدة، وحدِّد أي بيانات الموعد تملأ كل متغيّر في القالب.
-        لن تُرسَل الرسائل التلقائية لنوعٍ ما إلا بعد ربط قالب مُفعّل له.
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        اربط كل نوع رسالة بأحد قوالبك المعتمدة، وحدِّد أي بيانات الموعد تملأ كل متغيّر في القالب. لن
+        تُرسَل الرسائل التلقائية لنوعٍ ما إلا بعد ربط قالب مُفعّل له.
       </p>
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="w-4 h-4 animate-spin" /> جارٍ التحميل...
+          <Loader2 className="h-4 w-4 animate-spin" /> جارٍ التحميل...
         </div>
       ) : error ? (
         <p className="text-xs text-red-600">{error}</p>
@@ -122,13 +122,13 @@ function BindingCard({
   const isReminder = meta.purpose === "CONFIRM_REMINDER";
 
   const [selected, setSelected] = useState<string>(
-    initial ? templateKey(initial.templateName, initial.languageCode) : "",
+    initial ? templateKey(initial.templateName, initial.languageCode) : ""
   );
   const [variableMap, setVariableMap] = useState<string[]>(initial?.variableMap ?? []);
   const [enabled, setEnabled] = useState<boolean>(initial?.enabled ?? true);
   // Reminder is edited in hours; feedback in minutes.
   const [leadHours, setLeadHours] = useState<number>(
-    initial ? Math.round(initial.leadMinutes / 60) : 24,
+    initial ? Math.round(initial.leadMinutes / 60) : 24
   );
   const [delayMinutes, setDelayMinutes] = useState<number>(initial?.delayMinutes ?? 120);
   const [saving, setSaving] = useState(false);
@@ -136,7 +136,7 @@ function BindingCard({
 
   const template = useMemo(
     () => templates.find((t) => templateKey(t.name, t.language) === selected) ?? null,
-    [templates, selected],
+    [templates, selected]
   );
 
   // When the chosen template changes, resize the variable map to its placeholder
@@ -146,7 +146,7 @@ function BindingCard({
     const t = templates.find((x) => templateKey(x.name, x.language) === key);
     const count = t?.variableCount ?? 0;
     setVariableMap((prev) =>
-      Array.from({ length: count }, (_, i) => prev[i] ?? TOKEN_OPTIONS[0].value),
+      Array.from({ length: count }, (_, i) => prev[i] ?? TOKEN_OPTIONS[0].value)
     );
     setMsg(null);
   };
@@ -184,22 +184,22 @@ function BindingCard({
   };
 
   const previewVariables = variableMap.map(
-    (t) => `[${APPOINTMENT_TOKEN_LABELS[t as keyof typeof APPOINTMENT_TOKEN_LABELS] ?? t}]`,
+    (t) => `[${APPOINTMENT_TOKEN_LABELS[t as keyof typeof APPOINTMENT_TOKEN_LABELS] ?? t}]`
   );
 
   return (
-    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+    <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           {meta.icon}
           <div>
             <h2 className="text-sm font-semibold text-foreground">{meta.title}</h2>
-            <p className="text-[11px] text-muted-foreground mt-0.5 max-w-md leading-relaxed">
+            <p className="mt-0.5 max-w-md text-[11px] leading-relaxed text-muted-foreground">
               {meta.hint}
             </p>
           </div>
         </div>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+        <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           <input
             type="checkbox"
             checked={enabled}
@@ -240,7 +240,7 @@ function BindingCard({
           </label>
           {variableMap.map((token, i) => (
             <div key={i} className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground w-12 shrink-0">{`{{${i + 1}}}`}</span>
+              <span className="w-12 shrink-0 text-xs text-muted-foreground">{`{{${i + 1}}}`}</span>
               <select
                 value={token}
                 onChange={(e) =>
@@ -296,17 +296,15 @@ function BindingCard({
         />
       )}
 
-      {msg && (
-        <p className={`text-xs ${msg.ok ? "text-green-600" : "text-red-600"}`}>{msg.text}</p>
-      )}
+      {msg && <p className={`text-xs ${msg.ok ? "text-green-600" : "text-red-600"}`}>{msg.text}</p>}
 
       <div className="flex items-center gap-2">
         <button
           onClick={handleSave}
           disabled={saving || !template}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary/90 disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-40"
         >
-          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
           حفظ
         </button>
         {initial && (
@@ -315,7 +313,7 @@ function BindingCard({
             disabled={saving}
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-red-600"
           >
-            <Trash2 className="w-3 h-3" />
+            <Trash2 className="h-3 w-3" />
             إلغاء الربط
           </button>
         )}

@@ -93,9 +93,7 @@ export function HeroSection({
             <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/20">
               <Users className="h-5 w-5 text-accent" />
             </div>
-            <div className="font-heading text-2xl font-bold text-white">
-              {doctorCount}+
-            </div>
+            <div className="font-heading text-2xl font-bold text-white">{doctorCount}+</div>
             <div className="mt-0.5 font-sans text-xs text-white/50">طبيب متخصص</div>
           </div>
 
@@ -103,9 +101,7 @@ export function HeroSection({
             <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/20">
               <CheckCircle className="h-5 w-5 text-accent" />
             </div>
-            <div className="font-heading text-2xl font-bold text-white">
-              {appointmentCount}+
-            </div>
+            <div className="font-heading text-2xl font-bold text-white">{appointmentCount}+</div>
             <div className="mt-0.5 font-sans text-xs text-white/50">موعد مكتمل</div>
           </div>
 

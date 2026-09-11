@@ -9,14 +9,14 @@
 
 export function formatSlotDate(
   value: Date | string,
-  options: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" },
+  options: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" }
 ): string {
   return new Date(value).toLocaleDateString("ar-EG", { ...options, timeZone: "UTC" });
 }
 
 export function formatSlotTime(
   value: Date | string,
-  options: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" },
+  options: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" }
 ): string {
   return new Date(value).toLocaleTimeString("ar-EG", { ...options, timeZone: "UTC" });
 }

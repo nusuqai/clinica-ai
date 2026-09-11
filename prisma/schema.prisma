@@ -100,22 +100,19 @@ enum AppointmentTemplatePurpose {
 // A tenant. Each clinic is isolated: its own members, doctors, appointments,
 // conversations and branding. Reached at /clinic/{slug}.
 model Clinic {
-  id           String   @id @default(uuid()) @db.Uuid
-  slug         String   @unique
-  name         String
-  description  String?
-  logoUrl      String?
-  primaryColor String?
-  accentColor  String?
-  // IANA timezone (e.g. "Africa/Cairo"). Anchors appointment-automation timing:
-  // order-based bookings store only a date + "HH:MM" rule times, so converting
-  // those to an absolute instant ("24h before", "end of day") needs the clinic's
-  // zone. Slot times are already absolute, but this keeps all timing consistent.
-  timezone     String   @default("Africa/Cairo")
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
+  id                   String                      @id @default(uuid()) @db.Uuid
+  slug                 String                      @unique
+  name                 String
+  description          String?
+  logoUrl              String?
+  primaryColor         String?
+  accentColor          String?
+  isActive             Boolean                     @default(true)
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  timezone             String                      @default("Africa/Cairo")
+  messages             Message[]
+  escalations          Escalation[]
   members              ClinicMember[]
   branches             Branch[]
   phones               ClinicPhone[]
@@ -129,6 +126,12 @@ model Clinic {
   aiCredit             ClinicAiCredit?
   aiUsage              AiUsageLog[]
   aiLedger             AiCreditLedger[]
+  branchHours          BranchHours[]
+  doctorBranch         DoctorBranch[]
+  availabilityRule     AvailabilityRule[]
+  slot                 Slot[]
+  chatSession          ChatSession[]
+  branchPhone          BranchPhone[]
   dayQueues            DoctorDayQueue[]
   appointmentTemplates ClinicAppointmentTemplate[]
   appointmentFeedback  AppointmentFeedback[]
@@ -175,14 +178,17 @@ model Branch {
 model BranchPhone {
   id        String    @id @default(uuid()) @db.Uuid
   branchId  String    @db.Uuid
+  clinicId  String    @db.Uuid
   type      PhoneType
   number    String
   label     String? // e.g. "استقبال", "حجز"
   isPrimary Boolean   @default(false)
 
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@index([branchId])
+  @@index([clinicId])
   @@map("branch_phones")
 }
 
@@ -192,14 +198,17 @@ model BranchPhone {
 model BranchHours {
   id        String    @id @default(uuid()) @db.Uuid
   branchId  String    @db.Uuid
+  clinicId  String    @db.Uuid
   dayOfWeek DayOfWeek
   isClosed  Boolean   @default(false)
   openTime  String? // "HH:MM"
   closeTime String? // "HH:MM"
 
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@unique([branchId, dayOfWeek])
+  @@index([clinicId])
   @@map("branch_hours")
 }
 
@@ -402,12 +411,15 @@ model Specialty {
 model DoctorBranch {
   doctorId String @db.Uuid
   branchId String @db.Uuid
+  clinicId String @db.Uuid
 
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@id([doctorId, branchId])
   @@index([branchId])
+  @@index([clinicId])
   @@map("doctor_branches")
 }
 
@@ -420,6 +432,7 @@ enum AvailabilityMode {
 model AvailabilityRule {
   id                   String           @id @default(uuid()) @db.Uuid
   doctorId             String           @db.Uuid
+  clinicId             String           @db.Uuid
   branchId             String?          @db.Uuid // branch this schedule is for (required for new rows)
   dayOfWeek            DayOfWeek
   startTime            String // "HH:MM" e.g. "14:00" (queue session start for order-based)
@@ -437,6 +450,7 @@ model AvailabilityRule {
   note                 String? // free-text admin/doctor note about this rule
   generatedUntil       DateTime?        @db.Date // slot-based: how far ahead slots have been generated
 
+  clinic       Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   doctor       Doctor           @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   branch       Branch?          @relation(fields: [branchId], references: [id], onDelete: SetNull)
   slots        Slot[]
@@ -445,6 +459,7 @@ model AvailabilityRule {
 
   @@index([doctorId])
   @@index([branchId])
+  @@index([clinicId])
   @@map("availability_rules")
 }
 
@@ -484,12 +499,14 @@ model DoctorDayQueue {
 model Slot {
   id           String   @id @default(uuid()) @db.Uuid
   doctorId     String   @db.Uuid
+  clinicId     String   @db.Uuid
   branchId     String?  @db.Uuid // copied from the rule at generation time
   ruleId       String?  @db.Uuid
   date         DateTime @db.Date
   startTime    DateTime
   endTime      DateTime
   isBlocked    Boolean  @default(false)
+  clinic       Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   // Snapshot of the rule's referralOnly flag at generation time; keeps
   // patient-facing booking queries fast without joining the rule.
   referralOnly Boolean  @default(false)
@@ -501,6 +518,7 @@ model Slot {
 
   @@index([doctorId, date])
   @@index([branchId])
+  @@index([clinicId, date])
   @@map("slots")
 }
 
@@ -602,6 +620,7 @@ model Conversation {
 model ChatSession {
   id             String   @id @default(uuid()) @db.Uuid
   conversationId String   @db.Uuid
+  clinicId       String   @db.Uuid
   startedAt      DateTime @default(now())
   expiresAt      DateTime // startedAt + SESSION_MINUTES (env, default 30 min)
   // AI auto-reply for this session. Defaults on for every new session; the
@@ -609,38 +628,43 @@ model ChatSession {
   // user asks for a human. Does not carry over to the next session.
   aiEnabled      Boolean  @default(true)
 
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   messages     Message[]
   escalations  Escalation[]
   aiUsage      AiUsageLog[]
 
   @@index([conversationId])
+  @@index([clinicId])
   @@map("chat_sessions")
 }
 
 // One row per escalate_to_human request. A session can have several — e.g.
 // user escalates, admin re-enables the AI, user escalates again.
 model Escalation {
-  id             String    @id @default(uuid()) @db.Uuid
-  conversationId String    @db.Uuid
-  sessionId      String    @db.Uuid
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @db.Uuid
+  sessionId      String       @db.Uuid
+  clinicId       String       @db.Uuid
   reason         String?
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime     @default(now())
   // Set when an admin re-enables the AI for the session or sends a manual
   // reply in the conversation — whichever happens first. Null = still open.
   resolvedAt     DateTime?
-
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  session      ChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  clinic         Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  session        ChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
   @@index([sessionId])
+  @@index([clinicId])
   @@map("escalations")
 }
 
 model Message {
   id             String     @id @default(uuid()) @db.Uuid
   conversationId String     @db.Uuid
+  clinicId       String     @db.Uuid
   sessionId      String?    @db.Uuid
   senderType     SenderType
   senderId       String?    @db.Uuid // null when senderType = AGENT
@@ -649,6 +673,7 @@ model Message {
   isRead         Boolean    @default(false)
   createdAt      DateTime   @default(now())
 
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session      ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   sender       Profile?     @relation("SenderProfile", fields: [senderId], references: [id], onDelete: SetNull)
@@ -656,6 +681,7 @@ model Message {
 
   @@index([conversationId])
   @@index([sessionId])
+  @@index([clinicId, createdAt])
   @@map("messages")
 }
 

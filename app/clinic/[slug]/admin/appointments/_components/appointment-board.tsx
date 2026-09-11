@@ -2,7 +2,17 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { Search, X, Calendar, Clock, Stethoscope, MapPin, Phone, User, StickyNote } from "lucide-react";
+import {
+  Search,
+  X,
+  Calendar,
+  Clock,
+  Stethoscope,
+  MapPin,
+  Phone,
+  User,
+  StickyNote,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppointmentStatus } from "@prisma/client";
 import { updateAppointmentStatusAction } from "@/server/actions/admin";
@@ -40,7 +50,10 @@ interface AppointmentBoardProps {
   doctors: DoctorOption[];
 }
 
-export default function AppointmentBoard({ appointments: initial, doctors }: AppointmentBoardProps) {
+export default function AppointmentBoard({
+  appointments: initial,
+  doctors,
+}: AppointmentBoardProps) {
   const [appointments, setAppointments] = useState(initial);
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
@@ -89,13 +102,25 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
     setAppointments((prev) =>
       prev.map((a) =>
         a.id === id
-          ? { ...a, status, cancellationReason: status === AppointmentStatus.CANCELLED ? (cancellationReason ?? null) : a.cancellationReason }
-          : a,
-      ),
+          ? {
+              ...a,
+              status,
+              cancellationReason:
+                status === AppointmentStatus.CANCELLED
+                  ? (cancellationReason ?? null)
+                  : a.cancellationReason,
+            }
+          : a
+      )
     );
   }
 
-  function commitStatus(id: string, previousStatus: AppointmentStatus, status: AppointmentStatus, reason?: string) {
+  function commitStatus(
+    id: string,
+    previousStatus: AppointmentStatus,
+    status: AppointmentStatus,
+    reason?: string
+  ) {
     startTransition(async () => {
       const res = await updateAppointmentStatusAction(id, status, reason);
       if (res?.error) {
@@ -117,7 +142,7 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
     if (newStatus === appointment.status) return;
     if (!canTransition(appointment.status, newStatus)) {
       toast.error(
-        `لا يمكن نقل الموعد من "${APPOINTMENT_STATUS_LABELS[appointment.status]}" إلى "${APPOINTMENT_STATUS_LABELS[newStatus]}".`,
+        `لا يمكن نقل الموعد من "${APPOINTMENT_STATUS_LABELS[appointment.status]}" إلى "${APPOINTMENT_STATUS_LABELS[newStatus]}".`
       );
       return;
     }
@@ -147,22 +172,22 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             value={patientQuery}
             onChange={(e) => setPatientQuery(e.target.value)}
             placeholder="بحث باسم المريض..."
-            className="pr-9 pl-3 py-2 text-sm font-sans border border-border rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 w-56"
+            className="w-56 rounded-xl border border-border bg-background py-2 pl-3 pr-9 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
 
         <select
           value={doctorFilter}
           onChange={(e) => setDoctorFilter(e.target.value)}
-          className="px-3 py-2 text-sm font-sans border border-border rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">كل الأطباء</option>
           {doctors.map((doc) => (
@@ -176,16 +201,16 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
           type="date"
           value={dateFilter}
           onChange={(e) => setDateFilter(e.target.value)}
-          className="px-3 py-2 text-sm font-sans border border-border rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
 
         {hasActiveFilters && (
           <button
             type="button"
             onClick={clearFilters}
-            className="inline-flex items-center gap-1 px-3 py-2 text-sm font-sans text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1 px-3 py-2 font-sans text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
             مسح الفلاتر
           </button>
         )}
@@ -212,33 +237,31 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
         width="max-w-md"
       >
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground font-sans">
+          <p className="font-sans text-sm text-muted-foreground">
             الرجاء إدخال سبب إلغاء هذا الموعد.
           </p>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground font-sans">
-              سبب الإلغاء
-            </label>
+            <label className="font-sans text-sm font-medium text-foreground">سبب الإلغاء</label>
             <textarea
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
               rows={3}
               placeholder="أدخل سبب الإلغاء..."
-              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
           <div className="flex gap-3">
             <button
               onClick={confirmCancel}
               disabled={!cancelReason.trim()}
-              className="flex-1 bg-red-500 text-white rounded-xl py-2.5 text-sm font-medium font-sans hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 rounded-xl bg-red-500 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               تأكيد الإلغاء
             </button>
             <button
               type="button"
               onClick={() => setPendingCancelId(null)}
-              className="px-4 border border-border rounded-xl text-sm font-medium font-sans text-foreground hover:bg-muted transition-colors"
+              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
               تراجع
             </button>
@@ -287,7 +310,8 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
               <DetailRow icon={Clock} label={detailsAppt.slot ? "الوقت" : "الدور"}>
                 {detailsAppt.slot ? (
                   <span dir="ltr">
-                    {formatSlotTime(detailsAppt.slot.startTime)} – {formatSlotTime(detailsAppt.slot.endTime)}
+                    {formatSlotTime(detailsAppt.slot.startTime)} –{" "}
+                    {formatSlotTime(detailsAppt.slot.endTime)}
                   </span>
                 ) : detailsAppt.orderNumber != null ? (
                   <span>دور رقم {detailsAppt.orderNumber}</span>
@@ -306,14 +330,14 @@ export default function AppointmentBoard({ appointments: initial, doctors }: App
                 </DetailRow>
               )}
               {detailsAppt.cancellationReason && (
-                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-sm">
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                   <span className="font-medium">سبب الإلغاء: </span>
                   {detailsAppt.cancellationReason}
                 </div>
               )}
             </div>
 
-            <p className="text-xs text-muted-foreground pt-2 border-t border-border">
+            <p className="border-t border-border pt-2 text-xs text-muted-foreground">
               تم الحجز في {formatSlotDate(detailsAppt.createdAt)}
             </p>
           </div>
@@ -334,8 +358,8 @@ function DetailRow({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <Icon className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-      <div className="flex-1 min-w-0">
+      <Icon className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="text-foreground">{children}</p>
       </div>

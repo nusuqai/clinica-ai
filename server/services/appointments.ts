@@ -34,10 +34,7 @@ function upcomingAppointmentWhere() {
   today.setUTCHours(0, 0, 0, 0);
   return {
     status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
-    OR: [
-      { slot: { startTime: { gt: now } } },
-      { bookingDate: { gte: today } },
-    ],
+    OR: [{ slot: { startTime: { gt: now } } }, { bookingDate: { gte: today } }],
   };
 }
 
@@ -59,8 +56,7 @@ type WithQueueInfo = {
 // estimated wait, expected examination time) from the persisted appointment +
 // queue snapshot.
 function queueView(row: WithQueueInfo) {
-  const isOrderBased =
-    row.rule?.mode === AvailabilityMode.ORDER_BASED || row.orderNumber != null;
+  const isOrderBased = row.rule?.mode === AvailabilityMode.ORDER_BASED || row.orderNumber != null;
   const tracking = row.queue?.trackCurrentOrder ?? false;
   const currentOrder = isOrderBased && tracking ? (row.queue?.currentOrder ?? 0) : null;
   const estimatedWaitMin =
@@ -110,7 +106,7 @@ const doctorNameSelect = {
 const reshapeDoctor = <
   T extends { doctor: { specialty: { name: string } | null; fullName: string } },
 >(
-  row: T,
+  row: T
 ) => ({
   ...row,
   doctor: {
@@ -127,7 +123,7 @@ export async function getPatientAppointments(
     status?: AppointmentStatus;
     upcoming?: boolean;
     limit?: number;
-  },
+  }
 ): Promise<PatientAppointment[]> {
   const rows = await prisma.appointment.findMany({
     where: {
@@ -173,7 +169,7 @@ export async function listAppointments(
     status?: AppointmentStatus;
     doctorId?: string;
     patientId?: string;
-  },
+  }
 ): Promise<AdminAppointment[]> {
   const rows = await prisma.appointment.findMany({
     where: {
@@ -251,7 +247,7 @@ export interface DoctorAppointmentView {
 
 export async function getDoctorAppointments(
   doctorId: string,
-  options?: { status?: AppointmentStatus; upcoming?: boolean; limit?: number },
+  options?: { status?: AppointmentStatus; upcoming?: boolean; limit?: number }
 ): Promise<DoctorAppointmentView[]> {
   const rows = await prisma.appointment.findMany({
     where: {
@@ -282,7 +278,7 @@ export async function createAppointment(
   patientId: string,
   slotId: string,
   patientNotes?: string,
-  opts?: { excludeAppointmentId?: string },
+  opts?: { excludeAppointmentId?: string }
 ): Promise<Result<{ id: string }>> {
   try {
     const slot = await prisma.slot.findUnique({
@@ -306,15 +302,13 @@ export async function createAppointment(
         status: {
           in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
         },
-        ...(opts?.excludeAppointmentId
-          ? { id: { not: opts.excludeAppointmentId } }
-          : {}),
+        ...(opts?.excludeAppointmentId ? { id: { not: opts.excludeAppointmentId } } : {}),
       },
       select: { id: true },
     });
     if (active)
       return err(
-        "لديك حجز قائم مع هذا الطبيب لم يكتمل بعد. يرجى إتمامه أو إلغاؤه قبل حجز موعد جديد.",
+        "لديك حجز قائم مع هذا الطبيب لم يكتمل بعد. يرجى إتمامه أو إلغاؤه قبل حجز موعد جديد."
       );
 
     const appointment = await prisma.appointment.create({
@@ -346,7 +340,7 @@ export async function referAppointment(
   referringDoctorId: string,
   patientId: string,
   slotId: string,
-  notes?: string,
+  notes?: string
 ): Promise<Result<{ id: string }>> {
   try {
     const slot = await prisma.slot.findUnique({
@@ -357,8 +351,7 @@ export async function referAppointment(
     if (slot.isBlocked) return err("هذا الموعد غير متاح");
     if (slot.appointment) return err("هذا الموعد محجوز بالفعل");
     if (slot.startTime < new Date()) return err("لا يمكن حجز مواعيد في الماضي");
-    if (slot.doctorId === referringDoctorId)
-      return err("لا يمكن تحويل المريض إلى نفس الطبيب");
+    if (slot.doctorId === referringDoctorId) return err("لا يمكن تحويل المريض إلى نفس الطبيب");
 
     const appointment = await prisma.appointment.create({
       data: {
@@ -384,7 +377,7 @@ export async function referAppointment(
 export async function updateAppointmentStatus(
   appointmentId: string,
   status: AppointmentStatus,
-  cancellationReason?: string,
+  cancellationReason?: string
 ): Promise<Result<void>> {
   try {
     await prisma.appointment.update({

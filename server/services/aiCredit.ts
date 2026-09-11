@@ -142,10 +142,7 @@ export async function chargeUsage(args: {
     const markup = locked[0]?.markup ?? DEFAULT_MARKUP;
 
     // (2) Compute cost (Decimal only).
-    const { rawCost, chargedCost, inputRatePerM, outputRatePerM } = computeCost(
-      usage,
-      markup,
-    );
+    const { rawCost, chargedCost, inputRatePerM, outputRatePerM } = computeCost(usage, markup);
 
     // (3) Atomic decrement; the returned balance is the post-decrement value.
     const credit = await tx.clinicAiCredit.update({
@@ -188,9 +185,7 @@ export async function chargeUsage(args: {
 
 /** True when the thrown error is a duplicate-messageId charge (already applied). */
 export function isDuplicateChargeError(err: unknown): boolean {
-  return (
-    err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002"
-  );
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
 }
 
 async function moveBalance(
@@ -198,7 +193,7 @@ async function moveBalance(
   signedAmount: Prisma.Decimal,
   type: AiLedgerType,
   actorId: string | null,
-  note: string | null,
+  note: string | null
 ): Promise<Prisma.Decimal> {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`
@@ -229,7 +224,7 @@ export async function topUpClinicCredit(
   clinicId: string,
   amount: Prisma.Decimal,
   actorId: string,
-  note?: string,
+  note?: string
 ): Promise<Prisma.Decimal> {
   await ensureClinicAiCredit(clinicId);
   return moveBalance(clinicId, amount, AiLedgerType.TOPUP, actorId, note ?? null);
@@ -240,23 +235,14 @@ export async function adjustClinicCredit(
   clinicId: string,
   amount: Prisma.Decimal,
   actorId: string,
-  note?: string,
+  note?: string
 ): Promise<Prisma.Decimal> {
   await ensureClinicAiCredit(clinicId);
-  return moveBalance(
-    clinicId,
-    amount,
-    AiLedgerType.ADJUSTMENT,
-    actorId,
-    note ?? null,
-  );
+  return moveBalance(clinicId, amount, AiLedgerType.ADJUSTMENT, actorId, note ?? null);
 }
 
 /** Platform admin: set the per-clinic markup multiplier. */
-export async function setClinicMarkup(
-  clinicId: string,
-  markup: Prisma.Decimal,
-): Promise<void> {
+export async function setClinicMarkup(clinicId: string, markup: Prisma.Decimal): Promise<void> {
   await prisma.clinicAiCredit.upsert({
     where: { clinicId },
     update: { markup },
@@ -265,10 +251,7 @@ export async function setClinicMarkup(
 }
 
 /** Clinic admin: flip the per-clinic global AI auto-reply switch. */
-export async function setClinicAiEnabled(
-  clinicId: string,
-  enabled: boolean,
-): Promise<void> {
+export async function setClinicAiEnabled(clinicId: string, enabled: boolean): Promise<void> {
   await prisma.clinicAiCredit.upsert({
     where: { clinicId },
     update: { aiEnabled: enabled },
@@ -284,9 +267,10 @@ export async function setClinicAiEnabled(
  * so a top-up alone lets the agent resume.
  */
 export async function ensureOpenEscalation(
+  clinicId: string,
   conversationId: string,
   sessionId: string,
-  reason: string,
+  reason: string
 ): Promise<void> {
   const open = await prisma.escalation.findFirst({
     where: { sessionId, resolvedAt: null },
@@ -294,6 +278,6 @@ export async function ensureOpenEscalation(
   });
   if (open) return;
   await prisma.escalation.create({
-    data: { conversationId, sessionId, reason },
+    data: { clinicId, conversationId, sessionId, reason },
   });
 }
