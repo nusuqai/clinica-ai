@@ -3,10 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast, Toaster } from "sonner";
-import {
-  useRealtimeEscalations,
-  RealtimeEscalationRow,
-} from "@/hooks/use-realtime-messages";
+import { useRealtimeEscalations, RealtimeEscalationRow } from "@/hooks/use-realtime-messages";
 
 interface EscalationAlertsValue {
   hasUnresolved: boolean;
@@ -37,9 +34,7 @@ export default function EscalationProvider({
   const router = useRouter();
   // conversationId -> number of unresolved escalations on it
   const countsRef = useRef(new Map<string, number>());
-  const [hasUnresolved, setHasUnresolved] = useState(
-    initialConversationIds.length > 0,
-  );
+  const [hasUnresolved, setHasUnresolved] = useState(initialConversationIds.length > 0);
   const [eventTick, setEventTick] = useState(0);
 
   useEffect(() => {

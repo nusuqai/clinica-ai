@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  useState,
-  useEffect,
-  useMemo,
-  useRef,
-  useTransition,
-  useCallback,
-  Fragment,
-} from "react";
+import { useState, useEffect, useMemo, useRef, useTransition, useCallback, Fragment } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
@@ -51,7 +43,11 @@ import type {
   MessageItem,
   ConversationDetail,
 } from "@/server/services/messages";
-import { fetchConversations, fetchConversationDetail, markConversationRead } from "@/server/actions/conversations";
+import {
+  fetchConversations,
+  fetchConversationDetail,
+  markConversationRead,
+} from "@/server/actions/conversations";
 import { string } from "zod";
 interface ChatInboxProps {
   conversations: ConversationSummary[];
@@ -103,8 +99,7 @@ export default function ChatInbox({
 
   const [conversations, setConversations] = useState(initialConversations);
   const [messages, setMessages] = useState(initialMessages);
-  const [selectedConversation, setSelectedConversation] =
-    useState(initialConversation);
+  const [selectedConversation, setSelectedConversation] = useState(initialConversation);
   const [reply, setReply] = useState("");
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [listPending, startListTransition] = useTransition();
@@ -116,15 +111,9 @@ export default function ChatInbox({
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Sync when server re-renders with fresh data
-  useEffect(
-    () => setConversations(initialConversations),
-    [initialConversations],
-  );
+  useEffect(() => setConversations(initialConversations), [initialConversations]);
   useEffect(() => setMessages(initialMessages), [initialMessages]);
-  useEffect(
-    () => setSelectedConversation(initialConversation),
-    [initialConversation],
-  );
+  useEffect(() => setSelectedConversation(initialConversation), [initialConversation]);
 
   // An optimistic bubble is retired once its real row shows up in the server
   // props. Failed and in-flight ones stay put — they're the only record of the
@@ -133,8 +122,7 @@ export default function ChatInbox({
     const serverIds = new Set(initialMessages.map((m) => m.id));
     setPending((prev) => {
       const next = prev.filter(
-        (p) =>
-          !(p.status === "sent" && p.serverId && serverIds.has(p.serverId)),
+        (p) => !(p.status === "sent" && p.serverId && serverIds.has(p.serverId))
       );
       return next.length === prev.length ? prev : next;
     });
@@ -152,9 +140,7 @@ export default function ChatInbox({
   // WhatsApp renders once — from pending state, carrying its badge.
   const threadMessages = useMemo<RenderedMessage[]>(() => {
     const mine = pending.filter((p) => p.conversationId === activeId);
-    const superseded = new Set(
-      mine.map((p) => p.serverId).filter((id): id is string => !!id),
-    );
+    const superseded = new Set(mine.map((p) => p.serverId).filter((id): id is string => !!id));
     return [
       ...messages
         .filter((m) => !superseded.has(m.id))
@@ -183,89 +169,83 @@ export default function ChatInbox({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [threadMessages]);
 
-const refreshConversations = useCallback(() => {
-  startListTransition(async () => {
-    try {
-      const fresh = await fetchConversations(clinicId);
-      setConversations(fresh);
-    } catch (err) {
-      console.error("Failed to refresh conversations:", err);
-    }
-  });
-}, [clinicId]);
-const handleRealtimeMessage = useCallback(
-  (row: RealtimeMessageRow) => {
-    // Reconcile with this admin's own optimistic bubble, whichever arrives
-    // first — this realtime event or deliver()'s own response. Matched by
-    // conversation + content since the row doesn't carry the client id;
-    // fine for the common case of one in-flight admin send at a time.
-    if (row.senderType === SenderType.ADMIN) {
-      setPending((prev) => {
-        const match = prev.find(
-          (p) =>
-            p.conversationId === row.conversationId &&
-            !p.serverId &&
-            p.content === row.content,
-        );
-        if (!match) return prev;
-        return prev.map((p) =>
-          p.clientId === match.clientId
-            ? { ...p, serverId: row.id, status: "sent" as const }
-            : p,
-        );
-      });
-    }
-
-    // Append to the thread only if it's the open conversation.
-    if (row.conversationId === activeId) {
-      setMessages((prev) =>
-        prev.some((m) => m.id === row.id)
-          ? prev
-          : [
-              ...prev,
-              {
-                id: row.id,
-                content: row.content,
-                senderType: row.senderType,
-                sessionId: row.sessionId,
-                createdAt: new Date(row.createdAt),
-                isRead: row.isRead,
-              },
-            ],
-      );
-    }
-
-    // Patch the sidebar in place — preview, timestamp, unread, order.
-    // This is the single source of truth for an existing conversation's
-    // summary row; nothing else should refetch and overwrite it for the
-    // "new message on an existing conversation" case.
-    setConversations((prev) => {
-      const idx = prev.findIndex((c) => c.id === row.conversationId);
-      if (idx === -1) {
-        // Genuinely unknown conversation (e.g. a brand-new contact) — no
-        // summary fields to patch from a bare message row, fall back once.
-        refreshConversations();
-        return prev;
+  const refreshConversations = useCallback(() => {
+    startListTransition(async () => {
+      try {
+        const fresh = await fetchConversations(clinicId);
+        setConversations(fresh);
+      } catch (err) {
+        console.error("Failed to refresh conversations:", err);
       }
-      const updated: ConversationSummary = {
-        ...prev[idx],
-        lastMessage: row.content,
-        lastMessageAt: new Date(row.createdAt),
-        unreadCount:
-          row.senderType === SenderType.USER &&
-          row.conversationId !== activeId
-            ? prev[idx].unreadCount + 1
-            : prev[idx].unreadCount,
-      };
-      const rest = prev.filter((_, i) => i !== idx);
-      return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
     });
-  },
-  [activeId, refreshConversations],
-);
+  }, [clinicId]);
+  const handleRealtimeMessage = useCallback(
+    (row: RealtimeMessageRow) => {
+      // Reconcile with this admin's own optimistic bubble, whichever arrives
+      // first — this realtime event or deliver()'s own response. Matched by
+      // conversation + content since the row doesn't carry the client id;
+      // fine for the common case of one in-flight admin send at a time.
+      if (row.senderType === SenderType.ADMIN) {
+        setPending((prev) => {
+          const match = prev.find(
+            (p) =>
+              p.conversationId === row.conversationId && !p.serverId && p.content === row.content
+          );
+          if (!match) return prev;
+          return prev.map((p) =>
+            p.clientId === match.clientId ? { ...p, serverId: row.id, status: "sent" as const } : p
+          );
+        });
+      }
 
-useRealtimeConversations(clinicId, handleRealtimeMessage);
+      // Append to the thread only if it's the open conversation.
+      if (row.conversationId === activeId) {
+        setMessages((prev) =>
+          prev.some((m) => m.id === row.id)
+            ? prev
+            : [
+                ...prev,
+                {
+                  id: row.id,
+                  content: row.content,
+                  senderType: row.senderType,
+                  sessionId: row.sessionId,
+                  createdAt: new Date(row.createdAt),
+                  isRead: row.isRead,
+                },
+              ]
+        );
+      }
 
+      // Patch the sidebar in place — preview, timestamp, unread, order.
+      // This is the single source of truth for an existing conversation's
+      // summary row; nothing else should refetch and overwrite it for the
+      // "new message on an existing conversation" case.
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === row.conversationId);
+        if (idx === -1) {
+          // Genuinely unknown conversation (e.g. a brand-new contact) — no
+          // summary fields to patch from a bare message row, fall back once.
+          refreshConversations();
+          return prev;
+        }
+        const updated: ConversationSummary = {
+          ...prev[idx],
+          lastMessage: row.content,
+          lastMessageAt: new Date(row.createdAt),
+          unreadCount:
+            row.senderType === SenderType.USER && row.conversationId !== activeId
+              ? prev[idx].unreadCount + 1
+              : prev[idx].unreadCount,
+        };
+        const rest = prev.filter((_, i) => i !== idx);
+        return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
+      });
+    },
+    [activeId, refreshConversations]
+  );
+
+  useRealtimeConversations(clinicId, handleRealtimeMessage);
 
   // EscalationProvider owns the single realtime subscription for escalations
   // (a second subscribed channel with the same name crashes the realtime
@@ -283,38 +263,40 @@ useRealtimeConversations(clinicId, handleRealtimeMessage);
   }, [eventTick, refreshConversations]);
 
   // Client-side cache of conversation detail + messages, keyed by conversation
-// id. Lets switching back to an already-visited thread render instantly
-// instead of waiting on the server round-trip triggered by router.push.
-// ✅ correct — generic type goes in <>, initial value goes in the () call
-const conversationCache = useRef<Map<string, { detail: ConversationDetail; messages: MessageItem[] }>>(new Map());
+  // id. Lets switching back to an already-visited thread render instantly
+  // instead of waiting on the server round-trip triggered by router.push.
+  // ✅ correct — generic type goes in <>, initial value goes in the () call
+  const conversationCache = useRef<
+    Map<string, { detail: ConversationDetail; messages: MessageItem[] }>
+  >(new Map());
   // Sync when server re-renders with fresh data, and cache it for this id so
-// switching back later can skip the loading gap.
-useEffect(() => {
-  setConversations(initialConversations);
-}, [initialConversations]);
+  // switching back later can skip the loading gap.
+  useEffect(() => {
+    setConversations(initialConversations);
+  }, [initialConversations]);
 
-useEffect(() => {
-  setMessages(initialMessages);
-  setSelectedConversation(initialConversation);
-  if (initialConversation) {
-    conversationCache.current.set(initialConversation.id, {
-      detail: initialConversation,
-      messages: initialMessages,
-    });
-  }
-}, [initialConversation, initialMessages]);
-const handleSelectConversation = (id: string) => {
-  const cached = conversationCache.current.get(id);
-  if (cached) {
-    // Instant paint from cache; router.push below still refreshes it
-    // server-side, and the effect above will reconcile once that lands.
-    setSelectedConversation(cached.detail);
-    setMessages(cached.messages);
-  }
-  const params = new URLSearchParams(searchParams.toString());
-  params.set("id", id);
-  router.push(`${basePath}/admin/messages?${params.toString()}`);
-};
+  useEffect(() => {
+    setMessages(initialMessages);
+    setSelectedConversation(initialConversation);
+    if (initialConversation) {
+      conversationCache.current.set(initialConversation.id, {
+        detail: initialConversation,
+        messages: initialMessages,
+      });
+    }
+  }, [initialConversation, initialMessages]);
+  const handleSelectConversation = (id: string) => {
+    const cached = conversationCache.current.get(id);
+    if (cached) {
+      // Instant paint from cache; router.push below still refreshes it
+      // server-side, and the effect above will reconcile once that lands.
+      setSelectedConversation(cached.detail);
+      setMessages(cached.messages);
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("id", id);
+    router.push(`${basePath}/admin/messages?${params.toString()}`);
+  };
   const isWhatsapp = selectedConversation?.channel === Channel.WHATSAPP;
   // Outside the 24-hour window WhatsApp refuses free-form text; the admin must
   // send an approved template instead. `nowTs` is read so this recomputes on
@@ -323,14 +305,9 @@ const handleSelectConversation = (id: string) => {
   const isOutsideWindow =
     isWhatsapp && !isWithinWhatsappWindow(selectedConversation?.lastInboundAt);
 
-  const patchPending = useCallback(
-    (clientId: string, patch: Partial<PendingMessage>) => {
-      setPending((prev) =>
-        prev.map((p) => (p.clientId === clientId ? { ...p, ...patch } : p)),
-      );
-    },
-    [],
-  );
+  const patchPending = useCallback((clientId: string, patch: Partial<PendingMessage>) => {
+    setPending((prev) => prev.map((p) => (p.clientId === clientId ? { ...p, ...patch } : p)));
+  }, []);
 
   /** Runs the full send (creates the row + delivers) and reflects the outcome
    *  on the bubble. Used for the first attempt and for retrying a sync failure,
@@ -355,7 +332,7 @@ const handleSelectConversation = (id: string) => {
         status: result.whatsappSendFailed ? "failed_whatsapp" : "sent",
       });
     },
-    [patchPending, router],
+    [patchPending, router]
   );
 
   const handleSend = () => {
@@ -380,11 +357,7 @@ const handleSelectConversation = (id: string) => {
 
   // A template send is already persisted server-side; show it immediately as a
   // "sent" bubble (retired once the server row arrives), like a normal reply.
-  const handleTemplateSent = (msg: {
-    messageId: string;
-    createdAt: string;
-    content: string;
-  }) => {
+  const handleTemplateSent = (msg: { messageId: string; createdAt: string; content: string }) => {
     if (!activeId) return;
     setPending((prev) => [
       ...prev,
@@ -425,20 +398,18 @@ const handleSelectConversation = (id: string) => {
     void deliver(clientId, entry.conversationId, entry.content);
   };
 
- const handleToggleAi = () => {
-  if (!selectedConversation?.activeSessionId) return;
-  const sessionId = selectedConversation.activeSessionId;
-  const conversationId = selectedConversation.id;
-  const next = !selectedConversation.aiEnabled;
-  setSelectedConversation((prev) =>
-    prev ? { ...prev, aiEnabled: next } : prev,
-  );
-  startAiToggle(async () => {
-    await setSessionAiEnabled(sessionId, next);
-    const fresh = await fetchConversationDetail(conversationId);
-    if (fresh) setSelectedConversation(fresh);
-  });
-};
+  const handleToggleAi = () => {
+    if (!selectedConversation?.activeSessionId) return;
+    const sessionId = selectedConversation.activeSessionId;
+    const conversationId = selectedConversation.id;
+    const next = !selectedConversation.aiEnabled;
+    setSelectedConversation((prev) => (prev ? { ...prev, aiEnabled: next } : prev));
+    startAiToggle(async () => {
+      await setSessionAiEnabled(sessionId, next);
+      const fresh = await fetchConversationDetail(conversationId);
+      if (fresh) setSelectedConversation(fresh);
+    });
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -448,47 +419,41 @@ const handleSelectConversation = (id: string) => {
   };
 
   // Ref mirror of `conversations` so the "mark read" effect below can read
-// current unread state without depending on (and rerunning on) every list update.
-const conversationsRef = useRef(conversations);
-useEffect(() => {
-  conversationsRef.current = conversations;
-}, [conversations]);
+  // current unread state without depending on (and rerunning on) every list update.
+  const conversationsRef = useRef(conversations);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
-// Opening a conversation reads it — zero the badge immediately (optimistic)
-// and persist server-side so a reload or another admin sees it too. Only
-// fires when there's actually something unread, so it's a no-op on repeat
-// visits to an already-read thread.
-useEffect(() => {
-  if (!activeId) return;
-  const current = conversationsRef.current.find((c) => c.id === activeId);
-  if (!current || current.unreadCount === 0) return;
+  // Opening a conversation reads it — zero the badge immediately (optimistic)
+  // and persist server-side so a reload or another admin sees it too. Only
+  // fires when there's actually something unread, so it's a no-op on repeat
+  // visits to an already-read thread.
+  useEffect(() => {
+    if (!activeId) return;
+    const current = conversationsRef.current.find((c) => c.id === activeId);
+    if (!current || current.unreadCount === 0) return;
 
-  setConversations((prev) =>
-    prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)),
-  );
-  void markConversationRead(activeId).catch((err) => {
-    console.error("Failed to mark conversation as read:", err);
-  });
-}, [activeId]);
+    setConversations((prev) => prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)));
+    void markConversationRead(activeId).catch((err) => {
+      console.error("Failed to mark conversation as read:", err);
+    });
+  }, [activeId]);
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] bg-card border border-border rounded-2xl overflow-hidden">
+    <div className="flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-border bg-card">
       {/* ── Left pane: conversations list ── */}
-      <aside className="w-72 flex-shrink-0 border-e border-border flex flex-col">
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-          <h2 className="font-heading font-semibold text-sm text-foreground">
-            المحادثات
-          </h2>
-          {listPending && (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-          )}
+      <aside className="flex w-72 flex-shrink-0 flex-col border-e border-border">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h2 className="font-heading text-sm font-semibold text-foreground">المحادثات</h2>
+          {listPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
         </div>
 
-        <ul className="flex-1 overflow-y-auto divide-y divide-border">
+        <ul className="flex-1 divide-y divide-border overflow-y-auto">
           {conversations.length === 0 && (
             <li className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-              <Inbox className="w-8 h-8 opacity-40" />
-              <p className="text-xs font-sans">لا توجد محادثات بعد</p>
+              <Inbox className="h-8 w-8 opacity-40" />
+              <p className="font-sans text-xs">لا توجد محادثات بعد</p>
             </li>
           )}
           {conversations.map((conv) => (
@@ -496,46 +461,41 @@ useEffect(() => {
               <button
                 onClick={() => handleSelectConversation(conv.id)}
                 className={[
-                  "w-full text-start px-4 py-3 hover:bg-muted/50 transition-colors",
+                  "w-full px-4 py-3 text-start transition-colors hover:bg-muted/50",
                   conv.hasUnresolvedEscalation ? "bg-red-50" : "",
-                  activeId === conv.id
-                    ? "bg-accent/8 border-e-2 border-accent"
-                    : "",
+                  activeId === conv.id ? "bg-accent/8 border-e-2 border-accent" : "",
                 ].join(" ")}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-foreground font-sans truncate max-w-[140px] flex items-center gap-1.5">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="flex max-w-[140px] items-center gap-1.5 truncate font-sans text-sm font-medium text-foreground">
                     {conv.hasUnresolvedEscalation && (
                       <AlertTriangle
-                        className="w-3.5 h-3.5 text-red-500 flex-shrink-0"
+                        className="h-3.5 w-3.5 flex-shrink-0 text-red-500"
                         aria-label="طلب تصعيد غير محلول"
                       />
                     )}
                     <span className="truncate">{conv.contactName}</span>
                   </span>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className="flex flex-shrink-0 items-center gap-1.5">
                     {conv.unreadCount > 0 && (
-                      <span className="text-[10px] font-bold bg-accent text-white rounded-full w-4 h-4 flex items-center justify-center font-sans">
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-accent font-sans text-[10px] font-bold text-white">
                         {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
                       </span>
                     )}
                     {conv.channel === Channel.WHATSAPP ? (
-                      <WhatsappIcon className="w-3.5 h-3.5 text-green-500" />
+                      <WhatsappIcon className="h-3.5 w-3.5 text-green-500" />
                     ) : (
-                      <Globe className="w-3.5 h-3.5 text-accent" />
+                      <Globe className="h-3.5 w-3.5 text-accent" />
                     )}
                   </div>
                 </div>
                 {conv.lastMessage && (
-                  <p className="text-xs text-muted-foreground font-sans truncate">
+                  <p className="truncate font-sans text-xs text-muted-foreground">
                     {conv.lastMessage}
                   </p>
                 )}
                 {conv.lastMessageAt && (
-                  <p
-                    className="text-[10px] text-muted-foreground/60 font-sans mt-0.5"
-                    dir="rtl"
-                  >
+                  <p className="mt-0.5 font-sans text-[10px] text-muted-foreground/60" dir="rtl">
                     {formatDistanceToNow(new Date(conv.lastMessageAt), {
                       addSuffix: true,
                       locale: ar,
@@ -549,31 +509,31 @@ useEffect(() => {
       </aside>
 
       {/* ── Right pane: message thread ── */}
-      <div className="flex flex-col flex-1 min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col">
         {!selectedConversation ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
-            <MessageSquare className="w-12 h-12 opacity-20" />
-            <p className="text-sm font-sans">اختر محادثة لعرض الرسائل</p>
+            <MessageSquare className="h-12 w-12 opacity-20" />
+            <p className="font-sans text-sm">اختر محادثة لعرض الرسائل</p>
           </div>
         ) : (
           <>
             {/* Thread header */}
-            <div className="px-5 py-3 border-b border-border flex items-center gap-3 flex-shrink-0">
-              <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-accent font-sans">
+            <div className="flex flex-shrink-0 items-center gap-3 border-b border-border px-5 py-3">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent/20">
+                <span className="font-sans text-xs font-bold text-accent">
                   {selectedConversation.contactName.charAt(0)}
                 </span>
               </div>
               <div>
-                <p className="text-sm font-medium text-foreground font-sans">
+                <p className="font-sans text-sm font-medium text-foreground">
                   {selectedConversation.contactName}
                 </p>
                 {selectedConversation.contactPhone && (
                   <p
-                    className="text-xs text-muted-foreground font-sans flex items-center gap-1"
+                    className="flex items-center gap-1 font-sans text-xs text-muted-foreground"
                     dir="ltr"
                   >
-                    <Phone className="w-3 h-3" />
+                    <Phone className="h-3 w-3" />
                     {selectedConversation.contactPhone}
                   </p>
                 )}
@@ -584,44 +544,38 @@ useEffect(() => {
                     href={`${basePath}/admin/users/${selectedConversation.userId}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-sans bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 font-sans text-xs text-primary transition-colors hover:bg-primary/20"
                     title="فتح ملف العميل في تبويب جديد"
                   >
-                    <UserRound className="w-3.5 h-3.5" />
+                    <UserRound className="h-3.5 w-3.5" />
                     ملف العميل
-                    <ExternalLink className="w-3 h-3" />
+                    <ExternalLink className="h-3 w-3" />
                   </a>
                 ) : (
                   <span
-                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-sans bg-muted text-muted-foreground/60 cursor-not-allowed"
+                    className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 font-sans text-xs text-muted-foreground/60"
                     title="لا يوجد حساب مرتبط بعد — سيظهر الملف بعد تسجيل العميل"
                   >
-                    <UserRound className="w-3.5 h-3.5" />
+                    <UserRound className="h-3.5 w-3.5" />
                     ملف العميل
                   </span>
                 )}
                 {selectedConversation.escalations.length > 0 &&
                   (() => {
                     const unresolved = selectedConversation.escalations.filter(
-                      (e) => !e.resolvedAt,
+                      (e) => !e.resolvedAt
                     );
                     const isUnresolved = unresolved.length > 0;
-                    const shown = isUnresolved
-                      ? unresolved
-                      : selectedConversation.escalations;
+                    const shown = isUnresolved ? unresolved : selectedConversation.escalations;
                     return (
                       <span
                         className={[
-                          "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-sans",
-                          isUnresolved
-                            ? "bg-red-100 text-red-700"
-                            : "text-muted-foreground",
+                          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[10px]",
+                          isUnresolved ? "bg-red-100 text-red-700" : "text-muted-foreground",
                         ].join(" ")}
-                        title={shown
-                          .map((e) => e.reason ?? "بدون سبب")
-                          .join(" · ")}
+                        title={shown.map((e) => e.reason ?? "بدون سبب").join(" · ")}
                       >
-                        {isUnresolved && <AlertTriangle className="w-3 h-3" />}
+                        {isUnresolved && <AlertTriangle className="h-3 w-3" />}
                         {isUnresolved
                           ? `${unresolved.length} طلب تصعيد بانتظار الرد`
                           : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد)`}
@@ -633,7 +587,7 @@ useEffect(() => {
                     onClick={handleToggleAi}
                     disabled={aiTogglePending}
                     className={[
-                      "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-sans transition-colors disabled:opacity-50",
+                      "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-sans text-xs transition-colors disabled:opacity-50",
                       selectedConversation.aiEnabled
                         ? "bg-accent/10 text-accent"
                         : "bg-muted text-muted-foreground",
@@ -641,23 +595,21 @@ useEffect(() => {
                     title="تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة"
                   >
                     {selectedConversation.aiEnabled ? (
-                      <Bot className="w-3.5 h-3.5" />
+                      <Bot className="h-3.5 w-3.5" />
                     ) : (
-                      <BotOff className="w-3.5 h-3.5" />
+                      <BotOff className="h-3.5 w-3.5" />
                     )}
-                    {selectedConversation.aiEnabled
-                      ? "الذكاء مفعّل"
-                      : "الذكاء متوقف"}
+                    {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
                   </button>
                 )}
                 {selectedConversation.channel === Channel.WHATSAPP ? (
-                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-sans">
-                    <WhatsappIcon className="w-3 h-3" />
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 font-sans text-xs text-green-700">
+                    <WhatsappIcon className="h-3 w-3" />
                     واتساب
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent font-sans">
-                    <Globe className="w-3 h-3" />
+                  <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 font-sans text-xs text-accent">
+                    <Globe className="h-3 w-3" />
                     ويب
                   </span>
                 )}
@@ -665,107 +617,96 @@ useEffect(() => {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+            <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
               {threadMessages.length === 0 && (
-                <p className="text-center text-xs text-muted-foreground font-sans py-8">
+                <p className="py-8 text-center font-sans text-xs text-muted-foreground">
                   لا توجد رسائل في هذه المحادثة
                 </p>
               )}
               {threadMessages.map((msg, idx) => {
                 const prev = threadMessages[idx - 1];
-                const showDivider =
-                  !!msg.sessionId && msg.sessionId !== prev?.sessionId;
+                const showDivider = !!msg.sessionId && msg.sessionId !== prev?.sessionId;
                 const isOutgoing =
                   msg.senderType === SenderType.ADMIN || msg.senderType === SenderType.AGENT;
                 const isAgent = msg.senderType === SenderType.AGENT;
                 const status = msg.pending?.status;
-                const isFailed =
-                  status === "failed_sync" || status === "failed_whatsapp";
+                const isFailed = status === "failed_sync" || status === "failed_whatsapp";
                 return (
                   <Fragment key={msg.key}>
                     {showDivider && (
                       <div className="flex items-center gap-2 py-1" dir="rtl">
-                        <div className="flex-1 h-px bg-border" />
-                        <span className="text-[10px] text-muted-foreground font-sans whitespace-nowrap">
+                        <div className="h-px flex-1 bg-border" />
+                        <span className="whitespace-nowrap font-sans text-[10px] text-muted-foreground">
                           جلسة جديدة ·{" "}
                           {new Date(msg.createdAt).toLocaleString("ar-EG", {
                             dateStyle: "medium",
                             timeStyle: "short",
                           })}
                         </span>
-                        <div className="flex-1 h-px bg-border" />
+                        <div className="h-px flex-1 bg-border" />
                       </div>
                     )}
                     <div
-                      className={[
-                        "flex",
-                        isOutgoing ? "justify-start" : "justify-end",
-                      ].join(" ")}
+                      className={["flex", isOutgoing ? "justify-start" : "justify-end"].join(" ")}
                     >
                       <div
                         className={[
-                          "max-w-[70%] px-3.5 py-2 rounded-2xl text-sm font-sans leading-relaxed transition-opacity",
+                          "max-w-[70%] rounded-2xl px-3.5 py-2 font-sans text-sm leading-relaxed transition-opacity",
                           isAgent
-                            ? "bg-accent/10 text-foreground rounded-ss-sm border border-accent/20"
+                            ? "rounded-ss-sm border border-accent/20 bg-accent/10 text-foreground"
                             : isOutgoing
                               ? isFailed
-                                ? "bg-red-50 border border-red-200 text-foreground rounded-ss-sm"
-                                : "bg-muted text-foreground rounded-ss-sm"
-                              : "bg-primary text-white rounded-se-sm",
+                                ? "rounded-ss-sm border border-red-200 bg-red-50 text-foreground"
+                                : "rounded-ss-sm bg-muted text-foreground"
+                              : "rounded-se-sm bg-primary text-white",
                           status === "sending" ? "opacity-50" : "",
                         ].join(" ")}
                       >
                         {isAgent && (
-                          <p className="text-[10px] font-medium text-accent mb-0.5">
+                          <p className="mb-0.5 text-[10px] font-medium text-accent">
                             🤖 المساعد الذكي
                           </p>
                         )}
                         {isAgent ? (
-                          <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {msg.content}
-                            </ReactMarkdown>
+                          <div className="prose prose-sm prose-neutral max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                           </div>
                         ) : (
                           <p>{msg.content}</p>
                         )}
                         {status === "sending" ? (
-                          <p className="text-[10px] mt-1 flex items-center gap-1 text-muted-foreground">
-                            <Loader2 className="w-3 h-3 animate-spin" />
+                          <p className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <Loader2 className="h-3 w-3 animate-spin" />
                             جارٍ الإرسال...
                           </p>
                         ) : isFailed ? (
                           <div className="mt-1 flex items-center gap-1.5 text-[10px] text-red-700">
-                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                            <AlertTriangle className="h-3 w-3 flex-shrink-0" />
                             <span>
                               {status === "failed_whatsapp"
                                 ? "تم الحفظ لكن لم تصل إلى واتساب"
                                 : "لم يتم حفظ الرسالة"}
                             </span>
                             <button
-                              onClick={() =>
-                                handleRetry(msg.pending!.clientId)
-                              }
+                              onClick={() => handleRetry(msg.pending!.clientId)}
                               className="inline-flex items-center gap-1 font-medium underline hover:no-underline"
                             >
-                              <RotateCw className="w-3 h-3" />
+                              <RotateCw className="h-3 w-3" />
                               إعادة المحاولة
                             </button>
                           </div>
                         ) : (
                           <p
                             className={[
-                              "text-[10px] mt-1",
-                              isOutgoing
-                                ? "text-muted-foreground"
-                                : "text-white/60",
+                              "mt-1 text-[10px]",
+                              isOutgoing ? "text-muted-foreground" : "text-white/60",
                             ].join(" ")}
                             dir="ltr"
                           >
-                            {new Date(msg.createdAt).toLocaleTimeString(
-                              "ar-EG",
-                              { hour: "2-digit", minute: "2-digit" },
-                            )}
+                            {new Date(msg.createdAt).toLocaleTimeString("ar-EG", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
                           </p>
                         )}
                       </div>
@@ -777,23 +718,23 @@ useEffect(() => {
             </div>
 
             {/* Reply box */}
-            <div className="px-4 py-3 border-t border-border flex-shrink-0">
+            <div className="flex-shrink-0 border-t border-border px-4 py-3">
               {isOutsideWindow ? (
                 // Outside the 24-hour window WhatsApp refuses free-form text —
                 // only an approved template can reach the contact.
-                <div className="flex flex-col gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-3 text-xs text-amber-800 font-sans">
+                <div className="flex flex-col gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 font-sans text-xs text-amber-800">
                   <div className="flex items-start gap-2">
-                    <Clock className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <Clock className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <span>
-                      انتهت نافذة الـ24 ساعة منذ آخر رسالة من العميل. لا يمكن إرسال
-                      رسالة نصية حرة — أرسل قالبًا معتمدًا من ميتا بدلاً من ذلك.
+                      انتهت نافذة الـ24 ساعة منذ آخر رسالة من العميل. لا يمكن إرسال رسالة نصية حرة —
+                      أرسل قالبًا معتمدًا من ميتا بدلاً من ذلك.
                     </span>
                   </div>
                   <button
                     onClick={() => setShowTemplatePicker(true)}
-                    className="self-start inline-flex items-center gap-1.5 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors"
+                    className="inline-flex items-center gap-1.5 self-start rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90"
                   >
-                    <FileText className="w-3.5 h-3.5" />
+                    <FileText className="h-3.5 w-3.5" />
                     إرسال قالب معتمد
                   </button>
                 </div>
@@ -805,15 +746,15 @@ useEffect(() => {
                     onKeyDown={handleKeyDown}
                     placeholder="اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
                     rows={2}
-                    className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50 leading-relaxed"
+                    className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 font-sans text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
                     dir="rtl"
                   />
                   <button
                     onClick={handleSend}
                     disabled={!reply.trim()}
-                    className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-40"
+                    className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
                   >
-                    <Send className="w-4 h-4" />
+                    <Send className="h-4 w-4" />
                   </button>
                 </div>
               )}

@@ -53,18 +53,18 @@ legacy/         Previous implementation, kept for reference
 
 ## Scripts
 
-| Script | Description |
-| --- | --- |
-| `dev` / `dev:local` | Start the Next.js dev server (hosted or local Supabase env) |
-| `build` / `build:local` | Production build |
-| `start` / `start:local` | Start the production server |
-| `lint` | Run ESLint |
-| `prisma:generate` / `prisma:generate:local` | Generate the Prisma client |
-| `prisma:migrate` / `prisma:migrate:local` | Create and apply a new migration |
-| `prisma:deploy` / `prisma:deploy:local` | Apply existing migrations (CI/production) |
-| `prisma:studio` / `prisma:studio:local` | Open Prisma Studio |
-| `supabase:start` / `supabase:stop` / `supabase:reset` | Manage the local Supabase stack |
-| `tunnel` | Expose localhost via ngrok (for WhatsApp webhook testing) |
+| Script                                                | Description                                                 |
+| ----------------------------------------------------- | ----------------------------------------------------------- |
+| `dev` / `dev:local`                                   | Start the Next.js dev server (hosted or local Supabase env) |
+| `build` / `build:local`                               | Production build                                            |
+| `start` / `start:local`                               | Start the production server                                 |
+| `lint`                                                | Run ESLint                                                  |
+| `prisma:generate` / `prisma:generate:local`           | Generate the Prisma client                                  |
+| `prisma:migrate` / `prisma:migrate:local`             | Create and apply a new migration                            |
+| `prisma:deploy` / `prisma:deploy:local`               | Apply existing migrations (CI/production)                   |
+| `prisma:studio` / `prisma:studio:local`               | Open Prisma Studio                                          |
+| `supabase:start` / `supabase:stop` / `supabase:reset` | Manage the local Supabase stack                             |
+| `tunnel`                                              | Expose localhost via ngrok (for WhatsApp webhook testing)   |
 
 ## AI Agent
 

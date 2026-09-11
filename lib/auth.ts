@@ -74,10 +74,7 @@ export async function requireUser(): Promise<CurrentUser> {
  * cross-clinic access). Platform admins may access any clinic to "see everything".
  * If `roles` is given, the member's role must be one of them.
  */
-export async function requireClinicMember(
-  slug: string,
-  roles?: Role[]
-): Promise<ClinicContext> {
+export async function requireClinicMember(slug: string, roles?: Role[]): Promise<ClinicContext> {
   const user = await requireUser();
 
   const clinic = await prisma.clinic.findUnique({

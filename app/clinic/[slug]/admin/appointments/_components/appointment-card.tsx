@@ -34,7 +34,7 @@ export default function AppointmentCard({ appointment, onOpenDetails }: Appointm
         if (!isDragging) onOpenDetails(appointment);
       }}
       className={[
-        "bg-card border border-border rounded-xl p-3 shadow-sm font-sans select-none cursor-pointer",
+        "cursor-pointer select-none rounded-xl border border-border bg-card p-3 font-sans shadow-sm",
         isDragging ? "opacity-40" : "opacity-100",
         canMove ? "active:cursor-grabbing" : "opacity-90",
       ].join(" ")}
@@ -42,15 +42,15 @@ export default function AppointmentCard({ appointment, onOpenDetails }: Appointm
       {...attributes}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="font-medium text-foreground text-sm">{appointment.patient.fullName}</p>
-        {canMove && <GripVertical className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
+        <p className="text-sm font-medium text-foreground">{appointment.patient.fullName}</p>
+        {canMove && <GripVertical className="h-4 w-4 flex-shrink-0 text-muted-foreground" />}
       </div>
 
-      <p className="text-xs text-muted-foreground mt-1">
+      <p className="mt-1 text-xs text-muted-foreground">
         {appointment.doctor.profile.fullName} · {appointment.doctor.specialty}
       </p>
 
-      <p className="text-xs text-muted-foreground mt-2">
+      <p className="mt-2 text-xs text-muted-foreground">
         {appointment.slot
           ? formatSlotDate(appointment.slot.date)
           : appointment.bookingDate
@@ -69,7 +69,7 @@ export default function AppointmentCard({ appointment, onOpenDetails }: Appointm
 
       {appointment.cancellationReason && (
         <p
-          className="text-xs text-red-600 mt-2 bg-red-50 rounded-lg px-2 py-1 line-clamp-2"
+          className="mt-2 line-clamp-2 rounded-lg bg-red-50 px-2 py-1 text-xs text-red-600"
           title={appointment.cancellationReason}
         >
           {appointment.cancellationReason}

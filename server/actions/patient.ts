@@ -14,7 +14,7 @@ import { expectedOrderTime } from "@/lib/availability/queue-time";
 
 export async function updateProfileAction(
   fullName: string,
-  phone: string | null,
+  phone: string | null
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient();
   const {
@@ -41,7 +41,7 @@ export async function updateProfileAction(
 // ─── Appointment mutations ────────────────────────────────────────────────────
 
 export async function cancelAppointmentAction(
-  appointmentId: string,
+  appointmentId: string
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient();
   const {
@@ -67,7 +67,7 @@ export async function cancelAppointmentAction(
 
   const result = await AppointmentService.updateAppointmentStatus(
     appointmentId,
-    AppointmentStatus.CANCELLED,
+    AppointmentStatus.CANCELLED
   );
   if (!result.ok) return { ok: false, error: result.error };
 
@@ -79,14 +79,14 @@ export async function cancelAppointmentAction(
 // ─── Public queries (no auth required) ───────────────────────────────────────
 
 export async function getAvailableDaysAction(
-  doctorId: string,
+  doctorId: string
 ): Promise<DoctorService.AvailableDay[]> {
   return DoctorService.getAvailableDaysForBooking(doctorId);
 }
 
 export async function getAvailableSlotsAction(
   doctorId: string,
-  dateStr: string,
+  dateStr: string
 ): Promise<{ id: string; startTime: string; endTime: string }[]> {
   const date = new Date(dateStr);
   const slots = await DoctorService.getAvailableSlotsForBooking(doctorId, date);
@@ -103,7 +103,7 @@ export async function getAvailableSlotsAction(
  */
 export async function getOrderBookingInfoAction(
   doctorId: string,
-  dateStr: string,
+  dateStr: string
 ): Promise<{
   available: boolean;
   remaining: number | null;
@@ -121,11 +121,7 @@ export async function getOrderBookingInfoAction(
     nextOrderNumber,
     currentOrder: info.trackCurrentOrder ? info.currentOrder : null,
     estimatedDurationMin: info.estimatedDurationMin,
-    expectedTime: expectedOrderTime(
-      info.sessionStart,
-      nextOrderNumber,
-      info.estimatedDurationMin,
-    ),
+    expectedTime: expectedOrderTime(info.sessionStart, nextOrderNumber, info.estimatedDurationMin),
   };
 }
 
@@ -134,19 +130,15 @@ export async function getOrderBookingInfoAction(
 export async function bookOrderAppointmentAction(
   doctorId: string,
   dateStr: string,
-  patientNotes?: string,
+  patientNotes?: string
 ): Promise<{ ok: boolean; error?: string; orderNumber?: number }> {
   const ctx = await getActiveClinicContext();
   if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
-  if (ctx.role !== Role.PATIENT)
-    return { ok: false, error: "هذه الخدمة للمرضى فقط" };
+  if (ctx.role !== Role.PATIENT) return { ok: false, error: "هذه الخدمة للمرضى فقط" };
 
-  const result = await QueueService.bookOrderAppointment(
-    ctx.user.id,
-    doctorId,
-    new Date(dateStr),
-    { notes: patientNotes },
-  );
+  const result = await QueueService.bookOrderAppointment(ctx.user.id, doctorId, new Date(dateStr), {
+    notes: patientNotes,
+  });
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath("/clinic/[slug]/dashboard", "page");
@@ -156,7 +148,7 @@ export async function bookOrderAppointmentAction(
 
 export async function bookAppointmentAction(
   slotId: string,
-  patientNotes?: string,
+  patientNotes?: string
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getActiveClinicContext();
   if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
@@ -164,11 +156,7 @@ export async function bookAppointmentAction(
     return { ok: false, error: "هذه الخدمة للمرضى فقط" };
   }
 
-  const result = await AppointmentService.createAppointment(
-    ctx.user.id,
-    slotId,
-    patientNotes,
-  );
+  const result = await AppointmentService.createAppointment(ctx.user.id, slotId, patientNotes);
 
   if (!result.ok) return { ok: false, error: result.error };
 

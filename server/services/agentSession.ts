@@ -13,9 +13,7 @@ import type { AgentMessageMetadata } from "@/agent/types";
  */
 const envSessionMinutes = Number(process.env.SESSION_MINUTES);
 export const SESSION_MINUTES =
-  Number.isFinite(envSessionMinutes) && envSessionMinutes > 0
-    ? envSessionMinutes
-    : 30;
+  Number.isFinite(envSessionMinutes) && envSessionMinutes > 0 ? envSessionMinutes : 30;
 
 export interface SessionMessage {
   id: string;
@@ -33,7 +31,7 @@ export interface SessionMessage {
  */
 export async function resolveActiveSession(
   conversationId: string,
-  clinicId: string,
+  clinicId: string
 ): Promise<string> {
   const now = new Date();
   const live = await prisma.chatSession.findFirst({
@@ -65,9 +63,7 @@ export async function isSessionAiEnabled(sessionId: string): Promise<boolean> {
 }
 
 /** Prior messages of a session, oldest first, for LLM context. */
-export async function getSessionMessages(
-  sessionId: string,
-): Promise<SessionMessage[]> {
+export async function getSessionMessages(sessionId: string): Promise<SessionMessage[]> {
   const messages = await prisma.message.findMany({
     where: { sessionId },
     orderBy: { createdAt: "asc" },
@@ -87,19 +83,19 @@ export async function persistUserMessage(
   sessionId: string,
   clinicId: string,
   content: string,
-  senderId: string | null,
+  senderId: string | null
 ): Promise<SessionMessage> {
-    const m = await prisma.message.create({
-      data: {
-        conversationId,
-        sessionId,
-        senderType: SenderType.USER,
-        senderId,
-        content,
-        isRead: false,
-        clinicId,
-      },
-    });
+  const m = await prisma.message.create({
+    data: {
+      conversationId,
+      sessionId,
+      senderType: SenderType.USER,
+      senderId,
+      content,
+      isRead: false,
+      clinicId,
+    },
+  });
   await touchConversation(conversationId);
   return {
     id: m.id,
@@ -116,7 +112,7 @@ export async function persistAgentMessage(
   sessionId: string,
   clinicId: string,
   content: string,
-  metadata: AgentMessageMetadata | null,
+  metadata: AgentMessageMetadata | null
 ): Promise<SessionMessage> {
   const m = await prisma.message.create({
     data: {
@@ -125,10 +121,8 @@ export async function persistAgentMessage(
       senderType: SenderType.AGENT,
       content,
       isRead: true,
-      metadata: metadata
-        ? (metadata as unknown as Prisma.InputJsonValue)
-        : undefined,
-        clinicId,
+      metadata: metadata ? (metadata as unknown as Prisma.InputJsonValue) : undefined,
+      clinicId,
     },
   });
   await touchConversation(conversationId);
@@ -153,7 +147,7 @@ async function touchConversation(conversationId: string) {
  * first use). */
 export async function getOrCreateWebConversation(
   userId: string,
-  clinicId: string,
+  clinicId: string
 ): Promise<string> {
   const existing = await prisma.conversation.findUnique({
     where: { clinicId_userId_channel: { clinicId, userId, channel: Channel.WEB } },
@@ -176,7 +170,7 @@ export async function getOrCreateWebConversation(
  */
 export async function getOrCreateGuestWebConversation(
   conversationId: string | null,
-  clinicId: string,
+  clinicId: string
 ): Promise<string> {
   if (conversationId) {
     const existing = await prisma.conversation.findFirst({

@@ -9,9 +9,7 @@ export type SpecialtyWithCount = Specialty & { _count: { doctors: number } };
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export async function listSpecialties(
-  clinicId: string,
-): Promise<SpecialtyWithCount[]> {
+export async function listSpecialties(clinicId: string): Promise<SpecialtyWithCount[]> {
   return prisma.specialty.findMany({
     where: { clinicId },
     include: { _count: { select: { doctors: true } } },
@@ -21,7 +19,7 @@ export async function listSpecialties(
 
 /** Lightweight list for dropdowns. */
 export async function listSpecialtyOptions(
-  clinicId: string,
+  clinicId: string
 ): Promise<{ id: string; name: string }[]> {
   return prisma.specialty.findMany({
     where: { clinicId },
@@ -41,7 +39,7 @@ async function findByName(clinicId: string, name: string) {
 
 export async function createSpecialty(
   clinicId: string,
-  rawName: string,
+  rawName: string
 ): Promise<Result<{ id: string }>> {
   const name = rawName.trim();
   if (!name) return err("اسم التخصص مطلوب");
@@ -60,7 +58,7 @@ export async function createSpecialty(
 /** Return the id of an existing (case-insensitive) specialty or create it. */
 export async function findOrCreateSpecialty(
   clinicId: string,
-  rawName: string,
+  rawName: string
 ): Promise<Result<{ id: string }>> {
   const name = rawName.trim();
   if (!name) return err("اسم التخصص مطلوب");
@@ -72,7 +70,7 @@ export async function findOrCreateSpecialty(
 export async function renameSpecialty(
   clinicId: string,
   specialtyId: string,
-  rawName: string,
+  rawName: string
 ): Promise<Result<void>> {
   const name = rawName.trim();
   if (!name) return err("اسم التخصص مطلوب");
@@ -102,7 +100,7 @@ export async function deleteSpecialty(specialtyId: string): Promise<Result<void>
  */
 export async function resolveSpecialtyId(
   clinicId: string,
-  input: { specialtyId?: string | null; newSpecialtyName?: string | null },
+  input: { specialtyId?: string | null; newSpecialtyName?: string | null }
 ): Promise<Result<string | null>> {
   const newName = input.newSpecialtyName?.trim();
   if (newName) {

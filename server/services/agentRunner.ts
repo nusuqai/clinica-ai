@@ -2,18 +2,10 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, SenderType, type Role } from "@prisma/client";
 import { sendTextMessage, WhatsAppApiError } from "@/lib/meta/whatsapp";
-import type {
-  WhatsAppCredentials,
-  WhatsAppRecipient,
-} from "@/lib/meta/whatsapp";
+import type { WhatsAppCredentials, WhatsAppRecipient } from "@/lib/meta/whatsapp";
 import type { UnsupportedMediaType } from "@/lib/meta/whatsapp-inbound";
 import { showTypingIndicator } from "./whatsappTyping";
-import {
-  runAgentStream,
-  runAgentToText,
-  type AgentContext,
-  type PriorMessage,
-} from "@/agent";
+import { runAgentStream, runAgentToText, type AgentContext, type PriorMessage } from "@/agent";
 import type { AgentStreamEvent } from "@/agent";
 import type { ToolCallRecord } from "@/agent/types";
 import {
@@ -70,7 +62,7 @@ const UNSUPPORTED_NOTICE_COOLDOWN_MS = 60_000;
 async function deliverReply(
   contact: WhatsAppContact,
   reply: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppCredentials
 ): Promise<void> {
   const to = contactLabel(contact);
   // Reach a hidden-phone contact by their BSUID; everyone else by phone.
@@ -85,10 +77,10 @@ async function deliverReply(
   } catch (err) {
     if (err instanceof WhatsAppApiError && err.isOutsideServiceWindow) {
       console.error(
-        `[whatsapp] reply not delivered to ${to}: the 24-hour service window has closed — only an approved template can reach this contact`,
+        `[whatsapp] reply not delivered to ${to}: the 24-hour service window has closed — only an approved template can reach this contact`
       );
       console.error(
-        `[wa-debug] NOT DELIVERED to ${to}: 24h window closed (Meta 131047) — reply is in DB/dashboard but WhatsApp rejected it`,
+        `[wa-debug] NOT DELIVERED to ${to}: 24h window closed (Meta 131047) — reply is in DB/dashboard but WhatsApp rejected it`
       );
       return;
     }
@@ -96,7 +88,7 @@ async function deliverReply(
     const code = err instanceof WhatsAppApiError ? err.code : undefined;
     console.error(
       `[wa-debug] NOT DELIVERED to ${to}: Cloud API error code=${code} — reply is in DB/dashboard but WhatsApp did not accept it:`,
-      err,
+      err
     );
   }
 }
@@ -118,20 +110,15 @@ function toPrior(messages: SessionMessage[]): PriorMessage[] {
 async function clinicGateBlocks(
   clinicId: string,
   conversationId: string,
-  sessionId: string,
+  sessionId: string
 ): Promise<boolean> {
   const status = await getClinicAiStatus(clinicId);
   if (!status.aiEnabled) {
-    await ensureOpenEscalation(clinicId,conversationId, sessionId, "clinic_disabled");
+    await ensureOpenEscalation(clinicId, conversationId, sessionId, "clinic_disabled");
     return true;
   }
   if (!status.sufficient) {
-    await ensureOpenEscalation(
-      clinicId,
-      conversationId,
-      sessionId,
-      "insufficient_credit",
-    );
+    await ensureOpenEscalation(clinicId, conversationId, sessionId, "insufficient_credit");
     return true;
   }
   return false;
@@ -164,7 +151,7 @@ async function chargeReply(args: {
  */
 export async function* streamWebAgent(
   userId: string,
-  userText: string,
+  userText: string
 ): AsyncGenerator<AgentStreamEvent> {
   const membership = await prisma.clinicMember.findFirst({
     where: { userId, clinic: { isActive: true } },
@@ -178,10 +165,7 @@ export async function* streamWebAgent(
   });
   if (!membership) throw new Error("No clinic membership for user");
 
-  const conversationId = await getOrCreateWebConversation(
-    userId,
-    membership.clinicId,
-  );
+  const conversationId = await getOrCreateWebConversation(userId, membership.clinicId);
   const sessionId = await resolveActiveSession(conversationId, membership.clinicId);
   await persistUserMessage(conversationId, sessionId, membership.clinicId, userText, userId);
 
@@ -229,7 +213,7 @@ export async function* streamWebAgent(
     finalText || FALLBACK_REPLY,
     {
       toolCalls,
-    },
+    }
   );
 
   if (usage) {
@@ -255,7 +239,7 @@ export async function handleUnsupportedWhatsAppMessage(
   conversationId: string,
   contact: WhatsAppContact,
   media: UnsupportedMediaType,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppCredentials
 ): Promise<void> {
   // A hidden-phone contact can't be matched to a Profile by phone; the notice
   // is channel-level and doesn't need one, so leave it unattributed in that case.
@@ -274,8 +258,8 @@ export async function handleUnsupportedWhatsAppMessage(
     sessionId,
     clinicId,
     media.placeholder,
-    
-    profile?.id ?? null,
+
+    profile?.id ?? null
   );
 
   const recentReply = await prisma.message.findFirst({
@@ -305,7 +289,7 @@ export async function handleWhatsAppMessage(
   userText: string,
   /** Meta message id — enables read receipts and the typing indicator. */
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppCredentials
 ): Promise<void> {
   const { phone, userId } = contact;
   const conv = await prisma.conversation.findUnique({
@@ -319,7 +303,7 @@ export async function handleWhatsAppMessage(
   // The conversation was just created/updated by the webhook, so this is defensive.
   if (!conv) {
     console.warn(
-      `[wa-debug] DROP: conversation ${conversationId} not found in handleWhatsAppMessage — user message NOT stored`,
+      `[wa-debug] DROP: conversation ${conversationId} not found in handleWhatsAppMessage — user message NOT stored`
     );
     return;
   }
@@ -369,27 +353,21 @@ export async function handleWhatsAppMessage(
   }
 
   const sessionId = await resolveActiveSession(conversationId, clinicId);
-  await persistUserMessage(
-    conversationId,
-    sessionId,
-    clinicId,
-    userText,
-    profile?.id ?? null,
-  );
+  await persistUserMessage(conversationId, sessionId, clinicId, userText, profile?.id ?? null);
   console.log(
-    `[wa-debug] user message STORED convId=${conversationId} sessionId=${sessionId} profileId=${profile?.id ?? "none"}`,
+    `[wa-debug] user message STORED convId=${conversationId} sessionId=${sessionId} profileId=${profile?.id ?? "none"}`
   );
 
   if (!(await isSessionAiEnabled(sessionId))) {
     console.log(
-      `[wa-debug] no reply: AI disabled for session ${sessionId} (human handoff) — message stored, no WhatsApp reply`,
+      `[wa-debug] no reply: AI disabled for session ${sessionId} (human handoff) — message stored, no WhatsApp reply`
     );
     return;
   }
 
   if (await clinicGateBlocks(clinicId, conversationId, sessionId)) {
     console.log(
-      `[wa-debug] no reply: clinic gate blocks (AI off / out of credit) clinicId=${clinicId} — message stored, no WhatsApp reply`,
+      `[wa-debug] no reply: clinic gate blocks (AI off / out of credit) clinicId=${clinicId} — message stored, no WhatsApp reply`
     );
     return;
   }

@@ -11,9 +11,7 @@
 export const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** True while free-form replies are still allowed for this contact. */
-export function isWithinWhatsappWindow(
-  lastInboundAt: Date | string | null | undefined,
-): boolean {
+export function isWithinWhatsappWindow(lastInboundAt: Date | string | null | undefined): boolean {
   if (!lastInboundAt) return false;
   const t = new Date(lastInboundAt).getTime();
   if (Number.isNaN(t)) return false;

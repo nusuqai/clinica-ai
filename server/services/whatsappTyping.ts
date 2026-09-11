@@ -12,10 +12,7 @@ import { markReadAndStartTyping, type WhatsAppCredentials } from "@/lib/meta/wha
  * Purely cosmetic — it runs detached and swallows its own errors so it can
  * never throw into, or delay, the reply path.
  */
-export function showTypingIndicator(
-  messageId: string,
-  creds: WhatsAppCredentials,
-): void {
+export function showTypingIndicator(messageId: string, creds: WhatsAppCredentials): void {
   void markReadAndStartTyping(messageId, creds).catch((err) => {
     console.error("WhatsApp typing indicator failed:", err);
   });

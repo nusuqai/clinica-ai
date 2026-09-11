@@ -11,13 +11,11 @@ const FAQS = [
   },
   {
     question: "هل يمكنني إلغاء أو تعديل موعدي؟",
-    answer:
-      "نعم، يمكنك إلغاء موعدك من لوحة التحكم الخاصة بك في أي وقت قبل موعد الحجز.",
+    answer: "نعم، يمكنك إلغاء موعدك من لوحة التحكم الخاصة بك في أي وقت قبل موعد الحجز.",
   },
   {
     question: "هل الحجز مجاني؟",
-    answer:
-      "الحجز عبر المنصة مجاني بالكامل، وتُدفع رسوم الكشف مباشرة في العيادة حسب سعر كل طبيب.",
+    answer: "الحجز عبر المنصة مجاني بالكامل، وتُدفع رسوم الكشف مباشرة في العيادة حسب سعر كل طبيب.",
   },
   {
     question: "ماذا لو لم تظهر مواعيد متاحة لطبيب معين؟",
@@ -53,9 +51,7 @@ export function FAQSection() {
                   onClick={() => setOpenIndex(isOpen ? null : i)}
                   className="flex w-full items-center justify-between gap-4 px-5 py-4 text-right"
                 >
-                  <span className="font-sans text-sm font-semibold text-text">
-                    {faq.question}
-                  </span>
+                  <span className="font-sans text-sm font-semibold text-text">{faq.question}</span>
                   <ChevronDown
                     className={`h-4 w-4 shrink-0 text-accent transition-transform ${
                       isOpen ? "rotate-180" : ""
@@ -64,9 +60,7 @@ export function FAQSection() {
                 </button>
                 {isOpen && (
                   <div className="px-5 pb-4">
-                    <p className="font-sans text-sm leading-relaxed text-text/60">
-                      {faq.answer}
-                    </p>
+                    <p className="font-sans text-sm leading-relaxed text-text/60">{faq.answer}</p>
                   </div>
                 )}
               </div>

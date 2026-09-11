@@ -14,24 +14,16 @@ export default async function AiUsagePage() {
 
   return (
     <div>
-      <PageHeader
-        title="تقرير تكاليف المساعد الذكي"
-        subtitle={`آخر ${report.windowDays} يوماً`}
-      />
+      <PageHeader title="تقرير تكاليف المساعد الذكي" subtitle={`آخر ${report.windowDays} يوماً`} />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
           label="إجمالي التكلفة"
           value={usd(report.totalCharged)}
           icon={DollarSign}
           color="primary"
         />
-        <StatCard
-          label="عدد الردود"
-          value={report.turns}
-          icon={MessageSquare}
-          color="accent"
-        />
+        <StatCard label="عدد الردود" value={report.turns} icon={MessageSquare} color="accent" />
         <StatCard
           label="متوسط تكلفة الرد"
           value={usd(report.avgCostPerTurn)}
@@ -40,11 +32,9 @@ export default async function AiUsagePage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card border border-border rounded-2xl p-6">
-          <h2 className="font-heading font-semibold text-foreground mb-6">
-            التكلفة اليومية
-          </h2>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <h2 className="mb-6 font-heading font-semibold text-foreground">التكلفة اليومية</h2>
           {report.byDay.length > 0 ? (
             <BarList
               items={report.byDay.map((d) => ({
@@ -55,9 +45,7 @@ export default async function AiUsagePage() {
               color="bg-accent"
             />
           ) : (
-            <p className="text-sm text-muted-foreground font-sans">
-              لا توجد بيانات استخدام بعد.
-            </p>
+            <p className="font-sans text-sm text-muted-foreground">لا توجد بيانات استخدام بعد.</p>
           )}
         </div>
       </div>

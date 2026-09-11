@@ -9,23 +9,21 @@ interface TopbarProps {
 
 export default function Topbar({ title, onMenuClick }: TopbarProps) {
   return (
-    <header className="flex-shrink-0 h-16 bg-white border-b border-primary/8 flex items-center justify-between px-4 md:px-6 gap-4">
+    <header className="border-primary/8 flex h-16 flex-shrink-0 items-center justify-between gap-4 border-b bg-white px-4 md:px-6">
       {/* Mobile hamburger */}
       <button
         onClick={onMenuClick}
-        className="md:hidden p-2 rounded-xl text-primary/60 hover:text-primary hover:bg-primary/5 transition-colors"
+        className="rounded-xl p-2 text-primary/60 transition-colors hover:bg-primary/5 hover:text-primary md:hidden"
         aria-label="فتح القائمة"
       >
-        <Menu className="w-5 h-5" />
+        <Menu className="h-5 w-5" />
       </button>
 
       {/* Page title (desktop) */}
-      <h2 className="hidden md:block font-heading font-bold text-primary text-lg">
-        {title}
-      </h2>
+      <h2 className="hidden font-heading text-lg font-bold text-primary md:block">{title}</h2>
 
       {/* App name (mobile center) */}
-      <span className="md:hidden font-heading font-bold text-primary text-base flex-1 text-center">
+      <span className="flex-1 text-center font-heading text-base font-bold text-primary md:hidden">
         Clinica AI
       </span>
 

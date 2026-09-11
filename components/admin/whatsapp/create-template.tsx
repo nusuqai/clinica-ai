@@ -4,11 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { createTemplateAction } from "@/server/actions/whatsapp";
 import { countVariables } from "@/lib/meta/template-render";
-import type {
-  TemplateCategory,
-  TemplateButton,
-  TemplateButtonType,
-} from "@/lib/meta/whatsapp";
+import type { TemplateCategory, TemplateButton, TemplateButtonType } from "@/lib/meta/whatsapp";
 import { Field } from "./field";
 import { LANGUAGES } from "./languages";
 import WhatsappPreview from "./whatsapp-preview";
@@ -43,28 +39,21 @@ export default function CreateTemplate({ disabled }: { disabled: boolean }) {
   const [buttons, setButtons] = useState<TemplateButton[]>([]);
   const [examples, setExamples] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
-    null,
-  );
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const varCount = countVariables(bodyText);
   // Keep the examples array length in sync with the variable count.
   useEffect(() => {
-    setExamples((prev) =>
-      Array.from({ length: varCount }, (_, i) => prev[i] ?? ""),
-    );
+    setExamples((prev) => Array.from({ length: varCount }, (_, i) => prev[i] ?? ""));
   }, [varCount]);
 
   const addButton = () =>
     setButtons((prev) =>
-      prev.length >= MAX_BUTTONS
-        ? prev
-        : [...prev, { type: "QUICK_REPLY", text: "" }],
+      prev.length >= MAX_BUTTONS ? prev : [...prev, { type: "QUICK_REPLY", text: "" }]
     );
   const updateButton = (i: number, patch: Partial<TemplateButton>) =>
     setButtons((prev) => prev.map((b, j) => (j === i ? { ...b, ...patch } : b)));
-  const removeButton = (i: number) =>
-    setButtons((prev) => prev.filter((_, j) => j !== i));
+  const removeButton = (i: number) => setButtons((prev) => prev.filter((_, j) => j !== i));
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -100,22 +89,27 @@ export default function CreateTemplate({ disabled }: { disabled: boolean }) {
 
   return (
     <div>
-      <h2 className="text-sm font-semibold text-foreground font-sans mb-3 flex items-center gap-2">
-        <Plus className="w-4 h-4 text-accent" />
+      <h2 className="mb-3 flex items-center gap-2 font-sans text-sm font-semibold text-foreground">
+        <Plus className="h-4 w-4 text-accent" />
         إنشاء قالب جديد
       </h2>
-      <div className="bg-card border border-border rounded-2xl p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 gap-5 rounded-2xl border border-border bg-card p-5 md:grid-cols-2">
         {/* Form column */}
         <div className="space-y-4">
           {disabled && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
               أدخل بيانات الاتصال أولاً لتتمكن من إنشاء القوالب.
             </p>
           )}
-          <Field label="اسم القالب (أحرف صغيرة وأرقام وشرطة سفلية)" value={name} onChange={setName} placeholder="appointment_reminder" />
+          <Field
+            label="اسم القالب (أحرف صغيرة وأرقام وشرطة سفلية)"
+            value={name}
+            onChange={setName}
+            placeholder="appointment_reminder"
+          />
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1 font-sans">الفئة</label>
+              <label className="mb-1 block font-sans text-xs text-muted-foreground">الفئة</label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as TemplateCategory)}
@@ -129,7 +123,7 @@ export default function CreateTemplate({ disabled }: { disabled: boolean }) {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-muted-foreground mb-1 font-sans">اللغة</label>
+              <label className="mb-1 block font-sans text-xs text-muted-foreground">اللغة</label>
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
@@ -151,7 +145,7 @@ export default function CreateTemplate({ disabled }: { disabled: boolean }) {
             dir="rtl"
           />
           <div>
-            <label className="block text-xs text-muted-foreground mb-1 font-sans">
+            <label className="mb-1 block font-sans text-xs text-muted-foreground">
               نص الرسالة (استخدم {"{{1}}"}، {"{{2}}"} للمتغيرات)
             </label>
             <textarea
@@ -165,7 +159,9 @@ export default function CreateTemplate({ disabled }: { disabled: boolean }) {
           </div>
           {examples.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">قيم توضيحية للمتغيرات (يطلبها ميتا للمراجعة، وتظهر في المعاينة)</p>
+              <p className="text-xs text-muted-foreground">
+                قيم توضيحية للمتغيرات (يطلبها ميتا للمراجعة، وتظهر في المعاينة)
+              </p>
               {examples.map((ex, i) => (
                 <input
                   key={i}
@@ -179,24 +175,30 @@ export default function CreateTemplate({ disabled }: { disabled: boolean }) {
               ))}
             </div>
           )}
-          <Field label="تذييل اختياري" value={footerText} onChange={setFooterText} placeholder="عيادة النور" dir="rtl" />
+          <Field
+            label="تذييل اختياري"
+            value={footerText}
+            onChange={setFooterText}
+            placeholder="عيادة النور"
+            dir="rtl"
+          />
 
           {/* Buttons builder */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs text-muted-foreground font-sans">الأزرار (اختياري)</label>
+              <label className="font-sans text-xs text-muted-foreground">الأزرار (اختياري)</label>
               <button
                 type="button"
                 onClick={addButton}
                 disabled={buttons.length >= MAX_BUTTONS}
-                className="inline-flex items-center gap-1 text-xs text-accent hover:underline disabled:opacity-40 disabled:no-underline"
+                className="inline-flex items-center gap-1 text-xs text-accent hover:underline disabled:no-underline disabled:opacity-40"
               >
-                <Plus className="w-3 h-3" />
+                <Plus className="h-3 w-3" />
                 إضافة زر
               </button>
             </div>
             {buttons.map((b, i) => (
-              <div key={i} className="rounded-lg border border-border p-2.5 space-y-2">
+              <div key={i} className="space-y-2 rounded-lg border border-border p-2.5">
                 <div className="flex items-center gap-2">
                   <select
                     value={b.type}
@@ -222,10 +224,10 @@ export default function CreateTemplate({ disabled }: { disabled: boolean }) {
                   <button
                     type="button"
                     onClick={() => removeButton(i)}
-                    className="text-muted-foreground hover:text-red-600 flex-shrink-0"
+                    className="flex-shrink-0 text-muted-foreground hover:text-red-600"
                     aria-label="حذف الزر"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
                 {b.type === "URL" && (
@@ -259,16 +261,20 @@ export default function CreateTemplate({ disabled }: { disabled: boolean }) {
           <button
             onClick={handleSubmit}
             disabled={disabled || submitting || !name.trim() || !bodyText.trim()}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
           >
-            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {submitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
             إرسال للمراجعة
           </button>
         </div>
 
         {/* Live preview column */}
         <div>
-          <p className="text-xs text-muted-foreground mb-2 font-sans">معاينة مباشرة</p>
+          <p className="mb-2 font-sans text-xs text-muted-foreground">معاينة مباشرة</p>
           <WhatsappPreview
             headerText={headerText}
             bodyText={bodyText}

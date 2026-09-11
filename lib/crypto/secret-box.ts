@@ -28,9 +28,7 @@ function getKey(): Buffer {
 
   const raw = process.env.WHATSAPP_TOKEN_ENC_KEY;
   if (!raw) {
-    throw new Error(
-      "WHATSAPP_TOKEN_ENC_KEY is not set — cannot encrypt/decrypt WhatsApp tokens",
-    );
+    throw new Error("WHATSAPP_TOKEN_ENC_KEY is not set — cannot encrypt/decrypt WhatsApp tokens");
   }
 
   // Accept either base64 or hex; both are common ways to write 32 random bytes.
@@ -43,7 +41,7 @@ function getKey(): Buffer {
 
   if (key.length !== KEY_LENGTH) {
     throw new Error(
-      `WHATSAPP_TOKEN_ENC_KEY must decode to ${KEY_LENGTH} bytes (got ${key.length}) — generate one with \`openssl rand -base64 32\``,
+      `WHATSAPP_TOKEN_ENC_KEY must decode to ${KEY_LENGTH} bytes (got ${key.length}) — generate one with \`openssl rand -base64 32\``
     );
   }
 
@@ -55,10 +53,7 @@ function getKey(): Buffer {
 export function encryptSecret(plaintext: string): string {
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
-  const ciphertext = Buffer.concat([
-    cipher.update(plaintext, "utf8"),
-    cipher.final(),
-  ]);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
   return [
@@ -78,11 +73,7 @@ export function decryptSecret(payload: string): string {
   }
   const [, ivB64, tagB64, dataB64] = parts;
 
-  const decipher = crypto.createDecipheriv(
-    ALGORITHM,
-    getKey(),
-    Buffer.from(ivB64, "base64"),
-  );
+  const decipher = crypto.createDecipheriv(ALGORITHM, getKey(), Buffer.from(ivB64, "base64"));
   decipher.setAuthTag(Buffer.from(tagB64, "base64"));
 
   return Buffer.concat([

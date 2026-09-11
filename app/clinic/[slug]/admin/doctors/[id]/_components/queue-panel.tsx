@@ -91,10 +91,7 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
   function toggleTracking() {
     if (!queue) return;
     startTransition(async () => {
-      const res = await toggleQueueTrackingAction(
-        queue.id,
-        !queue.trackCurrentOrder,
-      );
+      const res = await toggleQueueTrackingAction(queue.id, !queue.trackCurrentOrder);
       if (res?.error) {
         setError(res.error);
         return;
@@ -133,85 +130,73 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
   const currentPatient =
     queue?.patients.find(
       (p) =>
-        p.orderNumber === queue.currentOrder &&
-        (p.status === "PENDING" || p.status === "CONFIRMED"),
+        p.orderNumber === queue.currentOrder && (p.status === "PENDING" || p.status === "CONFIRMED")
     ) ?? null;
 
   // Is there still a patient to call after the current one?
   const hasNext = queue ? queue.serveNextOrder <= booked : false;
   // Doctor started but no one is being served and nothing is left to call →
   // the queue is done for the day.
-  const queueFinished =
-    !!queue && queue.currentOrder > 0 && !currentPatient && !hasNext;
+  const queueFinished = !!queue && queue.currentOrder > 0 && !currentPatient && !hasNext;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-foreground font-sans">
-          اليوم
-        </label>
+        <label className="font-sans text-sm font-medium text-foreground">اليوم</label>
         <input
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
           dir="ltr"
-          className="border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
         <button
           onClick={load}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium font-sans border border-border rounded-lg text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
         >
-          <RefreshCw className="w-3.5 h-3.5" />
+          <RefreshCw className="h-3.5 w-3.5" />
           تحديث
         </button>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-sans">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
           {error}
         </div>
       )}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground font-sans">
-          جارٍ التحميل...
-        </p>
+        <p className="font-sans text-sm text-muted-foreground">جارٍ التحميل...</p>
       ) : !queue ? (
-        <div className="bg-card border border-border rounded-2xl py-16 text-center">
-          <p className="text-muted-foreground font-sans">
-            لا يوجد طابور دور لهذا اليوم. يظهر الطابور بعد أول حجز في قاعدة توفر
-            بنظام الدور.
+        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+          <p className="font-sans text-muted-foreground">
+            لا يوجد طابور دور لهذا اليوم. يظهر الطابور بعد أول حجز في قاعدة توفر بنظام الدور.
           </p>
         </div>
       ) : (
         <>
           {/* Summary + controls */}
-          <div className="bg-card border border-border rounded-2xl p-5 flex flex-wrap items-center gap-5">
+          <div className="flex flex-wrap items-center gap-5 rounded-2xl border border-border bg-card p-5">
             <div>
-              <p className="text-xs text-muted-foreground font-sans">
-                يُخدم الآن
-              </p>
-              <p className="text-3xl font-heading font-bold text-primary tabular-nums">
+              <p className="font-sans text-xs text-muted-foreground">يُخدم الآن</p>
+              <p className="font-heading text-3xl font-bold tabular-nums text-primary">
                 {currentPatient ? queue.currentOrder : "—"}
               </p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground font-sans">التالي</p>
-              <p className="text-3xl font-heading font-bold text-muted-foreground tabular-nums">
+              <p className="font-sans text-xs text-muted-foreground">التالي</p>
+              <p className="font-heading text-3xl font-bold tabular-nums text-muted-foreground">
                 {queue.serveNextOrder <= booked ? queue.serveNextOrder : "—"}
               </p>
             </div>
             <div className="h-10 w-px bg-border" />
             <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground font-sans">
-                الحجوزات:{" "}
-                <span className="text-foreground font-medium">{booked}</span>
+              <p className="font-sans text-xs text-muted-foreground">
+                الحجوزات: <span className="font-medium text-foreground">{booked}</span>
                 {queue.dailyCap != null && ` / ${queue.dailyCap}`}
               </p>
               {queue.branchName && (
-                <p className="text-xs text-muted-foreground font-sans">
-                  {queue.branchName}
-                </p>
+                <p className="font-sans text-xs text-muted-foreground">{queue.branchName}</p>
               )}
             </div>
             <div className="ms-auto flex items-center gap-2">
@@ -223,18 +208,18 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                     ? "إخفاء الدور الحالي عن المرضى"
                     : "إظهار الدور الحالي للمرضى"
                 }
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium font-sans border border-border rounded-lg text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50"
               >
                 {queue.trackCurrentOrder ? (
-                  <Eye className="w-3.5 h-3.5" />
+                  <Eye className="h-3.5 w-3.5" />
                 ) : (
-                  <EyeOff className="w-3.5 h-3.5" />
+                  <EyeOff className="h-3.5 w-3.5" />
                 )}
                 {queue.trackCurrentOrder ? "التتبّع مفعّل" : "التتبّع متوقف"}
               </button>
               {queueFinished ? (
-                <div className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium font-sans text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl">
-                  <CheckCircle2 className="w-4 h-4" />
+                <div className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 font-sans text-sm font-medium text-emerald-700">
+                  <CheckCircle2 className="h-4 w-4" />
                   اكتمل الطابور — لا مزيد من المرضى
                 </div>
               ) : (
@@ -244,9 +229,9 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                       onClick={() => skip(currentPatient.id)}
                       disabled={isPending}
                       title="تخطّي المريض الحالي مؤقتاً (غير حاضر)"
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium font-sans border border-amber-300 text-amber-700 rounded-xl hover:bg-amber-50 transition-colors disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 px-3 py-2 font-sans text-sm font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50"
                     >
-                      <SkipForward className="w-4 h-4" />
+                      <SkipForward className="h-4 w-4" />
                       تخطّي
                     </button>
                   )}
@@ -254,9 +239,9 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                     <button
                       onClick={handleNextClick}
                       disabled={isPending}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium font-sans hover:bg-primary/90 transition-colors disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
                     >
-                      <ChevronLeft className="w-4 h-4" />
+                      <ChevronLeft className="h-4 w-4" />
                       {currentPatient
                         ? "إنهاء واستدعاء التالي"
                         : queue.currentOrder === 0
@@ -271,17 +256,13 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
 
           {/* Ordered patient list */}
           {queue.patients.length === 0 ? (
-            <p className="text-sm text-muted-foreground font-sans">
-              لا يوجد مرضى في الطابور.
-            </p>
+            <p className="font-sans text-sm text-muted-foreground">لا يوجد مرضى في الطابور.</p>
           ) : (
-            <div className="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
+            <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
               {queue.patients.map((p) => {
                 const isCurrent = currentPatient?.id === p.id;
                 const isDone =
-                  !p.skipped &&
-                  p.orderNumber != null &&
-                  p.orderNumber < queue.currentOrder;
+                  !p.skipped && p.orderNumber != null && p.orderNumber < queue.currentOrder;
                 // A recalled patient keeps its skip flag while being served; show
                 // the "مؤجّل" state only when they're not the one being served.
                 const showSkipped = p.skipped && !isCurrent;
@@ -290,17 +271,13 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                     key={p.id}
                     className={[
                       "flex items-center justify-between gap-3 px-5 py-3",
-                      isCurrent
-                        ? "bg-primary/5"
-                        : showSkipped
-                          ? "bg-amber-50/60"
-                          : "",
+                      isCurrent ? "bg-primary/5" : showSkipped ? "bg-amber-50/60" : "",
                     ].join(" ")}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex min-w-0 items-center gap-3">
                       <span
                         className={[
-                          "inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold font-heading tabular-nums flex-shrink-0",
+                          "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full font-heading text-sm font-bold tabular-nums",
                           isCurrent
                             ? "bg-primary text-white"
                             : showSkipped
@@ -314,27 +291,27 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                       </span>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-foreground font-sans truncate">
+                          <p className="truncate font-sans text-sm font-medium text-foreground">
                             {p.patientName}
                           </p>
                           {showSkipped && (
-                            <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-px rounded-full font-sans flex-shrink-0">
+                            <span className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 py-px font-sans text-[10px] font-medium text-amber-700">
                               مؤجّل
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground font-sans">
+                        <div className="flex items-center gap-2 font-sans text-xs text-muted-foreground">
                           {p.phone && <span dir="ltr">{p.phone}</span>}
                           {p.expectedTime && (
                             <span className="inline-flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
+                              <Clock className="h-3 w-3" />
                               متوقع ~{p.expectedTime}
                             </span>
                           )}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex flex-shrink-0 items-center gap-2">
                       <AppointmentStatusBadge status={p.status} />
                       {/* Recall is the only per-row action — skip/next live in the
                           controls above and act on the current patient. Not shown
@@ -344,9 +321,9 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                           onClick={() => recall(p.id)}
                           disabled={isPending}
                           title="إرجاع المريض ليُخدَم الآن"
-                          className="inline-flex items-center gap-1 text-xs font-medium font-sans text-primary hover:underline disabled:opacity-50"
+                          className="inline-flex items-center gap-1 font-sans text-xs font-medium text-primary hover:underline disabled:opacity-50"
                         >
-                          <Undo2 className="w-3.5 h-3.5" />
+                          <Undo2 className="h-3.5 w-3.5" />
                           إرجاع
                         </button>
                       )}
@@ -365,24 +342,23 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
         title="إنهاء كشف المريض الحالي"
       >
         <div className="space-y-4">
-          <p className="text-sm text-foreground font-sans leading-relaxed">
-            هل أنهى المريض{" "}
-            <span className="font-semibold">{currentPatient?.patientName}</span>{" "}
-            (دور {currentPatient?.orderNumber}) الكشف؟ سيُعلَّم موعده كمكتمل
-            وينتقل الدور إلى المريض التالي.
+          <p className="font-sans text-sm leading-relaxed text-foreground">
+            هل أنهى المريض <span className="font-semibold">{currentPatient?.patientName}</span> (دور{" "}
+            {currentPatient?.orderNumber}) الكشف؟ سيُعلَّم موعده كمكتمل وينتقل الدور إلى المريض
+            التالي.
           </p>
           <div className="flex justify-end gap-2">
             <button
               onClick={() => setConfirmNext(false)}
               disabled={isPending}
-              className="px-4 py-2 text-sm font-medium font-sans border border-border rounded-xl text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
+              className="rounded-xl border border-border px-4 py-2 font-sans text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
             >
               إلغاء
             </button>
             <button
               onClick={performNext}
               disabled={isPending}
-              className="px-4 py-2 text-sm font-medium font-sans bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50"
+              className="rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {isPending ? "جارٍ..." : "تأكيد الإنهاء والانتقال"}
             </button>

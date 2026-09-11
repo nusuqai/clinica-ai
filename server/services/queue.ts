@@ -1,12 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
-import {
-  AppointmentStatus,
-  AvailabilityMode,
-  DayOfWeek,
-  type Prisma,
-} from "@prisma/client";
+import { AppointmentStatus, AvailabilityMode, DayOfWeek, type Prisma } from "@prisma/client";
 
 // getUTCDay() index → DayOfWeek enum.
 const DAY_BY_INDEX: DayOfWeek[] = [
@@ -31,11 +26,7 @@ export function toDateOnly(date: Date): Date {
  * given date. When branchId is given it must match; otherwise the first
  * order-based rule for that weekday is used.
  */
-export async function getOrderRuleForDate(
-  doctorId: string,
-  date: Date,
-  branchId?: string | null,
-) {
+export async function getOrderRuleForDate(doctorId: string, date: Date, branchId?: string | null) {
   const dayOfWeek = DAY_BY_INDEX[toDateOnly(date).getUTCDay()];
   return prisma.availabilityRule.findFirst({
     where: {
@@ -64,7 +55,7 @@ async function ensureQueue(
     estimatedDurationMin: number | null;
   },
   clinicId: string,
-  date: Date,
+  date: Date
 ) {
   const day = toDateOnly(date);
   const existing = await tx.doctorDayQueue.findUnique({
@@ -108,12 +99,11 @@ export async function bookOrderAppointment(
   patientId: string,
   doctorId: string,
   date: Date,
-  opts?: { branchId?: string | null; notes?: string },
+  opts?: { branchId?: string | null; notes?: string }
 ): Promise<Result<OrderBookingResult>> {
   try {
     const day = toDateOnly(date);
-    if (day < toDateOnly(new Date()))
-      return err("لا يمكن الحجز في يوم مضى");
+    if (day < toDateOnly(new Date())) return err("لا يمكن الحجز في يوم مضى");
 
     const doctor = await prisma.doctor.findUnique({
       where: { id: doctorId },
@@ -135,14 +125,12 @@ export async function bookOrderAppointment(
     });
     if (active)
       return err(
-        "لديك حجز قائم مع هذا الطبيب لم يكتمل بعد. يرجى إتمامه أو إلغاؤه قبل حجز موعد جديد.",
+        "لديك حجز قائم مع هذا الطبيب لم يكتمل بعد. يرجى إتمامه أو إلغاؤه قبل حجز موعد جديد."
       );
 
     const rule = await getOrderRuleForDate(doctorId, day, opts?.branchId);
-    if (!rule)
-      return err("هذا الطبيب لا يعمل بنظام الدور في هذا اليوم");
-    if (!rule.branchId)
-      return err("قاعدة الدور بدون فرع محدد");
+    if (!rule) return err("هذا الطبيب لا يعمل بنظام الدور في هذا اليوم");
+    if (!rule.branchId) return err("قاعدة الدور بدون فرع محدد");
     const orderRule = { ...rule, branchId: rule.branchId };
 
     const result = await prisma.$transaction(async (tx) => {
@@ -192,8 +180,7 @@ export async function bookOrderAppointment(
       };
     });
 
-    if (result.capped)
-      return err("اكتمل عدد الحجوزات المتاحة لهذا اليوم");
+    if (result.capped) return err("اكتمل عدد الحجوزات المتاحة لهذا اليوم");
 
     return ok({
       id: result.appt.id,
@@ -212,7 +199,7 @@ export async function bookOrderAppointment(
 export function estimateWaitMinutes(
   orderNumber: number,
   currentOrder: number,
-  estimatedDurationMin: number | null,
+  estimatedDurationMin: number | null
 ): number | null {
   if (estimatedDurationMin == null) return null;
   return Math.max(0, orderNumber - currentOrder) * estimatedDurationMin;
@@ -239,7 +226,7 @@ export interface OrderBookingInfo {
 export async function getOrderBookingInfo(
   doctorId: string,
   date: Date,
-  branchId?: string | null,
+  branchId?: string | null
 ): Promise<OrderBookingInfo | null> {
   const day = toDateOnly(date);
   const rule = await getOrderRuleForDate(doctorId, day, branchId);
@@ -268,11 +255,7 @@ export async function getOrderBookingInfo(
 
 // ─── Queue management (clinic/doctor controls) ────────────────────────────────
 
-export async function getDayQueue(
-  doctorId: string,
-  date: Date,
-  branchId?: string | null,
-) {
+export async function getDayQueue(doctorId: string, date: Date, branchId?: string | null) {
   const day = toDateOnly(date);
   const queue = await prisma.doctorDayQueue.findFirst({
     where: { doctorId, date: day, ...(branchId ? { branchId } : {}) },
@@ -301,10 +284,7 @@ export async function getDayQueue(
  * Keeps the appointment PENDING (no no-show) — just flags it and, if it was the
  * one being served, advances "now serving" to the next number. Recall restores it.
  */
-export async function skipOrder(
-  appointmentId: string,
-  doctorId?: string,
-): Promise<Result<void>> {
+export async function skipOrder(appointmentId: string, doctorId?: string): Promise<Result<void>> {
   try {
     const appt = await prisma.appointment.findUnique({
       where: { id: appointmentId },
@@ -357,7 +337,7 @@ export async function skipOrder(
  */
 export async function recallOrder(
   appointmentId: string,
-  doctorId?: string,
+  doctorId?: string
 ): Promise<Result<{ orderNumber: number }>> {
   try {
     const appt = await prisma.appointment.findUnique({
@@ -405,7 +385,7 @@ export async function recallOrder(
  */
 export async function completeCurrentAndAdvance(
   queueId: string,
-  doctorId?: string,
+  doctorId?: string
 ): Promise<Result<{ currentOrder: number; completedAppointmentId: string | null }>> {
   try {
     const q = await ownedQueue(queueId, doctorId);
@@ -458,7 +438,7 @@ async function ownedQueue(queueId: string, doctorId?: string) {
 export async function setCurrentOrder(
   queueId: string,
   to: number | null,
-  doctorId?: string,
+  doctorId?: string
 ): Promise<Result<{ currentOrder: number }>> {
   try {
     const q = await ownedQueue(queueId, doctorId);
@@ -479,7 +459,7 @@ export async function setCurrentOrder(
 export async function toggleQueueTracking(
   queueId: string,
   track: boolean,
-  doctorId?: string,
+  doctorId?: string
 ): Promise<Result<void>> {
   try {
     const q = await ownedQueue(queueId, doctorId);
@@ -497,7 +477,7 @@ export async function toggleQueueTracking(
 export async function setQueueCap(
   queueId: string,
   cap: number | null,
-  doctorId?: string,
+  doctorId?: string
 ): Promise<Result<void>> {
   try {
     const q = await ownedQueue(queueId, doctorId);

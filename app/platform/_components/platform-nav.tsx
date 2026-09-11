@@ -57,9 +57,7 @@ export default function PlatformNav({ email, pendingRequests }: Props) {
             <LayoutDashboard className="h-4 w-4" />
           </div>
           <div className="leading-tight">
-            <p className="font-heading text-sm font-bold text-foreground">
-              Nusuq
-            </p>
+            <p className="font-heading text-sm font-bold text-foreground">Nusuq</p>
             <p className="text-[11px] text-muted-foreground">لوحة المنصة</p>
           </div>
         </div>
@@ -152,7 +150,7 @@ function NavPill({
       href={href}
       onClick={onClick}
       className={[
-        "relative inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-sans transition-colors",
+        "relative inline-flex items-center gap-2 rounded-lg px-3 py-2 font-sans text-sm transition-colors",
         block ? "w-full" : "",
         active
           ? "bg-primary/10 text-primary"

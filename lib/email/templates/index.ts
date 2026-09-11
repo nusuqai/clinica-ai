@@ -26,8 +26,12 @@ export function requestReceivedEmail(args: {
       clinicName: args.clinicName,
       heading: `مرحباً ${esc(args.requesterName)}، استلمنا طلبك 🎉`,
       bodyHtml:
-        p(`شكراً لاهتمامك بمنصة <strong>${BRAND.name}</strong>. لقد استلمنا طلب تسجيل عيادة <strong>«${esc(args.clinicName)}»</strong> بنجاح.`) +
-        p("سيقوم فريقنا بمراجعة الطلب، وسنعود إليك عبر البريد الإلكتروني بالخطوات التالية في أقرب وقت ممكن.") +
+        p(
+          `شكراً لاهتمامك بمنصة <strong>${BRAND.name}</strong>. لقد استلمنا طلب تسجيل عيادة <strong>«${esc(args.clinicName)}»</strong> بنجاح.`
+        ) +
+        p(
+          "سيقوم فريقنا بمراجعة الطلب، وسنعود إليك عبر البريد الإلكتروني بالخطوات التالية في أقرب وقت ممكن."
+        ) +
         p("لا حاجة لأي إجراء من جانبك الآن — نحن نتولى الباقي. 🙌"),
     }),
   };
@@ -46,8 +50,12 @@ export function clinicApprovedInviteEmail(args: {
       clinicName: args.clinicName,
       heading: `تهانينا ${esc(args.requesterName)}! تمت الموافقة ✅`,
       bodyHtml:
-        p(`يسعدنا إبلاغك بأنه تمت الموافقة على تسجيل عيادة <strong>«${esc(args.clinicName)}»</strong> على منصة <strong>${BRAND.name}</strong>.`) +
-        p("لقد أنشأنا لك حساب مدير العيادة. اضغط الزر أدناه لتعيين كلمة المرور الخاصة بك وتسجيل الدخول إلى لوحة التحكم.") +
+        p(
+          `يسعدنا إبلاغك بأنه تمت الموافقة على تسجيل عيادة <strong>«${esc(args.clinicName)}»</strong> على منصة <strong>${BRAND.name}</strong>.`
+        ) +
+        p(
+          "لقد أنشأنا لك حساب مدير العيادة. اضغط الزر أدناه لتعيين كلمة المرور الخاصة بك وتسجيل الدخول إلى لوحة التحكم."
+        ) +
         linkFallback(args.actionUrl),
       cta: { label: "تعيين كلمة المرور", url: args.actionUrl },
       footnote: LINK_EXPIRY_NOTE,
@@ -67,9 +75,15 @@ export function clinicRejectedEmail(args: {
       clinicName: args.clinicName,
       heading: `مرحباً ${esc(args.requesterName)}`,
       bodyHtml:
-        p(`شكراً لتقديمك طلب تسجيل عيادة <strong>«${esc(args.clinicName)}»</strong> على منصة <strong>${BRAND.name}</strong>.`) +
-        p("بعد المراجعة، لم نتمكن من الموافقة على الطلب في الوقت الحالي. قد يعود ذلك إلى نقص في المعلومات أو عدم اكتمال متطلبات التسجيل.") +
-        p("يسعدنا مساعدتك — يمكنك الرد على فريق الدعم لمعرفة التفاصيل أو إعادة تقديم الطلب بعد استكمال البيانات."),
+        p(
+          `شكراً لتقديمك طلب تسجيل عيادة <strong>«${esc(args.clinicName)}»</strong> على منصة <strong>${BRAND.name}</strong>.`
+        ) +
+        p(
+          "بعد المراجعة، لم نتمكن من الموافقة على الطلب في الوقت الحالي. قد يعود ذلك إلى نقص في المعلومات أو عدم اكتمال متطلبات التسجيل."
+        ) +
+        p(
+          "يسعدنا مساعدتك — يمكنك الرد على فريق الدعم لمعرفة التفاصيل أو إعادة تقديم الطلب بعد استكمال البيانات."
+        ),
     }),
   };
 }
@@ -87,7 +101,9 @@ export function clinicCreatedInviteEmail(args: {
       clinicName: args.clinicName,
       heading: `مرحباً ${esc(args.adminName)} 👋`,
       bodyHtml:
-        p(`تم إنشاء حساب لك لإدارة عيادة <strong>«${esc(args.clinicName)}»</strong> على منصة <strong>${BRAND.name}</strong>.`) +
+        p(
+          `تم إنشاء حساب لك لإدارة عيادة <strong>«${esc(args.clinicName)}»</strong> على منصة <strong>${BRAND.name}</strong>.`
+        ) +
         p("اضغط الزر أدناه لتعيين كلمة المرور وتسجيل الدخول إلى لوحة التحكم الخاصة بعيادتك.") +
         linkFallback(args.actionUrl),
       cta: { label: "تعيين كلمة المرور", url: args.actionUrl },
@@ -111,7 +127,9 @@ export function accountInviteEmail(args: {
       clinicName: args.clinicName,
       heading: `${greeting} 👋`,
       bodyHtml:
-        p(`لتتمكن من تسجيل الدخول إلى حسابك على الموقع ومتابعة مواعيدك مع عيادة <strong>«${esc(args.clinicName)}»</strong>، اضغط الزر أدناه لتعيين كلمة المرور الخاصة بك.`) +
+        p(
+          `لتتمكن من تسجيل الدخول إلى حسابك على الموقع ومتابعة مواعيدك مع عيادة <strong>«${esc(args.clinicName)}»</strong>، اضغط الزر أدناه لتعيين كلمة المرور الخاصة بك.`
+        ) +
         p("كل مواعيدك وبياناتك السابقة محفوظة وستظهر فور تسجيل دخولك.") +
         linkFallback(args.actionUrl),
       cta: { label: "تعيين كلمة المرور", url: args.actionUrl },
@@ -121,10 +139,7 @@ export function accountInviteEmail(args: {
 }
 
 // 5) Password reset (recovery).
-export function passwordResetEmail(args: {
-  name: string | null;
-  actionUrl: string;
-}): BuiltEmail {
+export function passwordResetEmail(args: { name: string | null; actionUrl: string }): BuiltEmail {
   const greeting = args.name ? `مرحباً ${esc(args.name)}` : "مرحباً";
   return {
     subject: `إعادة تعيين كلمة المرور — ${BRAND.name}`,
@@ -132,7 +147,9 @@ export function passwordResetEmail(args: {
       preheader: "طلب إعادة تعيين كلمة المرور لحسابك.",
       heading: `${greeting}، إعادة تعيين كلمة المرور 🔐`,
       bodyHtml:
-        p("تلقّينا طلباً لإعادة تعيين كلمة المرور لحسابك. اضغط الزر أدناه لاختيار كلمة مرور جديدة.") +
+        p(
+          "تلقّينا طلباً لإعادة تعيين كلمة المرور لحسابك. اضغط الزر أدناه لاختيار كلمة مرور جديدة."
+        ) +
         p("إذا لم تطلب ذلك، يمكنك تجاهل هذه الرسالة بأمان — لن يتغيّر شيء في حسابك.") +
         linkFallback(args.actionUrl),
       cta: { label: "إعادة تعيين كلمة المرور", url: args.actionUrl },
@@ -161,7 +178,9 @@ export function signupOtpEmail(args: {
       clinicName: args.clinicName,
       heading: `${greeting}، أكّد بريدك الإلكتروني`,
       bodyHtml:
-        p(`استخدم الرمز التالي لتفعيل حسابك في عيادة <strong>«${esc(args.clinicName)}»</strong> على منصة <strong>${BRAND.name}</strong>:`) +
+        p(
+          `استخدم الرمز التالي لتفعيل حسابك في عيادة <strong>«${esc(args.clinicName)}»</strong> على منصة <strong>${BRAND.name}</strong>:`
+        ) +
         codeBox +
         p("أدخل هذا الرمز في الصفحة المفتوحة لإكمال التسجيل.") +
         p("إذا لم تطلب إنشاء حساب، تجاهل هذه الرسالة."),
@@ -183,7 +202,9 @@ export function emailChangeEmail(args: {
       preheader: "أكّد عنوان بريدك الإلكتروني الجديد.",
       heading: `${greeting}، أكّد بريدك الجديد ✉️`,
       bodyHtml:
-        p(`تلقّينا طلباً لتغيير البريد الإلكتروني لحسابك إلى <strong dir="ltr">${esc(args.newEmail)}</strong>.`) +
+        p(
+          `تلقّينا طلباً لتغيير البريد الإلكتروني لحسابك إلى <strong dir="ltr">${esc(args.newEmail)}</strong>.`
+        ) +
         p("اضغط الزر أدناه لتأكيد هذا التغيير. لن يُعتمد البريد الجديد قبل التأكيد.") +
         p("إذا لم تطلب هذا التغيير، تجاهل هذه الرسالة وسيبقى بريدك الحالي كما هو.") +
         linkFallback(args.actionUrl),

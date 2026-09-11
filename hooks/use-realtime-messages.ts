@@ -20,7 +20,7 @@ export interface RealtimeMessageRow {
 
 export function useRealtimeMessages(
   conversationId: string | null,
-  onNewMessage: (row: RealtimeMessageRow) => void,
+  onNewMessage: (row: RealtimeMessageRow) => void
 ) {
   const callbackRef = useRef(onNewMessage);
   callbackRef.current = onNewMessage;
@@ -36,13 +36,13 @@ export function useRealtimeMessages(
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: `conversationId=eq.${conversationId}`,  
+          filter: `conversationId=eq.${conversationId}`,
         },
         (payload) => {
           const row = payload.new as unknown as RealtimeMessageRow;
           if (row.conversationId !== conversationId) return;
           callbackRef.current(row);
-        },
+        }
       )
       .subscribe();
     return () => {
@@ -64,7 +64,7 @@ export interface RealtimeEscalationRow {
 export function useRealtimeEscalations(
   onInsert: (row: RealtimeEscalationRow) => void,
   onResolve: (row: RealtimeEscalationRow) => void,
-  clinicId: string,
+  clinicId: string
 ) {
   const insertRef = useRef(onInsert);
   insertRef.current = onInsert;
@@ -77,18 +77,28 @@ export function useRealtimeEscalations(
       .channel("escalations:all")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "escalations", filter: `clinicId=eq.${clinicId}` },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "escalations",
+          filter: `clinicId=eq.${clinicId}`,
+        },
         (payload) => {
           insertRef.current(payload.new as unknown as RealtimeEscalationRow);
-        },
+        }
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "escalations" , filter: `clinicId=eq.${clinicId}`},
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "escalations",
+          filter: `clinicId=eq.${clinicId}`,
+        },
         (payload) => {
           const row = payload.new as unknown as RealtimeEscalationRow;
           if (row.resolvedAt) resolveRef.current(row);
-        },
+        }
       )
       .subscribe();
     return () => {
@@ -98,9 +108,8 @@ export function useRealtimeEscalations(
 }
 
 export function useRealtimeConversations(
-
   clinicId: string,
-  onNewMessage: (row: RealtimeMessageRow) => void,
+  onNewMessage: (row: RealtimeMessageRow) => void
 ) {
   const messageRef = useRef(onNewMessage);
   messageRef.current = onNewMessage;
@@ -116,14 +125,14 @@ export function useRealtimeConversations(
           schema: "public",
           table: "messages",
           filter: `clinicId=eq.${clinicId}`,
- 
+
           // no conversation_id filter — this admin needs every conversation's
           // inserts to keep the sidebar accurate; the callback decides what
           // to do with each row based on the currently open thread
         },
         (payload) => {
           messageRef.current(payload.new as unknown as RealtimeMessageRow);
-        },
+        }
       )
       .subscribe();
 

@@ -33,7 +33,7 @@ function toHHMM(totalMin: number): string {
 export function expectedOrderTime(
   sessionStart: string,
   orderNumber: number,
-  estimatedDurationMin: number | null,
+  estimatedDurationMin: number | null
 ): string | null {
   const startMin = parseHHMM(sessionStart);
   if (

@@ -5,9 +5,7 @@ import { UserPlus } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import { createDoctorAction } from "@/server/actions/admin";
 import SpecialtySelect, { type SpecialtyOption } from "./specialty-select";
-import AvailabilityRulesEditor, {
-  type EditorBranchHours,
-} from "./availability-rules-editor";
+import AvailabilityRulesEditor, { type EditorBranchHours } from "./availability-rules-editor";
 
 export interface BranchOption {
   id: string;
@@ -30,14 +28,10 @@ export default function AddDoctorModal({
 
   // Branches picked for the doctor, with their hours — the availability editor
   // only lets rules be added for branches the doctor actually works at.
-  const selectedBranches = branches.filter((b) =>
-    selectedBranchIds.includes(b.id),
-  );
+  const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
 
   function toggleBranch(id: string, checked: boolean) {
-    setSelectedBranchIds((ids) =>
-      checked ? [...ids, id] : ids.filter((x) => x !== id),
-    );
+    setSelectedBranchIds((ids) => (checked ? [...ids, id] : ids.filter((x) => x !== id)));
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -60,48 +54,43 @@ export default function AddDoctorModal({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium font-sans hover:bg-primary/90 transition-colors"
+        className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
       >
-        <UserPlus className="w-4 h-4" />
+        <UserPlus className="h-4 w-4" />
         إضافة طبيب
       </button>
 
-      <Modal
-        open={open}
-        onClose={() => setOpen(false)}
-        title="إضافة طبيب جديد"
-        width="max-w-2xl"
-      >
+      <Modal open={open} onClose={() => setOpen(false)} title="إضافة طبيب جديد" width="max-w-2xl">
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-sans">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
               {error}
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Full name */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">
+              <label className="font-sans text-sm font-medium text-foreground">
                 الاسم الكامل *
               </label>
               <input
                 name="fullName"
                 required
                 placeholder="د. أحمد محمد"
-                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
 
             {/* Title (rank) */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">
+              <label className="font-sans text-sm font-medium text-foreground">
                 الدرجة (اختياري)
               </label>
               <select
                 name="title"
                 defaultValue=""
-                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
                 <option value="">غير محدد</option>
                 <option value="SPECIALIST">أخصائي</option>
@@ -116,7 +105,7 @@ export default function AddDoctorModal({
 
             {/* Years of experience */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">
+              <label className="font-sans text-sm font-medium text-foreground">
                 سنوات الخبرة (اختياري)
               </label>
               <input
@@ -125,13 +114,13 @@ export default function AddDoctorModal({
                 min={0}
                 dir="ltr"
                 placeholder="10"
-                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
 
             {/* Examination fee */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">
+              <label className="font-sans text-sm font-medium text-foreground">
                 سعر الكشف (اختياري)
               </label>
               <input
@@ -141,13 +130,13 @@ export default function AddDoctorModal({
                 step="0.01"
                 dir="ltr"
                 placeholder="200.00"
-                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
 
             {/* Consultation (follow-up) fee */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground font-sans">
+              <label className="font-sans text-sm font-medium text-foreground">
                 سعر الاستشارة (اختياري)
               </label>
               <input
@@ -157,22 +146,18 @@ export default function AddDoctorModal({
                 step="0.01"
                 dir="ltr"
                 placeholder="150.00"
-                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
           </div>
 
           {/* Flags */}
           <div className="flex flex-wrap gap-4">
-            <label className="flex items-center gap-2 text-sm font-medium text-foreground font-sans">
-              <input
-                type="checkbox"
-                name="requiresAdvanceBooking"
-                defaultChecked
-              />
+            <label className="flex items-center gap-2 font-sans text-sm font-medium text-foreground">
+              <input type="checkbox" name="requiresAdvanceBooking" defaultChecked />
               يحتاج حجزاً مسبقاً
             </label>
-            <label className="flex items-center gap-2 text-sm font-medium text-foreground font-sans">
+            <label className="flex items-center gap-2 font-sans text-sm font-medium text-foreground">
               <input type="checkbox" name="acceptsChildren" />
               يكشف على الأطفال
             </label>
@@ -180,11 +165,9 @@ export default function AddDoctorModal({
 
           {/* Branches */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground font-sans">
-              فروع العمل
-            </label>
+            <label className="font-sans text-sm font-medium text-foreground">فروع العمل</label>
             {branches.length === 0 ? (
-              <p className="text-xs text-muted-foreground font-sans">
+              <p className="font-sans text-xs text-muted-foreground">
                 لا توجد فروع. أضف فرعاً من صفحة الفروع أولاً.
               </p>
             ) : (
@@ -192,7 +175,7 @@ export default function AddDoctorModal({
                 {branches.map((b) => (
                   <label
                     key={b.id}
-                    className="flex items-center gap-2 text-sm font-sans border border-border rounded-xl px-3 py-2 cursor-pointer hover:bg-muted"
+                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-border px-3 py-2 font-sans text-sm hover:bg-muted"
                   >
                     <input
                       type="checkbox"
@@ -213,40 +196,40 @@ export default function AddDoctorModal({
 
           {/* Qualifications */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground font-sans">
+            <label className="font-sans text-sm font-medium text-foreground">
               المؤهلات العلمية (اختياري)
             </label>
             <textarea
               name="qualifications"
               rows={2}
               placeholder="بكالوريوس الطب والجراحة، ماجستير..."
-              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
 
           {/* Areas of sub-specialty expertise */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground font-sans">
+            <label className="font-sans text-sm font-medium text-foreground">
               مجالات الخبرة الدقيقة (اختياري)
             </label>
             <textarea
               name="expertiseAreas"
               rows={2}
               placeholder="جراحة المناظير، أمراض القلب التداخلية..."
-              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
 
           {/* Bio */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground font-sans">
+            <label className="font-sans text-sm font-medium text-foreground">
               نبذة تعريفية (اختياري)
             </label>
             <textarea
               name="bio"
               rows={3}
               placeholder="خبرة في..."
-              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
 
@@ -254,14 +237,14 @@ export default function AddDoctorModal({
             <button
               type="submit"
               disabled={isPending}
-              className="flex-1 bg-primary text-white rounded-xl py-2.5 text-sm font-medium font-sans hover:bg-primary/90 transition-colors disabled:opacity-60"
+              className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               {isPending ? "جارٍ الحفظ..." : "إضافة الطبيب"}
             </button>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="px-4 border border-border rounded-xl text-sm font-medium font-sans text-foreground hover:bg-muted transition-colors"
+              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
               إلغاء
             </button>

@@ -21,23 +21,20 @@ import { languageLabel } from "./languages";
 import WhatsappPreview from "./whatsapp-preview";
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<
-    string,
-    { cls: string; icon: React.ReactNode; label: string }
-  > = {
+  const map: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
     APPROVED: {
       cls: "bg-green-100 text-green-700",
-      icon: <CheckCircle2 className="w-3 h-3" />,
+      icon: <CheckCircle2 className="h-3 w-3" />,
       label: "معتمد",
     },
     PENDING: {
       cls: "bg-amber-100 text-amber-700",
-      icon: <Clock className="w-3 h-3" />,
+      icon: <Clock className="h-3 w-3" />,
       label: "قيد المراجعة",
     },
     REJECTED: {
       cls: "bg-red-100 text-red-700",
-      icon: <XCircle className="w-3 h-3" />,
+      icon: <XCircle className="h-3 w-3" />,
       label: "مرفوض",
     },
   };
@@ -48,7 +45,7 @@ function StatusBadge({ status }: { status: string }) {
   };
   return (
     <span
-      className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${m.cls}`}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] ${m.cls}`}
     >
       {m.icon}
       {m.label}
@@ -92,21 +89,21 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
   // Option sets derived from what actually loaded.
   const statuses = useMemo(
     () => Array.from(new Set(templates.map((t) => t.status))).sort(),
-    [templates],
+    [templates]
   );
   const categories = useMemo(
     () =>
       Array.from(new Set(templates.map((t) => t.category)))
         .filter(Boolean)
         .sort(),
-    [templates],
+    [templates]
   );
   const languages = useMemo(
     () =>
       Array.from(new Set(templates.map((t) => t.language)))
         .filter(Boolean)
         .sort(),
-    [templates],
+    [templates]
   );
 
   const filtered = useMemo(() => {
@@ -115,36 +112,30 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
       if (status !== ALL && t.status !== status) return false;
       if (category !== ALL && t.category !== category) return false;
       if (language !== ALL && t.language !== language) return false;
-      if (q && !`${t.name} ${t.bodyText}`.toLowerCase().includes(q))
-        return false;
+      if (q && !`${t.name} ${t.bodyText}`.toLowerCase().includes(q)) return false;
       return true;
     });
   }, [templates, search, status, category, language]);
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-foreground font-sans flex items-center gap-2">
-          <FileText className="w-4 h-4 text-accent" />
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 font-sans text-sm font-semibold text-foreground">
+          <FileText className="h-4 w-4 text-accent" />
           القوالب
         </h2>
         {!disabled && (
-          <button
-            onClick={() => void load()}
-            className="text-xs text-accent hover:underline"
-          >
+          <button onClick={() => void load()} className="text-xs text-accent hover:underline">
             تحديث
           </button>
         )}
       </div>
-      <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
         {disabled ? (
-          <p className="text-xs text-muted-foreground">
-            أدخل بيانات الاتصال لعرض القوالب.
-          </p>
+          <p className="text-xs text-muted-foreground">أدخل بيانات الاتصال لعرض القوالب.</p>
         ) : loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin" /> جارٍ التحميل...
+            <Loader2 className="h-4 w-4 animate-spin" /> جارٍ التحميل...
           </div>
         ) : error ? (
           <p className="text-xs text-red-600">{error}</p>
@@ -153,14 +144,14 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
         ) : (
           <>
             {/* Filter bar */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="relative sm:col-span-2 lg:col-span-1">
-                <Search className="w-3.5 h-3.5 text-muted-foreground absolute top-1/2 -translate-y-1/2 start-3" />
+                <Search className="absolute start-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="بحث بالاسم أو النص"
-                  className="w-full rounded-lg border border-border bg-background ps-8 pe-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+                  className="w-full rounded-lg border border-border bg-background py-2 pe-3 ps-8 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
                 />
               </div>
               <FilterSelect
@@ -187,20 +178,15 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
             </div>
 
             {filtered.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4 text-center">
+              <p className="py-4 text-center text-xs text-muted-foreground">
                 لا توجد قوالب مطابقة للفلاتر.
               </p>
             ) : (
               <div className="space-y-3">
                 {filtered.map((t) => (
-                  <div
-                    key={t.id}
-                    className="rounded-xl border border-border px-3.5 py-3"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-foreground">
-                        {t.name}
-                      </span>
+                  <div key={t.id} className="rounded-xl border border-border px-3.5 py-3">
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="text-sm font-medium text-foreground">{t.name}</span>
                       <div className="flex items-center gap-2">
                         <StatusBadge status={t.status} />
                         <button
@@ -208,11 +194,11 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
                           className="text-muted-foreground hover:text-red-600"
                           aria-label="حذف"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
-                    <p className="text-[10px] text-muted-foreground mb-2 uppercase">
+                    <p className="mb-2 text-[10px] uppercase text-muted-foreground">
                       {t.category} · {t.language}
                     </p>
                     <WhatsappPreview
@@ -259,21 +245,13 @@ function FilterSelect({
   );
 }
 
-function SendToNumber({
-  template,
-  onDone,
-}: {
-  template: MessageTemplate;
-  onDone: () => void;
-}) {
+function SendToNumber({ template, onDone }: { template: MessageTemplate; onDone: () => void }) {
   const [phone, setPhone] = useState("");
   const [variables, setVariables] = useState<string[]>(
-    Array.from({ length: template.variableCount }, () => ""),
+    Array.from({ length: template.variableCount }, () => "")
   );
   const [sending, setSending] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
-    null,
-  );
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const handleSend = async () => {
     setSending(true);
@@ -310,9 +288,7 @@ function SendToNumber({
           key={i}
           value={v}
           onChange={(e) =>
-            setVariables((prev) =>
-              prev.map((x, j) => (j === i ? e.target.value : x)),
-            )
+            setVariables((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
           }
           placeholder={`القيمة ${i + 1} ({{${i + 1}}})`}
           className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
@@ -326,31 +302,20 @@ function SendToNumber({
         buttons={template.buttons}
       />
       {message && (
-        <p
-          className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}
-        >
+        <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
           {message.text}
         </p>
       )}
       <div className="flex items-center gap-2">
         <button
           onClick={handleSend}
-          disabled={
-            sending || !phone.trim() || variables.some((v) => !v.trim())
-          }
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary/90 disabled:opacity-40"
+          disabled={sending || !phone.trim() || variables.some((v) => !v.trim())}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-40"
         >
-          {sending ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
-          ) : (
-            <Send className="w-3 h-3" />
-          )}
+          {sending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
           إرسال
         </button>
-        <button
-          onClick={onDone}
-          className="text-xs text-muted-foreground hover:underline"
-        >
+        <button onClick={onDone} className="text-xs text-muted-foreground hover:underline">
           إلغاء
         </button>
       </div>

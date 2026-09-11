@@ -4,11 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Channel, Role, SenderType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getActiveClinicContext } from "@/lib/auth";
-import {
-  sendTextMessage,
-  sendTemplateMessage,
-  type WhatsAppRecipient,
-} from "@/lib/meta/whatsapp";
+import { sendTextMessage, sendTemplateMessage, type WhatsAppRecipient } from "@/lib/meta/whatsapp";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
 import { resolveActiveSession } from "@/server/services/agentSession";
@@ -65,7 +61,7 @@ export type SendAdminReplyResult =
 
 export async function sendAdminReply(
   conversationId: string,
-  content: string,
+  content: string
 ): Promise<SendAdminReplyResult> {
   const ctx = await getActiveClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
@@ -148,9 +144,7 @@ export async function sendAdminReply(
  * Re-sends an already-persisted reply over WhatsApp. Used by the inbox retry
  * action after a delivery failure — it must not create a second message row.
  */
-export async function retryWhatsappDelivery(
-  messageId: string,
-): Promise<{ ok: boolean }> {
+export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: boolean }> {
   const ctx = await getActiveClinicContext();
   if (!ctx || ctx.role !== Role.ADMIN) return { ok: false };
 
@@ -208,7 +202,7 @@ export async function sendWhatsappTemplate(
     language: string;
     variables: string[];
     renderedText: string;
-  },
+  }
 ): Promise<SendTemplateResult> {
   const ctx = await getActiveClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
@@ -234,7 +228,7 @@ export async function sendWhatsappTemplate(
         languageCode: input.language,
         variables: input.variables,
       },
-      creds,
+      creds
     );
   } catch (err) {
     console.error("Failed to send WhatsApp template:", err);
@@ -277,10 +271,7 @@ export async function sendWhatsappTemplate(
   }
 }
 
-export async function setSessionAiEnabled(
-  sessionId: string,
-  enabled: boolean,
-): Promise<void> {
+export async function setSessionAiEnabled(sessionId: string, enabled: boolean): Promise<void> {
   const ctx = await getActiveClinicContext();
   if (!ctx) throw new Error("Unauthorized");
   if (ctx.role !== Role.ADMIN) throw new Error("Forbidden");

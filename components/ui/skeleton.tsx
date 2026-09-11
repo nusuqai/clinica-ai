@@ -1,28 +1,23 @@
 export function Skeleton({ className = "" }: { className?: string }) {
-  return (
-    <div
-      className={`animate-pulse rounded-md bg-muted ${className}`}
-      aria-hidden="true"
-    />
-  );
+  return <div className={`animate-pulse rounded-md bg-muted ${className}`} aria-hidden="true" />;
 }
 
 export function PageHeaderSkeleton({ withAction = false }: { withAction?: boolean }) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-6">
+    <div className="mb-6 flex items-start justify-between gap-4">
       <div className="space-y-2">
         <Skeleton className="h-7 w-40" />
         <Skeleton className="h-4 w-56" />
       </div>
-      {withAction && <Skeleton className="h-10 w-32 rounded-xl flex-shrink-0" />}
+      {withAction && <Skeleton className="h-10 w-32 flex-shrink-0 rounded-xl" />}
     </div>
   );
 }
 
 export function StatCardSkeleton() {
   return (
-    <div className="bg-card border border-border rounded-2xl p-5 flex items-center gap-4">
-      <Skeleton className="w-12 h-12 rounded-xl flex-shrink-0" />
+    <div className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5">
+      <Skeleton className="h-12 w-12 flex-shrink-0 rounded-xl" />
       <div className="flex-1 space-y-2">
         <Skeleton className="h-6 w-10" />
         <Skeleton className="h-3 w-20" />
@@ -39,7 +34,7 @@ export function StatCardGridSkeleton({
   columns?: string;
 }) {
   return (
-    <div className={`grid ${columns} gap-4 mb-8`}>
+    <div className={`grid ${columns} mb-8 gap-4`}>
       {Array.from({ length: count }).map((_, i) => (
         <StatCardSkeleton key={i} />
       ))}
@@ -47,17 +42,11 @@ export function StatCardGridSkeleton({
   );
 }
 
-export function TableSkeleton({
-  columns = 5,
-  rows = 6,
-}: {
-  columns?: number;
-  rows?: number;
-}) {
+export function TableSkeleton({ columns = 5, rows = 6 }: { columns?: number; rows?: number }) {
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+    <div className="overflow-hidden rounded-2xl border border-border bg-card">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm font-sans">
+        <table className="w-full font-sans text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/40">
               {Array.from({ length: columns }).map((_, i) => (
@@ -86,21 +75,21 @@ export function TableSkeleton({
 
 export function ListCardSkeleton({ rows = 5 }: { rows?: number }) {
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden">
-      <div className="px-6 py-4 border-b border-border">
+    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="border-b border-border px-6 py-4">
         <Skeleton className="h-4 w-32" />
       </div>
       <ul className="divide-y divide-border">
         {Array.from({ length: rows }).map((_, i) => (
-          <li key={i} className="flex items-center justify-between px-6 py-4 gap-4">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <Skeleton className="w-10 h-10 rounded-xl flex-shrink-0" />
-              <div className="space-y-2 flex-1 max-w-[200px]">
+          <li key={i} className="flex items-center justify-between gap-4 px-6 py-4">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <Skeleton className="h-10 w-10 flex-shrink-0 rounded-xl" />
+              <div className="max-w-[200px] flex-1 space-y-2">
                 <Skeleton className="h-3.5 w-3/4" />
                 <Skeleton className="h-3 w-1/2" />
               </div>
             </div>
-            <Skeleton className="h-5 w-16 rounded-full flex-shrink-0" />
+            <Skeleton className="h-5 w-16 flex-shrink-0 rounded-full" />
           </li>
         ))}
       </ul>
@@ -110,10 +99,10 @@ export function ListCardSkeleton({ rows = 5 }: { rows?: number }) {
 
 export function CardGridSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-card border border-border rounded-2xl p-5 space-y-3">
-          <Skeleton className="w-12 h-12 rounded-xl" />
+        <div key={i} className="space-y-3 rounded-2xl border border-border bg-card p-5">
+          <Skeleton className="h-12 w-12 rounded-xl" />
           <Skeleton className="h-4 w-2/3" />
           <Skeleton className="h-3 w-1/2" />
         </div>
@@ -124,7 +113,7 @@ export function CardGridSkeleton({ count = 3 }: { count?: number }) {
 
 export function FormCardSkeleton({ fields = 4 }: { fields?: number }) {
   return (
-    <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
+    <div className="space-y-5 rounded-2xl border border-border bg-card p-6">
       {Array.from({ length: fields }).map((_, i) => (
         <div key={i} className="space-y-1.5">
           <Skeleton className="h-3.5 w-24" />

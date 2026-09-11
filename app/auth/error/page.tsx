@@ -6,28 +6,28 @@ export default function AuthErrorPage() {
   return (
     <div
       dir="rtl"
-      className="min-h-screen flex flex-col items-center justify-center bg-background px-6 text-center"
+      className="flex min-h-screen flex-col items-center justify-center bg-background px-6 text-center"
     >
-      <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center mb-6">
+      <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50">
         <span className="text-3xl">⚠️</span>
       </div>
-      <h1 className="text-2xl font-heading font-bold text-primary mb-3">
+      <h1 className="mb-3 font-heading text-2xl font-bold text-primary">
         الرابط غير صالح أو منتهي الصلاحية
       </h1>
-      <p className="text-text/50 font-sans text-sm leading-relaxed max-w-sm mb-8">
-        قد يكون هذا الرابط قد استُخدم من قبل أو انتهت صلاحيته. يمكنك طلب رابط جديد
-        من صفحة نسيت كلمة المرور.
+      <p className="mb-8 max-w-sm font-sans text-sm leading-relaxed text-text/50">
+        قد يكون هذا الرابط قد استُخدم من قبل أو انتهت صلاحيته. يمكنك طلب رابط جديد من صفحة نسيت كلمة
+        المرور.
       </p>
       <div className="flex items-center gap-3">
         <Link
           href="/forgot-password"
-          className="py-3 px-6 rounded-2xl text-sm font-semibold text-white bg-primary hover:bg-primary/90 transition-all font-sans shadow-lg shadow-primary/20"
+          className="rounded-2xl bg-primary px-6 py-3 font-sans text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
         >
           طلب رابط جديد
         </Link>
         <Link
           href="/login"
-          className="py-3 px-6 rounded-2xl text-sm font-semibold text-primary bg-white border border-text/10 hover:bg-text/5 transition-all font-sans"
+          className="rounded-2xl border border-text/10 bg-white px-6 py-3 font-sans text-sm font-semibold text-primary transition-all hover:bg-text/5"
         >
           تسجيل الدخول
         </Link>

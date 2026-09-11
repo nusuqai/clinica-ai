@@ -8,8 +8,7 @@ export function CTABannerSection() {
           جاهز لحجز موعدك؟
         </h2>
         <p className="max-w-xl font-sans text-base text-white/60">
-          انضم إلى آلاف المرضى الذين يحجزون مواعيدهم الطبية بسهولة عبر
-          ClinicaAI.
+          انضم إلى آلاف المرضى الذين يحجزون مواعيدهم الطبية بسهولة عبر ClinicaAI.
         </p>
         <a
           href="#doctors"

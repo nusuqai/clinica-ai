@@ -3,10 +3,7 @@
 import { Channel, type SenderType } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import {
-  getOrCreateWebConversation,
-  getSessionMessages,
-} from "@/server/services/agentSession";
+import { getOrCreateWebConversation, getSessionMessages } from "@/server/services/agentSession";
 import type { AgentMessageMetadata } from "@/agent/types";
 
 export interface WebChatMessage {
@@ -41,10 +38,7 @@ export async function getWebChatMessages(): Promise<WebChatState | null> {
   });
   if (!membership) return null;
 
-  const conversationId = await getOrCreateWebConversation(
-    user.id,
-    membership.clinicId,
-  );
+  const conversationId = await getOrCreateWebConversation(user.id, membership.clinicId);
 
   const activeSession = await prisma.chatSession.findFirst({
     where: { conversationId, expiresAt: { gt: new Date() } },
@@ -52,9 +46,7 @@ export async function getWebChatMessages(): Promise<WebChatState | null> {
     select: { id: true },
   });
 
-  const messages = activeSession
-    ? await getSessionMessages(activeSession.id)
-    : [];
+  const messages = activeSession ? await getSessionMessages(activeSession.id) : [];
 
   return {
     conversationId,
@@ -74,9 +66,7 @@ export async function getWebChatMessages(): Promise<WebChatState | null> {
  * scoped to `channel: WEB, userId: null` so it can never read a logged-in
  * user's conversation even if a guest id were guessed.
  */
-export async function getGuestChatMessages(
-  conversationId: string,
-): Promise<WebChatState | null> {
+export async function getGuestChatMessages(conversationId: string): Promise<WebChatState | null> {
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, channel: Channel.WEB, userId: null },
     select: { id: true },
@@ -89,9 +79,7 @@ export async function getGuestChatMessages(
     select: { id: true },
   });
 
-  const messages = activeSession
-    ? await getSessionMessages(activeSession.id)
-    : [];
+  const messages = activeSession ? await getSessionMessages(activeSession.id) : [];
 
   return {
     conversationId,

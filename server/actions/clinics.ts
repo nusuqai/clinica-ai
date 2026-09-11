@@ -6,14 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureClinicAiCredit } from "@/server/services/aiCredit";
-import {
-  sendClinicApprovedInvite,
-  sendClinicCreatedInvite,
-} from "@/lib/email/send-auth-email";
-import {
-  sendRequestReceived,
-  sendClinicRejected,
-} from "@/lib/email/send-transactional";
+import { sendClinicApprovedInvite, sendClinicCreatedInvite } from "@/lib/email/send-auth-email";
+import { sendRequestReceived, sendClinicRejected } from "@/lib/email/send-transactional";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -80,7 +74,7 @@ async function getOrCreateAuthUser(
   admin: ReturnType<typeof createAdminClient>,
   email: string,
   fullName: string,
-  phone: string | null,
+  phone: string | null
 ): Promise<string> {
   const { data, error } = await admin.auth.admin.createUser({
     email,
@@ -92,9 +86,7 @@ async function getOrCreateAuthUser(
 
   // Email already registered — reuse that account.
   const { data: list } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  const found = list?.users.find(
-    (u) => u.email?.toLowerCase() === email.toLowerCase(),
-  );
+  const found = list?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
   if (found) return found.id;
 
   throw new Error(error?.message ?? "تعذّر إنشاء حساب المستخدم");
@@ -107,7 +99,8 @@ export async function approveClinicRequest(requestId: string) {
     where: { id: requestId },
   });
   if (!request) return { error: "الطلب غير موجود" };
-  if (request.status !== ClinicRequestStatus.PENDING) return { error: "تمت معالجة هذا الطلب بالفعل" };
+  if (request.status !== ClinicRequestStatus.PENDING)
+    return { error: "تمت معالجة هذا الطلب بالفعل" };
 
   const admin = createAdminClient();
   try {
@@ -117,7 +110,7 @@ export async function approveClinicRequest(requestId: string) {
       admin,
       request.requesterEmail,
       request.requesterName,
-      request.requesterPhone,
+      request.requesterPhone
     );
 
     // Ensure the identity profile exists (created by the auth trigger).
@@ -170,7 +163,10 @@ export async function approveClinicRequest(requestId: string) {
       email: request.requesterEmail,
       name: request.requesterName,
       clinicName: clinic.name,
-    }).catch((e) => ({ ok: false as const, error: e instanceof Error ? e.message : "email failed" }));
+    }).catch((e) => ({
+      ok: false as const,
+      error: e instanceof Error ? e.message : "email failed",
+    }));
 
     revalidatePath("/platform/requests");
     revalidatePath("/platform/clinics");
@@ -189,7 +185,11 @@ export async function rejectClinicRequest(requestId: string) {
   const reviewer = await requirePlatform();
   const request = await prisma.clinicRequest.update({
     where: { id: requestId },
-    data: { status: ClinicRequestStatus.REJECTED, reviewedById: reviewer.id, reviewedAt: new Date() },
+    data: {
+      status: ClinicRequestStatus.REJECTED,
+      reviewedById: reviewer.id,
+      reviewedAt: new Date(),
+    },
   });
 
   await sendClinicRejected({
@@ -218,18 +218,11 @@ export async function createClinic(formData: FormData) {
 
   const admin = createAdminClient();
   try {
-    const slug = await uniqueSlug(
-      (formData.get("slug") as string)?.trim() || name,
-    );
+    const slug = await uniqueSlug((formData.get("slug") as string)?.trim() || name);
 
     // Create (or reuse) the auth account that will manage this clinic, then set
     // it up as the clinic's ADMIN — same path as approving a clinic request.
-    const userId = await getOrCreateAuthUser(
-      admin,
-      adminEmail,
-      adminName,
-      adminPhone,
-    );
+    const userId = await getOrCreateAuthUser(admin, adminEmail, adminName, adminPhone);
 
     let profile = await prisma.profile.findUnique({ where: { id: userId } });
     if (!profile) {
@@ -271,7 +264,10 @@ export async function createClinic(formData: FormData) {
       email: adminEmail,
       name: adminName,
       clinicName: clinic.name,
-    }).catch((e) => ({ ok: false as const, error: e instanceof Error ? e.message : "email failed" }));
+    }).catch((e) => ({
+      ok: false as const,
+      error: e instanceof Error ? e.message : "email failed",
+    }));
 
     revalidatePath("/platform/clinics");
     return { success: true, clinicId: clinic.id, slug: clinic.slug, emailSent: invite.ok };

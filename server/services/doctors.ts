@@ -23,10 +23,7 @@ import {
 // Fees are Prisma Decimal on the row; we surface them as plain numbers so the
 // view is safe to pass from Server Components to Client Components (Decimal
 // objects can't cross that boundary).
-export type DoctorWithProfile = Omit<
-  Doctor,
-  "examinationFee" | "consultationFee"
-> & {
+export type DoctorWithProfile = Omit<Doctor, "examinationFee" | "consultationFee"> & {
   examinationFee: number | null;
   consultationFee: number | null;
   profile: {
@@ -148,9 +145,7 @@ export type DoctorSlot = {
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export async function listActiveDoctors(
-  clinicId: string,
-): Promise<DoctorWithProfile[]> {
+export async function listActiveDoctors(clinicId: string): Promise<DoctorWithProfile[]> {
   const doctors = await prisma.doctor.findMany({
     where: { clinicId, isActive: true },
     include: linkedProfileSelect,
@@ -161,7 +156,7 @@ export async function listActiveDoctors(
 
 export async function getAvailableSlotsForBooking(
   doctorId: string,
-  date: Date,
+  date: Date
 ): Promise<
   {
     id: string;
@@ -204,7 +199,7 @@ export async function getAvailableSlotsForBooking(
  */
 export async function getReferralSlotsForBooking(
   doctorId: string,
-  date: Date,
+  date: Date
 ): Promise<
   {
     id: string;
@@ -257,7 +252,7 @@ export interface AvailableDay {
  */
 export async function getAvailableDaysForBooking(
   doctorId: string,
-  daysAhead = 60,
+  daysAhead = 60
 ): Promise<AvailableDay[]> {
   const now = new Date();
   const until = new Date(now);
@@ -342,9 +337,7 @@ export async function getAvailableDaysForBooking(
     .map(([date, mode]) => ({ date, mode }));
 }
 
-export async function listDoctors(
-  clinicId: string,
-): Promise<DoctorWithProfile[]> {
+export async function listDoctors(clinicId: string): Promise<DoctorWithProfile[]> {
   const [doctors, { data: authList }] = await Promise.all([
     prisma.doctor.findMany({
       where: { clinicId },
@@ -355,17 +348,15 @@ export async function listDoctors(
   ]);
 
   const emailMap = new Map<string, string>(
-    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""]),
+    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""])
   );
 
-  return doctors.map((d) =>
-    toView(d, d.profileId ? (emailMap.get(d.profileId) ?? "") : ""),
-  );
+  return doctors.map((d) => toView(d, d.profileId ? (emailMap.get(d.profileId) ?? "") : ""));
 }
 
 export async function getDoctor(
   doctorId: string,
-  clinicId?: string,
+  clinicId?: string
 ): Promise<DoctorWithProfile | null> {
   const doctor = await prisma.doctor.findFirst({
     where: { id: doctorId, ...(clinicId ? { clinicId } : {}) },
@@ -375,8 +366,7 @@ export async function getDoctor(
 
   let email = "";
   if (doctor.profileId) {
-    const { data: authUser } =
-      await createAdminClient().auth.admin.getUserById(doctor.profileId);
+    const { data: authUser } = await createAdminClient().auth.admin.getUserById(doctor.profileId);
     email = authUser?.user?.email ?? "";
   }
   return toView(doctor, email);
@@ -385,7 +375,7 @@ export async function getDoctor(
 /** Resolve the Doctor record for a logged-in user (via their linked account). */
 export async function getDoctorByProfileId(
   profileId: string,
-  clinicId?: string,
+  clinicId?: string
 ): Promise<DoctorWithProfile | null> {
   const doctor = await prisma.doctor.findFirst({
     where: { profileId, ...(clinicId ? { clinicId } : {}) },
@@ -399,7 +389,7 @@ export async function getDoctorByProfileId(
 
 /** Create a standalone doctor with NO login account (profileId stays null). */
 export async function createDoctor(
-  input: CreateDoctorInput,
+  input: CreateDoctorInput
 ): Promise<Result<{ id: string; fullName: string }>> {
   try {
     const doctor = await prisma.doctor.create({
@@ -420,7 +410,10 @@ export async function createDoctor(
         isActive: true,
         ...(input.branchIds?.length && {
           branches: {
-            create: [...new Set(input.branchIds)].map((branchId) => ({ branchId, clinicId: input.clinicId })),
+            create: [...new Set(input.branchIds)].map((branchId) => ({
+              branchId,
+              clinicId: input.clinicId,
+            })),
           },
         }),
       },
@@ -439,18 +432,16 @@ export async function createDoctor(
  * On failure after step 1, the auth user is deleted to avoid orphans.
  */
 export async function createDoctorAccount(
-  input: CreateDoctorAccountInput,
+  input: CreateDoctorAccountInput
 ): Promise<Result<{ id: string; fullName: string }>> {
   const admin = createAdminClient();
 
-  const { data: authData, error: authError } = await admin.auth.admin.createUser(
-    {
-      email: input.email,
-      password: input.password,
-      email_confirm: true,
-      user_metadata: { full_name: input.fullName, phone: input.phone || null },
-    },
-  );
+  const { data: authData, error: authError } = await admin.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: { full_name: input.fullName, phone: input.phone || null },
+  });
 
   if (authError) {
     const m = authError.message.toLowerCase();
@@ -505,7 +496,10 @@ export async function createDoctorAccount(
           isActive: true,
           ...(input.branchIds?.length && {
             branches: {
-              create: [...new Set(input.branchIds)].map((branchId) => ({ branchId, clinicId: input.clinicId })),
+              create: [...new Set(input.branchIds)].map((branchId) => ({
+                branchId,
+                clinicId: input.clinicId,
+              })),
             },
           }),
         },
@@ -523,7 +517,7 @@ export async function createDoctorAccount(
 /** Attach a NEW login account to an existing account-less doctor. */
 export async function linkDoctorAccount(
   doctorId: string,
-  input: { email: string; password: string },
+  input: { email: string; password: string }
 ): Promise<Result<void>> {
   const admin = createAdminClient();
 
@@ -531,14 +525,12 @@ export async function linkDoctorAccount(
   if (!doctor) return err("الطبيب غير موجود");
   if (doctor.profileId) return err("هذا الطبيب لديه حساب بالفعل.");
 
-  const { data: authData, error: authError } = await admin.auth.admin.createUser(
-    {
-      email: input.email,
-      password: input.password,
-      email_confirm: true,
-      user_metadata: { full_name: doctor.fullName, phone: doctor.phone },
-    },
-  );
+  const { data: authData, error: authError } = await admin.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: { full_name: doctor.fullName, phone: doctor.phone },
+  });
   if (authError) return err(authError.message);
 
   const userId = authData.user.id;
@@ -561,9 +553,7 @@ export async function linkDoctorAccount(
   }
 }
 
-export async function updateDoctor(
-  input: UpdateDoctorInput,
-): Promise<Result<void>> {
+export async function updateDoctor(input: UpdateDoctorInput): Promise<Result<void>> {
   try {
     await prisma.$transaction(async (tx) => {
       await tx.doctor.update({
@@ -607,7 +597,11 @@ export async function updateDoctor(
         });
         if (unique.length) {
           await tx.doctorBranch.createMany({
-            data: unique.map((branchId) => ({ doctorId: input.doctorId, branchId , clinicId: input.clinicId})),
+            data: unique.map((branchId) => ({
+              doctorId: input.doctorId,
+              branchId,
+              clinicId: input.clinicId,
+            })),
             skipDuplicates: true,
           });
         }
@@ -619,10 +613,7 @@ export async function updateDoctor(
   }
 }
 
-export async function setDoctorActive(
-  doctorId: string,
-  isActive: boolean,
-): Promise<Result<void>> {
+export async function setDoctorActive(doctorId: string, isActive: boolean): Promise<Result<void>> {
   try {
     await prisma.doctor.update({ where: { id: doctorId }, data: { isActive } });
     return ok(undefined);
@@ -682,7 +673,7 @@ export async function validateRuleAgainstBranch(
   branchId: string,
   dayOfWeek: DayOfWeek,
   startTime: string,
-  endTime: string,
+  endTime: string
 ): Promise<string | null> {
   if (endTime <= startTime) return "وقت النهاية يجب أن يكون بعد وقت البداية.";
 
@@ -701,16 +692,14 @@ export async function validateRuleAgainstBranch(
   return null;
 }
 
-export async function createRule(
-  input: CreateRuleInput,
-): Promise<Result<{ id: string }>> {
+export async function createRule(input: CreateRuleInput): Promise<Result<{ id: string }>> {
   try {
     const validationError = await validateRuleAgainstBranch(
       input.doctorId,
       input.branchId,
       input.dayOfWeek,
       input.startTime,
-      input.endTime,
+      input.endTime
     );
     if (validationError) return err(validationError);
 
@@ -755,10 +744,7 @@ export async function deleteRule(ruleId: string): Promise<Result<void>> {
   }
 }
 
-export async function toggleRuleActive(
-  ruleId: string,
-  isActive: boolean,
-): Promise<Result<void>> {
+export async function toggleRuleActive(ruleId: string, isActive: boolean): Promise<Result<void>> {
   try {
     await prisma.availabilityRule.update({
       where: { id: ruleId },
@@ -784,7 +770,7 @@ const DAY_MAP: Record<DayOfWeek, number> = {
 
 export async function generateSlotsForRule(
   ruleId: string,
-  daysAhead = 30,
+  daysAhead = 30
 ): Promise<Result<{ count: number }>> {
   try {
     const rule = await prisma.availabilityRule.findUnique({
@@ -801,9 +787,7 @@ export async function generateSlotsForRule(
     today.setUTCHours(0, 0, 0, 0);
 
     const from = rule.generatedUntil
-      ? new Date(
-          Math.max(rule.generatedUntil.getTime() + 86_400_000, today.getTime()),
-        )
+      ? new Date(Math.max(rule.generatedUntil.getTime() + 86_400_000, today.getTime()))
       : today;
 
     const until = new Date(today);
@@ -873,7 +857,7 @@ export async function generateSlotsForRule(
 
 export async function listDoctorSlots(
   doctorId: string,
-  options?: { from?: Date; to?: Date },
+  options?: { from?: Date; to?: Date }
 ): Promise<DoctorSlot[]> {
   const from =
     options?.from ??
@@ -924,7 +908,7 @@ export interface ScheduleDaySummary {
  */
 export async function getDoctorScheduleDays(
   doctorId: string,
-  daysAhead = 30,
+  daysAhead = 30
 ): Promise<ScheduleDaySummary[]> {
   const from = new Date();
   from.setUTCHours(0, 0, 0, 0);
@@ -980,22 +964,21 @@ export async function getDoctorStats(doctorId: string) {
   const todayEnd = new Date(today);
   todayEnd.setUTCHours(23, 59, 59, 999);
 
-  const [todayCount, pendingCount, completedCount, totalCount, uniquePatients] =
-    await Promise.all([
-      prisma.appointment.count({
-        where: { doctorId, slot: { date: { gte: today, lte: todayEnd } } },
-      }),
-      prisma.appointment.count({
-        where: { doctorId, status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] } },
-      }),
-      prisma.appointment.count({ where: { doctorId, status: AppointmentStatus.COMPLETED } }),
-      prisma.appointment.count({ where: { doctorId } }),
-      prisma.appointment.findMany({
-        where: { doctorId },
-        select: { patientId: true },
-        distinct: ["patientId"],
-      }),
-    ]);
+  const [todayCount, pendingCount, completedCount, totalCount, uniquePatients] = await Promise.all([
+    prisma.appointment.count({
+      where: { doctorId, slot: { date: { gte: today, lte: todayEnd } } },
+    }),
+    prisma.appointment.count({
+      where: { doctorId, status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] } },
+    }),
+    prisma.appointment.count({ where: { doctorId, status: AppointmentStatus.COMPLETED } }),
+    prisma.appointment.count({ where: { doctorId } }),
+    prisma.appointment.findMany({
+      where: { doctorId },
+      select: { patientId: true },
+      distinct: ["patientId"],
+    }),
+  ]);
 
   return {
     todayCount,
@@ -1015,9 +998,7 @@ export type DoctorPatient = {
   totalAppointments: number;
 };
 
-export async function getDoctorPatients(
-  doctorId: string,
-): Promise<DoctorPatient[]> {
+export async function getDoctorPatients(doctorId: string): Promise<DoctorPatient[]> {
   const appointments = await prisma.appointment.findMany({
     where: { doctorId },
     include: {

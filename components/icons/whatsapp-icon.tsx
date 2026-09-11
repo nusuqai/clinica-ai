@@ -6,10 +6,7 @@ import type { SVGProps } from "react";
  * `className` for sizing/colour. Used in the admin inbox to mark WhatsApp
  * conversations (replacing the generic phone icon).
  */
-export function WhatsappIcon({
-  className,
-  ...props
-}: SVGProps<SVGSVGElement>) {
+export function WhatsappIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
   return (
     <svg
       viewBox="0 0 24 24"

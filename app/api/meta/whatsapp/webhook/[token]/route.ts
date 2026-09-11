@@ -31,7 +31,7 @@ export const runtime = "nodejs";
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ token: string }> },
+  { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
   const config = await getWebhookConfigByToken(token);
@@ -41,7 +41,7 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ token: string }> },
+  { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
 
@@ -54,7 +54,7 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   console.log(
-    `[wa-debug] token resolved → clinicId=${creds.clinicId} configuredPhoneNumberId=${creds.phoneNumberId}`,
+    `[wa-debug] token resolved → clinicId=${creds.clinicId} configuredPhoneNumberId=${creds.phoneNumberId}`
   );
 
   let payload: Record<string, unknown>;
@@ -73,14 +73,12 @@ export async function POST(
   // belongs to. A mismatch means a wrong URL was pasted (or a spoof) — ignore.
   const phoneNumberId = extractPhoneNumberId(payload);
   console.log(
-    `[wa-debug] payload phone_number_id=${phoneNumberId ?? "(none)"} vs configured=${creds.phoneNumberId}`,
+    `[wa-debug] payload phone_number_id=${phoneNumberId ?? "(none)"} vs configured=${creds.phoneNumberId}`
   );
   if (phoneNumberId && phoneNumberId !== creds.phoneNumberId) {
+    console.warn("[meta-whatsapp] phone_number_id does not match this clinic's config — ignoring");
     console.warn(
-      "[meta-whatsapp] phone_number_id does not match this clinic's config — ignoring",
-    );
-    console.warn(
-      `[wa-debug] DROP: phone_number_id mismatch — entire payload discarded (got ${phoneNumberId}, expected ${creds.phoneNumberId})`,
+      `[wa-debug] DROP: phone_number_id mismatch — entire payload discarded (got ${phoneNumberId}, expected ${creds.phoneNumberId})`
     );
     return NextResponse.json({ ok: true });
   }
@@ -93,13 +91,13 @@ export async function POST(
         userId: e.userId,
         messageId: e.messageId,
         kind: e.message.kind,
-      })),
-    )}`,
+      }))
+    )}`
   );
   // Delivery/read receipts parse to nothing — the common case.
   if (envelopes.length === 0) {
     console.log(
-      "[wa-debug] 0 envelopes — likely a status/read receipt (no messages array), nothing to store",
+      "[wa-debug] 0 envelopes — likely a status/read receipt (no messages array), nothing to store"
     );
     return NextResponse.json({ ok: true });
   }
@@ -113,7 +111,7 @@ export async function POST(
       console.error("[meta-whatsapp] failed to process message:", e);
       console.error(
         `[wa-debug] DROP: processMessage threw for phone=${envelope.phone} messageId=${envelope.messageId} kind=${envelope.message.kind} — message LOST (Meta told ok, no retry):`,
-        e,
+        e
       );
     }
   }
@@ -124,15 +122,15 @@ export async function POST(
 
 async function processMessage(
   { phone, userId, name, messageId, message }: InboundEnvelope,
-  creds: ClinicWhatsappCredentials,
+  creds: ClinicWhatsappCredentials
 ): Promise<void> {
   console.log(
-    `[wa-debug] processMessage phone=${phone ?? "(hidden)"} userId=${userId ?? "(none)"} messageId=${messageId} kind=${message.kind}`,
+    `[wa-debug] processMessage phone=${phone ?? "(hidden)"} userId=${userId ?? "(none)"} messageId=${messageId} kind=${message.kind}`
   );
   // Reactions, system notices and empty bodies carry nothing to answer.
   if (message.kind === "ignore") {
     console.log(
-      `[wa-debug] DROP: kind=ignore (reaction/system/empty body) — not stored. messageId=${messageId}`,
+      `[wa-debug] DROP: kind=ignore (reaction/system/empty body) — not stored. messageId=${messageId}`
     );
     return;
   }
@@ -146,31 +144,21 @@ async function processMessage(
   // The agent only reads text, so media never reaches it — record what came in
   // and tell the contact to send text instead.
   if (message.kind === "unsupported") {
-    console.log(
-      `[wa-debug] routing → unsupported-media handler convId=${conversation.id}`,
-    );
+    console.log(`[wa-debug] routing → unsupported-media handler convId=${conversation.id}`);
     await handleUnsupportedWhatsAppMessage(
       creds.clinicId,
       conversation.id,
       { phone, userId },
       message,
-      creds,
+      creds
     );
     return;
   }
 
   // Hands off to the agent: it persists the user message + reply (linked to the
   // active session) and sends the reply back over the Cloud API.
-  console.log(
-    `[wa-debug] routing → text handler convId=${conversation.id}`,
-  );
-  await handleWhatsAppMessage(
-    conversation.id,
-    { phone, userId },
-    message.text,
-    messageId,
-    creds,
-  );
+  console.log(`[wa-debug] routing → text handler convId=${conversation.id}`);
+  await handleWhatsAppMessage(conversation.id, { phone, userId }, message.text, messageId, creds);
 }
 
 /**
@@ -184,7 +172,7 @@ async function processMessage(
  */
 async function resolveConversation(
   clinicId: string,
-  { phone, userId, name }: { phone: string | null; userId: string | null; name: string },
+  { phone, userId, name }: { phone: string | null; userId: string | null; name: string }
 ) {
   let conversation =
     (userId &&
@@ -200,7 +188,7 @@ async function resolveConversation(
   console.log(
     `[wa-debug] conversation lookup phone=${phone ?? "(hidden)"} userId=${userId ?? "(none)"} → ${
       conversation ? `found id=${conversation.id}` : "NOT FOUND (will create)"
-    }`,
+    }`
   );
 
   if (!conversation) {

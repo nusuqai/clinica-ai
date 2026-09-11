@@ -24,7 +24,10 @@ export function SaasHero({
   clinicCount: number;
 }) {
   return (
-    <section className="relative flex min-h-screen items-center overflow-hidden bg-primary" id="hero">
+    <section
+      className="relative flex min-h-screen items-center overflow-hidden bg-primary"
+      id="hero"
+    >
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-accent/10 blur-3xl" />
         <div className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-accent/5 blur-3xl" />
@@ -45,8 +48,8 @@ export function SaasHero({
         </h1>
 
         <p className="mx-auto mt-6 max-w-2xl font-sans text-lg leading-relaxed text-white/60">
-          ClinicaAI منصة متكاملة تمنح كل عيادة صفحتها الخاصة، وموظف استقبال ذكي، وحجزاً
-          عبر واتساب، ولوحة تحكم لإدارة الأطباء والمواعيد والمرضى.
+          ClinicaAI منصة متكاملة تمنح كل عيادة صفحتها الخاصة، وموظف استقبال ذكي، وحجزاً عبر واتساب،
+          ولوحة تحكم لإدارة الأطباء والمواعيد والمرضى.
         </p>
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
@@ -78,9 +81,7 @@ export function SaasHero({
         </div>
 
         {clinicCount > 0 && (
-          <p className="mt-10 font-sans text-sm text-white/40">
-            موثوقة من {clinicCount}+ عيادة
-          </p>
+          <p className="mt-10 font-sans text-sm text-white/40">موثوقة من {clinicCount}+ عيادة</p>
         )}
       </div>
     </section>
@@ -128,9 +129,7 @@ export function SaasHowItWorks() {
                 <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-md shadow-primary/20">
                   <Icon className="h-7 w-7 text-accent" />
                 </div>
-                <div className="mb-2 font-heading text-sm font-bold text-accent">
-                  {`٠${i + 1}`}
-                </div>
+                <div className="mb-2 font-heading text-sm font-bold text-accent">{`٠${i + 1}`}</div>
                 <h3 className="font-heading text-lg font-bold text-text">{step.title}</h3>
                 <p className="mt-2 max-w-xs font-sans text-sm leading-relaxed text-text/60">
                   {step.description}
@@ -187,9 +186,7 @@ export function SaasFeatures() {
           <h2 className="font-heading text-3xl font-extrabold text-primary lg:text-4xl">
             كل ما تحتاجه عيادتك
           </h2>
-          <p className="mt-3 font-sans text-base text-text/60">
-            أدوات متكاملة لإدارة عيادة حديثة
-          </p>
+          <p className="mt-3 font-sans text-base text-text/60">أدوات متكاملة لإدارة عيادة حديثة</p>
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -203,9 +200,7 @@ export function SaasFeatures() {
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10">
                   <Icon className="h-6 w-6 text-accent" />
                 </div>
-                <h3 className="font-heading text-base font-bold text-text">
-                  {feature.title}
-                </h3>
+                <h3 className="font-heading text-base font-bold text-text">{feature.title}</h3>
                 <p className="mt-2 font-sans text-sm leading-relaxed text-text/60">
                   {feature.description}
                 </p>
@@ -257,13 +252,22 @@ export function MarketingFooter() {
           </p>
 
           <div className="flex flex-wrap justify-center gap-6">
-            <a href="#features" className="font-sans text-sm text-white/50 transition-colors hover:text-accent">
+            <a
+              href="#features"
+              className="font-sans text-sm text-white/50 transition-colors hover:text-accent"
+            >
               المميزات
             </a>
-            <a href="#request" className="font-sans text-sm text-white/50 transition-colors hover:text-accent">
+            <a
+              href="#request"
+              className="font-sans text-sm text-white/50 transition-colors hover:text-accent"
+            >
               أنشئ عيادتك
             </a>
-            <Link href="/login" className="font-sans text-sm text-white/50 transition-colors hover:text-accent">
+            <Link
+              href="/login"
+              className="font-sans text-sm text-white/50 transition-colors hover:text-accent"
+            >
               تسجيل الدخول
             </Link>
           </div>

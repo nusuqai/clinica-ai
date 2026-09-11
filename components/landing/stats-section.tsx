@@ -19,19 +19,12 @@ export function StatsSection({ doctorCount, appointmentCount }: Props) {
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <div
-              key={stat.label}
-              className="flex flex-col items-center text-center"
-            >
+            <div key={stat.label} className="flex flex-col items-center text-center">
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-accent/20">
                 <Icon className="h-6 w-6 text-accent" />
               </div>
-              <div className="font-heading text-3xl font-extrabold text-white">
-                {stat.value}
-              </div>
-              <div className="mt-1 font-sans text-sm text-white/50">
-                {stat.label}
-              </div>
+              <div className="font-heading text-3xl font-extrabold text-white">{stat.value}</div>
+              <div className="mt-1 font-sans text-sm text-white/50">{stat.label}</div>
             </div>
           );
         })}

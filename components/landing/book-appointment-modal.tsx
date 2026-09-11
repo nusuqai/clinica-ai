@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import {
-  X,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  LogIn,
-  ChevronDown,
-  Users,
-} from "lucide-react";
+import { X, Clock, CheckCircle, AlertCircle, LogIn, ChevronDown, Users } from "lucide-react";
 import Link from "next/link";
 import {
   bookAppointmentAction,
@@ -50,9 +42,7 @@ interface OrderInfo {
 }
 
 /** Per-day payload, loaded lazily when a day is opened and cached in state. */
-type DayData =
-  | { kind: "slots"; slots: Slot[] }
-  | { kind: "queue"; info: OrderInfo };
+type DayData = { kind: "slots"; slots: Slot[] } | { kind: "queue"; info: OrderInfo };
 
 /** What the patient has chosen to book, carried into the confirm step. */
 type Selection =
@@ -121,12 +111,10 @@ export function BookAppointmentModal({
       .then((days) => {
         if (cancelled) return;
         setAvailableDays(days);
-        if (days.length === 0)
-          setDaysError("لا توجد أيام متاحة لهذا الطبيب حالياً");
+        if (days.length === 0) setDaysError("لا توجد أيام متاحة لهذا الطبيب حالياً");
       })
       .catch(() => {
-        if (!cancelled)
-          setDaysError("تعذر تحميل الأيام المتاحة، يرجى المحاولة مجدداً");
+        if (!cancelled) setDaysError("تعذر تحميل الأيام المتاحة، يرجى المحاولة مجدداً");
       })
       .finally(() => {
         if (!cancelled) setDaysLoading(false);
@@ -196,18 +184,11 @@ export function BookAppointmentModal({
     setBookingError("");
     startTransition(async () => {
       if (selection.mode === "SLOT_BASED") {
-        const res = await bookAppointmentAction(
-          selection.slot.id,
-          notes || undefined,
-        );
+        const res = await bookAppointmentAction(selection.slot.id, notes || undefined);
         if (res.ok) setSuccess(true);
         else setBookingError(res.error ?? "حدث خطأ غير متوقع");
       } else {
-        const res = await bookOrderAppointmentAction(
-          doctor.id,
-          selection.date,
-          notes || undefined,
-        );
+        const res = await bookOrderAppointmentAction(doctor.id, selection.date, notes || undefined);
         if (res.ok) {
           setBookedOrder(res.orderNumber ?? null);
           setSuccess(true);
@@ -238,12 +219,8 @@ export function BookAppointmentModal({
               {initials}
             </div>
             <div>
-              <p className="font-sans text-sm font-semibold text-text">
-                {doctor.name}
-              </p>
-              <p className="font-sans text-xs text-text/50">
-                {doctor.specialty}
-              </p>
+              <p className="font-sans text-sm font-semibold text-text">{doctor.name}</p>
+              <p className="font-sans text-xs text-text/50">{doctor.specialty}</p>
             </div>
           </div>
           <button
@@ -263,12 +240,8 @@ export function BookAppointmentModal({
                 <LogIn className="h-7 w-7 text-accent" />
               </div>
               <div>
-                <p className="font-heading text-lg font-bold text-text">
-                  سجّل دخولك للمتابعة
-                </p>
-                <p className="mt-1 font-sans text-sm text-text/50">
-                  تحتاج إلى حساب مريض لحجز موعد
-                </p>
+                <p className="font-heading text-lg font-bold text-text">سجّل دخولك للمتابعة</p>
+                <p className="mt-1 font-sans text-sm text-text/50">تحتاج إلى حساب مريض لحجز موعد</p>
               </div>
               <div className="flex w-full flex-col gap-2">
                 <Link
@@ -291,9 +264,7 @@ export function BookAppointmentModal({
           {!needsAuth && step === 1 && !success && (
             <div className="flex flex-col gap-5">
               <div>
-                <p className="mb-1 font-heading text-base font-bold text-text">
-                  اختر يوم الموعد
-                </p>
+                <p className="mb-1 font-heading text-base font-bold text-text">اختر يوم الموعد</p>
                 <p className="font-sans text-sm text-text/50">
                   اضغط على اليوم لعرض الأوقات المتاحة أو حالة الدور
                 </p>
@@ -320,10 +291,7 @@ export function BookAppointmentModal({
                     const loading = dayLoading[date];
                     const errorMsg = dayError[date];
                     return (
-                      <div
-                        key={date}
-                        className="overflow-hidden rounded-xl border border-border"
-                      >
+                      <div key={date} className="overflow-hidden rounded-xl border border-border">
                         {/* Day header */}
                         <button
                           onClick={() => toggleDay(date, mode)}
@@ -368,50 +336,47 @@ export function BookAppointmentModal({
                             )}
 
                             {/* Slot-based day */}
-                            {!loading &&
-                              data?.kind === "slots" &&
-                              data.slots.length > 0 && (
-                                <>
-                                  <p className="mb-2 flex items-center gap-1.5 font-sans text-xs font-medium text-text/60">
-                                    <Clock className="h-3.5 w-3.5" />
-                                    اختر وقت الموعد
-                                  </p>
-                                  <div className="grid grid-cols-3 gap-2">
-                                    {data.slots.map((slot) => {
-                                      const isSel =
-                                        selection?.mode === "SLOT_BASED" &&
-                                        selection.slot.id === slot.id;
-                                      return (
-                                        <button
-                                          key={slot.id}
-                                          onClick={() =>
-                                            setSelection({
-                                              mode: "SLOT_BASED",
-                                              date,
-                                              slot,
-                                            })
-                                          }
-                                          className={`rounded-lg border px-3 py-2 text-center font-sans text-sm font-medium transition-all ${
-                                            isSel
-                                              ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-                                              : "border-border bg-background text-text hover:border-accent/50"
-                                          }`}
-                                        >
-                                          {formatTime(slot.startTime)}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </>
-                              )}
+                            {!loading && data?.kind === "slots" && data.slots.length > 0 && (
+                              <>
+                                <p className="mb-2 flex items-center gap-1.5 font-sans text-xs font-medium text-text/60">
+                                  <Clock className="h-3.5 w-3.5" />
+                                  اختر وقت الموعد
+                                </p>
+                                <div className="grid grid-cols-3 gap-2">
+                                  {data.slots.map((slot) => {
+                                    const isSel =
+                                      selection?.mode === "SLOT_BASED" &&
+                                      selection.slot.id === slot.id;
+                                    return (
+                                      <button
+                                        key={slot.id}
+                                        onClick={() =>
+                                          setSelection({
+                                            mode: "SLOT_BASED",
+                                            date,
+                                            slot,
+                                          })
+                                        }
+                                        className={`rounded-lg border px-3 py-2 text-center font-sans text-sm font-medium transition-all ${
+                                          isSel
+                                            ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
+                                            : "border-border bg-background text-text hover:border-accent/50"
+                                        }`}
+                                      >
+                                        {formatTime(slot.startTime)}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </>
+                            )}
 
                             {/* Order-based (queue) day */}
                             {!loading && data?.kind === "queue" && (
                               <QueueBox
                                 info={data.info}
                                 selected={
-                                  selection?.mode === "ORDER_BASED" &&
-                                  selection.date === date
+                                  selection?.mode === "ORDER_BASED" && selection.date === date
                                 }
                                 onSelect={() =>
                                   setSelection({
@@ -446,9 +411,7 @@ export function BookAppointmentModal({
             <div className="flex flex-col gap-5">
               {/* Summary */}
               <div className="rounded-xl bg-muted px-4 py-3">
-                <p className="font-sans text-xs font-medium text-text/50">
-                  تفاصيل الموعد
-                </p>
+                <p className="font-sans text-xs font-medium text-text/50">تفاصيل الموعد</p>
                 <div className="mt-2 flex flex-col gap-1">
                   <div className="flex items-center justify-between">
                     <span className="font-sans text-sm text-text/70">التاريخ</span>
@@ -472,18 +435,14 @@ export function BookAppointmentModal({
                   ) : (
                     <>
                       <div className="flex items-center justify-between">
-                        <span className="font-sans text-sm text-text/70">
-                          نظام الحجز
-                        </span>
+                        <span className="font-sans text-sm text-text/70">نظام الحجز</span>
                         <span className="font-sans text-sm font-medium text-text">
                           الدور — رقمك {selection.info.nextOrderNumber}
                         </span>
                       </div>
                       {selection.info.expectedTime && (
                         <div className="flex items-center justify-between">
-                          <span className="font-sans text-sm text-text/70">
-                            الوقت المتوقع
-                          </span>
+                          <span className="font-sans text-sm text-text/70">الوقت المتوقع</span>
                           <span className="font-sans text-sm font-medium text-text">
                             ~{selection.info.expectedTime}
                           </span>
@@ -493,9 +452,7 @@ export function BookAppointmentModal({
                   )}
                   {doctor.fee && (
                     <div className="flex items-center justify-between">
-                      <span className="font-sans text-sm text-text/70">
-                        رسوم الكشف
-                      </span>
+                      <span className="font-sans text-sm text-text/70">رسوم الكشف</span>
                       <span className="font-sans text-sm font-semibold text-accent">
                         {doctor.fee} جنيه
                       </span>
@@ -506,8 +463,7 @@ export function BookAppointmentModal({
 
               <div>
                 <label className="mb-1.5 block font-sans text-sm font-medium text-text">
-                  ملاحظات للطبيب{" "}
-                  <span className="font-normal text-text/40">(اختياري)</span>
+                  ملاحظات للطبيب <span className="font-normal text-text/40">(اختياري)</span>
                 </label>
                 <textarea
                   value={notes}
@@ -538,7 +494,7 @@ export function BookAppointmentModal({
                 <button
                   onClick={handleBook}
                   disabled={isPending}
-                  className="flex-1 rounded-xl bg-accent py-3 font-medium text-white transition-opacity disabled:opacity-60 hover:opacity-90"
+                  className="flex-1 rounded-xl bg-accent py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {isPending
                     ? "جارٍ الحجز..."
@@ -562,11 +518,8 @@ export function BookAppointmentModal({
                 </p>
                 {bookedOrder != null ? (
                   <p className="mt-1 font-sans text-sm text-text/60">
-                    رقمك في الطابور:{" "}
-                    <span className="font-bold text-accent">{bookedOrder}</span>
-                    <span className="mt-0.5 block text-text/50">
-                      في انتظار التأكيد من العيادة
-                    </span>
+                    رقمك في الطابور: <span className="font-bold text-accent">{bookedOrder}</span>
+                    <span className="mt-0.5 block text-text/50">في انتظار التأكيد من العيادة</span>
                   </p>
                 ) : (
                   <p className="mt-1 font-sans text-sm text-text/50">
@@ -619,26 +572,19 @@ function QueueBox({
     <div className="flex flex-col gap-3">
       <div className="rounded-lg bg-accent/5 px-3 py-2.5">
         <p className="font-sans text-sm text-text">
-          سيكون دورك رقم{" "}
-          <span className="font-bold text-accent">{info.nextOrderNumber}</span>
+          سيكون دورك رقم <span className="font-bold text-accent">{info.nextOrderNumber}</span>
         </p>
         <div className="mt-1 flex flex-col gap-0.5 font-sans text-xs text-text/60">
           {info.expectedTime && (
-            <span className="text-text/80">
-              الوقت المتوقع للكشف: ~{info.expectedTime}
-            </span>
+            <span className="text-text/80">الوقت المتوقع للكشف: ~{info.expectedTime}</span>
           )}
           {info.currentOrder != null && (
             <span>
-              {info.currentOrder > 0
-                ? `يُخدَم الآن رقم ${info.currentOrder}`
-                : "لم يبدأ الكشف بعد"}
+              {info.currentOrder > 0 ? `يُخدَم الآن رقم ${info.currentOrder}` : "لم يبدأ الكشف بعد"}
             </span>
           )}
           {wait != null && <span>الانتظار التقديري: ~{wait} دقيقة</span>}
-          {info.remaining != null && (
-            <span>المتبقّي اليوم: {info.remaining} حجز</span>
-          )}
+          {info.remaining != null && <span>المتبقّي اليوم: {info.remaining} حجز</span>}
         </div>
       </div>
       <button

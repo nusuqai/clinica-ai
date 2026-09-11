@@ -32,8 +32,7 @@ function parseDoctorTitle(formData: FormData): DoctorTitle | null {
 
 // Parse the extra doctor attributes shared by create & update forms.
 function parseDoctorAttributes(formData: FormData) {
-  const num = (key: string) =>
-    formData.get(key) ? Number(formData.get(key)) : undefined;
+  const num = (key: string) => (formData.get(key) ? Number(formData.get(key)) : undefined);
   return {
     title: parseDoctorTitle(formData),
     yearsOfExperience: num("yearsOfExperience"),
@@ -143,13 +142,10 @@ async function createDraftRules(
 export async function linkDoctorAccountAction(formData: FormData) {
   await requireAdmin();
 
-  const result = await DoctorService.linkDoctorAccount(
-    formData.get("doctorId") as string,
-    {
-      email: formData.get("email") as string,
-      password: formData.get("password") as string,
-    },
-  );
+  const result = await DoctorService.linkDoctorAccount(formData.get("doctorId") as string, {
+    email: formData.get("email") as string,
+    password: formData.get("password") as string,
+  });
 
   if (!result.ok) return { error: result.error };
   revalidatePath("/clinic/[slug]/admin/doctors", "page");
@@ -226,10 +222,7 @@ export async function deleteUserAction(userId: string) {
   return { success: true };
 }
 
-export async function updatePatientProfileAction(
-  userId: string,
-  formData: FormData,
-) {
+export async function updatePatientProfileAction(userId: string, formData: FormData) {
   const clinicId = await requireAdmin();
   const result = await UserService.updatePatientProfile(userId, clinicId, {
     fullName: (formData.get("fullName") as string) ?? undefined,
@@ -241,15 +234,12 @@ export async function updatePatientProfileAction(
   return { success: true as const };
 }
 
-export async function changePatientEmailAction(
-  userId: string,
-  formData: FormData,
-) {
+export async function changePatientEmailAction(userId: string, formData: FormData) {
   const clinicId = await requireAdmin();
   const result = await UserService.changePatientEmail(
     userId,
     clinicId,
-    (formData.get("email") as string) ?? "",
+    (formData.get("email") as string) ?? ""
   );
   if (!result.ok) return { error: result.error };
   return { success: true as const };
@@ -303,7 +293,7 @@ export async function createRuleAction(formData: FormData, clinicId: string) {
   await requireAdmin();
   const doctorId = formData.get("doctorId") as string;
   const branchId = (formData.get("branchId") as string) || "";
-  
+
   if (!branchId) return { error: "اختر الفرع لهذه القاعدة." };
   const result = await DoctorService.createRule({
     doctorId,
@@ -311,9 +301,7 @@ export async function createRuleAction(formData: FormData, clinicId: string) {
     dayOfWeek: formData.get("dayOfWeek") as import("@prisma/client").DayOfWeek,
     startTime: formData.get("startTime") as string,
     endTime: formData.get("endTime") as string,
-    slotDurationMin: formData.get("slotDurationMin")
-      ? Number(formData.get("slotDurationMin"))
-      : 30,
+    slotDurationMin: formData.get("slotDurationMin") ? Number(formData.get("slotDurationMin")) : 30,
     clinicId: clinicId,
     mode:
       formData.get("mode") === "ORDER_BASED"
@@ -339,11 +327,7 @@ export async function deleteRuleAction(ruleId: string, doctorId: string) {
   return { success: true };
 }
 
-export async function toggleRuleActiveAction(
-  ruleId: string,
-  isActive: boolean,
-  doctorId: string,
-) {
+export async function toggleRuleActiveAction(ruleId: string, isActive: boolean, doctorId: string) {
   await requireAdmin();
   const result = await DoctorService.toggleRuleActive(ruleId, isActive);
   if (!result.ok) return { error: result.error };
@@ -432,8 +416,7 @@ async function requireQueueInClinic(queueId: string, clinicId: string) {
 
 export async function advanceQueueAction(queueId: string, to: number | null) {
   const clinicId = await requireAdmin();
-  if (!(await requireQueueInClinic(queueId, clinicId)))
-    return { error: "الطابور غير موجود" };
+  if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.setCurrentOrder(queueId, to);
   if (!res.ok) return { error: res.error };
   revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
@@ -443,8 +426,7 @@ export async function advanceQueueAction(queueId: string, to: number | null) {
 // "Next patient": complete the current patient and advance the queue.
 export async function completeCurrentAndAdvanceAction(queueId: string) {
   const clinicId = await requireAdmin();
-  if (!(await requireQueueInClinic(queueId, clinicId)))
-    return { error: "الطابور غير موجود" };
+  if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.completeCurrentAndAdvance(queueId);
   if (!res.ok) return { error: res.error };
   revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
@@ -453,8 +435,7 @@ export async function completeCurrentAndAdvanceAction(queueId: string) {
 
 export async function toggleQueueTrackingAction(queueId: string, track: boolean) {
   const clinicId = await requireAdmin();
-  if (!(await requireQueueInClinic(queueId, clinicId)))
-    return { error: "الطابور غير موجود" };
+  if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.toggleQueueTracking(queueId, track);
   if (!res.ok) return { error: res.error };
   revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
@@ -463,8 +444,7 @@ export async function toggleQueueTrackingAction(queueId: string, track: boolean)
 
 export async function setQueueCapAction(queueId: string, cap: number | null) {
   const clinicId = await requireAdmin();
-  if (!(await requireQueueInClinic(queueId, clinicId)))
-    return { error: "الطابور غير موجود" };
+  if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.setQueueCap(queueId, cap);
   if (!res.ok) return { error: res.error };
   revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
@@ -514,9 +494,7 @@ export async function toggleSlotBlockedAction(slotId: string, doctorId: string) 
 
 // ─── Branch actions ───────────────────────────────────────────────────────────
 
-export async function createBranchAction(
-  input: Omit<BranchService.CreateBranchInput, "clinicId">,
-) {
+export async function createBranchAction(input: Omit<BranchService.CreateBranchInput, "clinicId">) {
   const clinicId = await requireAdmin();
   const result = await BranchService.createBranch({ ...input, clinicId });
   if (!result.ok) return { error: result.error };
@@ -568,7 +546,7 @@ export async function deleteBranchAction(branchId: string) {
 // ─── Clinic info actions ──────────────────────────────────────────────────────
 
 export async function updateClinicInfoAction(
-  input: Omit<ClinicInfoService.UpdateClinicInfoInput, "clinicId">,
+  input: Omit<ClinicInfoService.UpdateClinicInfoInput, "clinicId">
 ) {
   const clinicId = await requireAdmin();
   const result = await ClinicInfoService.updateClinicInfo({ ...input, clinicId });

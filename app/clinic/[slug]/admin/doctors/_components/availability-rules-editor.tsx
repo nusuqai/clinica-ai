@@ -3,11 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { DayOfWeek, AvailabilityMode } from "@prisma/client";
-import {
-  createRuleAction,
-  deleteRuleAction,
-  getDoctorRulesAction,
-} from "@/server/actions/admin";
+import { createRuleAction, deleteRuleAction, getDoctorRulesAction } from "@/server/actions/admin";
 import { queueCapacityHint } from "@/lib/availability/queue-capacity";
 
 export interface EditorBranchHours {
@@ -66,7 +62,7 @@ const SLOT_DURATIONS = [15, 20, 30, 45, 60];
 function branchWindow(
   branches: EditorBranch[],
   branchId: string,
-  day: DayOfWeek,
+  day: DayOfWeek
 ): { text: string; ok: boolean } | null {
   const branch = branches.find((b) => b.id === branchId);
   if (!branch) return null;
@@ -85,7 +81,6 @@ function branchWindow(
 type Props =
   | { mode: "draft"; branches: EditorBranch[] }
   | { mode: "live"; doctorId: string; branches: EditorBranch[]; clinicId: string };
-  
 
 /**
  * Inline availability-rules editor embedded in the add/edit doctor modals so
@@ -139,9 +134,7 @@ export default function AvailabilityRulesEditor(props: Props) {
   useEffect(() => {
     if (props.mode !== "draft") return;
     setRows((rs) => rs.filter((r) => branches.some((b) => b.id === r.branchId)));
-    setNBranch((cur) =>
-      branches.some((b) => b.id === cur) ? cur : (branches[0]?.id ?? ""),
-    );
+    setNBranch((cur) => (branches.some((b) => b.id === cur) ? cur : (branches[0]?.id ?? "")));
   }, [branches, props.mode]);
 
   const dayHint = branchWindow(branches, nBranch, nDay);
@@ -215,11 +208,7 @@ export default function AvailabilityRulesEditor(props: Props) {
       setRows((rs) => rs.filter((_, i) => i !== idx));
       return;
     }
-    if (
-      !confirm(
-        "سيتم حذف هذه القاعدة والمواعيد المستقبلية غير المحجوزة. هل تريد المتابعة؟",
-      )
-    )
+    if (!confirm("سيتم حذف هذه القاعدة والمواعيد المستقبلية غير المحجوزة. هل تريد المتابعة؟"))
       return;
     const ruleId = row.id;
     setError(null);
@@ -233,18 +222,15 @@ export default function AvailabilityRulesEditor(props: Props) {
     });
   }
 
-  const branchName = (id: string) =>
-    branches.find((b) => b.id === id)?.name ?? "فرع غير محدد";
+  const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? "فرع غير محدد";
 
   return (
     <div className="space-y-3 border-t border-border pt-4">
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-foreground font-sans">
+        <label className="font-sans text-sm font-medium text-foreground">
           قواعد التوفر (المواعيد الأسبوعية)
         </label>
-        <span className="text-xs text-muted-foreground font-sans">
-          {rows.length} قاعدة
-        </span>
+        <span className="font-sans text-xs text-muted-foreground">{rows.length} قاعدة</span>
       </div>
 
       {props.mode === "draft" && (
@@ -263,30 +249,29 @@ export default function AvailabilityRulesEditor(props: Props) {
               dailyCap: r.dailyCap,
               referralOnly: r.referralOnly,
               note: r.note,
-            })),
+            }))
           )}
         />
       )}
 
       {branches.length === 0 ? (
-        <p className="text-xs text-muted-foreground font-sans">
+        <p className="font-sans text-xs text-muted-foreground">
           اختر فرعاً واحداً على الأقل لفروع عمل الطبيب أعلاه
-          {props.mode === "live" ? " واحفظ التعديلات" : ""} لتتمكّن من إضافة قواعد
-          التوفر.
+          {props.mode === "live" ? " واحفظ التعديلات" : ""} لتتمكّن من إضافة قواعد التوفر.
         </p>
       ) : (
         <>
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs font-sans">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-sans text-xs text-red-700">
               {error}
             </div>
           )}
 
           {/* Existing / drafted rules */}
           {loading ? (
-            <p className="text-xs text-muted-foreground font-sans">جارٍ التحميل...</p>
+            <p className="font-sans text-xs text-muted-foreground">جارٍ التحميل...</p>
           ) : rows.length === 0 ? (
-            <p className="text-xs text-muted-foreground font-sans">
+            <p className="font-sans text-xs text-muted-foreground">
               لا توجد قواعد بعد. أضف قاعدة بالأسفل.
             </p>
           ) : (
@@ -294,30 +279,30 @@ export default function AvailabilityRulesEditor(props: Props) {
               {rows.map((rule, idx) => (
                 <div
                   key={rule.id ?? idx}
-                  className="bg-muted/40 border border-border rounded-xl px-3 py-2"
+                  className="rounded-xl border border-border bg-muted/40 px-3 py-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-foreground font-sans text-sm">
+                    <span className="font-sans text-sm font-medium text-foreground">
                       {DAY_LABELS[rule.dayOfWeek]}
                     </span>
-                    <span className="text-muted-foreground font-sans text-sm" dir="ltr">
+                    <span className="font-sans text-sm text-muted-foreground" dir="ltr">
                       {rule.startTime} – {rule.endTime}
                     </span>
-                    <span className="text-xs text-primary font-sans bg-primary/10 px-2 py-0.5 rounded-full">
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 font-sans text-xs text-primary">
                       {branchName(rule.branchId)}
                     </span>
                     {rule.mode === AvailabilityMode.ORDER_BASED ? (
-                      <span className="text-xs font-medium text-indigo-700 font-sans bg-indigo-100 px-2 py-0.5 rounded-full">
+                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-sans text-xs font-medium text-indigo-700">
                         نظام الدور
                         {rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : ""}
                       </span>
                     ) : (
-                      <span className="text-xs text-muted-foreground font-sans bg-muted px-2 py-0.5 rounded-full">
+                      <span className="rounded-full bg-muted px-2 py-0.5 font-sans text-xs text-muted-foreground">
                         {rule.slotDurationMin} دقيقة / موعد
                       </span>
                     )}
                     {rule.referralOnly && (
-                      <span className="text-xs font-medium text-amber-700 font-sans bg-amber-100 px-2 py-0.5 rounded-full">
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-sans text-xs font-medium text-amber-700">
                         تحويلات فقط
                       </span>
                     )}
@@ -326,15 +311,13 @@ export default function AvailabilityRulesEditor(props: Props) {
                       onClick={() => removeRow(idx)}
                       disabled={isPending}
                       title="حذف القاعدة"
-                      className="ms-auto p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                      className="ms-auto rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                   {rule.note && (
-                    <p className="text-xs text-muted-foreground font-sans mt-1">
-                      {rule.note}
-                    </p>
+                    <p className="mt-1 font-sans text-xs text-muted-foreground">{rule.note}</p>
                   )}
                 </div>
               ))}
@@ -342,16 +325,14 @@ export default function AvailabilityRulesEditor(props: Props) {
           )}
 
           {/* New rule row */}
-          <div className="bg-card border border-dashed border-border rounded-xl p-3 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-3 rounded-xl border border-dashed border-border bg-card p-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1 sm:col-span-2">
-                <label className="text-xs font-medium text-muted-foreground font-sans">
-                  الفرع
-                </label>
+                <label className="font-sans text-xs font-medium text-muted-foreground">الفرع</label>
                 <select
                   value={nBranch}
                   onChange={(e) => setNBranch(e.target.value)}
-                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 >
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>
@@ -362,13 +343,13 @@ export default function AvailabilityRulesEditor(props: Props) {
               </div>
 
               <div className="space-y-1 sm:col-span-2">
-                <label className="text-xs font-medium text-muted-foreground font-sans">
+                <label className="font-sans text-xs font-medium text-muted-foreground">
                   يوم الأسبوع
                 </label>
                 <select
                   value={nDay}
                   onChange={(e) => setNDay(e.target.value as DayOfWeek)}
-                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 >
                   {DAYS_ORDER.map((day) => (
                     <option key={day} value={day}>
@@ -379,7 +360,7 @@ export default function AvailabilityRulesEditor(props: Props) {
                 {dayHint && (
                   <p
                     className={[
-                      "text-xs font-sans mt-1",
+                      "mt-1 font-sans text-xs",
                       dayHint.ok ? "text-muted-foreground" : "text-red-600",
                     ].join(" ")}
                   >
@@ -389,7 +370,7 @@ export default function AvailabilityRulesEditor(props: Props) {
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground font-sans">
+                <label className="font-sans text-xs font-medium text-muted-foreground">
                   وقت البداية
                 </label>
                 <input
@@ -397,12 +378,12 @@ export default function AvailabilityRulesEditor(props: Props) {
                   value={nStart}
                   onChange={(e) => setNStart(e.target.value)}
                   dir="ltr"
-                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground font-sans">
+                <label className="font-sans text-xs font-medium text-muted-foreground">
                   وقت النهاية
                 </label>
                 <input
@@ -410,18 +391,18 @@ export default function AvailabilityRulesEditor(props: Props) {
                   value={nEnd}
                   onChange={(e) => setNEnd(e.target.value)}
                   dir="ltr"
-                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
 
               <div className="space-y-1 sm:col-span-2">
-                <label className="text-xs font-medium text-muted-foreground font-sans">
+                <label className="font-sans text-xs font-medium text-muted-foreground">
                   نظام الجدولة
                 </label>
                 <select
                   value={nMode}
                   onChange={(e) => setNMode(e.target.value as AvailabilityMode)}
-                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 >
                   <option value={AvailabilityMode.SLOT_BASED}>مواعيد بأوقات ثابتة</option>
                   <option value={AvailabilityMode.ORDER_BASED}>نظام الدور (طابور)</option>
@@ -431,7 +412,7 @@ export default function AvailabilityRulesEditor(props: Props) {
               {isOrder ? (
                 <>
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground font-sans">
+                    <label className="font-sans text-xs font-medium text-muted-foreground">
                       دقائق الكشف التقديرية
                     </label>
                     <input
@@ -439,11 +420,11 @@ export default function AvailabilityRulesEditor(props: Props) {
                       min={1}
                       value={nEstDur}
                       onChange={(e) => setNEstDur(Number(e.target.value))}
-                      className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground font-sans">
+                    <label className="font-sans text-xs font-medium text-muted-foreground">
                       الحد الأقصى للحجوزات
                     </label>
                     <input
@@ -451,7 +432,7 @@ export default function AvailabilityRulesEditor(props: Props) {
                       min={1}
                       value={nCap}
                       onChange={(e) => setNCap(Number(e.target.value))}
-                      className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
                   {(() => {
@@ -459,10 +440,10 @@ export default function AvailabilityRulesEditor(props: Props) {
                     if (!hint) return null;
                     return (
                       <p
-                        className={`sm:col-span-2 text-xs font-sans rounded-lg px-3 py-2 ${
+                        className={`rounded-lg px-3 py-2 font-sans text-xs sm:col-span-2 ${
                           hint.tone === "warn"
-                            ? "bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900"
-                            : "bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900"
+                            ? "border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+                            : "border border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
                         }`}
                       >
                         {hint.text}
@@ -472,13 +453,13 @@ export default function AvailabilityRulesEditor(props: Props) {
                 </>
               ) : (
                 <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-medium text-muted-foreground font-sans">
+                  <label className="font-sans text-xs font-medium text-muted-foreground">
                     مدة الموعد
                   </label>
                   <select
                     value={nDur}
                     onChange={(e) => setNDur(Number(e.target.value))}
-                    className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                   >
                     {SLOT_DURATIONS.map((d) => (
                       <option key={d} value={d}>
@@ -489,14 +470,14 @@ export default function AvailabilityRulesEditor(props: Props) {
                 </div>
               )}
 
-              <label className="flex items-start gap-2 sm:col-span-2 cursor-pointer">
+              <label className="flex cursor-pointer items-start gap-2 sm:col-span-2">
                 <input
                   type="checkbox"
                   checked={nReferralOnly}
                   onChange={(e) => setNReferralOnly(e.target.checked)}
                   className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
                 />
-                <span className="text-xs text-foreground font-sans">
+                <span className="font-sans text-xs text-foreground">
                   تحويلات فقط
                   <span className="block text-muted-foreground">
                     لا يحجزها المرضى مباشرةً؛ تُحجز عبر تحويل من طبيب بعد الكشف.
@@ -505,7 +486,7 @@ export default function AvailabilityRulesEditor(props: Props) {
               </label>
 
               <div className="space-y-1 sm:col-span-2">
-                <label className="text-xs font-medium text-muted-foreground font-sans">
+                <label className="font-sans text-xs font-medium text-muted-foreground">
                   ملاحظة (اختياري)
                 </label>
                 <input
@@ -513,7 +494,7 @@ export default function AvailabilityRulesEditor(props: Props) {
                   value={nNote}
                   onChange={(e) => setNNote(e.target.value)}
                   placeholder="مثال: تحويلات حالات القلب فقط"
-                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
             </div>
@@ -522,15 +503,15 @@ export default function AvailabilityRulesEditor(props: Props) {
               type="button"
               onClick={addRow}
               disabled={!canAdd}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium font-sans hover:bg-primary/90 transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="h-4 w-4" />
               {props.mode === "live" && isPending ? "جارٍ الإضافة..." : "إضافة قاعدة"}
             </button>
           </div>
 
           {props.mode === "draft" && rows.length > 0 && (
-            <p className="text-xs text-muted-foreground font-sans">
+            <p className="font-sans text-xs text-muted-foreground">
               سيتم توليد مواعيد الـ 30 يوماً القادمة تلقائياً عند حفظ الطبيب.
             </p>
           )}

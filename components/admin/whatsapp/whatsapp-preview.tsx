@@ -31,8 +31,7 @@ function ButtonIcon({ type }: { type: TemplateButton["type"] }) {
 // A faint doodle-dot texture over the classic WhatsApp wallpaper beige, so the
 // panel reads as a chat screen and not just a coloured box. Kept inline (data
 // URI) to stay self-contained.
-const WALLPAPER =
-  "radial-gradient(rgba(0,0,0,0.035) 1px, transparent 1px)";
+const WALLPAPER = "radial-gradient(rgba(0,0,0,0.035) 1px, transparent 1px)";
 
 /**
  * Renders a template body the way it lands in WhatsApp: an outgoing (clinic)
@@ -49,12 +48,8 @@ export default function WhatsappPreview({
   time = "10:30",
   className = "",
 }: WhatsappPreviewProps) {
-  const rendered = bodyText.trim()
-    ? fillTemplate(bodyText, variables)
-    : "";
-  const header = headerText?.trim()
-    ? fillTemplate(headerText, variables)
-    : "";
+  const rendered = bodyText.trim() ? fillTemplate(bodyText, variables) : "";
+  const header = headerText?.trim() ? fillTemplate(headerText, variables) : "";
   const activeButtons = buttons.filter((b) => b.text.trim());
   // Show the card whenever there's anything to render, not just body text.
   const hasContent = !!(rendered || header || activeButtons.length > 0);
@@ -63,22 +58,22 @@ export default function WhatsappPreview({
     <div
       dir="rtl"
       className={[
-        "rounded-2xl border border-border overflow-hidden",
+        "overflow-hidden rounded-2xl border border-border",
         "bg-[#ECE5DD] dark:bg-[#0B141A]",
         className,
       ].join(" ")}
       style={{ backgroundImage: WALLPAPER, backgroundSize: "20px 20px" }}
     >
-      <div className="flex flex-col p-4 min-h-[120px] justify-center">
+      <div className="flex min-h-[120px] flex-col justify-center p-4">
         {hasContent ? (
-          <div className="relative self-end w-full max-w-[85%]">
+          <div className="relative w-full max-w-[85%] self-end">
             {/* Tail at the top-start corner of the outgoing bubble */}
             <span
-              className="absolute top-0 -start-1.5 w-3 h-3 bg-[#D9FDD3] dark:bg-[#005C4B] z-10"
+              className="absolute -start-1.5 top-0 z-10 h-3 w-3 bg-[#D9FDD3] dark:bg-[#005C4B]"
               style={{ clipPath: "polygon(0 0, 100% 0, 100% 100%)" }}
               aria-hidden
             />
-            <div className="relative rounded-2xl rounded-ss-sm bg-[#D9FDD3] dark:bg-[#005C4B] shadow-sm overflow-hidden">
+            <div className="relative overflow-hidden rounded-2xl rounded-ss-sm bg-[#D9FDD3] shadow-sm dark:bg-[#005C4B]">
               <div className="px-3 py-2">
                 {header && (
                   <p className="mb-1 whitespace-pre-wrap break-words text-sm font-bold text-[#111B21] dark:text-[#E9EDEF]">
@@ -91,13 +86,13 @@ export default function WhatsappPreview({
                   </p>
                 )}
                 {footerText?.trim() && (
-                  <p className="mt-1.5 text-[11px] text-[#111B21]/50 dark:text-[#E9EDEF]/50 whitespace-pre-wrap break-words">
+                  <p className="mt-1.5 whitespace-pre-wrap break-words text-[11px] text-[#111B21]/50 dark:text-[#E9EDEF]/50">
                     {footerText}
                   </p>
                 )}
                 <span className="mt-1 flex items-center justify-end gap-1 text-[10px] text-[#111B21]/45 dark:text-[#E9EDEF]/50">
                   {time}
-                  <CheckCheck className="w-3.5 h-3.5 text-sky-500" />
+                  <CheckCheck className="h-3.5 w-3.5 text-sky-500" />
                 </span>
               </div>
 

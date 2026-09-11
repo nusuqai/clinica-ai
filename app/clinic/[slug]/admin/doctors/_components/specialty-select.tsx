@@ -29,7 +29,7 @@ export default function SpecialtySelect({
 
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-foreground font-sans">التخصص</label>
+      <label className="font-sans text-sm font-medium text-foreground">التخصص</label>
       {/* Real submitted value: empty when creating a new specialty. */}
       <input type="hidden" name="specialtyId" value={isNew ? "" : value} />
       <select

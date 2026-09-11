@@ -56,10 +56,7 @@ export default function CreditManager({ clinicId, currentMarkup }: Props) {
           <button
             disabled={pending || !topUp.trim()}
             onClick={() =>
-              run(
-                () => topUpClinicAction({ clinicId, amount: topUp }),
-                "تمت إضافة الرصيد.",
-              )
+              run(() => topUpClinicAction({ clinicId, amount: topUp }), "تمت إضافة الرصيد.")
             }
             className="flex-shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
@@ -80,10 +77,7 @@ export default function CreditManager({ clinicId, currentMarkup }: Props) {
           <button
             disabled={pending || !adjust.trim()}
             onClick={() =>
-              run(
-                () => adjustClinicBalanceAction({ clinicId, amount: adjust }),
-                "تم تعديل الرصيد.",
-              )
+              run(() => adjustClinicBalanceAction({ clinicId, amount: adjust }), "تم تعديل الرصيد.")
             }
             className="flex-shrink-0 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
           >
@@ -104,10 +98,7 @@ export default function CreditManager({ clinicId, currentMarkup }: Props) {
           <button
             disabled={pending || !markup.trim()}
             onClick={() =>
-              run(
-                () => setClinicMarkupAction({ clinicId, markup }),
-                "تم تحديث المضاعف.",
-              )
+              run(() => setClinicMarkupAction({ clinicId, markup }), "تم تحديث المضاعف.")
             }
             className="flex-shrink-0 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
@@ -116,9 +107,7 @@ export default function CreditManager({ clinicId, currentMarkup }: Props) {
         </div>
       </div>
       {msg && (
-        <p className={`text-xs ${msg.ok ? "text-emerald-600" : "text-red-600"}`}>
-          {msg.text}
-        </p>
+        <p className={`text-xs ${msg.ok ? "text-emerald-600" : "text-red-600"}`}>{msg.text}</p>
       )}
     </div>
   );

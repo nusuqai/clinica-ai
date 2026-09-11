@@ -17,11 +17,5 @@ export default async function ClinicRegisterPage({
   });
   if (!clinic) notFound();
 
-  return (
-    <ClinicRegisterForm
-      slug={slug}
-      clinicName={clinic.name}
-      initialPhone={phone ?? ""}
-    />
-  );
+  return <ClinicRegisterForm slug={slug} clinicName={clinic.name} initialPhone={phone ?? ""} />;
 }

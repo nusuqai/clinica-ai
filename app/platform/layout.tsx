@@ -3,11 +3,7 @@ import { requirePlatformAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import PlatformNav from "./_components/platform-nav";
 
-export default async function PlatformLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePlatformAdmin();
   const pendingRequests = await prisma.clinicRequest.count({
     where: { status: ClinicRequestStatus.PENDING },

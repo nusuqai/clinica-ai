@@ -29,7 +29,7 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
     const phone = normalizePhone((formData.get("phone") as string) ?? "");
     if (!isValidPhone(phone)) {
       setError(
-        `أدخل رقم الهاتف بالصيغة الدولية بدون علامة (+) وبدون صفر في البداية: بادئة الدولة ثم الرقم، مثال: ${PHONE_EXAMPLE}`,
+        `أدخل رقم الهاتف بالصيغة الدولية بدون علامة (+) وبدون صفر في البداية: بادئة الدولة ثم الرقم، مثال: ${PHONE_EXAMPLE}`
       );
       return;
     }
@@ -51,18 +51,14 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
   }
 
   return (
-    <div className="w-full max-w-md relative z-10">
+    <div className="relative z-10 w-full max-w-md">
       <div className="mb-8">
-        <h1 className="text-3xl font-heading font-bold text-primary mb-2">
-          إنشاء حساب جديد
-        </h1>
-        <p className="text-text/50 font-sans text-sm">
-          أنشئ حسابك في {clinicName} لحجز مواعيدك
-        </p>
+        <h1 className="mb-2 font-heading text-3xl font-bold text-primary">إنشاء حساب جديد</h1>
+        <p className="font-sans text-sm text-text/50">أنشئ حسابك في {clinicName} لحجز مواعيدك</p>
       </div>
 
       {error && (
-        <div className="mb-6 flex flex-col gap-2 bg-red-50 text-red-600 px-4 py-3 rounded-2xl text-sm font-sans border border-red-100">
+        <div className="mb-6 flex flex-col gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-sans text-sm text-red-600">
           <div className="flex items-start gap-3">
             <span className="mt-0.5 flex-shrink-0">⚠</span>
             <span>{error}</span>
@@ -70,7 +66,7 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
           {needsLogin && (
             <Link
               href={`/clinic/${slug}/login`}
-              className="self-start font-semibold text-accent hover:text-accent/80 transition-colors"
+              className="self-start font-semibold text-accent transition-colors hover:text-accent/80"
             >
               الذهاب إلى تسجيل الدخول ←
             </Link>
@@ -80,29 +76,25 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-text/70 font-sans">
-            الاسم الكامل
-          </label>
+          <label className="block font-sans text-sm font-medium text-text/70">الاسم الكامل</label>
           <div className="relative">
-            <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
               <User className="h-4.5 w-4.5 text-text/30" />
             </div>
             <input
               name="fullName"
               type="text"
               required
-              className="block w-full pr-11 pl-4 py-3.5 font-sans text-sm border border-text/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-white placeholder:text-text/30 transition-all"
+              className="block w-full rounded-2xl border border-text/10 bg-white py-3.5 pl-4 pr-11 font-sans text-sm transition-all placeholder:text-text/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
               placeholder="أحمد الرشيد"
             />
           </div>
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-text/70 font-sans">
-            رقم الهاتف
-          </label>
+          <label className="block font-sans text-sm font-medium text-text/70">رقم الهاتف</label>
           <div className="relative">
-            <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
               <Phone className="h-4.5 w-4.5 text-text/30" />
             </div>
             <input
@@ -113,22 +105,21 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
               required
               dir="ltr"
               defaultValue={normalizePhone(initialPhone)}
-              className="block w-full pr-11 pl-4 py-3.5 font-sans text-sm border border-text/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-white text-right placeholder:text-text/30 transition-all"
+              className="block w-full rounded-2xl border border-text/10 bg-white py-3.5 pl-4 pr-11 text-right font-sans text-sm transition-all placeholder:text-text/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
               placeholder={PHONE_EXAMPLE}
             />
           </div>
-          <p className="text-xs text-text/40 font-sans">
-            بادئة الدولة ثم الرقم بدون (+) وبدون صفر — مثال:{" "}
-            <span dir="ltr">{PHONE_EXAMPLE}</span>
+          <p className="font-sans text-xs text-text/40">
+            بادئة الدولة ثم الرقم بدون (+) وبدون صفر — مثال: <span dir="ltr">{PHONE_EXAMPLE}</span>
           </p>
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-text/70 font-sans">
+          <label className="block font-sans text-sm font-medium text-text/70">
             البريد الإلكتروني
           </label>
           <div className="relative">
-            <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
               <Mail className="h-4.5 w-4.5 text-text/30" />
             </div>
             <input
@@ -136,7 +127,7 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
               type="email"
               required
               dir="ltr"
-              className="block w-full pr-11 pl-4 py-3.5 font-sans text-sm border border-text/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-white text-right placeholder:text-text/30 transition-all"
+              className="block w-full rounded-2xl border border-text/10 bg-white py-3.5 pl-4 pr-11 text-right font-sans text-sm transition-all placeholder:text-text/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
               placeholder="name@example.com"
             />
           </div>
@@ -144,11 +135,9 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-text/70 font-sans">
-              كلمة المرور
-            </label>
+            <label className="block font-sans text-sm font-medium text-text/70">كلمة المرور</label>
             <div className="relative">
-              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5">
                 <Lock className="h-4 w-4 text-text/30" />
               </div>
               <input
@@ -157,13 +146,13 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
                 required
                 minLength={6}
                 dir="ltr"
-                className="block w-full pr-10 pl-9 py-3.5 font-sans text-sm border border-text/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-white placeholder:text-text/30 transition-all"
+                className="block w-full rounded-2xl border border-text/10 bg-white py-3.5 pl-9 pr-10 font-sans text-sm transition-all placeholder:text-text/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
                 placeholder="••••••••"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
-                className="absolute inset-y-0 left-0 pl-3 flex items-center text-text/30 hover:text-primary transition-colors"
+                className="absolute inset-y-0 left-0 flex items-center pl-3 text-text/30 transition-colors hover:text-primary"
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -171,11 +160,9 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-text/70 font-sans">
-              تأكيد المرور
-            </label>
+            <label className="block font-sans text-sm font-medium text-text/70">تأكيد المرور</label>
             <div className="relative">
-              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5">
                 <Lock className="h-4 w-4 text-text/30" />
               </div>
               <input
@@ -183,13 +170,13 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
                 type={showConfirm ? "text" : "password"}
                 required
                 dir="ltr"
-                className="block w-full pr-10 pl-9 py-3.5 font-sans text-sm border border-text/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-white placeholder:text-text/30 transition-all"
+                className="block w-full rounded-2xl border border-text/10 bg-white py-3.5 pl-9 pr-10 font-sans text-sm transition-all placeholder:text-text/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
                 placeholder="••••••••"
               />
               <button
                 type="button"
                 onClick={() => setShowConfirm((v) => !v)}
-                className="absolute inset-y-0 left-0 pl-3 flex items-center text-text/30 hover:text-primary transition-colors"
+                className="absolute inset-y-0 left-0 flex items-center pl-3 text-text/30 transition-colors hover:text-primary"
               >
                 {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -200,24 +187,28 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
         <button
           type="submit"
           disabled={isPending}
-          className="w-full flex justify-center items-center gap-2.5 py-3.5 px-4 rounded-2xl text-sm font-semibold text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-200 disabled:opacity-60 font-sans shadow-lg shadow-primary/20"
+          className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-primary px-4 py-3.5 font-sans text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all duration-200 hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-60"
         >
-          {isPending ? <Loader2 className="animate-spin w-4.5 h-4.5" /> : <ArrowLeft className="w-4.5 h-4.5" />}
+          {isPending ? (
+            <Loader2 className="w-4.5 h-4.5 animate-spin" />
+          ) : (
+            <ArrowLeft className="w-4.5 h-4.5" />
+          )}
           {isPending ? "جارٍ إنشاء الحساب..." : "إنشاء الحساب"}
         </button>
       </form>
 
       <div className="my-6 flex items-center gap-4">
-        <div className="flex-1 h-px bg-text/8" />
-        <span className="text-xs text-text/30 font-sans">أو</span>
-        <div className="flex-1 h-px bg-text/8" />
+        <div className="bg-text/8 h-px flex-1" />
+        <span className="font-sans text-xs text-text/30">أو</span>
+        <div className="bg-text/8 h-px flex-1" />
       </div>
 
-      <p className="text-center text-sm font-sans text-text/50">
+      <p className="text-center font-sans text-sm text-text/50">
         لديك حساب بالفعل؟{" "}
         <Link
           href={`/clinic/${slug}/login`}
-          className="font-semibold text-accent hover:text-accent/80 transition-colors"
+          className="font-semibold text-accent transition-colors hover:text-accent/80"
         >
           سجل دخولك
         </Link>
@@ -226,9 +217,9 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
       <div className="mt-8 text-center">
         <Link
           href={`/clinic/${slug}`}
-          className="inline-flex items-center gap-1.5 text-xs text-text/30 hover:text-text/60 transition-colors font-sans"
+          className="inline-flex items-center gap-1.5 font-sans text-xs text-text/30 transition-colors hover:text-text/60"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
+          <ArrowLeft className="h-3.5 w-3.5" />
           العودة إلى صفحة العيادة
         </Link>
       </div>

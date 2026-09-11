@@ -42,9 +42,7 @@ export function LandingNav({
   return (
     <header
       className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
-        scrolled
-          ? "bg-primary/95 shadow-lg backdrop-blur-md"
-          : "bg-transparent"
+        scrolled ? "bg-primary/95 shadow-lg backdrop-blur-md" : "bg-transparent"
       }`}
     >
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
@@ -52,19 +50,13 @@ export function LandingNav({
         <Link href={homeHref} className="flex items-center gap-2">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={logoUrl}
-              alt={brandName}
-              className="h-9 w-9 rounded-xl object-cover"
-            />
+            <img src={logoUrl} alt={brandName} className="h-9 w-9 rounded-xl object-cover" />
           ) : (
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent">
               <Stethoscope className="h-5 w-5 text-white" />
             </div>
           )}
-          <span className="font-heading text-xl font-bold text-white">
-            {brandName}
-          </span>
+          <span className="font-heading text-xl font-bold text-white">{brandName}</span>
         </Link>
 
         {/* Desktop links */}

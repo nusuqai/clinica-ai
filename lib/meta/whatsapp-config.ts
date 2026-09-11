@@ -60,7 +60,7 @@ function toCredentials(row: {
 
 /** Credentials for a clinic, or null if it has not been configured yet. */
 export async function getClinicWhatsappCredentials(
-  clinicId: string,
+  clinicId: string
 ): Promise<ClinicWhatsappCredentials | null> {
   const row = await prisma.whatsappConfig.findUnique({ where: { clinicId } });
   return row ? toCredentials(row) : null;
@@ -71,9 +71,7 @@ export async function getClinicWhatsappCredentials(
  * how the shared endpoint routes each request to the owning clinic. Returns the
  * verify token too, so the GET handshake can validate against it.
  */
-export async function getWebhookConfigByToken(
-  webhookToken: string,
-): Promise<WebhookConfig | null> {
+export async function getWebhookConfigByToken(webhookToken: string): Promise<WebhookConfig | null> {
   const row = await prisma.whatsappConfig.findUnique({ where: { webhookToken } });
   if (!row) return null;
   return { ...toCredentials(row), verifyToken: row.verifyToken };
@@ -81,7 +79,7 @@ export async function getWebhookConfigByToken(
 
 /** Non-secret status for the settings page. */
 export async function getWhatsappConfigStatus(
-  clinicId: string,
+  clinicId: string
 ): Promise<WhatsappConfigStatus | null> {
   const row = await prisma.whatsappConfig.findUnique({
     where: { clinicId },
@@ -130,7 +128,7 @@ function generateVerifyToken(): string {
  */
 export async function saveWhatsappConfig(
   clinicId: string,
-  input: SaveWhatsappConfigInput,
+  input: SaveWhatsappConfigInput
 ): Promise<{ webhookToken: string; verifyToken: string }> {
   const phoneNumberId = input.phoneNumberId.trim();
   const wabaId = input.wabaId.trim();

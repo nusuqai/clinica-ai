@@ -71,8 +71,7 @@ export function DoctorsClient({
   const [filter, setFilter] = useState("الكل");
   const [bookTarget, setBookTarget] = useState<BookTarget | null>(null);
 
-  const filtered =
-    filter === "الكل" ? doctors : doctors.filter((d) => d.specialty === filter);
+  const filtered = filter === "الكل" ? doctors : doctors.filter((d) => d.specialty === filter);
 
   return (
     <div id="doctors" className="scroll-mt-20">
@@ -131,9 +130,7 @@ export function DoctorsClient({
                   <p className="truncate font-heading text-base font-bold text-text">
                     د. {doctor.profile.fullName}
                   </p>
-                  <p className="truncate font-sans text-sm text-accent">
-                    {doctor.specialty}
-                  </p>
+                  <p className="truncate font-sans text-sm text-accent">{doctor.specialty}</p>
                 </div>
               </div>
 
@@ -144,9 +141,7 @@ export function DoctorsClient({
                     <DollarSign className="h-4 w-4 shrink-0 text-accent" />
                     <span className="font-sans text-sm">
                       رسوم الكشف:{" "}
-                      <span className="font-medium text-text">
-                        {doctor.consultationFee} جنيه
-                      </span>
+                      <span className="font-medium text-text">{doctor.consultationFee} جنيه</span>
                     </span>
                   </div>
                 )}
@@ -160,9 +155,7 @@ export function DoctorsClient({
                 )}
                 <div className="flex items-center gap-2 text-text/60">
                   <Calendar className="h-4 w-4 shrink-0 text-accent" />
-                  <span className="font-sans text-sm">
-                    {doctor._count.appointments} موعد مكتمل
-                  </span>
+                  <span className="font-sans text-sm">{doctor._count.appointments} موعد مكتمل</span>
                 </div>
               </div>
 

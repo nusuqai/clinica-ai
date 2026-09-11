@@ -11,13 +11,11 @@ export default async function PlatformRequestsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-heading text-2xl font-bold text-foreground">
-        طلبات إنشاء العيادات
-      </h1>
+      <h1 className="mb-6 font-heading text-2xl font-bold text-foreground">طلبات إنشاء العيادات</h1>
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm font-sans">
+          <table className="w-full font-sans text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-muted-foreground">
                 <th className="px-4 py-3 text-start font-medium">مقدّم الطلب</th>
@@ -39,9 +37,7 @@ export default async function PlatformRequestsPage() {
                 <tr key={r.id} className="align-top hover:bg-muted/30">
                   <td className="px-4 py-3 font-medium text-foreground">
                     {r.requesterName}
-                    {r.note && (
-                      <p className="mt-1 text-xs text-muted-foreground">{r.note}</p>
-                    )}
+                    {r.note && <p className="mt-1 text-xs text-muted-foreground">{r.note}</p>}
                   </td>
                   <td className="px-4 py-3 text-foreground">
                     {r.requestedClinicName}

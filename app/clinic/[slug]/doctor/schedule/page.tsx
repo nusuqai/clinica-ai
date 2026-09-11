@@ -2,15 +2,9 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Activity, CalendarClock } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
-import {
-  listDoctorRules,
-  listDoctorSlots,
-  getDoctorByProfileId,
-} from "@/server/services/doctors";
+import { listDoctorRules, listDoctorSlots, getDoctorByProfileId } from "@/server/services/doctors";
 import { listBranches } from "@/server/services/branches";
-import DoctorRulesTab, {
-  type DoctorBranchOption,
-} from "./_components/doctor-rules-tab";
+import DoctorRulesTab, { type DoctorBranchOption } from "./_components/doctor-rules-tab";
 import DoctorSlotsTab from "./_components/doctor-slots-tab";
 
 const TABS = [
@@ -25,10 +19,7 @@ interface PageProps {
   searchParams: Promise<{ tab?: string }>;
 }
 
-export default async function DoctorSchedulePage({
-  params,
-  searchParams,
-}: PageProps) {
+export default async function DoctorSchedulePage({ params, searchParams }: PageProps) {
   const { slug } = await params;
   const ctx = await requireClinicMember(slug, ["DOCTOR"]);
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
@@ -45,25 +36,25 @@ export default async function DoctorSchedulePage({
       {/* Header */}
       <div className="mb-6">
         <h1 className="font-heading text-2xl font-bold text-foreground">جدول العمل</h1>
-        <p className="text-sm text-muted-foreground mt-1 font-sans">
+        <p className="mt-1 font-sans text-sm text-muted-foreground">
           أدِر قواعد توفرك ومواعيدك المتاحة
         </p>
       </div>
 
       {/* Tab nav */}
-      <div className="flex gap-1 mb-6 bg-muted/40 border border-border rounded-xl p-1 w-fit">
+      <div className="mb-6 flex w-fit gap-1 rounded-xl border border-border bg-muted/40 p-1">
         {TABS.map(({ key, label, icon: Icon }) => (
           <Link
             key={key}
             href={`${base}/doctor/schedule?tab=${key}`}
             className={[
-              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium font-sans transition-all",
+              "flex items-center gap-2 rounded-lg px-4 py-2 font-sans text-sm font-medium transition-all",
               activeTab === key
-                ? "bg-card shadow-sm text-foreground"
+                ? "bg-card text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             ].join(" ")}
           >
-            <Icon className="w-4 h-4" />
+            <Icon className="h-4 w-4" />
             {label}
           </Link>
         ))}
@@ -71,11 +62,7 @@ export default async function DoctorSchedulePage({
 
       {/* Tab content */}
       {activeTab === "rules" && (
-        <RulesContent
-          doctorId={doctor.id}
-          clinicId={ctx.clinic.id}
-          branchIds={doctor.branchIds}
-        />
+        <RulesContent doctorId={doctor.id} clinicId={ctx.clinic.id} branchIds={doctor.branchIds} />
       )}
       {activeTab === "slots" && <SlotsContent doctorId={doctor.id} />}
     </div>

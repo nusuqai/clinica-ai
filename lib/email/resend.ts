@@ -29,22 +29,18 @@ export type SendEmailInput = {
   replyTo?: string;
 };
 
-export type SendEmailResult =
-  | { ok: true; id: string | null }
-  | { ok: false; error: string };
+export type SendEmailResult = { ok: true; id: string | null } | { ok: false; error: string };
 
 /**
  * Send one transactional email. Never throws — callers get a Result so a mail
  * failure never breaks the surrounding action (approving a clinic must still
  * succeed even if the email bounces).
  */
-export async function sendEmail(
-  input: SendEmailInput,
-): Promise<SendEmailResult> {
+export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   const resend = getClient();
   if (!resend) {
     console.warn(
-      `[email] RESEND_API_KEY not set — skipped sending "${input.subject}" to ${input.to}`,
+      `[email] RESEND_API_KEY not set — skipped sending "${input.subject}" to ${input.to}`
     );
     return { ok: true, id: null };
   }

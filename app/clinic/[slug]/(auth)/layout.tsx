@@ -19,11 +19,11 @@ export default async function ClinicAuthLayout({
   if (!clinic) notFound();
 
   return (
-    <div className="min-h-screen flex" dir="rtl">
+    <div className="flex min-h-screen" dir="rtl">
       {/* Branding panel */}
-      <div className="hidden lg:flex lg:w-1/2 bg-primary relative flex-col justify-between p-12 overflow-hidden">
-        <div className="absolute top-[-80px] left-[-80px] w-72 h-72 rounded-full bg-accent/20 blur-[100px] pointer-events-none" />
-        <div className="absolute bottom-[-60px] right-[-60px] w-96 h-96 rounded-full bg-accent/10 blur-[120px] pointer-events-none" />
+      <div className="relative hidden flex-col justify-between overflow-hidden bg-primary p-12 lg:flex lg:w-1/2">
+        <div className="pointer-events-none absolute left-[-80px] top-[-80px] h-72 w-72 rounded-full bg-accent/20 blur-[100px]" />
+        <div className="pointer-events-none absolute bottom-[-60px] right-[-60px] h-96 w-96 rounded-full bg-accent/10 blur-[120px]" />
 
         <Link href={`/clinic/${slug}`} className="relative z-10 flex items-center gap-3">
           {clinic.logoUrl ? (
@@ -34,30 +34,26 @@ export default async function ClinicAuthLayout({
               className="h-12 w-12 rounded-xl object-cover"
             />
           ) : null}
-          <span className="font-heading text-2xl font-bold text-white">
-            {clinic.name}
-          </span>
+          <span className="font-heading text-2xl font-bold text-white">{clinic.name}</span>
         </Link>
 
-        <div className="relative z-10 flex-1 flex flex-col justify-center">
-          <h2 className="text-4xl font-heading font-bold text-white leading-tight mb-4">
+        <div className="relative z-10 flex flex-1 flex-col justify-center">
+          <h2 className="mb-4 font-heading text-4xl font-bold leading-tight text-white">
             مرحباً بك في
             <br />
             <span className="text-accent">{clinic.name}</span>
           </h2>
-          <p className="text-white/60 font-sans text-lg leading-relaxed max-w-sm">
+          <p className="max-w-sm font-sans text-lg leading-relaxed text-white/60">
             سجّل دخولك أو أنشئ حسابك لحجز مواعيدك ومتابعة رعايتك الصحية مع {clinic.name}.
           </p>
         </div>
 
-        <p className="relative z-10 text-white/30 text-sm font-sans">
-          مدعوم من ClinicaAI
-        </p>
+        <p className="relative z-10 font-sans text-sm text-white/30">مدعوم من ClinicaAI</p>
       </div>
 
       {/* Form panel */}
-      <div className="w-full lg:w-1/2 flex flex-col justify-center items-center bg-background relative overflow-hidden px-6 py-12">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-40 bg-accent/8 blur-[80px] pointer-events-none lg:hidden" />
+      <div className="relative flex w-full flex-col items-center justify-center overflow-hidden bg-background px-6 py-12 lg:w-1/2">
+        <div className="bg-accent/8 pointer-events-none absolute left-1/2 top-0 h-40 w-80 -translate-x-1/2 blur-[80px] lg:hidden" />
         {children}
       </div>
     </div>

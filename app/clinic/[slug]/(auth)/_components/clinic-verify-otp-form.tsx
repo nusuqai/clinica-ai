@@ -3,10 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { Loader2, ArrowLeft, ShieldCheck, RotateCw } from "lucide-react";
-import {
-  verifyClinicSignup,
-  resendClinicSignupOtp,
-} from "@/server/actions/auth";
+import { verifyClinicSignup, resendClinicSignupOtp } from "@/server/actions/auth";
 
 interface Props {
   slug: string;
@@ -16,12 +13,7 @@ interface Props {
   initialResendIn: number;
 }
 
-export function ClinicVerifyOtpForm({
-  slug,
-  clinicName,
-  email,
-  initialResendIn,
-}: Props) {
+export function ClinicVerifyOtpForm({ slug, clinicName, email, initialResendIn }: Props) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -67,18 +59,18 @@ export function ClinicVerifyOtpForm({
   }
 
   return (
-    <div className="w-full max-w-md relative z-10">
-      <div className="flex justify-center mb-6">
-        <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center">
-          <ShieldCheck className="w-8 h-8 text-accent" />
+    <div className="relative z-10 w-full max-w-md">
+      <div className="mb-6 flex justify-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10">
+          <ShieldCheck className="h-8 w-8 text-accent" />
         </div>
       </div>
 
       <div className="mb-8 text-center">
-        <h1 className="text-3xl font-heading font-bold text-primary mb-2">
+        <h1 className="mb-2 font-heading text-3xl font-bold text-primary">
           تأكيد البريد الإلكتروني
         </h1>
-        <p className="text-text/50 font-sans text-sm leading-relaxed">
+        <p className="font-sans text-sm leading-relaxed text-text/50">
           أدخل الرمز المكوّن من 8 أرقام الذي أرسلناه إلى
           <br />
           <span dir="ltr" className="font-semibold text-text/70">
@@ -90,14 +82,14 @@ export function ClinicVerifyOtpForm({
       </div>
 
       {error && (
-        <div className="mb-6 flex items-start gap-3 bg-red-50 text-red-600 px-4 py-3 rounded-2xl text-sm font-sans border border-red-100">
+        <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-sans text-sm text-red-600">
           <span className="mt-0.5 flex-shrink-0">⚠</span>
           <span>{error}</span>
         </div>
       )}
 
       {info && (
-        <div className="mb-6 flex items-start gap-3 bg-emerald-50 text-emerald-700 px-4 py-3 rounded-2xl text-sm font-sans border border-emerald-100">
+        <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
           <span className="mt-0.5 flex-shrink-0">✓</span>
           <span>{info}</span>
         </div>
@@ -106,7 +98,7 @@ export function ClinicVerifyOtpForm({
       <form className="space-y-5" onSubmit={handleSubmit}>
         <input type="hidden" name="email" value={email} />
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-text/70 font-sans text-center">
+          <label className="block text-center font-sans text-sm font-medium text-text/70">
             رمز التحقق
           </label>
           <input
@@ -118,7 +110,7 @@ export function ClinicVerifyOtpForm({
             maxLength={8}
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-            className="block w-full py-4 font-sans text-2xl tracking-[0.5em] text-center font-bold border border-text/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-white text-primary placeholder:text-text/20 transition-all"
+            className="block w-full rounded-2xl border border-text/10 bg-white py-4 text-center font-sans text-2xl font-bold tracking-[0.5em] text-primary transition-all placeholder:text-text/20 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
             placeholder="••••••••"
           />
         </div>
@@ -126,10 +118,10 @@ export function ClinicVerifyOtpForm({
         <button
           type="submit"
           disabled={isPending || code.length < 8}
-          className="w-full flex justify-center items-center gap-2.5 py-3.5 px-4 rounded-2xl text-sm font-semibold text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed font-sans shadow-lg shadow-primary/20"
+          className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-primary px-4 py-3.5 font-sans text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all duration-200 hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? (
-            <Loader2 className="animate-spin w-4.5 h-4.5" />
+            <Loader2 className="w-4.5 h-4.5 animate-spin" />
           ) : (
             <ShieldCheck className="w-4.5 h-4.5" />
           )}
@@ -138,32 +130,30 @@ export function ClinicVerifyOtpForm({
       </form>
 
       <div className="mt-6 text-center">
-        <p className="text-xs text-text/40 font-sans mb-2">
+        <p className="mb-2 font-sans text-xs text-text/40">
           لم يصلك الرمز؟ تحقّق من مجلد الرسائل غير المرغوبة.
         </p>
         <button
           type="button"
           onClick={handleResend}
           disabled={resendIn > 0 || resending}
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:text-accent/80 transition-colors disabled:text-text/30 disabled:cursor-not-allowed font-sans"
+          className="inline-flex items-center gap-1.5 font-sans text-sm font-semibold text-accent transition-colors hover:text-accent/80 disabled:cursor-not-allowed disabled:text-text/30"
         >
           {resending ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <RotateCw className="w-3.5 h-3.5" />
+            <RotateCw className="h-3.5 w-3.5" />
           )}
-          {resendIn > 0
-            ? `إعادة إرسال الرمز خلال ${resendIn}ث`
-            : "إعادة إرسال الرمز"}
+          {resendIn > 0 ? `إعادة إرسال الرمز خلال ${resendIn}ث` : "إعادة إرسال الرمز"}
         </button>
       </div>
 
       <div className="mt-8 text-center">
         <Link
           href={`/clinic/${slug}/register`}
-          className="inline-flex items-center gap-1.5 text-xs text-text/30 hover:text-text/60 transition-colors font-sans"
+          className="inline-flex items-center gap-1.5 font-sans text-xs text-text/30 transition-colors hover:text-text/60"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
+          <ArrowLeft className="h-3.5 w-3.5" />
           العودة إلى التسجيل
         </Link>
       </div>

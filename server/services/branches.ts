@@ -48,8 +48,7 @@ export interface CreateBranchInput {
   hours?: BranchHoursInput[];
 }
 
-export interface UpdateBranchInput
-  extends Partial<Omit<CreateBranchInput, "clinicId">> {
+export interface UpdateBranchInput extends Partial<Omit<CreateBranchInput, "clinicId">> {
   branchId: string;
   clinicId: string;
 }
@@ -64,7 +63,7 @@ const detailInclude = {
 
 export async function listBranches(
   clinicId: string,
-  options?: { activeOnly?: boolean },
+  options?: { activeOnly?: boolean }
 ): Promise<BranchWithDetails[]> {
   return prisma.branch.findMany({
     where: { clinicId, ...(options?.activeOnly ? { isActive: true } : {}) },
@@ -75,7 +74,7 @@ export async function listBranches(
 
 export async function getBranch(
   branchId: string,
-  clinicId?: string,
+  clinicId?: string
 ): Promise<BranchWithDetails | null> {
   return prisma.branch.findFirst({
     where: { id: branchId, ...(clinicId ? { clinicId } : {}) },
@@ -97,20 +96,15 @@ export async function getMainBranch(clinicId: string): Promise<Branch | null> {
 /** Branch opening window for one weekday. Null = no hours row configured. */
 export async function getBranchDayWindow(
   branchId: string,
-  dayOfWeek: DayOfWeek,
+  dayOfWeek: DayOfWeek
 ): Promise<{ isClosed: boolean; openTime: string | null; closeTime: string | null } | null> {
   const row = await prisma.branchHours.findUnique({
     where: { branchId_dayOfWeek: { branchId, dayOfWeek } },
   });
-  return row
-    ? { isClosed: row.isClosed, openTime: row.openTime, closeTime: row.closeTime }
-    : null;
+  return row ? { isClosed: row.isClosed, openTime: row.openTime, closeTime: row.closeTime } : null;
 }
 
-export async function doctorWorksAtBranch(
-  doctorId: string,
-  branchId: string,
-): Promise<boolean> {
+export async function doctorWorksAtBranch(doctorId: string, branchId: string): Promise<boolean> {
   const link = await prisma.doctorBranch.findUnique({
     where: { doctorId_branchId: { doctorId, branchId } },
   });
@@ -151,9 +145,7 @@ function hoursCreateData(branchId: string, hours: BranchHoursInput[], clinicId: 
   }));
 }
 
-export async function createBranch(
-  input: CreateBranchInput,
-): Promise<Result<{ id: string }>> {
+export async function createBranch(input: CreateBranchInput): Promise<Result<{ id: string }>> {
   try {
     const branch = await prisma.$transaction(async (tx) => {
       const b = await tx.branch.create({
@@ -172,10 +164,14 @@ export async function createBranch(
         },
       });
       if (input.phones?.length) {
-        await tx.branchPhone.createMany({ data: phoneCreateData(b.id, input.phones, input.clinicId) });
+        await tx.branchPhone.createMany({
+          data: phoneCreateData(b.id, input.phones, input.clinicId),
+        });
       }
       if (input.hours?.length) {
-        await tx.branchHours.createMany({ data: hoursCreateData(b.id, input.hours, input.clinicId) });
+        await tx.branchHours.createMany({
+          data: hoursCreateData(b.id, input.hours, input.clinicId),
+        });
       }
       return b;
     });
@@ -185,9 +181,7 @@ export async function createBranch(
   }
 }
 
-export async function updateBranch(
-  input: UpdateBranchInput,
-): Promise<Result<void>> {
+export async function updateBranch(input: UpdateBranchInput): Promise<Result<void>> {
   try {
     await prisma.$transaction(async (tx) => {
       await tx.branch.update({
@@ -235,10 +229,7 @@ export async function updateBranch(
   }
 }
 
-export async function setBranchActive(
-  branchId: string,
-  isActive: boolean,
-): Promise<Result<void>> {
+export async function setBranchActive(branchId: string, isActive: boolean): Promise<Result<void>> {
   try {
     await prisma.branch.update({ where: { id: branchId }, data: { isActive } });
     return ok(undefined);
@@ -266,10 +257,7 @@ export async function deleteBranch(branchId: string): Promise<Result<void>> {
 }
 
 /** Make `branchId` the clinic's single main branch. */
-export async function setMainBranch(
-  clinicId: string,
-  branchId: string,
-): Promise<Result<void>> {
+export async function setMainBranch(clinicId: string, branchId: string): Promise<Result<void>> {
   try {
     await prisma.$transaction([
       prisma.branch.updateMany({ where: { clinicId }, data: { isMain: false } }),
@@ -285,7 +273,7 @@ export async function setMainBranch(
 export async function setDoctorBranches(
   doctorId: string,
   branchIds: string[],
-  clinicId: string,
+  clinicId: string
 ): Promise<Result<void>> {
   try {
     const unique = [...new Set(branchIds)];
@@ -294,7 +282,7 @@ export async function setDoctorBranches(
         where: { doctorId, branchId: { notIn: unique.length ? unique : ["__none__"] } },
       }),
       prisma.doctorBranch.createMany({
-        data: unique.map((branchId) => ({ doctorId, branchId, clinicId: clinicId})),
+        data: unique.map((branchId) => ({ doctorId, branchId, clinicId: clinicId })),
         skipDuplicates: true,
       }),
     ]);

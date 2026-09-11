@@ -39,9 +39,7 @@ export function HowItWorksSection() {
                 <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-md shadow-primary/20">
                   <Icon className="h-7 w-7 text-accent" />
                 </div>
-                <div className="mb-2 font-heading text-sm font-bold text-accent">
-                  {`٠${i + 1}`}
-                </div>
+                <div className="mb-2 font-heading text-sm font-bold text-accent">{`٠${i + 1}`}</div>
                 <h3 className="font-heading text-lg font-bold text-text">{step.title}</h3>
                 <p className="mt-2 max-w-xs font-sans text-sm leading-relaxed text-text/60">
                   {step.description}

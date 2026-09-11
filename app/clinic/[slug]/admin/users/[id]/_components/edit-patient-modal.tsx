@@ -3,10 +3,7 @@
 import { useState, useTransition } from "react";
 import { Pencil, Loader2 } from "lucide-react";
 import Modal from "@/components/admin/modal";
-import {
-  updatePatientProfileAction,
-  changePatientEmailAction,
-} from "@/server/actions/admin";
+import { updatePatientProfileAction, changePatientEmailAction } from "@/server/actions/admin";
 
 interface Props {
   userId: string;
@@ -17,13 +14,7 @@ interface Props {
   claimed: boolean;
 }
 
-export default function EditPatientModal({
-  userId,
-  fullName,
-  phone,
-  email,
-  claimed,
-}: Props) {
+export default function EditPatientModal({ userId, fullName, phone, email, claimed }: Props) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -50,7 +41,10 @@ export default function EditPatientModal({
     startEmail(async () => {
       const res = await changePatientEmailAction(userId, formData);
       if (res?.error) setError(res.error);
-      else setInfo("تم إرسال رابط التأكيد إلى البريد الجديد. لن يتغيّر البريد حتى يضغط المريض الرابط.");
+      else
+        setInfo(
+          "تم إرسال رابط التأكيد إلى البريد الجديد. لن يتغيّر البريد حتى يضغط المريض الرابط."
+        );
     });
   }
 
@@ -66,20 +60,20 @@ export default function EditPatientModal({
           setInfo(null);
           setOpen(true);
         }}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium font-sans bg-primary text-white hover:bg-primary/90 transition-colors"
+        className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
       >
-        <Pencil className="w-4 h-4" />
+        <Pencil className="h-4 w-4" />
         تعديل
       </button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="تعديل بيانات المريض">
         {error && (
-          <div className="mb-4 bg-red-50 border border-red-100 text-red-600 rounded-xl px-4 py-3 text-sm font-sans">
+          <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 font-sans text-sm text-red-600">
             {error}
           </div>
         )}
         {info && (
-          <div className="mb-4 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-xl px-4 py-3 text-sm font-sans">
+          <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
             {info}
           </div>
         )}
@@ -104,9 +98,9 @@ export default function EditPatientModal({
           <button
             type="submit"
             disabled={savingProfile}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold font-sans bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-sans text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
           >
-            {savingProfile && <Loader2 className="w-4 h-4 animate-spin" />}
+            {savingProfile && <Loader2 className="h-4 w-4 animate-spin" />}
             حفظ البيانات
           </button>
         </form>
@@ -126,7 +120,7 @@ export default function EditPatientModal({
               placeholder="name@example.com"
               className={`${field} text-start`}
             />
-            <p className="text-xs text-muted-foreground font-sans mt-1.5">
+            <p className="mt-1.5 font-sans text-xs text-muted-foreground">
               {claimed
                 ? "سيُرسل رابط تأكيد إلى البريد الجديد، ولن يتغيّر قبل الضغط عليه."
                 : "هذا الحساب لم يُفعّل بريدَه بعد (مُسجّل عبر واتساب). أدخل بريداً لإرسال رابط التأكيد."}
@@ -135,9 +129,9 @@ export default function EditPatientModal({
           <button
             type="submit"
             disabled={savingEmail}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold font-sans border border-border text-foreground hover:bg-muted transition-colors disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 font-sans text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-60"
           >
-            {savingEmail && <Loader2 className="w-4 h-4 animate-spin" />}
+            {savingEmail && <Loader2 className="h-4 w-4 animate-spin" />}
             تغيير البريد (بتأكيد)
           </button>
         </form>
