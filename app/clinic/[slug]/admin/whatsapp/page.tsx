@@ -4,5 +4,5 @@ import { redirect } from "next/navigation";
 // Land on Templates by default so old links (and the sidebar parent) resolve.
 export default async function WhatsAppIndexPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  redirect(`/clinic/${slug}/admin/whatsapp/templates`);
+  redirect(`/admin/whatsapp/templates`);
 }

@@ -26,7 +26,7 @@ export default async function BookAppointmentPage() {
         doctors={serialisedDoctors}
         isAuthenticated={true}
         isPatient={true}
-        appointmentsHref={`/clinic/${clinic.slug}/dashboard/appointments`}
+        appointmentsHref={`/dashboard/appointments`}
       />
     </div>
   );

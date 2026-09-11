@@ -23,8 +23,7 @@ export default async function DoctorSchedulePage({ params, searchParams }: PageP
   const { slug } = await params;
   const ctx = await requireClinicMember(slug, ["DOCTOR"]);
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
-  if (!doctor) redirect(`/clinic/${slug}`);
-  const base = `/clinic/${slug}`;
+  if (!doctor) redirect(`/`);
 
   const { tab } = await searchParams;
   const activeTab: Tab = (TABS.map((t) => t.key) as string[]).includes(tab ?? "")
@@ -46,7 +45,7 @@ export default async function DoctorSchedulePage({ params, searchParams }: PageP
         {TABS.map(({ key, label, icon: Icon }) => (
           <Link
             key={key}
-            href={`${base}/doctor/schedule?tab=${key}`}
+            href={`/doctor/schedule?tab=${key}`}
             className={[
               "flex items-center gap-2 rounded-lg px-4 py-2 font-sans text-sm font-medium transition-all",
               activeTab === key

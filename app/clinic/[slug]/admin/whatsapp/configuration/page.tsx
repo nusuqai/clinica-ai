@@ -23,7 +23,7 @@ export default async function WhatsAppConfigurationPage({
       />
       <div className="max-w-xl space-y-4">
         <Link
-          href={`/clinic/${slug}/admin/whatsapp/guide`}
+          href={`/admin/whatsapp/guide`}
           className="inline-flex items-center gap-2 text-sm text-accent hover:underline"
         >
           <BookOpen className="h-4 w-4" />

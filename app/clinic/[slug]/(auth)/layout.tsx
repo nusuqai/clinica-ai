@@ -25,7 +25,7 @@ export default async function ClinicAuthLayout({
         <div className="pointer-events-none absolute left-[-80px] top-[-80px] h-72 w-72 rounded-full bg-accent/20 blur-[100px]" />
         <div className="pointer-events-none absolute bottom-[-60px] right-[-60px] h-96 w-96 rounded-full bg-accent/10 blur-[120px]" />
 
-        <Link href={`/clinic/${slug}`} className="relative z-10 flex items-center gap-3">
+        <Link href={`/`} className="relative z-10 flex items-center gap-3">
           {clinic.logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img

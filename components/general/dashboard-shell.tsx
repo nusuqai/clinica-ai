@@ -12,8 +12,6 @@ export type DashboardRole = "patient" | "doctor" | "admin";
 interface DashboardShellProps {
   children: React.ReactNode;
   role: DashboardRole;
-  /** URL prefix for this clinic, e.g. `/clinic/sunrise-dental`. */
-  basePath: string;
   userFullName: string;
   userEmail: string;
   /** Admin only — conversation IDs with an unresolved escalation on load. */
@@ -24,7 +22,6 @@ interface DashboardShellProps {
 export default function DashboardShell({
   children,
   role,
-  basePath,
   userFullName,
   userEmail,
   clinicId,
@@ -33,17 +30,10 @@ export default function DashboardShell({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Nav hrefs are clinic-relative; prefix them with this clinic's base path.
-  // The "/" home link (back to the public site) is left absolute.
-  const prefix = (href: string) => (href === "/" ? "/" : `${basePath}${href}`);
-  const navItems = navConfig[role].map((item) => ({
-    ...item,
-    href: prefix(item.href),
-    children: item.children?.map((child) => ({
-      ...child,
-      href: prefix(child.href),
-    })),
-  }));
+  // Each clinic is served from its own subdomain, so the nav config's hrefs
+  // ("/admin", "/dashboard", "/" …) are already correct as-is — no clinic
+  // prefix to apply.
+  const navItems = navConfig[role];
   const { label: roleLabel, pageTitle } = roleMeta[role];
 
   const shell = (

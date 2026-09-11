@@ -19,7 +19,6 @@ interface PageProps {
 export default async function UserDetailPage({ params }: PageProps) {
   const { slug, id } = await params;
   const { clinic } = await requireActiveMember(["ADMIN"]);
-  const base = `/clinic/${slug}`;
 
   const user = await getClinicUser(id, clinic.id);
   if (!user) notFound();
@@ -33,7 +32,7 @@ export default async function UserDetailPage({ params }: PageProps) {
   return (
     <div>
       <Link
-        href={`${base}/admin/users`}
+        href={`/admin/users`}
         className="mb-6 inline-flex items-center gap-1.5 font-sans text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowRight className="h-4 w-4" />

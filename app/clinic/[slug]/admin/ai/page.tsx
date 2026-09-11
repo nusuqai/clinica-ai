@@ -17,7 +17,7 @@ export default async function AiSettingsPage({ params }: { params: Promise<{ slu
         subtitle="تحكّم في الرد الآلي على العملاء وتابع رصيد الاستخدام"
         action={
           <Link
-            href={`/clinic/${slug}/admin/ai/usage`}
+            href={`/admin/ai/usage`}
             className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground hover:bg-muted"
           >
             <BarChart3 className="h-4 w-4" />

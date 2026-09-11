@@ -12,7 +12,6 @@ export default async function PatientDashboardPage({
 }) {
   const { slug } = await params;
   const ctx = await requireClinicMember(slug, ["PATIENT"]);
-  const base = `/clinic/${slug}`;
 
   const [stats, upcoming] = await Promise.all([
     getPatientStats(ctx.user.id),
@@ -72,7 +71,7 @@ export default async function PatientDashboardPage({
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <h2 className="font-heading font-semibold text-foreground">المواعيد القادمة</h2>
           <Link
-            href={`${base}/dashboard/appointments`}
+            href={`/dashboard/appointments`}
             className="font-sans text-sm text-primary hover:underline"
           >
             عرض الكل
@@ -83,7 +82,7 @@ export default async function PatientDashboardPage({
             <CalendarDays className="h-10 w-10 text-muted-foreground/40" />
             <p className="font-sans text-sm text-muted-foreground">لا توجد مواعيد قادمة</p>
             <Link
-              href={`${base}/dashboard/book`}
+              href={`/dashboard/book`}
               className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white hover:opacity-90"
             >
               <CalendarPlus className="h-4 w-4" />
@@ -140,7 +139,7 @@ export default async function PatientDashboardPage({
       {/* Quick actions */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Link
-          href={`${base}/dashboard/book`}
+          href={`/dashboard/book`}
           className="group flex items-center gap-4 rounded-2xl border border-border bg-card p-5 transition-colors hover:border-primary/40 hover:bg-primary/5"
         >
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-white">
@@ -152,7 +151,7 @@ export default async function PatientDashboardPage({
           </div>
         </Link>
         <Link
-          href={`${base}/dashboard/appointments`}
+          href={`/dashboard/appointments`}
           className="group flex items-center gap-4 rounded-2xl border border-border bg-card p-5 transition-colors hover:border-primary/40 hover:bg-primary/5"
         >
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-white">

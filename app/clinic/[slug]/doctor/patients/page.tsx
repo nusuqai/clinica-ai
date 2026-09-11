@@ -13,7 +13,7 @@ export default async function DoctorPatientsPage({
   const { slug } = await params;
   const ctx = await requireClinicMember(slug, ["DOCTOR"]);
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
-  if (!doctor) redirect(`/clinic/${slug}/doctor`);
+  if (!doctor) redirect(`/doctor`);
 
   const patients = await getDoctorPatients(doctor.id);
 

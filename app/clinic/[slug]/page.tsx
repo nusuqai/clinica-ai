@@ -27,9 +27,8 @@ export default async function ClinicLandingPage({ params }: { params: Promise<{ 
   });
   if (!clinic) notFound();
 
-  const base = `/clinic/${slug}`;
-  const loginHref = `${base}/login`;
-  const registerHref = `${base}/register`;
+  const loginHref = `/login`;
+  const registerHref = `/register`;
 
   // ── Auth check (who is viewing) ─────────────────────────────────────────────
   const supabase = await createClient();
@@ -51,7 +50,7 @@ export default async function ClinicLandingPage({ params }: { params: Promise<{ 
     if (membership) {
       memberRole = membership.role;
       isPatient = membership.role === Role.PATIENT;
-      dashboardHref = roleHome(slug, membership.role);
+      dashboardHref = roleHome(membership.role);
     }
   }
 
@@ -95,7 +94,7 @@ export default async function ClinicLandingPage({ params }: { params: Promise<{ 
         dashboardHref={dashboardHref}
         brandName={clinic.name}
         logoUrl={clinic.logoUrl}
-        homeHref={base}
+        homeHref="/"
         loginHref={loginHref}
         registerHref={registerHref}
       />

@@ -19,7 +19,6 @@ export default async function AdminLayout({
   return (
     <DashboardShell
       role="admin"
-      basePath={`/clinic/${slug}`}
       userFullName={ctx.user.profile.fullName || ctx.user.email || "مسؤول"}
       userEmail={ctx.user.email}
       initialUnresolvedEscalationConversationIds={initialUnresolvedEscalationConversationIds}

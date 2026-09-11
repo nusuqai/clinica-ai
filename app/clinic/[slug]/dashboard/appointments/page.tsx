@@ -17,7 +17,6 @@ interface PageProps {
 export default async function PatientAppointmentsPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
   const ctx = await requireClinicMember(slug, ["PATIENT"]);
-  const base = `/clinic/${slug}`;
 
   const { status } = await searchParams;
   const filterStatus = Object.keys(APPOINTMENT_STATUS_LABELS).includes(status ?? "")
@@ -35,7 +34,7 @@ export default async function PatientAppointmentsPage({ params, searchParams }: 
         subtitle={`${appointments.length} موعد`}
         action={
           <Link
-            href={`${base}/dashboard/book`}
+            href={`/dashboard/book`}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-sans text-sm font-medium text-white hover:opacity-90"
           >
             <CalendarPlus className="h-4 w-4" />
@@ -47,7 +46,7 @@ export default async function PatientAppointmentsPage({ params, searchParams }: 
       {/* Filter pills */}
       <div className="mb-6 flex flex-wrap gap-2">
         <a
-          href={`${base}/dashboard/appointments`}
+          href={`/dashboard/appointments`}
           className={[
             "rounded-full px-3 py-1.5 font-sans text-sm font-medium transition-colors",
             !filterStatus
@@ -61,7 +60,7 @@ export default async function PatientAppointmentsPage({ params, searchParams }: 
           ([val, label]) => (
             <a
               key={val}
-              href={`${base}/dashboard/appointments?status=${val}`}
+              href={`/dashboard/appointments?status=${val}`}
               className={[
                 "rounded-full px-3 py-1.5 font-sans text-sm font-medium transition-colors",
                 filterStatus === val
@@ -81,7 +80,7 @@ export default async function PatientAppointmentsPage({ params, searchParams }: 
             <CalendarDays className="h-10 w-10 text-muted-foreground/40" />
             <p className="font-sans text-sm text-muted-foreground">لا توجد مواعيد</p>
             <Link
-              href={`${base}/dashboard/book`}
+              href={`/dashboard/book`}
               className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white hover:opacity-90"
             >
               <CalendarPlus className="h-4 w-4" />

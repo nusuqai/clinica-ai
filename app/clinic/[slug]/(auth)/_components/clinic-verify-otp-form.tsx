@@ -150,7 +150,7 @@ export function ClinicVerifyOtpForm({ slug, clinicName, email, initialResendIn }
 
       <div className="mt-8 text-center">
         <Link
-          href={`/clinic/${slug}/register`}
+          href={`/register`}
           className="inline-flex items-center gap-1.5 font-sans text-xs text-text/30 transition-colors hover:text-text/60"
         >
           <ArrowLeft className="h-3.5 w-3.5" />

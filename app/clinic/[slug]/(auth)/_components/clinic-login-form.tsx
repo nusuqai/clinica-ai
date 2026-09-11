@@ -175,7 +175,7 @@ export function ClinicLoginForm({ slug, clinicName }: Props) {
       <p className="text-center font-sans text-sm text-text/50">
         ليس لديك حساب في {clinicName}؟{" "}
         <Link
-          href={`/clinic/${slug}/register`}
+          href={`/register`}
           className="font-semibold text-accent transition-colors hover:text-accent/80"
         >
           أنشئ حساباً جديداً
@@ -184,7 +184,7 @@ export function ClinicLoginForm({ slug, clinicName }: Props) {
 
       <div className="mt-8 text-center">
         <Link
-          href={`/clinic/${slug}`}
+          href={`/`}
           className="inline-flex items-center gap-1.5 font-sans text-xs text-text/30 transition-colors hover:text-text/60"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
