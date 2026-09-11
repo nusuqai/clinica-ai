@@ -1,0 +1,16 @@
+# Abort the commit if ANY command below exits non-zero.
+set -e
+
+echo "🎨  Formatting staged files (prettier + prisma format)..."
+npx lint-staged
+
+echo "🧬  Validating Prisma schema..."
+npm run prisma:validate
+
+echo "🔎  Type-checking (tsc --noEmit)..."
+npm run typecheck
+
+echo "🧹  Linting (next lint)..."
+npm run lint
+
+echo "✅  All pre-commit checks passed."

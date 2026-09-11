@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+build
+dist
+coverage
+legacy
+agent
+prisma/migrations
+package-lock.json
+*.tsbuildinfo
+next-env.d.ts
+.env*
