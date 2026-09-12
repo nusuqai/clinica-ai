@@ -35,7 +35,15 @@ const ACTIVE_CLINIC_COOKIE = "active-clinic";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const tenant = tenantFromHost(request.headers.get("host"));
+  // `x-forwarded-host` before `host`: when a server action calls redirect() to an
+  // app-relative path, Next re-fetches that path internally to stream it back with
+  // the action response, and that fetch goes to the server's own origin — so `host`
+  // arrives as the internal origin and the clinic subdomain is gone. The original
+  // public host survives on `x-forwarded-host`. Without this, the first render after
+  // login is never rewritten onto /clinic/{slug}/… and 404s until the user refreshes.
+  const tenant = tenantFromHost(
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host")
+  );
 
   // Legacy path-based URLs (/clinic/{slug}/…) move to the clinic's subdomain.
   // Done before any auth work so an unauthenticated visitor lands on the right
