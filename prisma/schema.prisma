@@ -785,6 +785,13 @@ model ClinicAppointmentTemplate {
   // appointment_time, clinic_name, branch_name, branch_address, order_number, …).
   // variableMap[0] fills {{1}}, variableMap[1] fills {{2}}, and so on.
   variableMap  String[]
+  // Snapshot of the template's text (header / body / footer with {{n}}
+  // placeholders) taken from Meta when the admin saves the binding. Lets the
+  // sender render the exact message locally — for the admin inbox thread —
+  // without a per-send Graph API call to fetch the template body.
+  bodyText     String                     @default("")
+  headerText   String                     @default("")
+  footerText   String                     @default("")
   enabled      Boolean                    @default(true)
   // CONFIRM_REMINDER: how long before the visit to send (minutes; 1440 = 24h).
   leadMinutes  Int                        @default(1440)

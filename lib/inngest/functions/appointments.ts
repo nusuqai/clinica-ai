@@ -6,6 +6,7 @@ import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { sendTemplateMessage, WhatsAppApiError, type WhatsAppRecipient } from "@/lib/meta/whatsapp";
 import { effectiveEndUtc, effectiveStartUtc } from "@/lib/appointment-timing";
 import { buildTemplateVariables, buildTokenContext } from "@/lib/appointment-templates";
+import { fillTemplate } from "@/lib/meta/template-render";
 
 /**
  * Appointment automation engine.
@@ -269,10 +270,33 @@ async function getWhatsappThread(clinicId: string, patient: { id: string; phone:
   });
 }
 
+// Fallback labels for the inbox thread when a binding has no snapshotted text
+// (legacy rows saved before bodyText was captured).
 const PURPOSE_LABEL = {
   CONFIRM_REMINDER: "تذكير بالموعد — برجاء تأكيد الحجز",
   FEEDBACK_REQUEST: "طلب تقييم بعد الزيارة",
 } as const;
+
+/**
+ * Renders the exact message text from the binding's snapshotted template
+ * (header / body / footer), filling the body's {{n}} placeholders with the
+ * resolved variables — so the admin inbox shows what the patient received,
+ * with no Graph API call. Header/footer are static (Meta keeps them variable-
+ * free in our create flow), so only the body is filled.
+ */
+function renderBindingText(
+  binding: { bodyText: string; headerText: string; footerText: string },
+  variables: string[],
+  fallback: string
+): string {
+  if (!binding.bodyText.trim()) return fallback;
+  const parts = [
+    binding.headerText.trim(),
+    fillTemplate(binding.bodyText, variables).trim(),
+    binding.footerText.trim(),
+  ].filter(Boolean);
+  return parts.join("\n\n");
+}
 
 export const appointmentNotify = inngest.createFunction(
   {
@@ -362,7 +386,7 @@ export const appointmentNotify = inngest.createFunction(
             clinicId,
             conversationId: thread.id,
             senderType: SenderType.AGENT,
-            content: PURPOSE_LABEL[purpose],
+            content: renderBindingText(binding, variables, PURPOSE_LABEL[purpose]),
             metadata: {
               automation: purpose,
               appointmentId,

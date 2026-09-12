@@ -216,24 +216,35 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "confirm_appointment",
         description:
-          "أكّد موعداً معلّقاً (قيد الانتظار) للمريض الحالي بعد رسالة تذكير الحجز — يحوّل حالته إلى مؤكّد.",
-        schema: z.object({ appointmentId: z.string() }),
+          "أكّد موعداً معلّقاً (قيد الانتظار) للمريض الحالي بعد رسالة تذكير الحجز — يحوّل حالته إلى مؤكّد. إن لم يُحدَّد معرّف الموعد، يُستنتج آخر موعد معلّق للمريض (يُفضَّل الذي أُرسل له تذكير).",
+        schema: z.object({
+          appointmentId: z
+            .string()
+            .nullable()
+            .describe("معرّف الموعد (اختياري — يُستنتج الموعد المعلّق تلقائياً إن تُرك فارغاً)"),
+        }),
       },
       async ({ appointmentId }) => {
-        const appt = await prisma.appointment.findUnique({
-          where: { id: appointmentId },
-          select: { patientId: true, status: true },
-        });
-        if (!appt || appt.patientId !== patientId)
-          return { error: "الموعد غير موجود أو لا يخصك" };
-        if (appt.status !== AppointmentStatus.PENDING)
-          return { error: "لا يمكن تأكيد هذا الموعد (ليس في حالة انتظار)" };
+        // With an id: it must be the patient's own PENDING appointment. Without
+        // one (a bare "نعم"/button reply carries no id): resolve the patient's
+        // pending appointment, preferring the one a reminder was sent for.
+        const appt = appointmentId
+          ? await prisma.appointment.findFirst({
+              where: { id: appointmentId, patientId, status: AppointmentStatus.PENDING },
+              select: { id: true },
+            })
+          : await prisma.appointment.findFirst({
+              where: { patientId, status: AppointmentStatus.PENDING },
+              orderBy: [{ reminderSentAt: "desc" }, { createdAt: "desc" }],
+              select: { id: true },
+            });
+        if (!appt) return { error: "لا يوجد موعد بانتظار التأكيد" };
         const res = await AppointmentService.updateAppointmentStatus(
-          appointmentId,
+          appt.id,
           AppointmentStatus.CONFIRMED,
         );
         if (!res.ok) return { error: res.error };
-        return await appointmentCard(appointmentId);
+        return await appointmentCard(appt.id);
       },
     ),
     jsonTool(

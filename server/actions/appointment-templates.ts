@@ -130,6 +130,14 @@ export async function saveAppointmentTemplateBindingAction(
   const leadMinutes = Math.max(0, Math.round(input.leadMinutes ?? 1440));
   const delayMinutes = Math.max(0, Math.round(input.delayMinutes ?? 120));
 
+  // Snapshot the template text so the sender can render the exact message
+  // locally (for the inbox thread) without a per-send Graph API call.
+  const snapshot = {
+    bodyText: template.bodyText,
+    headerText: template.headerText,
+    footerText: template.footerText,
+  };
+
   await prisma.clinicAppointmentTemplate.upsert({
     where: { clinicId_purpose: { clinicId: auth.ctx.clinic.id, purpose: input.purpose } },
     create: {
@@ -141,6 +149,7 @@ export async function saveAppointmentTemplateBindingAction(
       enabled: input.enabled,
       leadMinutes,
       delayMinutes,
+      ...snapshot,
     },
     update: {
       templateName: input.templateName,
@@ -149,6 +158,7 @@ export async function saveAppointmentTemplateBindingAction(
       enabled: input.enabled,
       leadMinutes,
       delayMinutes,
+      ...snapshot,
     },
   });
 
