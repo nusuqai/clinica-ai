@@ -21,8 +21,11 @@ const PUBLIC_ROUTES = [
 const PUBLIC_TENANT_ROUTES = ["/", "/login", "/register", "/verify-otp", "/forgot-password"];
 
 // Routes that accept unauthenticated guest requests (no Supabase session at
-// all) — the route handler itself scopes what a guest can do.
-const PUBLIC_API_ROUTES = ["/api/meta/whatsapp/webhook", "/api/agent/chat"];
+// all) — the route handler itself scopes what a guest can do. `/api/inngest` is
+// called by Inngest (sync + function invocations) with no Supabase session; it
+// is secured instead by Inngest's request-signature verification (signing key),
+// so it must bypass the auth redirect or the sync request lands on /login.
+const PUBLIC_API_ROUTES = ["/api/meta/whatsapp/webhook", "/api/agent/chat", "/api/inngest"];
 
 // Host-agnostic paths, never rewritten onto a clinic: API handlers scope
 // themselves (the WhatsApp webhook identifies its clinic by token), and emailed

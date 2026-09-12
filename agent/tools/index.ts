@@ -3,6 +3,7 @@ import { Channel } from "@prisma/client";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import type { AgentContext } from "@/agent/types";
 import { commonTools } from "./common";
+import { knowledgeTools } from "./knowledge";
 import { patientTools } from "./patient";
 import { doctorTools } from "./doctor";
 import { adminTools } from "./admin";
@@ -15,7 +16,11 @@ import { claimWebLoginTool } from "./claim";
  * never constructed, so the model cannot see or call them.
  */
 export function getToolsForRole(ctx: AgentContext): DynamicStructuredTool[] {
-  const base = [...commonTools(ctx.clinicId), escalationTool(ctx)];
+  const base = [
+    ...commonTools(ctx.clinicId),
+    ...knowledgeTools(ctx.clinicId),
+    escalationTool(ctx),
+  ];
 
   // Claiming website access (attach email + set-password link) only makes sense
   // on WhatsApp — a web user is already logged in.
