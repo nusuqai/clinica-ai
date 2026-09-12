@@ -43,12 +43,7 @@ import type {
   MessageItem,
   ConversationDetail,
 } from "@/server/services/messages";
-import {
-  fetchConversations,
-  fetchConversationDetail,
-  markConversationRead,
-} from "@/server/actions/conversations";
-import { string } from "zod";
+import { fetchConversations, fetchConversationDetail } from "@/server/actions/conversations";
 interface ChatInboxProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationDetail | null;
@@ -425,9 +420,14 @@ export default function ChatInbox({
     conversationsRef.current = conversations;
   }, [conversations]);
 
-  // Opening a conversation reads it — zero the badge immediately (optimistic)
-  // and persist server-side so a reload or another admin sees it too. Only
-  // fires when there's actually something unread, so it's a no-op on repeat
+  // Opening a conversation reads it — zero the badge immediately (optimistic).
+  // Server-side persistence is handled by the page render itself (it calls
+  // markConversationRead whenever it renders with an `id`), so we deliberately
+  // do NOT fire a second server action here: doing so races the RSC navigation
+  // that router.push kicks off, and the concurrent pair can trip Supabase's
+  // single-use refresh-token rotation, logging the admin out mid-select and
+  // bouncing them to the home page. One request per select keeps auth stable.
+  // Only runs when there's actually something unread, so it's a no-op on repeat
   // visits to an already-read thread.
   useEffect(() => {
     if (!activeId) return;
@@ -435,9 +435,6 @@ export default function ChatInbox({
     if (!current || current.unreadCount === 0) return;
 
     setConversations((prev) => prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)));
-    void markConversationRead(activeId).catch((err) => {
-      console.error("Failed to mark conversation as read:", err);
-    });
   }, [activeId]);
 
   return (
