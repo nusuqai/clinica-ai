@@ -44,7 +44,6 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
     : "appointments";
 
   const { clinic } = await requireActiveMember(["ADMIN"]);
-  const base = `/clinic/${slug}`;
   const doctor = await getDoctor(id, clinic.id);
   if (!doctor) notFound();
 
@@ -81,7 +80,7 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
     <div>
       {/* Back */}
       <Link
-        href={`${base}/admin/doctors`}
+        href={`/admin/doctors`}
         className="mb-6 inline-flex items-center gap-1.5 font-sans text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowRight className="h-4 w-4" />
@@ -189,7 +188,7 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
         {TABS.map(({ key, label, icon: Icon }) => (
           <Link
             key={key}
-            href={`${base}/admin/doctors/${id}?tab=${key}`}
+            href={`/admin/doctors/${id}?tab=${key}`}
             className={[
               "flex items-center gap-2 rounded-lg px-4 py-2 font-sans text-sm font-medium transition-all",
               activeTab === key

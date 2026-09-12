@@ -65,7 +65,7 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
           </div>
           {needsLogin && (
             <Link
-              href={`/clinic/${slug}/login`}
+              href={`/login`}
               className="self-start font-semibold text-accent transition-colors hover:text-accent/80"
             >
               الذهاب إلى تسجيل الدخول ←
@@ -207,7 +207,7 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
       <p className="text-center font-sans text-sm text-text/50">
         لديك حساب بالفعل؟{" "}
         <Link
-          href={`/clinic/${slug}/login`}
+          href={`/login`}
           className="font-semibold text-accent transition-colors hover:text-accent/80"
         >
           سجل دخولك
@@ -216,7 +216,7 @@ export function ClinicRegisterForm({ slug, clinicName, initialPhone = "" }: Prop
 
       <div className="mt-8 text-center">
         <Link
-          href={`/clinic/${slug}`}
+          href={`/`}
           className="inline-flex items-center gap-1.5 font-sans text-xs text-text/30 transition-colors hover:text-text/60"
         >
           <ArrowLeft className="h-3.5 w-3.5" />

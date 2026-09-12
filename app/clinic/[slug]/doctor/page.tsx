@@ -15,9 +15,8 @@ export default async function DoctorDashboardPage({
   const { slug } = await params;
   const ctx = await requireClinicMember(slug, ["DOCTOR"]);
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
-  if (!doctor) redirect(`/clinic/${slug}`);
+  if (!doctor) redirect(`/`);
 
-  const base = `/clinic/${slug}`;
   const [stats, upcoming] = await Promise.all([
     getDoctorStats(doctor.id),
     getDoctorAppointments(doctor.id, { upcoming: true, limit: 5 }),
@@ -68,7 +67,7 @@ export default async function DoctorDashboardPage({
             </p>
           </div>
           <Link
-            href={`${base}/doctor/appointments`}
+            href={`/doctor/appointments`}
             className="inline-flex items-center gap-1 font-sans text-sm font-medium text-primary hover:underline"
           >
             عرض الكل
@@ -131,12 +130,12 @@ export default async function DoctorDashboardPage({
       {/* Quick links */}
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
         <QuickLink
-          href={`${base}/doctor/appointments`}
+          href={`/doctor/appointments`}
           label="إدارة المواعيد"
           icon={CalendarDays}
         />
-        <QuickLink href={`${base}/doctor/schedule`} label="جدول العمل" icon={Clock} />
-        <QuickLink href={`${base}/doctor/patients`} label="قائمة المرضى" icon={Users} />
+        <QuickLink href={`/doctor/schedule`} label="جدول العمل" icon={Clock} />
+        <QuickLink href={`/doctor/patients`} label="قائمة المرضى" icon={Users} />
       </div>
     </div>
   );

@@ -77,7 +77,7 @@ export default async function AdminDoctorsPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <Link
-                        href={`/clinic/${clinic.slug}/admin/doctors/${doctor.id}`}
+                        href={`/admin/doctors/${doctor.id}`}
                         title="عرض التفاصيل"
                         className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
                       >

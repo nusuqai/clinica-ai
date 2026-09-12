@@ -9,7 +9,7 @@ export default async function DoctorProfilePage({ params }: { params: Promise<{ 
   const { slug } = await params;
   const ctx = await requireClinicMember(slug, ["DOCTOR"]);
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
-  if (!doctor) redirect(`/clinic/${slug}/doctor`);
+  if (!doctor) redirect(`/doctor`);
   const specialties = await listSpecialtyOptions(ctx.clinic.id);
 
   const initials = doctor.profile.fullName

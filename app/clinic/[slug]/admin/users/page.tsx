@@ -9,7 +9,6 @@ import { RoleBadge } from "@/components/admin/status-badge";
 export default async function AdminUsersPage() {
   const { clinic } = await requireActiveMember(["ADMIN"]);
   const users = await listUsers(clinic.id);
-  const base = `/clinic/${clinic.slug}`;
 
   return (
     <div>
@@ -44,7 +43,7 @@ export default async function AdminUsersPage() {
                 <tr key={user.id} className="transition-colors hover:bg-muted/30">
                   <td className="px-4 py-3 font-medium">
                     <Link
-                      href={`${base}/admin/users/${user.id}`}
+                      href={`/admin/users/${user.id}`}
                       className="text-foreground transition-colors hover:text-primary"
                     >
                       {user.fullName}
@@ -64,7 +63,7 @@ export default async function AdminUsersPage() {
                   </td>
                   <td className="px-4 py-3 text-end">
                     <Link
-                      href={`${base}/admin/users/${user.id}`}
+                      href={`/admin/users/${user.id}`}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 font-sans text-xs font-medium text-foreground transition-colors hover:bg-muted"
                     >
                       <Eye className="h-3.5 w-3.5" />

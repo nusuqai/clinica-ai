@@ -17,8 +17,7 @@ export default async function DoctorAppointmentsPage({ params, searchParams }: P
   const { slug } = await params;
   const ctx = await requireClinicMember(slug, ["DOCTOR"]);
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
-  if (!doctor) redirect(`/clinic/${slug}`);
-  const base = `/clinic/${slug}`;
+  if (!doctor) redirect(`/`);
 
   const { status } = await searchParams;
   const filterStatus = Object.keys(APPOINTMENT_STATUS_LABELS).includes(status ?? "")
@@ -42,7 +41,7 @@ export default async function DoctorAppointmentsPage({ params, searchParams }: P
       {/* Status filter pills */}
       <div className="mb-6 flex flex-wrap gap-2">
         <a
-          href={`${base}/doctor/appointments`}
+          href={`/doctor/appointments`}
           className={[
             "rounded-full px-3 py-1.5 font-sans text-sm font-medium transition-colors",
             !filterStatus
@@ -56,7 +55,7 @@ export default async function DoctorAppointmentsPage({ params, searchParams }: P
           ([val, label]) => (
             <a
               key={val}
-              href={`${base}/doctor/appointments?status=${val}`}
+              href={`/doctor/appointments?status=${val}`}
               className={[
                 "rounded-full px-3 py-1.5 font-sans text-sm font-medium transition-colors",
                 filterStatus === val

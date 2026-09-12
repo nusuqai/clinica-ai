@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { clinicUrl } from "@/lib/clinic-url";
 import { Role } from "@prisma/client";
 
 // Cookie the middleware sets from the /clinic/{slug} URL, so server actions
@@ -106,7 +107,7 @@ export async function requireClinicMember(slug: string, roles?: Role[]): Promise
   const role: Role = membership?.role ?? Role.ADMIN;
 
   if (roles && !roles.includes(role)) {
-    redirect(roleHome(clinic.slug, role));
+    redirect(roleHome(role));
   }
 
   const { isActive: _isActive, ...clinicSummary } = clinic;
@@ -169,22 +170,30 @@ export async function getActiveClinicContext(): Promise<ClinicContext | null> {
 export async function requireActiveMember(roles?: Role[]): Promise<ClinicContext> {
   const ctx = await getActiveClinicContext();
   if (!ctx) redirect("/login");
-  if (roles && !roles.includes(ctx.role)) redirect(roleHome(ctx.clinic.slug, ctx.role));
+  if (roles && !roles.includes(ctx.role)) redirect(roleHome(ctx.role));
   return ctx;
 }
 
 // ─── Redirect helpers ─────────────────────────────────────────────────────────
 
-export function roleHome(slug: string, role: Role): string {
-  if (role === Role.ADMIN) return `/clinic/${slug}/admin`;
-  if (role === Role.DOCTOR) return `/clinic/${slug}/doctor`;
-  return `/clinic/${slug}/dashboard`;
+/**
+ * A role's home, relative to the clinic's own host. Every clinic is served from
+ * its own subdomain (see lib/clinic-url.ts), so no slug belongs in the path —
+ * use clinicUrl(slug, roleHome(role)) when the redirect crosses hosts.
+ */
+export function roleHome(role: Role): string {
+  if (role === Role.ADMIN) return "/admin";
+  if (role === Role.DOCTOR) return "/doctor";
+  return "/dashboard";
 }
 
 /**
  * Where to send a user right after login. Platform admins go to the platform
  * console; otherwise the user lands in their clinic. Multi-clinic users go to
  * their first clinic for now (a picker can come later).
+ *
+ * This one is called from the ROOT domain (global login, /clinics), so it has to
+ * cross hosts into the clinic's subdomain — hence an absolute URL.
  */
 export async function redirectToUserClinic(
   userId: string,
@@ -199,5 +208,5 @@ export async function redirectToUserClinic(
   });
 
   if (!membership) redirect("/login");
-  redirect(roleHome(membership.clinic.slug, membership.role));
+  redirect(clinicUrl(membership.clinic.slug, roleHome(membership.role)));
 }

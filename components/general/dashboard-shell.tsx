@@ -12,38 +12,34 @@ export type DashboardRole = "patient" | "doctor" | "admin";
 interface DashboardShellProps {
   children: React.ReactNode;
   role: DashboardRole;
-  /** URL prefix for this clinic, e.g. `/clinic/sunrise-dental`. */
-  basePath: string;
   userFullName: string;
   userEmail: string;
   /** Admin only — conversation IDs with an unresolved escalation on load. */
   initialUnresolvedEscalationConversationIds?: string[];
   clinicId: string;
+  /** The clinic this host belongs to — shown in the sidebar and topbar so a
+      user who is a member of more than one clinic always knows where they are. */
+  clinicName: string;
+  clinicLogoUrl?: string | null;
 }
 
 export default function DashboardShell({
   children,
   role,
-  basePath,
   userFullName,
   userEmail,
   clinicId,
+  clinicName,
+  clinicLogoUrl = null,
   initialUnresolvedEscalationConversationIds = [],
 }: DashboardShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Nav hrefs are clinic-relative; prefix them with this clinic's base path.
-  // The "/" home link (back to the public site) is left absolute.
-  const prefix = (href: string) => (href === "/" ? "/" : `${basePath}${href}`);
-  const navItems = navConfig[role].map((item) => ({
-    ...item,
-    href: prefix(item.href),
-    children: item.children?.map((child) => ({
-      ...child,
-      href: prefix(child.href),
-    })),
-  }));
+  // Each clinic is served from its own subdomain, so the nav config's hrefs
+  // ("/admin", "/dashboard", "/" …) are already correct as-is — no clinic
+  // prefix to apply.
+  const navItems = navConfig[role];
   const { label: roleLabel, pageTitle } = roleMeta[role];
 
   const shell = (
@@ -61,6 +57,8 @@ export default function DashboardShell({
         roleLabel={roleLabel}
         userFullName={userFullName}
         userEmail={userEmail}
+        clinicName={clinicName}
+        clinicLogoUrl={clinicLogoUrl}
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed((v) => !v)}
         mobileOpen={mobileOpen}
@@ -68,7 +66,11 @@ export default function DashboardShell({
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Topbar title={pageTitle} onMenuClick={() => setMobileOpen(true)} />
+        <Topbar
+          title={pageTitle}
+          clinicName={clinicName}
+          onMenuClick={() => setMobileOpen(true)}
+        />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
 

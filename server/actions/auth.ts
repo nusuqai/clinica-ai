@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { Role } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { redirectToUserClinic, roleHome, ACTIVE_CLINIC_COOKIE } from "@/lib/auth";
+import { redirectToUserClinic, roleHome } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/secret-box";
 import { sendPasswordReset, sendClinicSignupOtp } from "@/lib/email/send-auth-email";
@@ -90,7 +90,7 @@ export async function signIn(formData: FormData) {
 }
 
 // NOTE: There is no global (clinic-less) sign-up. Accounts are only created
-// under a specific clinic via /clinic/{slug}/register (startClinicSignup →
+// under a specific clinic via that clinic's /register (startClinicSignup →
 // verifyClinicSignup below), which links the new user to that clinic. Staff and
 // admins are provisioned by an admin instead.
 
@@ -103,7 +103,7 @@ async function findAuthUserByEmail(email: string) {
 }
 
 // ─── Per-clinic auth ──────────────────────────────────────────────────────────
-// Login / register scoped to a specific clinic (from the /clinic/[slug]/... URL),
+// Login / register scoped to a specific clinic (from the request's subdomain),
 // so we know which clinic a self-registering patient is joining and can route an
 // existing account straight to its dashboard in that clinic.
 
@@ -154,7 +154,7 @@ export async function signInToClinic(slug: string, formData: FormData) {
         await recordOtpSent(email);
       }
       await storeSignupPassword(password);
-      redirect(`/clinic/${slug}/verify-otp?email=${encodeURIComponent(email)}`);
+      redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
     }
     return { error: "البريد الإلكتروني أو كلمة المرور غير صحيحة." };
   }
@@ -163,14 +163,14 @@ export async function signInToClinic(slug: string, formData: FormData) {
     where: { userId_clinicId: { userId: data.user.id, clinicId: clinic.id } },
     select: { role: true },
   });
-  if (membership) redirect(roleHome(slug, membership.role));
+  if (membership) redirect(roleHome(membership.role));
 
   // Platform admins may enter any clinic even without a membership.
   const profile = await prisma.profile.findUnique({
     where: { id: data.user.id },
     select: { isPlatformAdmin: true },
   });
-  if (profile?.isPlatformAdmin) redirect(roleHome(slug, Role.ADMIN));
+  if (profile?.isPlatformAdmin) redirect(roleHome(Role.ADMIN));
 
   // Authenticated but NOT a member of this clinic. The password check already
   // opened a session; we must not leave the visitor signed in to a clinic they
@@ -204,7 +204,7 @@ export async function joinClinic(slug: string, formData: FormData) {
     update: {},
     create: { userId: data.user.id, clinicId: clinic.id, role: Role.PATIENT },
   });
-  redirect(roleHome(slug, Role.PATIENT));
+  redirect(roleHome(Role.PATIENT));
 }
 
 // Step 1 of clinic sign-up: validate, guard against existing accounts, then have
@@ -265,7 +265,7 @@ export async function startClinicSignup(slug: string, formData: FormData) {
 
   // Keep the password available so the verify page can resend a code.
   await storeSignupPassword(password);
-  redirect(`/clinic/${slug}/verify-otp?email=${encodeURIComponent(email)}`);
+  redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
 }
 
 // Step 2 of clinic sign-up: verify the OTP (Supabase validates it), which opens
@@ -302,7 +302,7 @@ export async function verifyClinicSignup(slug: string, formData: FormData) {
   });
 
   await clearSignupPassword();
-  redirect(roleHome(slug, Role.PATIENT));
+  redirect(roleHome(Role.PATIENT));
 }
 
 // Resend a signup verification code from the verify page (email only — the
@@ -347,10 +347,9 @@ export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();
 
-  // Return to the login page of the clinic the user was in (tracked by the
-  // middleware's active-clinic cookie), falling back to the root login.
-  const slug = (await cookies()).get(ACTIVE_CLINIC_COOKIE)?.value;
-  redirect(slug ? `/clinic/${slug}/login` : "/login");
+  // Each clinic is its own host, so a relative redirect already lands on the
+  // right login page — the clinic's subdomain, or the root domain.
+  redirect("/login");
 }
 
 // ─── Password recovery & first-password (set) flows ──────────────────────────

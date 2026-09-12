@@ -6,7 +6,7 @@ import PageHeader from "@/components/admin/page-header";
 export default async function WhatsAppGuidePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   await requireActiveMember(["ADMIN"]);
-  const configHref = `/clinic/${slug}/admin/whatsapp/configuration`;
+  const configHref = `/admin/whatsapp/configuration`;
 
   return (
     <div>
@@ -102,7 +102,7 @@ export default async function WhatsAppGuidePage({ params }: { params: Promise<{ 
           <p>
             انتقل إلى{" "}
             <Link
-              href={`/clinic/${slug}/admin/whatsapp/templates`}
+              href={`/admin/whatsapp/templates`}
               className="text-accent hover:underline"
             >
               صفحة القوالب

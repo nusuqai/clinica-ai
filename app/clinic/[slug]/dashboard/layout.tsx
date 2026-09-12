@@ -15,10 +15,11 @@ export default async function PatientLayout({
   return (
     <DashboardShell
       role="patient"
-      basePath={`/clinic/${slug}`}
       userFullName={ctx.user.profile.fullName || ctx.user.email || "مستخدم"}
       userEmail={ctx.user.email}
       clinicId={ctx.clinic.id}
+      clinicName={ctx.clinic.name}
+      clinicLogoUrl={ctx.clinic.logoUrl}
     >
       {children}
     </DashboardShell>
