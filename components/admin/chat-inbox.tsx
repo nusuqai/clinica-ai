@@ -46,8 +46,7 @@ import type {
 import {
   fetchConversations,
   fetchConversationDetail,
-  markConversationRead,
-} from "@/server/actions/conversations";
+ } from "@/server/actions/conversations";
 
 interface ChatInboxProps {
   conversations: ConversationSummary[];
