@@ -23,6 +23,8 @@ export default async function AdminLayout({
       userEmail={ctx.user.email}
       initialUnresolvedEscalationConversationIds={initialUnresolvedEscalationConversationIds}
       clinicId={ctx.clinic.id}
+      clinicName={ctx.clinic.name}
+      clinicLogoUrl={ctx.clinic.logoUrl}
     >
       {children}
     </DashboardShell>

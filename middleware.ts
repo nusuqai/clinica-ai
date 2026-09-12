@@ -12,12 +12,13 @@ const PUBLIC_ROUTES = [
   "/forgot-password",
   "/verify-otp",
   "/reset-password",
+  "/set-password",
 ];
 
 // A clinic's public surface, as seen on its own subdomain: the landing page and
 // its own login/register. Everything deeper (/admin, /doctor, /dashboard…)
 // stays authenticated.
-const PUBLIC_TENANT_ROUTES = ["/", "/login", "/register", "/verify-otp"];
+const PUBLIC_TENANT_ROUTES = ["/", "/login", "/register", "/verify-otp", "/forgot-password"];
 
 // Routes that accept unauthenticated guest requests (no Supabase session at
 // all) — the route handler itself scopes what a guest can do.

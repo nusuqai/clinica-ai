@@ -4,10 +4,11 @@ import { Menu, Bell } from "lucide-react";
 
 interface TopbarProps {
   title: string;
+  clinicName: string;
   onMenuClick: () => void;
 }
 
-export default function Topbar({ title, onMenuClick }: TopbarProps) {
+export default function Topbar({ title, clinicName, onMenuClick }: TopbarProps) {
   return (
     <header className="border-primary/8 flex h-16 flex-shrink-0 items-center justify-between gap-4 border-b bg-white px-4 md:px-6">
       {/* Mobile hamburger */}
@@ -22,9 +23,9 @@ export default function Topbar({ title, onMenuClick }: TopbarProps) {
       {/* Page title (desktop) */}
       <h2 className="hidden font-heading text-lg font-bold text-primary md:block">{title}</h2>
 
-      {/* App name (mobile center) */}
-      <span className="flex-1 text-center font-heading text-base font-bold text-primary md:hidden">
-        Clinica AI
+      {/* Clinic name (mobile center) — the sidebar that carries it is hidden here. */}
+      <span className="flex-1 truncate text-center font-heading text-base font-bold text-primary md:hidden">
+        {clinicName}
       </span>
 
       {/* Actions */}
