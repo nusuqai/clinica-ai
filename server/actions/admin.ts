@@ -10,6 +10,7 @@ import * as AppointmentService from "@/server/services/appointments";
 import * as BranchService from "@/server/services/branches";
 import * as ClinicInfoService from "@/server/services/clinicInfo";
 import * as SpecialtyService from "@/server/services/specialties";
+import * as KnowledgeService from "@/server/services/knowledge";
 import * as QueueService from "@/server/services/queue";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 
@@ -586,5 +587,59 @@ export async function deleteSpecialtyAction(specialtyId: string) {
   if (!result.ok) return { error: result.error };
   revalidatePath("/clinic/[slug]/admin/specialties", "page");
   revalidatePath("/clinic/[slug]/admin/doctors", "page");
+  return { success: true };
+}
+
+// ─── Knowledge-doc actions ──────────────────────────────────────────────────────
+
+export async function createKnowledgeDocAction(input: {
+  slug: string;
+  title: string;
+  summary: string;
+  content: string;
+  isActive?: boolean;
+}) {
+  const clinicId = await requireAdmin();
+  const result = await KnowledgeService.createKnowledgeDoc({ ...input, clinicId });
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/clinic/[slug]/admin/knowledge", "page");
+  return { success: true, id: result.data.id };
+}
+
+export async function updateKnowledgeDocAction(input: {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  content: string;
+  isActive: boolean;
+}) {
+  const clinicId = await requireAdmin();
+  // Ownership check.
+  const doc = await KnowledgeService.getKnowledgeDocById(clinicId, input.id);
+  if (!doc) return { error: "المستند غير موجود" };
+  const result = await KnowledgeService.updateKnowledgeDoc(input);
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/clinic/[slug]/admin/knowledge", "page");
+  return { success: true };
+}
+
+export async function toggleKnowledgeDocActiveAction(id: string, isActive: boolean) {
+  const clinicId = await requireAdmin();
+  const doc = await KnowledgeService.getKnowledgeDocById(clinicId, id);
+  if (!doc) return { error: "المستند غير موجود" };
+  const result = await KnowledgeService.setKnowledgeDocActive(id, isActive);
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/clinic/[slug]/admin/knowledge", "page");
+  return { success: true };
+}
+
+export async function deleteKnowledgeDocAction(id: string) {
+  const clinicId = await requireAdmin();
+  const doc = await KnowledgeService.getKnowledgeDocById(clinicId, id);
+  if (!doc) return { error: "المستند غير موجود" };
+  const result = await KnowledgeService.deleteKnowledgeDoc(id);
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/clinic/[slug]/admin/knowledge", "page");
   return { success: true };
 }

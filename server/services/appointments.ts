@@ -384,6 +384,10 @@ export async function updateAppointmentStatus(
       where: { id: appointmentId },
       data: {
         status,
+        ...(status === AppointmentStatus.CONFIRMED && { confirmedAt: new Date() }),
+        // completedAt anchors the post-visit feedback delay (the automation
+        // sweep sends "delayMinutes after completion").
+        ...(status === AppointmentStatus.COMPLETED && { completedAt: new Date() }),
         ...(status === AppointmentStatus.CANCELLED && {
           cancelledAt: new Date(),
           cancellationReason: cancellationReason ?? null,

@@ -87,45 +87,80 @@ enum SocialPlatform {
   OTHER
 }
 
+// Which appointment automation a ClinicAppointmentTemplate binding drives.
+// CONFIRM_REMINDER = the "please confirm" message sent ~24h before the visit;
+// FEEDBACK_REQUEST = the post-visit message asking the patient for feedback.
+enum AppointmentTemplatePurpose {
+  CONFIRM_REMINDER
+  FEEDBACK_REQUEST
+}
+
 // ─── Tenancy ────────────────────────────────────────────────────────────────
 
 // A tenant. Each clinic is isolated: its own members, doctors, appointments,
 // conversations and branding. Reached at /clinic/{slug}.
 model Clinic {
-  id                String             @id @default(uuid()) @db.Uuid
-  slug              String             @unique
-  name              String
-  description       String?
-  logoUrl           String?
-  primaryColor      String?
-  accentColor       String?
-  isActive          Boolean            @default(true)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  messages          Message[]
-  escalations       Escalation[]
-  members           ClinicMember[]
-  branches          Branch[]
-  phones            ClinicPhone[]
-  socials           ClinicSocial[]
-  specialties       Specialty[]
-  doctors           Doctor[]
-  appointments      Appointment[]
-  conversations     Conversation[]
-  requestsFulfilled ClinicRequest[]    @relation("RequestCreatedClinic")
-  whatsappConfig    WhatsappConfig?
-  aiCredit          ClinicAiCredit?
-  aiUsage           AiUsageLog[]
-  aiLedger          AiCreditLedger[]
-  branchHours       BranchHours[]
-  doctorBranch      DoctorBranch[]
-  availabilityRule  AvailabilityRule[]
-  slot              Slot[]
-  chatSession       ChatSession[]
-  branchPhone       BranchPhone[]
-  dayQueues         DoctorDayQueue[]
+  id                   String                      @id @default(uuid()) @db.Uuid
+  slug                 String                      @unique
+  name                 String
+  description          String?
+  logoUrl              String?
+  primaryColor         String?
+  accentColor          String?
+  isActive             Boolean                     @default(true)
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  timezone             String                      @default("Africa/Cairo")
+  messages             Message[]
+  escalations          Escalation[]
+  members              ClinicMember[]
+  branches             Branch[]
+  phones               ClinicPhone[]
+  socials              ClinicSocial[]
+  specialties          Specialty[]
+  doctors              Doctor[]
+  appointments         Appointment[]
+  conversations        Conversation[]
+  requestsFulfilled    ClinicRequest[]             @relation("RequestCreatedClinic")
+  whatsappConfig       WhatsappConfig?
+  aiCredit             ClinicAiCredit?
+  aiUsage              AiUsageLog[]
+  aiLedger             AiCreditLedger[]
+  branchHours          BranchHours[]
+  doctorBranch         DoctorBranch[]
+  availabilityRule     AvailabilityRule[]
+  slot                 Slot[]
+  chatSession          ChatSession[]
+  branchPhone          BranchPhone[]
+  dayQueues            DoctorDayQueue[]
+  appointmentTemplates ClinicAppointmentTemplate[]
+  appointmentFeedback  AppointmentFeedback[]
+  knowledgeDocs        KnowledgeDoc[]
 
   @@map("clinics")
+}
+
+/// Free-form clinic knowledge documents the agent can look up on demand.
+/// Two tools expose these: `list_knowledge` returns the catalog (title +
+/// summary per doc) so the model knows what exists, and `get_knowledge`
+/// returns the full markdown `content` of one doc by `slug`. This is a
+/// lightweight, tool-based alternative to vector RAG — appropriate while the
+/// per-clinic document set is small. Scoped by clinic like every other table.
+model KnowledgeDoc {
+  id        String   @id @default(uuid()) @db.Uuid
+  clinicId  String   @db.Uuid
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  slug      String // stable handle the agent passes to get_knowledge, e.g. "company-terms"
+  title     String // human title, shown in the list_knowledge catalog
+  summary   String // one line describing what's inside; shown in list_knowledge
+  content   String // full document as markdown; returned by get_knowledge
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clinicId, slug])
+  @@index([clinicId])
+  @@map("knowledge_docs")
 }
 
 // ─── Branches & contact info ──────────────────────────────────────────────────
@@ -319,12 +354,13 @@ model Profile {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  doctor            Doctor?
-  appointments      Appointment[]
-  conversations     Conversation[]
-  sentMessages      Message[]       @relation("SenderProfile")
-  clinicMemberships ClinicMember[]
-  reviewedRequests  ClinicRequest[] @relation("RequestReviewer")
+  doctor              Doctor?
+  appointments        Appointment[]
+  conversations       Conversation[]
+  sentMessages        Message[]             @relation("SenderProfile")
+  clinicMemberships   ClinicMember[]
+  reviewedRequests    ClinicRequest[]       @relation("RequestReviewer")
+  appointmentFeedback AppointmentFeedback[]
 
   @@map("profiles")
 }
@@ -536,17 +572,28 @@ model Appointment {
   doctorNotes          String?
   cancelledAt          DateTime?
   cancellationReason   String?
+  // Set when the appointment transitions to CONFIRMED / COMPLETED. Distinct from
+  // updatedAt (which any edit bumps): the automation sweep needs the actual
+  // moment of completion to time the feedback message ("delay after completed").
+  confirmedAt          DateTime?
+  completedAt          DateTime?
+  // Automation dedupe flags. Non-null = that message has already been queued, so
+  // the sweep never sends it twice. Left null until sent, so an appointment whose
+  // clinic links a template later is still picked up on a later tick.
+  reminderSentAt       DateTime?
+  feedbackRequestedAt  DateTime?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
-  clinic     Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  branch     Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  patient    Profile           @relation(fields: [patientId], references: [id])
-  doctor     Doctor            @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  referredBy Doctor?           @relation("ReferredAppointments", fields: [referredByDoctorId], references: [id])
-  slot       Slot?             @relation(fields: [slotId], references: [id])
-  rule       AvailabilityRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
-  queue      DoctorDayQueue?   @relation(fields: [queueId], references: [id], onDelete: SetNull)
+  clinic     Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  branch     Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  patient    Profile              @relation(fields: [patientId], references: [id])
+  doctor     Doctor               @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  referredBy Doctor?              @relation("ReferredAppointments", fields: [referredByDoctorId], references: [id])
+  slot       Slot?                @relation(fields: [slotId], references: [id])
+  rule       AvailabilityRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  queue      DoctorDayQueue?      @relation(fields: [queueId], references: [id], onDelete: SetNull)
+  feedback   AppointmentFeedback?
 
   @@index([clinicId])
   @@index([branchId])
@@ -555,6 +602,12 @@ model Appointment {
   @@index([referredByDoctorId])
   @@index([queueId])
   @@index([doctorId, bookingDate])
+  // Sweep passes: reminder discovery (PENDING + not yet reminded),
+  // feedback discovery (COMPLETED + not yet requested), and the no-show sweep
+  // scanning slot-based bookings by status.
+  @@index([status, reminderSentAt])
+  @@index([status, feedbackRequestedAt])
+  @@index([status, completedAt])
   @@map("appointments")
 }
 
@@ -731,4 +784,72 @@ model AiCreditLedger {
 
   @@index([clinicId, createdAt])
   @@map("ai_credit_ledger")
+}
+
+// ─── Appointment automation ───────────────────────────────────────────────────
+
+// Links one of a clinic's approved WhatsApp templates to an automation purpose,
+// and records how to fill its {{n}} placeholders. Templates live only in Meta
+// (there is no Template model), so this binding is what lets the sweep know WHICH
+// template to send for a clinic and in WHAT ORDER to pass the variables.
+//
+// The confirmation/feedback flows run ONLY when an enabled binding exists for the
+// clinic + purpose. No binding → that clinic's flow is inert (see the sweep's
+// relation-filter gate); the appointment's dedupe flag stays null so it is still
+// eligible once a binding is added.
+model ClinicAppointmentTemplate {
+  id           String                     @id @default(uuid()) @db.Uuid
+  clinicId     String                     @db.Uuid
+  purpose      AppointmentTemplatePurpose
+  // The clinic's own approved template — name + language as registered in Meta.
+  templateName String
+  languageCode String
+  // Ordered token list, one entry per {{n}} placeholder, drawn from a fixed
+  // vocabulary the sweep can resolve (patient_name, doctor_name, appointment_date,
+  // appointment_time, clinic_name, branch_name, branch_address, order_number, …).
+  // variableMap[0] fills {{1}}, variableMap[1] fills {{2}}, and so on.
+  variableMap  String[]
+  // Snapshot of the template's text (header / body / footer with {{n}}
+  // placeholders) taken from Meta when the admin saves the binding. Lets the
+  // sender render the exact message locally — for the admin inbox thread —
+  // without a per-send Graph API call to fetch the template body.
+  bodyText     String                     @default("")
+  headerText   String                     @default("")
+  footerText   String                     @default("")
+  enabled      Boolean                    @default(true)
+  // CONFIRM_REMINDER: how long before the visit to send (minutes; 1440 = 24h).
+  leadMinutes  Int                        @default(1440)
+  // FEEDBACK_REQUEST: how long after completion to send (minutes).
+  delayMinutes Int                        @default(120)
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  // At most one binding per (clinic, purpose).
+  @@unique([clinicId, purpose])
+  @@index([clinicId])
+  @@map("clinic_appointment_templates")
+}
+
+// A patient's feedback for a completed appointment. One row per appointment
+// (created when the patient replies to the feedback message, via the agent's
+// submit_appointment_feedback tool). rating/comment are both optional so a
+// patient can leave a star rating, a comment, or both.
+model AppointmentFeedback {
+  id            String   @id @default(uuid()) @db.Uuid
+  appointmentId String   @unique @db.Uuid
+  clinicId      String   @db.Uuid
+  patientId     String   @db.Uuid
+  rating        Int? // e.g. 1–5, if the clinic's template asks for a score
+  comment       String?
+  createdAt     DateTime @default(now())
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  clinic      Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient     Profile     @relation(fields: [patientId], references: [id])
+
+  @@index([clinicId])
+  @@index([patientId])
+  @@map("appointment_feedback")
 }
