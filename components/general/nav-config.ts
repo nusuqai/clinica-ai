@@ -46,6 +46,7 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
     { href: "/admin/specialties", label: "التخصصات", icon: Tags },
     { href: "/admin/branches", label: "الفروع", icon: MapPin },
     { href: "/admin/settings", label: "معلومات العيادة", icon: Building2 },
+    { href: "/admin/knowledge", label: "قاعدة المعرفة", icon: BookOpen },
     { href: "/admin/appointments", label: "المواعيد", icon: CalendarDays },
     { href: "/admin/messages", label: "الرسائل", icon: MessageSquare },
     {

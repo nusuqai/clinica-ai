@@ -135,8 +135,32 @@ model Clinic {
   dayQueues            DoctorDayQueue[]
   appointmentTemplates ClinicAppointmentTemplate[]
   appointmentFeedback  AppointmentFeedback[]
+  knowledgeDocs        KnowledgeDoc[]
 
   @@map("clinics")
+}
+
+/// Free-form clinic knowledge documents the agent can look up on demand.
+/// Two tools expose these: `list_knowledge` returns the catalog (title +
+/// summary per doc) so the model knows what exists, and `get_knowledge`
+/// returns the full markdown `content` of one doc by `slug`. This is a
+/// lightweight, tool-based alternative to vector RAG — appropriate while the
+/// per-clinic document set is small. Scoped by clinic like every other table.
+model KnowledgeDoc {
+  id        String   @id @default(uuid()) @db.Uuid
+  clinicId  String   @db.Uuid
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  slug      String // stable handle the agent passes to get_knowledge, e.g. "company-terms"
+  title     String // human title, shown in the list_knowledge catalog
+  summary   String // one line describing what's inside; shown in list_knowledge
+  content   String // full document as markdown; returned by get_knowledge
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clinicId, slug])
+  @@index([clinicId])
+  @@map("knowledge_docs")
 }
 
 // ─── Branches & contact info ──────────────────────────────────────────────────
