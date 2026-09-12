@@ -19,6 +19,7 @@ export default async function DoctorLayout({
       clinicId={ctx.clinic.id}
       clinicName={ctx.clinic.name}
       clinicLogoUrl={ctx.clinic.logoUrl}
+      viaPlatformAdmin={ctx.viaPlatformAdmin}
     >
       {children}
     </DashboardShell>

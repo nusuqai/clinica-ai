@@ -143,26 +143,51 @@ export async function getActiveClinicContext(): Promise<ClinicContext | null> {
   const cookieStore = await cookies();
   const slug = cookieStore.get(ACTIVE_CLINIC_COOKIE)?.value;
 
-  let membership = slug
+  const membership = slug
     ? await prisma.clinicMember.findFirst({
         where: { userId: user.id, clinic: { isActive: true, slug } },
         select: { role: true, clinic: { select: clinicSelect } },
       })
     : null;
 
-  if (!membership) {
-    membership = await prisma.clinicMember.findFirst({
-      where: { userId: user.id, clinic: { isActive: true } },
-      orderBy: { createdAt: "asc" },
-      select: { role: true, clinic: { select: clinicSelect } },
-    });
+  if (membership) {
+    return {
+      user,
+      clinic: membership.clinic,
+      role: membership.role,
+      viaPlatformAdmin: false,
+    };
   }
-  if (!membership) return null;
+
+  // A platform admin belongs to no clinic but may act as ADMIN inside whichever
+  // one they're currently on. requireClinicMember already grants this from the
+  // URL slug, so without the same rule here a platform admin passes a clinic's
+  // layout and is then bounced to /login by every page and action inside it.
+  // Scoped to `slug`: with no active clinic there is nothing to be admin OF, so
+  // we fall through rather than picking an arbitrary clinic for them.
+  if (slug && user.profile.isPlatformAdmin) {
+    const clinic = await prisma.clinic.findFirst({
+      where: { slug, isActive: true },
+      select: clinicSelect,
+    });
+    if (clinic) {
+      return { user, clinic, role: Role.ADMIN, viaPlatformAdmin: true };
+    }
+  }
+
+  // No active clinic (or not a member there): fall back to the user's first
+  // membership so callers outside a clinic host still resolve.
+  const fallback = await prisma.clinicMember.findFirst({
+    where: { userId: user.id, clinic: { isActive: true } },
+    orderBy: { createdAt: "asc" },
+    select: { role: true, clinic: { select: clinicSelect } },
+  });
+  if (!fallback) return null;
 
   return {
     user,
-    clinic: membership.clinic,
-    role: membership.role,
+    clinic: fallback.clinic,
+    role: fallback.role,
     viaPlatformAdmin: false,
   };
 }
