@@ -2,6 +2,7 @@ import { ClinicRequestStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { CLINIC_REQUEST_STATUS_LABELS } from "@/lib/labels";
 import RequestActions from "./_components/request-actions";
+import { clinicHost, clinicOrigin } from "@/lib/clinic-url";
 
 export default async function PlatformRequestsPage() {
   const requests = await prisma.clinicRequest.findMany({
@@ -42,9 +43,15 @@ export default async function PlatformRequestsPage() {
                   <td className="px-4 py-3 text-foreground">
                     {r.requestedClinicName}
                     {r.createdClinic && (
-                      <p className="mt-1 text-xs text-muted-foreground" dir="ltr">
-                        /clinic/{r.createdClinic.slug}
-                      </p>
+                      <a
+                        href={clinicOrigin(r.createdClinic.slug)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 block text-xs text-muted-foreground hover:text-primary hover:underline"
+                        dir="ltr"
+                      >
+                        {clinicHost(r.createdClinic.slug)}
+                      </a>
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground" dir="ltr">

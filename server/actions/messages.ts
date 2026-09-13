@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Channel, Role, SenderType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getActiveClinicContext } from "@/lib/auth";
+import { getClinicContext } from "@/lib/auth";
 import { sendTextMessage, sendTemplateMessage, type WhatsAppRecipient } from "@/lib/meta/whatsapp";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
@@ -63,7 +63,7 @@ export async function sendAdminReply(
   conversationId: string,
   content: string
 ): Promise<SendAdminReplyResult> {
-  const ctx = await getActiveClinicContext();
+  const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
   if (ctx.role !== Role.ADMIN) return { ok: false, reason: "forbidden" };
 
@@ -131,7 +131,7 @@ export async function sendAdminReply(
     data: { updatedAt: new Date() },
   });
 
-  revalidatePath("/clinic/[slug]/admin/messages", "page");
+  revalidatePath("/admin/messages", "page");
   return {
     ok: true,
     messageId: message.id,
@@ -145,7 +145,7 @@ export async function sendAdminReply(
  * action after a delivery failure — it must not create a second message row.
  */
 export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: boolean }> {
-  const ctx = await getActiveClinicContext();
+  const ctx = await getClinicContext();
   if (!ctx || ctx.role !== Role.ADMIN) return { ok: false };
 
   const message = await prisma.message.findUnique({
@@ -204,7 +204,7 @@ export async function sendWhatsappTemplate(
     renderedText: string;
   }
 ): Promise<SendTemplateResult> {
-  const ctx = await getActiveClinicContext();
+  const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
   if (ctx.role !== Role.ADMIN) return { ok: false, reason: "forbidden" };
 
@@ -257,7 +257,7 @@ export async function sendWhatsappTemplate(
       data: { updatedAt: new Date() },
     });
 
-    revalidatePath("/clinic/[slug]/admin/messages", "page");
+    revalidatePath("/admin/messages", "page");
     return {
       ok: true,
       messageId: message.id,
@@ -272,7 +272,7 @@ export async function sendWhatsappTemplate(
 }
 
 export async function setSessionAiEnabled(sessionId: string, enabled: boolean): Promise<void> {
-  const ctx = await getActiveClinicContext();
+  const ctx = await getClinicContext();
   if (!ctx) throw new Error("Unauthorized");
   if (ctx.role !== Role.ADMIN) throw new Error("Forbidden");
 
@@ -290,5 +290,5 @@ export async function setSessionAiEnabled(sessionId: string, enabled: boolean): 
     });
   }
 
-  revalidatePath("/clinic/[slug]/admin/messages", "page");
+  revalidatePath("/admin/messages", "page");
 }

@@ -1,9 +1,15 @@
+import { notFound } from "next/navigation";
 import { ClinicRequestStatus } from "@prisma/client";
 import { requirePlatformAdmin } from "@/lib/auth";
+import { getTenantSlug } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
 import PlatformNav from "./_components/platform-nav";
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
+  // The console belongs to the root domain. On a clinic's subdomain it simply
+  // doesn't exist — platform admins reach it from the platform host.
+  if (await getTenantSlug()) notFound();
+
   const user = await requirePlatformAdmin();
   const pendingRequests = await prisma.clinicRequest.count({
     where: { status: ClinicRequestStatus.PENDING },

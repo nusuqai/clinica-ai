@@ -84,18 +84,18 @@ is the platform brand, Nusuq). To add a flow: add a builder, then a sender in
 
 ## Signup email verification (OTP)
 
-Account creation exists **only under a clinic** (`/clinic/{slug}/register`) — there
-is no global sign-up. The flow (issue #11, email half):
+Account creation exists **only under a clinic** (`/register` on that clinic's own
+subdomain) — there is no global sign-up. The flow (issue #11, email half):
 
 ```
-startClinicSignup(slug)   → guards against existing accounts (findAuthUserByEmail):
+startClinicSignup()       → guards against existing accounts (findAuthUserByEmail):
                               • confirmed + already a member → "login" error
                               • confirmed elsewhere → needsLogin (log in to join)
                               • unconfirmed leftover → deleted, re-created
                             → sendClinicSignupOtp: generateLink({type:"signup"}) mints
                               the user + a 6-digit code; Resend delivers the CODE
-                            → redirect /clinic/{slug}/verify-otp?email=…
-verifyClinicSignup(slug)  → verifyOtp({email, token, type:"signup"}) (Supabase verifies)
+                            → redirect /verify-otp?email=…
+verifyClinicSignup()      → verifyOtp({email, token, type:"signup"}) (Supabase verifies)
                             → session opens → upsert ClinicMember(PATIENT) → dashboard
 ```
 
@@ -103,11 +103,11 @@ Supabase owns OTP **creation and verification**; Resend only delivers. Locally
 (no `RESEND_API_KEY`) the code is printed to the server log so you can still test.
 
 **Unverified login → auto-resend.** If someone signs up but never verifies, then
-tries to log in at `/clinic/{slug}/login`, Supabase returns `email_not_confirmed`
-(only when the password is correct, so it can't probe accounts). `signInToClinic`
+tries to log in at the clinic's `/login`, Supabase returns `email_not_confirmed`
+(only when the password is correct, so it can't probe accounts). `signIn`
 catches it, re-issues a fresh OTP (`sendClinicSignupOtp` → `mintSignupOtp`, which
 regenerates for an existing unconfirmed user or deletes+recreates as a fallback),
-and redirects them to `/clinic/{slug}/verify-otp` to finish. **This requires the
+and redirects them to `/verify-otp` to finish. **This requires the
 Supabase "Confirm email" toggle to be ON** — otherwise unconfirmed users can log
 in directly and the gate never triggers.
 

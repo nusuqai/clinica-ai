@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureClinicAiCredit } from "@/server/services/aiCredit";
+import { registerClinicDomain } from "@/lib/vercel/domains";
 import { sendClinicApprovedInvite, sendClinicCreatedInvite } from "@/lib/email/send-auth-email";
 import { sendRequestReceived, sendClinicRejected } from "@/lib/email/send-transactional";
 
@@ -17,20 +18,90 @@ async function requirePlatform() {
   return u;
 }
 
+/**
+ * Attaches the new clinic's subdomain to the Vercel project, which is what makes
+ * Vercel serve the host and issue its certificate.
+ *
+ * Best-effort by design, exactly like the invite email: the clinic row already
+ * exists and committed, so a Vercel outage must not roll the creation back. A
+ * failure leaves the clinic reachable only at the root domain's legacy path
+ * until someone re-runs `node --env-file=.env scripts/backfill-clinic-domains.mjs`,
+ * which is idempotent and picks up any clinic whose domain is missing.
+ */
+async function provisionClinicDomain(slug: string): Promise<{ ok: boolean }> {
+  const result = await registerClinicDomain(slug);
+  if (!result.ok) {
+    console.error(`[vercel] could not register ${result.domain}: ${result.error}`);
+    return { ok: false };
+  }
+  if (result.status === "registered" && !result.verified) {
+    // DNS should already resolve via the wildcard, so this means the wildcard
+    // record is missing or hasn't propagated — the cert won't issue until it does.
+    console.warn(`[vercel] ${result.domain} attached but not yet verified (check DNS)`);
+  }
+  return { ok: true };
+}
+
+// Labels that must never become a clinic host, because they are (or may become)
+// part of the platform's own surface on the root domain.
+const RESERVED_SUBDOMAINS = new Set([
+  "www",
+  "api",
+  "app",
+  "admin",
+  "auth",
+  "platform",
+  "clinic",
+  "clinics",
+  "mail",
+  "email",
+  "smtp",
+  "static",
+  "assets",
+  "cdn",
+  "docs",
+  "blog",
+  "status",
+  "support",
+  "help",
+  "staging",
+  "dev",
+  "test",
+]);
+
+/**
+ * A clinic's slug IS its subdomain ({slug}.{ROOT_DOMAIN}), so it must be a valid
+ * DNS label: lowercase a-z, digits and hyphens, max 63 chars, no leading or
+ * trailing hyphen.
+ *
+ * This is why non-ASCII is stripped rather than kept: clinic names here are
+ * usually Arabic, and an Arabic label cannot be used as a hostname without
+ * punycode. Accented Latin is folded ("Clínica" → "clinica"); a name with no
+ * usable ASCII at all yields "" and the caller falls back to "clinic", which
+ * uniqueSlug then numbers. A platform admin can always set a nicer slug by hand.
+ */
 function slugify(input: string): string {
-  return input
+  const cleaned = input
     .trim()
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "") // drop the marks NFKD just split off
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  // Re-trim after truncating so we can't end on a hyphen.
+  return cleaned.slice(0, 63).replace(/-+$/g, "");
 }
 
 async function uniqueSlug(base: string): Promise<string> {
   const root = slugify(base) || "clinic";
   let slug = root;
   let n = 1;
-  while (await prisma.clinic.findUnique({ where: { slug }, select: { id: true } })) {
+  // A reserved label is treated exactly like a taken one, so "admin" becomes
+  // "admin-2" rather than shadowing the platform's own host.
+  while (
+    RESERVED_SUBDOMAINS.has(slug) ||
+    (await prisma.clinic.findUnique({ where: { slug }, select: { id: true } }))
+  ) {
     slug = `${root}-${++n}`;
   }
   return slug;
@@ -156,6 +227,8 @@ export async function approveClinicRequest(requestId: string) {
 
     await ensureClinicAiCredit(clinic.id);
 
+    const domain = await provisionClinicDomain(clinic.slug);
+
     // Invite the new clinic admin to set their password. Best-effort: approval
     // already succeeded, so a mail failure must not roll it back — surface it as
     // a soft warning the UI can show while still reporting success.
@@ -175,6 +248,7 @@ export async function approveClinicRequest(requestId: string) {
       clinicId: clinic.id,
       slug: clinic.slug,
       emailSent: invite.ok,
+      domainReady: domain.ok,
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "فشل الموافقة على الطلب" };
@@ -259,6 +333,8 @@ export async function createClinic(formData: FormData) {
 
     await ensureClinicAiCredit(clinic.id);
 
+    const domain = await provisionClinicDomain(clinic.slug);
+
     // Invite the clinic admin to set their password (best-effort).
     const invite = await sendClinicCreatedInvite({
       email: adminEmail,
@@ -270,7 +346,13 @@ export async function createClinic(formData: FormData) {
     }));
 
     revalidatePath("/platform/clinics");
-    return { success: true, clinicId: clinic.id, slug: clinic.slug, emailSent: invite.ok };
+    return {
+      success: true,
+      clinicId: clinic.id,
+      slug: clinic.slug,
+      emailSent: invite.ok,
+      domainReady: domain.ok,
+    };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "فشل إنشاء العيادة" };
   }

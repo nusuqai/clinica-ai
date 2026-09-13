@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ClinicRequestStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { clinicHost, clinicOrigin } from "@/lib/clinic-url";
 
 export default async function PlatformOverviewPage() {
   const [clinicCount, pendingRequests, doctorCount, memberCount, clinics] = await Promise.all([
@@ -72,7 +73,14 @@ export default async function PlatformOverviewPage() {
                 <tr key={c.id} className="hover:bg-muted/30">
                   <td className="px-4 py-3 font-medium text-foreground">{c.name}</td>
                   <td className="px-4 py-3 text-muted-foreground" dir="ltr">
-                    /clinic/{c.slug}
+                    <a
+                      href={clinicOrigin(c.slug)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="hover:text-primary hover:underline"
+                    >
+                      {clinicHost(c.slug)}
+                    </a>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{c._count.members}</td>
                   <td className="px-4 py-3 text-muted-foreground">{c._count.doctors}</td>
