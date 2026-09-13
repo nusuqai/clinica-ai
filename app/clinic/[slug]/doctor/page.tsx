@@ -129,11 +129,7 @@ export default async function DoctorDashboardPage({
 
       {/* Quick links */}
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <QuickLink
-          href={`/doctor/appointments`}
-          label="إدارة المواعيد"
-          icon={CalendarDays}
-        />
+        <QuickLink href={`/doctor/appointments`} label="إدارة المواعيد" icon={CalendarDays} />
         <QuickLink href={`/doctor/schedule`} label="جدول العمل" icon={Clock} />
         <QuickLink href={`/doctor/patients`} label="قائمة المرضى" icon={Users} />
       </div>

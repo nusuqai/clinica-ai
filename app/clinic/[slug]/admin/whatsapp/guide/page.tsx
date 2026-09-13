@@ -101,10 +101,7 @@ export default async function WhatsAppGuidePage({ params }: { params: Promise<{ 
         <Step n={5} icon={<MessageSquareText className="h-4 w-4" />} title="أنشئ قوالبك">
           <p>
             انتقل إلى{" "}
-            <Link
-              href={`/admin/whatsapp/templates`}
-              className="text-accent hover:underline"
-            >
+            <Link href={`/admin/whatsapp/templates`} className="text-accent hover:underline">
               صفحة القوالب
             </Link>{" "}
             وأنشئ قالبًا. تُراجعه ميتا خلال دقائق إلى ساعات؛ ولا يمكن إرسال القالب إلا بعد اعتماده

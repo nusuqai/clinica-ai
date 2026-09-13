@@ -43,10 +43,7 @@ import type {
   MessageItem,
   ConversationDetail,
 } from "@/server/services/messages";
-import {
-  fetchConversations,
-  fetchConversationDetail,
- } from "@/server/actions/conversations";
+import { fetchConversations, fetchConversationDetail } from "@/server/actions/conversations";
 
 interface ChatInboxProps {
   conversations: ConversationSummary[];
