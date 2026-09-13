@@ -1,18 +1,18 @@
 import "server-only";
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cache } from "react";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { clinicUrl } from "@/lib/clinic-url";
+import { getTenantSlug } from "@/lib/tenant";
 import { Role } from "@prisma/client";
 
-// Cookie the middleware sets from the /clinic/{slug} URL, so server actions
-// (which don't see the URL) can scope to the clinic the user is viewing.
-export const ACTIVE_CLINIC_COOKIE = "active-clinic";
-
-// Centralized auth/tenancy helpers. Replaces the ad-hoc `getUser()` + Prisma
-// role lookup that used to be duplicated across every layout / action / route.
-// The per-clinic role now lives on ClinicMember; identity lives on Profile.
+// Centralized auth/tenancy helpers. Identity lives on Profile; the per-clinic
+// role lives on ClinicMember.
+//
+// The clinic is ALWAYS resolved from the request's host (see lib/tenant.ts) —
+// never from a URL segment or a cookie — so pages, layouts and server actions
+// all agree on which clinic they're in without passing a slug around.
 
 export type CurrentUser = {
   id: string;
@@ -38,14 +38,22 @@ export type ClinicContext = {
   user: CurrentUser;
   clinic: ClinicSummary;
   role: Role;
-  // True when access is granted because the user is a platform admin rather than
-  // an actual member of this clinic.
-  viaPlatformAdmin: boolean;
 };
+
+const clinicSelect = {
+  id: true,
+  slug: true,
+  name: true,
+  logoUrl: true,
+  primaryColor: true,
+  accentColor: true,
+} as const;
 
 // ─── Identity ───────────────────────────────────────────────────────────────
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+// `cache` dedupes per request: a layout and its page both asking who the user is
+// (or which clinic this is) costs one round trip, not two.
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -59,7 +67,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   if (!profile) return null;
 
   return { id: user.id, email: user.email ?? "", profile };
-}
+});
 
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
@@ -70,108 +78,68 @@ export async function requireUser(): Promise<CurrentUser> {
 // ─── Clinic (tenant) access ───────────────────────────────────────────────────
 
 /**
- * Resolves the clinic from the URL slug and authorizes the current user for it.
- * A user must be a member of THIS clinic (non-members are rejected — no
- * cross-clinic access). Platform admins may access any clinic to "see everything".
- * If `roles` is given, the member's role must be one of them.
+ * The active clinic for this request's host, or null on the root domain (and
+ * for a subdomain with no matching active clinic). No auth involved — use it
+ * for public surfaces like the clinic landing page and the auth screens.
  */
-export async function requireClinicMember(slug: string, roles?: Role[]): Promise<ClinicContext> {
-  const user = await requireUser();
-
-  const clinic = await prisma.clinic.findUnique({
-    where: { slug },
-    select: {
-      id: true,
-      slug: true,
-      name: true,
-      logoUrl: true,
-      primaryColor: true,
-      accentColor: true,
-      isActive: true,
-    },
+export const getHostClinic = cache(async (): Promise<ClinicSummary | null> => {
+  const slug = await getTenantSlug();
+  if (!slug) return null;
+  return prisma.clinic.findFirst({
+    where: { slug, isActive: true },
+    select: clinicSelect,
   });
-  if (!clinic || !clinic.isActive) redirect("/login");
+});
+
+/**
+ * Same, but a subdomain that names no active clinic is a 404 rather than a
+ * silent fallback to the platform's own page. For public pages that render
+ * differently per host — null still means "this is the root domain".
+ */
+export async function getHostClinicOrNotFound(): Promise<ClinicSummary | null> {
+  const clinic = await getHostClinic();
+  if (!clinic && (await getTenantSlug())) notFound();
+  return clinic;
+}
+
+/**
+ * The host's clinic plus the current user's role in it, or null when there's no
+ * clinic host, no session, or no access. Non-redirecting — server actions use
+ * this and return an error instead of navigating.
+ */
+export async function getClinicContext(): Promise<ClinicContext | null> {
+  const [user, clinic] = await Promise.all([getCurrentUser(), getHostClinic()]);
+  if (!user || !clinic) return null;
 
   const membership = await prisma.clinicMember.findUnique({
     where: { userId_clinicId: { userId: user.id, clinicId: clinic.id } },
     select: { role: true },
   });
 
-  const viaPlatformAdmin = !membership && user.profile.isPlatformAdmin;
-  if (!membership && !viaPlatformAdmin) {
-    // Not a member of this clinic: reject without revealing anything.
-    redirect("/login");
-  }
+  // Membership is the only way in — platform admins get no implicit access.
+  if (!membership) return null;
 
-  // Platform admins act with ADMIN privileges inside any clinic.
-  const role: Role = membership?.role ?? Role.ADMIN;
+  return { user, clinic, role: membership.role };
+}
 
-  if (roles && !roles.includes(role)) {
-    redirect(roleHome(role));
-  }
-
-  const { isActive: _isActive, ...clinicSummary } = clinic;
-  return { user, clinic: clinicSummary, role, viaPlatformAdmin };
+/**
+ * Authorizes the current user for this host's clinic, redirecting rather than
+ * returning null: to the clinic's login when there's no access, or to the
+ * user's own role home when `roles` excludes them.
+ */
+export async function requireClinicMember(roles?: Role[]): Promise<ClinicContext> {
+  const ctx = await getClinicContext();
+  // Either not signed in, not a member, or this isn't a clinic host at all.
+  // Rejecting to /login reveals nothing about which of those it was.
+  if (!ctx) redirect("/login");
+  if (roles && !roles.includes(ctx.role)) redirect(roleHome(ctx.role));
+  return ctx;
 }
 
 export async function requirePlatformAdmin(): Promise<CurrentUser> {
   const user = await requireUser();
   if (!user.profile.isPlatformAdmin) redirect("/login");
   return user;
-}
-
-// ─── Active-clinic bridge (for routes that are not yet under /clinic/[slug]) ──
-// The existing /admin, /doctor, /dashboard routes have no slug in the URL, so
-// they resolve the user's clinic from their (single) membership. Once those
-// routes move under /clinic/[slug], switch them to requireClinicMember(slug).
-
-const clinicSelect = {
-  id: true,
-  slug: true,
-  name: true,
-  logoUrl: true,
-  primaryColor: true,
-  accentColor: true,
-} as const;
-
-export async function getActiveClinicContext(): Promise<ClinicContext | null> {
-  const user = await getCurrentUser();
-  if (!user) return null;
-
-  // Prefer the clinic in the URL (via the middleware cookie); fall back to the
-  // user's first membership so callers without an active clinic still resolve.
-  const cookieStore = await cookies();
-  const slug = cookieStore.get(ACTIVE_CLINIC_COOKIE)?.value;
-
-  let membership = slug
-    ? await prisma.clinicMember.findFirst({
-        where: { userId: user.id, clinic: { isActive: true, slug } },
-        select: { role: true, clinic: { select: clinicSelect } },
-      })
-    : null;
-
-  if (!membership) {
-    membership = await prisma.clinicMember.findFirst({
-      where: { userId: user.id, clinic: { isActive: true } },
-      orderBy: { createdAt: "asc" },
-      select: { role: true, clinic: { select: clinicSelect } },
-    });
-  }
-  if (!membership) return null;
-
-  return {
-    user,
-    clinic: membership.clinic,
-    role: membership.role,
-    viaPlatformAdmin: false,
-  };
-}
-
-export async function requireActiveMember(roles?: Role[]): Promise<ClinicContext> {
-  const ctx = await getActiveClinicContext();
-  if (!ctx) redirect("/login");
-  if (roles && !roles.includes(ctx.role)) redirect(roleHome(ctx.role));
-  return ctx;
 }
 
 // ─── Redirect helpers ─────────────────────────────────────────────────────────
@@ -187,13 +155,33 @@ export function roleHome(role: Role): string {
   return "/dashboard";
 }
 
+/** A user's first clinic membership, used to route them in from the root domain. */
+export async function firstMembership(
+  userId: string
+): Promise<{ role: Role; slug: string } | null> {
+  const membership = await prisma.clinicMember.findFirst({
+    where: { userId, clinic: { isActive: true } },
+    orderBy: { createdAt: "asc" },
+    select: { role: true, clinic: { select: { slug: true } } },
+  });
+  return membership ? { role: membership.role, slug: membership.clinic.slug } : null;
+}
+
 /**
- * Where to send a user right after login. Platform admins go to the platform
- * console; otherwise the user lands in their clinic. Multi-clinic users go to
- * their first clinic for now (a picker can come later).
- *
- * This one is called from the ROOT domain (global login, /clinics), so it has to
- * cross hosts into the clinic's subdomain — hence an absolute URL.
+ * Where a signed-in user continues to from the ROOT domain: the platform
+ * console for platform admins, otherwise their clinic's subdomain (multi-clinic
+ * users get their first clinic for now — a picker can come later). Absolute,
+ * because it crosses hosts.
+ */
+export async function continueHrefFor(user: CurrentUser): Promise<string> {
+  if (user.profile.isPlatformAdmin) return "/platform";
+  const membership = await firstMembership(user.id);
+  return membership ? clinicUrl(membership.slug, roleHome(membership.role)) : "/login";
+}
+
+/**
+ * Sends a user from the root domain into their clinic. Called right after a
+ * platform-side login, so it has to cross hosts — hence an absolute URL.
  */
 export async function redirectToUserClinic(
   userId: string,
@@ -201,12 +189,7 @@ export async function redirectToUserClinic(
 ): Promise<never> {
   if (isPlatformAdmin) redirect("/platform");
 
-  const membership = await prisma.clinicMember.findFirst({
-    where: { userId, clinic: { isActive: true } },
-    orderBy: { createdAt: "asc" },
-    select: { role: true, clinic: { select: { slug: true } } },
-  });
-
+  const membership = await firstMembership(userId);
   if (!membership) redirect("/login");
-  redirect(clinicUrl(membership.clinic.slug, roleHome(membership.role)));
+  redirect(clinicUrl(membership.slug, roleHome(membership.role)));
 }

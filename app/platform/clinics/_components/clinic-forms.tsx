@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createClinic, updateClinic } from "@/server/actions/clinics";
+import { clinicHost, clinicOrigin } from "@/lib/clinic-url";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground";
@@ -102,9 +103,15 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
       <div className="mb-3 flex items-center justify-between">
         <div>
           <p className="font-heading font-semibold text-foreground">{clinic.name}</p>
-          <p className="text-xs text-muted-foreground" dir="ltr">
-            /clinic/{clinic.slug}
-          </p>
+          <a
+            href={clinicOrigin(clinic.slug)}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-muted-foreground hover:text-primary hover:underline"
+            dir="ltr"
+          >
+            {clinicHost(clinic.slug)}
+          </a>
         </div>
         <button
           disabled={pending}

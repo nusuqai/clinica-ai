@@ -4,16 +4,27 @@
  * `demo.localhost:3000` in dev (browsers resolve *.localhost to 127.0.0.1 with
  * no hosts-file entry).
  *
- * The middleware rewrites that host onto the internal `/clinic/{slug}/…` route
- * tree, so INSIDE a clinic every link is root-relative ("/admin") and the slug
- * never appears in a path. Only cross-host links — the root domain sending a
- * user into their clinic, or one clinic linking to another — need an absolute
- * URL; build those here.
+ * The subdomain IS the route: the app has one set of pages (/, /login, /admin,
+ * /doctor, /dashboard …) and the host decides which clinic they belong to.
+ * Nothing is rewritten or redirected — the middleware just resolves the clinic
+ * from the Host header and hands it to the app on a request header.
+ *
+ * So inside a clinic every link is plain and root-relative ("/admin"). Only
+ * cross-host links — the root domain sending a user into their clinic, or a
+ * clinic linking back to the platform — need an absolute URL; build those here.
  *
  * No server-only imports: this is used by the edge middleware too.
  */
 
 export const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "localhost:3000";
+
+/**
+ * Request header the middleware stamps with the clinic subdomain, so server
+ * components and server actions (which never see the Host directly) can resolve
+ * the tenant. Always set by the middleware — and stripped when absent — so an
+ * incoming request can never spoof it.
+ */
+export const TENANT_HEADER = "x-clinic-slug";
 
 /** Local dev runs over http; everything else is https. */
 function protocolFor(host: string): "http" | "https" {
@@ -21,9 +32,19 @@ function protocolFor(host: string): "http" | "https" {
   return name === "localhost" || name === "127.0.0.1" ? "http" : "https";
 }
 
+/** `https://{ROOT_DOMAIN}` — the platform host, no trailing slash. */
+export function rootOrigin(): string {
+  return `${protocolFor(ROOT_DOMAIN)}://${ROOT_DOMAIN}`;
+}
+
+/** A clinic's public host — `{slug}.{ROOT_DOMAIN}`, dev port included. */
+export function clinicHost(slug: string): string {
+  return `${slug}.${ROOT_DOMAIN}`;
+}
+
 /** `https://{slug}.{ROOT_DOMAIN}` — no trailing slash. */
 export function clinicOrigin(slug: string): string {
-  return `${protocolFor(ROOT_DOMAIN)}://${slug}.${ROOT_DOMAIN}`;
+  return `${protocolFor(ROOT_DOMAIN)}://${clinicHost(slug)}`;
 }
 
 /** Absolute URL to `path` inside a clinic, e.g. clinicUrl("demo", "/admin"). */
@@ -33,8 +54,8 @@ export function clinicUrl(slug: string, path = "/"): string {
 
 /**
  * The clinic subdomain carried by a Host header, or null when the request is
- * for the root domain itself (marketing, /clinics, /platform), a Vercel preview
- * URL, or anything not under the root domain.
+ * for the root domain itself (marketing, /platform), a Vercel preview URL, or
+ * anything not under the root domain.
  */
 export function tenantFromHost(host: string | null | undefined): string | null {
   if (!host) return null;

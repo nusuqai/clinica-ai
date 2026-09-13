@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { Role } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { redirectToUserClinic, roleHome } from "@/lib/auth";
+import { getHostClinic, redirectToUserClinic, roleHome } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/secret-box";
 import { sendPasswordReset, sendClinicSignupOtp } from "@/lib/email/send-auth-email";
@@ -67,16 +67,30 @@ async function clearSignupPassword(): Promise<void> {
   }
 }
 
-export async function signIn(formData: FormData) {
+// Find an existing auth user by email (case-insensitive). Supabase has no
+// direct getUserByEmail on this client version, so we scan — fine at our scale.
+async function findAuthUserByEmail(email: string) {
+  const admin = createAdminClient();
+  const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
+  return data?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase()) ?? null;
+}
+
+// ─── Shared auth ──────────────────────────────────────────────────────────────
+// One set of auth actions serves every host. The clinic comes from the request's
+// subdomain (getHostClinic), so a form submitted on a clinic's /login is scoped
+// to that clinic, while the same action on the root domain signs a user into the
+// platform and routes them onward to their own clinic.
+//
+// NOTE: There is no global (clinic-less) sign-up. Accounts are only created
+// under a specific clinic (startClinicSignup → verifyClinicSignup below), which
+// links the new user to that clinic. Staff and admins are provisioned by an
+// admin instead.
+
+/** Root-domain sign-in: authenticate, then cross into the user's own clinic. */
+async function signInToPlatform(email: string, password: string) {
   const supabase = await createClient();
 
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-
-  const { error, data } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  const { error, data } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     return { error: "البريد الإلكتروني أو كلمة المرور غير صحيحة." };
   }
@@ -89,39 +103,15 @@ export async function signIn(formData: FormData) {
   await redirectToUserClinic(data.user.id, profile?.isPlatformAdmin ?? false);
 }
 
-// NOTE: There is no global (clinic-less) sign-up. Accounts are only created
-// under a specific clinic via that clinic's /register (startClinicSignup →
-// verifyClinicSignup below), which links the new user to that clinic. Staff and
-// admins are provisioned by an admin instead.
-
-// Find an existing auth user by email (case-insensitive). Supabase has no
-// direct getUserByEmail on this client version, so we scan — fine at our scale.
-async function findAuthUserByEmail(email: string) {
-  const admin = createAdminClient();
-  const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  return data?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase()) ?? null;
-}
-
-// ─── Per-clinic auth ──────────────────────────────────────────────────────────
-// Login / register scoped to a specific clinic (from the request's subdomain),
-// so we know which clinic a self-registering patient is joining and can route an
-// existing account straight to its dashboard in that clinic.
-
-async function activeClinicBySlug(slug: string) {
-  return prisma.clinic.findFirst({
-    where: { slug, isActive: true },
-    select: { id: true, name: true },
-  });
-}
-
-export async function signInToClinic(slug: string, formData: FormData) {
+export async function signIn(formData: FormData) {
   const supabase = await createClient();
-
-  const clinic = await activeClinicBySlug(slug);
-  if (!clinic) return { error: "العيادة غير موجودة." };
 
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+
+  // No subdomain → the platform's own login.
+  const clinic = await getHostClinic();
+  if (!clinic) return signInToPlatform(email, password);
 
   const { error, data } = await supabase.auth.signInWithPassword({
     email,
@@ -165,13 +155,6 @@ export async function signInToClinic(slug: string, formData: FormData) {
   });
   if (membership) redirect(roleHome(membership.role));
 
-  // Platform admins may enter any clinic even without a membership.
-  const profile = await prisma.profile.findUnique({
-    where: { id: data.user.id },
-    select: { isPlatformAdmin: true },
-  });
-  if (profile?.isPlatformAdmin) redirect(roleHome(Role.ADMIN));
-
   // Authenticated but NOT a member of this clinic. The password check already
   // opened a session; we must not leave the visitor signed in to a clinic they
   // don't belong to — sign out immediately. The page then offers to create an
@@ -182,10 +165,10 @@ export async function signInToClinic(slug: string, formData: FormData) {
 
 // Create a PATIENT membership in this clinic. Re-authenticates with the same
 // credentials (the sign-in flow signed the non-member out), then joins.
-export async function joinClinic(slug: string, formData: FormData) {
+export async function joinClinic(formData: FormData) {
   const supabase = await createClient();
 
-  const clinic = await activeClinicBySlug(slug);
+  const clinic = await getHostClinic();
   if (!clinic) return { error: "العيادة غير موجودة." };
 
   const email = formData.get("email") as string;
@@ -211,8 +194,8 @@ export async function joinClinic(slug: string, formData: FormData) {
 // Supabase mint an email-verification OTP that we deliver via Resend. The user
 // is created (unconfirmed) here; the ClinicMember link is created only after the
 // code is verified in step 2, so an abandoned signup leaves no clinic access.
-export async function startClinicSignup(slug: string, formData: FormData) {
-  const clinic = await activeClinicBySlug(slug);
+export async function startClinicSignup(formData: FormData) {
+  const clinic = await getHostClinic();
   if (!clinic) return { error: "العيادة غير موجودة." };
 
   const email = (formData.get("email") as string)?.trim();
@@ -270,10 +253,10 @@ export async function startClinicSignup(slug: string, formData: FormData) {
 
 // Step 2 of clinic sign-up: verify the OTP (Supabase validates it), which opens
 // a session, then link the now-confirmed user to this clinic as a PATIENT.
-export async function verifyClinicSignup(slug: string, formData: FormData) {
+export async function verifyClinicSignup(formData: FormData) {
   const supabase = await createClient();
 
-  const clinic = await activeClinicBySlug(slug);
+  const clinic = await getHostClinic();
   if (!clinic) return { error: "العيادة غير موجودة." };
 
   const email = (formData.get("email") as string)?.trim();
@@ -308,8 +291,8 @@ export async function verifyClinicSignup(slug: string, formData: FormData) {
 // Resend a signup verification code from the verify page (email only — the
 // password comes from the pending-signup cookie). Rate-limited by the same
 // per-email cooldown as the initial send.
-export async function resendClinicSignupOtp(slug: string, formData: FormData) {
-  const clinic = await activeClinicBySlug(slug);
+export async function resendClinicSignupOtp(formData: FormData) {
+  const clinic = await getHostClinic();
   if (!clinic) return { error: "العيادة غير موجودة." };
 
   const email = (formData.get("email") as string)?.trim();
