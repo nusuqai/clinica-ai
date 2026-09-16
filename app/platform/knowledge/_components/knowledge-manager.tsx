@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2, Eye, EyeOff, FileText } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import {
-  createKnowledgeDocAction,
-  updateKnowledgeDocAction,
-  deleteKnowledgeDocAction,
-  toggleKnowledgeDocActiveAction,
-} from "@/server/actions/admin";
+  createClinicKnowledgeDocAction,
+  updateClinicKnowledgeDocAction,
+  deleteClinicKnowledgeDocAction,
+  toggleClinicKnowledgeDocActiveAction,
+} from "@/server/actions/platformKnowledge";
 
 export interface KnowledgeDocView {
   id: string;
@@ -52,7 +52,15 @@ function formatDate(iso: string): string {
   });
 }
 
-export default function KnowledgeManager({ docs }: { docs: KnowledgeDocView[] }) {
+export default function KnowledgeManager({
+  clinicId,
+  docs,
+}: {
+  /** The clinic these documents belong to. Named explicitly because the console
+      runs on the root domain, where there is no tenant to infer from the host. */
+  clinicId: string;
+  docs: KnowledgeDocView[];
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -74,6 +82,7 @@ export default function KnowledgeManager({ docs }: { docs: KnowledgeDocView[] })
     e.preventDefault();
     if (!draft) return;
     const payload = {
+      clinicId,
       slug: draft.slug.trim(),
       title: draft.title.trim(),
       summary: draft.summary.trim(),
@@ -82,12 +91,12 @@ export default function KnowledgeManager({ docs }: { docs: KnowledgeDocView[] })
     };
     if (draft.id) {
       run(
-        () => updateKnowledgeDocAction({ id: draft.id!, ...payload }),
+        () => updateClinicKnowledgeDocAction({ id: draft.id!, ...payload }),
         () => setDraft(null)
       );
     } else {
       run(
-        () => createKnowledgeDocAction(payload),
+        () => createClinicKnowledgeDocAction(payload),
         () => setDraft(null)
       );
     }
@@ -146,7 +155,15 @@ export default function KnowledgeManager({ docs }: { docs: KnowledgeDocView[] })
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-1">
                   <button
-                    onClick={() => run(() => toggleKnowledgeDocActiveAction(d.id, !d.isActive))}
+                    onClick={() =>
+                      run(() =>
+                        toggleClinicKnowledgeDocActiveAction({
+                          clinicId,
+                          id: d.id,
+                          isActive: !d.isActive,
+                        })
+                      )
+                    }
                     disabled={isPending}
                     title={d.isActive ? "إخفاء عن المساعد" : "تفعيل"}
                     className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-40"
@@ -174,7 +191,7 @@ export default function KnowledgeManager({ docs }: { docs: KnowledgeDocView[] })
                     onClick={() =>
                       run(() => {
                         if (!confirm(`حذف المستند «${d.title}» نهائياً؟`)) return Promise.resolve();
-                        return deleteKnowledgeDocAction(d.id);
+                        return deleteClinicKnowledgeDocAction({ clinicId, id: d.id });
                       })
                     }
                     disabled={isPending}
