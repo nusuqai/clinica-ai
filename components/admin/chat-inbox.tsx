@@ -43,13 +43,15 @@ import type {
   MessageItem,
   ConversationDetail,
 } from "@/server/services/messages";
-import { fetchConversations, fetchConversationDetail } from "@/server/actions/conversations";
+import {
+  fetchConversations,
+  fetchConversationDetail,
+ } from "@/server/actions/conversations";
+
 interface ChatInboxProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationDetail | null;
   messages: MessageItem[];
-  /** This clinic's URL prefix, e.g. `/clinic/sunrise-dental`. */
-  basePath: string;
   clinicId: string;
 }
 
@@ -85,7 +87,6 @@ export default function ChatInbox({
   conversations: initialConversations,
   selectedConversation: initialConversation,
   messages: initialMessages,
-  basePath,
   clinicId,
 }: ChatInboxProps) {
   const router = useRouter();
@@ -290,7 +291,7 @@ export default function ChatInbox({
     }
     const params = new URLSearchParams(searchParams.toString());
     params.set("id", id);
-    router.push(`${basePath}/admin/messages?${params.toString()}`);
+    router.push(`/admin/messages?${params.toString()}`);
   };
   const isWhatsapp = selectedConversation?.channel === Channel.WHATSAPP;
   // Outside the 24-hour window WhatsApp refuses free-form text; the admin must
@@ -538,7 +539,7 @@ export default function ChatInbox({
               <div className="ms-auto flex items-center gap-2">
                 {selectedConversation.userId ? (
                   <a
-                    href={`${basePath}/admin/users/${selectedConversation.userId}`}
+                    href={`/admin/users/${selectedConversation.userId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 font-sans text-xs text-primary transition-colors hover:bg-primary/20"

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { AppointmentStatus, Role } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveClinicContext } from "@/lib/auth";
+import { getClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
@@ -27,8 +27,8 @@ export async function updateProfileAction(
       where: { id: user.id },
       data: { fullName: fullName.trim(), phone: phone?.trim() || null },
     });
-    revalidatePath("/clinic/[slug]/dashboard", "page");
-    revalidatePath("/clinic/[slug]/dashboard/profile", "page");
+    revalidatePath("/dashboard", "page");
+    revalidatePath("/dashboard/profile", "page");
     return { ok: true };
   } catch (e) {
     return {
@@ -71,8 +71,8 @@ export async function cancelAppointmentAction(
   );
   if (!result.ok) return { ok: false, error: result.error };
 
-  revalidatePath("/clinic/[slug]/dashboard", "page");
-  revalidatePath("/clinic/[slug]/dashboard/appointments", "page");
+  revalidatePath("/dashboard", "page");
+  revalidatePath("/dashboard/appointments", "page");
   return { ok: true };
 }
 
@@ -132,7 +132,7 @@ export async function bookOrderAppointmentAction(
   dateStr: string,
   patientNotes?: string
 ): Promise<{ ok: boolean; error?: string; orderNumber?: number }> {
-  const ctx = await getActiveClinicContext();
+  const ctx = await getClinicContext();
   if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
   if (ctx.role !== Role.PATIENT) return { ok: false, error: "هذه الخدمة للمرضى فقط" };
 
@@ -141,8 +141,8 @@ export async function bookOrderAppointmentAction(
   });
   if (!result.ok) return { ok: false, error: result.error };
 
-  revalidatePath("/clinic/[slug]/dashboard", "page");
-  revalidatePath("/clinic/[slug]/dashboard/appointments", "page");
+  revalidatePath("/dashboard", "page");
+  revalidatePath("/dashboard/appointments", "page");
   return { ok: true, orderNumber: result.data.orderNumber };
 }
 
@@ -150,7 +150,7 @@ export async function bookAppointmentAction(
   slotId: string,
   patientNotes?: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const ctx = await getActiveClinicContext();
+  const ctx = await getClinicContext();
   if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
   if (ctx.role !== Role.PATIENT) {
     return { ok: false, error: "هذه الخدمة للمرضى فقط" };

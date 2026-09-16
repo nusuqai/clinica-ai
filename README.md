@@ -14,7 +14,10 @@ AI agent (LangChain/LangGraph) that handles WhatsApp-based patient interactions.
 ## Project structure
 
 ```text
-app/            Next.js routes, grouped by role: (admin), (doctor), (patient), (auth), (marketing)
+app/(root)/     Landing page — the marketing site, or a clinic's public page (host-dependent)
+app/(auth)/     Login / register / verify / password flows, shared by every host
+app/(clinic)/   The clinic app: /admin, /doctor, /dashboard
+app/platform/   Platform-admin console (root domain only)
 agent/          AI agent (LangChain/LangGraph) — see agent/README.md
 server/         Server actions and services shared by the app and the agent
 prisma/         Prisma schema and migrations
@@ -22,6 +25,21 @@ supabase/       Supabase config and SQL migrations
 docs/           Design and refactor documentation
 legacy/         Previous implementation, kept for reference
 ```
+
+## Multi-tenancy
+
+Every clinic is served from its own subdomain of `NEXT_PUBLIC_ROOT_DOMAIN` —
+`demo.clinica-ai.nusuqai.com` — and the root domain serves the marketing site
+and the platform console. There is **one** set of routes: the Host decides which
+clinic they belong to. The middleware resolves the clinic from the subdomain and
+stamps it on the request (`x-clinic-slug`); `lib/auth.ts` reads it from there, so
+no page, action or link ever carries a slug and every in-clinic link is plain and
+root-relative (`/admin`, `/dashboard`). Nothing is rewritten or redirected
+between hosts. Only cross-host links are absolute — build those with
+`lib/clinic-url.ts`.
+
+In dev, browsers resolve `*.localhost` to 127.0.0.1 with no hosts-file entry, so
+a clinic is reachable at `http://demo.localhost:3000` straight away.
 
 ## Getting started
 

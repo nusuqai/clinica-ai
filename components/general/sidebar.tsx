@@ -20,6 +20,8 @@ interface SidebarProps {
   roleLabel: string;
   userFullName: string;
   userEmail: string;
+  clinicName: string;
+  clinicLogoUrl?: string | null;
   collapsed: boolean;
   onToggleCollapse: () => void;
   mobileOpen: boolean;
@@ -31,6 +33,8 @@ export default function Sidebar({
   roleLabel,
   userFullName,
   userEmail,
+  clinicName,
+  clinicLogoUrl = null,
   collapsed,
   onToggleCollapse,
   mobileOpen,
@@ -58,6 +62,8 @@ export default function Sidebar({
           roleLabel={roleLabel}
           userFullName={userFullName}
           userEmail={userEmail}
+          clinicName={clinicName}
+          clinicLogoUrl={clinicLogoUrl}
           initials={initials}
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
@@ -84,6 +90,8 @@ export default function Sidebar({
           roleLabel={roleLabel}
           userFullName={userFullName}
           userEmail={userEmail}
+          clinicName={clinicName}
+          clinicLogoUrl={clinicLogoUrl}
           initials={initials}
           collapsed={false}
           onToggleCollapse={onMobileClose}
@@ -99,6 +107,8 @@ interface SidebarContentProps {
   roleLabel: string;
   userFullName: string;
   userEmail: string;
+  clinicName: string;
+  clinicLogoUrl?: string | null;
   initials: string;
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -110,6 +120,8 @@ function SidebarContent({
   roleLabel,
   userFullName,
   userEmail,
+  clinicName,
+  clinicLogoUrl = null,
   initials,
   collapsed,
   onToggleCollapse,
@@ -135,14 +147,26 @@ function SidebarContent({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Logo */}
-      <div className="flex h-16 flex-shrink-0 items-center gap-3 border-b border-white/10 px-4">
-        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent/20">
-          <Stethoscope className="h-5 w-5 text-accent" />
-        </div>
+      {/* Clinic identity — this host's clinic, not the platform brand. */}
+      <div
+        className="flex h-16 flex-shrink-0 items-center gap-3 border-b border-white/10 px-4"
+        title={collapsed ? clinicName : undefined}
+      >
+        {clinicLogoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={clinicLogoUrl}
+            alt={clinicName}
+            className="h-9 w-9 flex-shrink-0 rounded-xl object-cover"
+          />
+        ) : (
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent/20">
+            <Stethoscope className="h-5 w-5 text-accent" />
+          </div>
+        )}
         {!collapsed && (
           <span className="truncate font-heading text-lg font-bold tracking-wide text-white">
-            Clinica AI
+            {clinicName}
           </span>
         )}
       </div>

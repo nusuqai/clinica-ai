@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { AppointmentTemplatePurpose, Role } from "@prisma/client";
-import { getActiveClinicContext } from "@/lib/auth";
+import { getClinicContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { listMessageTemplates } from "@/lib/meta/whatsapp";
@@ -16,7 +16,7 @@ import { APPOINTMENT_TOKENS } from "@/lib/appointment-templates";
  * purpose until an enabled binding exists.
  */
 
-const PATH = "/clinic/[slug]/admin/whatsapp";
+const PATH = "/admin/whatsapp";
 
 type ActionError = {
   ok: false;
@@ -37,7 +37,7 @@ export interface AppointmentTemplateBinding {
 }
 
 async function requireAdminClinic() {
-  const ctx = await getActiveClinicContext();
+  const ctx = await getClinicContext();
   if (!ctx) return { ok: false as const, reason: "unauthorized" as const };
   if (ctx.role !== Role.ADMIN) return { ok: false as const, reason: "forbidden" as const };
   return { ok: true as const, ctx };
