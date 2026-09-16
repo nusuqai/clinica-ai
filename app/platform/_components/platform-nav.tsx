@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   ClipboardList,
   Building2,
+  MessageCircle,
   Wallet,
   LogOut,
   Menu,
@@ -40,6 +41,7 @@ export default function PlatformNav({ email, pendingRequests }: Props) {
       badge: pendingRequests,
     },
     { href: "/platform/clinics", label: "العيادات", icon: Building2 },
+    { href: "/platform/whatsapp", label: "واتساب", icon: MessageCircle },
     { href: "/platform/credits", label: "الأرصدة والتكاليف", icon: Wallet },
   ];
 

@@ -39,7 +39,7 @@ export default function WhatsappTemplatePicker({
       if (!res.ok) {
         setError(
           res.reason === "not_configured"
-            ? "لم يتم إعداد واتساب لهذه العيادة بعد."
+            ? "لم يتم إعداد واتساب لهذه العيادة بعد. تواصل مع إدارة المنصّة."
             : "message" in res && res.message
               ? res.message
               : "تعذّر تحميل القوالب."
@@ -127,7 +127,7 @@ export default function WhatsappTemplatePicker({
             </div>
           ) : templates.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              لا توجد قوالب معتمدة بعد. أنشئ قالبًا من صفحة إعدادات واتساب.
+              لا توجد قوالب معتمدة بعد. تواصل مع إدارة المنصّة لإنشاء القوالب واعتمادها من ميتا.
             </p>
           ) : (
             <>
