@@ -2,11 +2,14 @@
 
 import { useState } from "react";
 import { Loader2, Save, KeyRound, Copy, Check } from "lucide-react";
-import { saveWhatsappConfigAction } from "@/server/actions/whatsapp";
+import { saveClinicWhatsappConfigAction } from "@/server/actions/platformWhatsapp";
 import type { WhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
 import { Field } from "./field";
 
 interface Props {
+  /** The clinic being configured — named explicitly, since the console runs on
+      the root domain where there is no tenant to infer from the host. */
+  clinicId: string;
   initialConfig: WhatsappConfigStatus | null;
   /** Public base URL, used to build the clinic's unique webhook URL. */
   appUrl: string;
@@ -17,7 +20,7 @@ interface Props {
  * the encrypted access token — plus the read-only webhook Callback URL + Verify
  * Token the clinic pastes back into Meta.
  */
-export default function ConnectionConfig({ initialConfig, appUrl }: Props) {
+export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Props) {
   const [phoneNumberId, setPhoneNumberId] = useState(initialConfig?.phoneNumberId ?? "");
   const [wabaId, setWabaId] = useState(initialConfig?.wabaId ?? "");
   const [accessToken, setAccessToken] = useState("");
@@ -40,7 +43,8 @@ export default function ConnectionConfig({ initialConfig, appUrl }: Props) {
   const handleSave = async () => {
     setSaving(true);
     setMessage(null);
-    const res = await saveWhatsappConfigAction({
+    const res = await saveClinicWhatsappConfigAction({
+      clinicId,
       phoneNumberId,
       wabaId,
       accessToken: accessToken || undefined,

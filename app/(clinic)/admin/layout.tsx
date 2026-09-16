@@ -18,6 +18,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       clinicId={ctx.clinic.id}
       clinicName={ctx.clinic.name}
       clinicLogoUrl={ctx.clinic.logoUrl}
+      viaPlatformAdmin={ctx.viaPlatformAdmin}
     >
       {children}
     </DashboardShell>

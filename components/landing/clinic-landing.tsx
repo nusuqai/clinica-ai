@@ -1,8 +1,6 @@
 import { AppointmentStatus, Role } from "@prisma/client";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { prisma } from "@/lib/prisma";
-import { roleHome, type ClinicSummary } from "@/lib/auth";
+import { getClinicContext, getCurrentUser, roleHome, type ClinicSummary } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import { LandingNav } from "@/components/landing/landing-nav";
@@ -22,28 +20,17 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
   const registerHref = "/register";
 
   // ── Auth check (who is viewing) ─────────────────────────────────────────────
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClinicContext is the single source of truth for access to this clinic, so
+  // a platform admin — a member of no clinic but an admin of all of them — gets
+  // the same way in here as everywhere else. getCurrentUser stays separate: a
+  // visitor signed in to a DIFFERENT clinic is still signed in, they just have
+  // no dashboard here to jump to.
+  const [user, ctx] = await Promise.all([getCurrentUser(), getClinicContext()]);
 
-  let isAuthenticated = false;
-  let isPatient = false;
-  let dashboardHref = loginHref;
-  let memberRole: Role | null = null;
-
-  if (user) {
-    isAuthenticated = true;
-    const membership = await prisma.clinicMember.findUnique({
-      where: { userId_clinicId: { userId: user.id, clinicId: clinic.id } },
-      select: { role: true },
-    });
-    if (membership) {
-      memberRole = membership.role;
-      isPatient = membership.role === Role.PATIENT;
-      dashboardHref = roleHome(membership.role);
-    }
-  }
+  const isAuthenticated = !!user;
+  const accessRole: Role | null = ctx?.role ?? null;
+  const isPatient = ctx?.role === Role.PATIENT;
+  const dashboardHref = ctx ? roleHome(ctx.role) : loginHref;
 
   // ── Data (scoped to THIS clinic) ────────────────────────────────────────────
   const [doctors, allAppointments] = await Promise.all([
@@ -90,8 +77,8 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
         registerHref={registerHref}
       />
 
-      {/* Member banner — quick jump to their dashboard in this clinic */}
-      {memberRole && (
+      {/* Quick jump to whichever dashboard the viewer has in this clinic */}
+      {accessRole && (
         <div className="fixed left-1/2 top-20 z-40 -translate-x-1/2">
           <Link
             href={dashboardHref}

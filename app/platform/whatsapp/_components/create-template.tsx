@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
-import { createTemplateAction } from "@/server/actions/whatsapp";
+import { createClinicTemplateAction } from "@/server/actions/platformWhatsapp";
 import { countVariables } from "@/lib/meta/template-render";
 import type { TemplateCategory, TemplateButton, TemplateButtonType } from "@/lib/meta/whatsapp";
 import { Field } from "./field";
-import { LANGUAGES } from "./languages";
-import WhatsappPreview from "./whatsapp-preview";
+// Shared with the clinic-side reminders page and inbox picker, so these stay
+// under components/admin/whatsapp rather than moving here.
+import { LANGUAGES } from "@/components/admin/whatsapp/languages";
+import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
 
 const CATEGORIES: { value: TemplateCategory; label: string }[] = [
   { value: "UTILITY", label: "خدمية (Utility)" },
@@ -29,7 +31,13 @@ const MAX_BUTTONS = 3;
  * live WhatsApp-style preview of the body as the admin types, with the example
  * values standing in for the `{{n}}` placeholders.
  */
-export default function CreateTemplate({ disabled }: { disabled: boolean }) {
+export default function CreateTemplate({
+  clinicId,
+  disabled,
+}: {
+  clinicId: string;
+  disabled: boolean;
+}) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState<TemplateCategory>("UTILITY");
   const [language, setLanguage] = useState<string>(LANGUAGES[0].value);
@@ -58,7 +66,8 @@ export default function CreateTemplate({ disabled }: { disabled: boolean }) {
   const handleSubmit = async () => {
     setSubmitting(true);
     setMessage(null);
-    const res = await createTemplateAction({
+    const res = await createClinicTemplateAction({
+      clinicId,
       name,
       category,
       language,

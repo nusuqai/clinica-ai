@@ -1,17 +1,17 @@
 import Link from "next/link";
 import { KeyRound, Settings, Webhook, MessageSquareText, ExternalLink } from "lucide-react";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePlatformAdmin } from "@/lib/auth";
 import PageHeader from "@/components/admin/page-header";
 
 export default async function WhatsAppGuidePage() {
-  await requireClinicMember(["ADMIN"]);
-  const configHref = `/admin/whatsapp/configuration`;
+  await requirePlatformAdmin();
+  const configHref = `/platform/whatsapp`;
 
   return (
     <div>
       <PageHeader
         title="دليل إعداد واتساب"
-        subtitle="خطوات الحصول على مفاتيح WhatsApp Cloud API وربط العيادة بحساب ميتا"
+        subtitle="خطوات الحصول على مفاتيح WhatsApp Cloud API وربط عيادة بحساب ميتا الخاص بها"
       />
 
       <div className="max-w-3xl space-y-5">
@@ -100,8 +100,8 @@ export default async function WhatsAppGuidePage() {
         <Step n={5} icon={<MessageSquareText className="h-4 w-4" />} title="أنشئ قوالبك">
           <p>
             انتقل إلى{" "}
-            <Link href={`/admin/whatsapp/templates`} className="text-accent hover:underline">
-              صفحة القوالب
+            <Link href={configHref} className="text-accent hover:underline">
+              قسم القوالب في بطاقة العيادة
             </Link>{" "}
             وأنشئ قالبًا. تُراجعه ميتا خلال دقائق إلى ساعات؛ ولا يمكن إرسال القالب إلا بعد اعتماده
             (الحالة <Code>APPROVED</Code>). خارج نافذة الـ 24 ساعة، القوالب المعتمدة هي الوسيلة
@@ -116,9 +116,10 @@ export default async function WhatsAppGuidePage() {
 function Intro() {
   return (
     <div className="rounded-2xl border border-border bg-card p-5 text-sm leading-relaxed text-muted-foreground">
-      تستخدم كل عيادة تطبيق ميتا الخاص بها. اتبع الخطوات التالية للحصول على المفاتيح المطلوبة ولصقها
-      في <b className="text-foreground">صفحة الإعدادات</b>. تحتاج عادةً إلى ربط واحد فقط ثم تكتفي
-      بإنشاء القوالب.
+      تستخدم كل عيادة تطبيق ميتا الخاص بها، ويتولّى إعدادَه مسؤول المنصّة نيابةً عنها. اتبع الخطوات
+      التالية للحصول على المفاتيح المطلوبة ولصقها في{" "}
+      <b className="text-foreground">بطاقة العيادة بصفحة واتساب</b>. تحتاج عادةً إلى ربط واحد لكل
+      عيادة، ثم تكتفي بإنشاء القوالب.
     </div>
   );
 }

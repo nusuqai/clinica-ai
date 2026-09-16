@@ -70,7 +70,8 @@ export default function AppointmentAutomation({ configured }: { configured: bool
     return (
       <div className="rounded-2xl border border-border bg-card p-5">
         <p className="text-xs text-muted-foreground">
-          فعِّل اتصال واتساب أولاً من صفحة الإعدادات لتتمكّن من ربط قوالب التذكير والتقييم.
+          لم يُفعّل اتصال واتساب لهذه العيادة بعد. تواصل مع إدارة المنصّة لتفعيله، ثم يمكنك ربط
+          قوالب التذكير والتقييم من هنا.
         </p>
       </div>
     );
