@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { Role } from "@prisma/client";
-import { getActiveClinicContext } from "@/lib/auth";
+import { getClinicContext } from "@/lib/auth";
 import {
   getWhatsappConfigStatus,
   getClinicWhatsappCredentials,
@@ -19,7 +19,7 @@ import {
   type TemplateButton,
 } from "@/lib/meta/whatsapp";
 
-const CONFIG_PATH = "/clinic/[slug]/admin/whatsapp";
+const CONFIG_PATH = "/admin/whatsapp";
 
 type ActionError = {
   ok: false;
@@ -28,7 +28,7 @@ type ActionError = {
 };
 
 async function requireAdminClinic() {
-  const ctx = await getActiveClinicContext();
+  const ctx = await getClinicContext();
   if (!ctx) return { ok: false as const, reason: "unauthorized" as const };
   if (ctx.role !== Role.ADMIN) return { ok: false as const, reason: "forbidden" as const };
   return { ok: true as const, ctx };

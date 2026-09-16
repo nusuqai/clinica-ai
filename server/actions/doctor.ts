@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { AvailabilityMode, Role, type AppointmentStatus, type DayOfWeek } from "@prisma/client";
 import * as QueueService from "@/server/services/queue";
 
-import { getActiveClinicContext } from "@/lib/auth";
+import { getClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import { listDoctorBranchIds } from "@/server/services/branches";
@@ -18,7 +18,7 @@ async function requireDoctor(): Promise<{
   doctorId: string;
   clinicId: string;
 }> {
-  const ctx = await getActiveClinicContext();
+  const ctx = await getClinicContext();
   if (!ctx || ctx.role !== Role.DOCTOR) throw new Error("غير مصرح");
 
   const doctor = await prisma.doctor.findFirst({
@@ -50,8 +50,8 @@ export async function updateAppointmentStatusAsDoctorAction(
     cancellationReason
   );
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/doctor/appointments", "page");
-  revalidatePath("/clinic/[slug]/doctor", "page");
+  revalidatePath("/doctor/appointments", "page");
+  revalidatePath("/doctor", "page");
   return { success: true };
 }
 
@@ -68,7 +68,7 @@ export async function updateDoctorNotesAction(appointmentId: string, doctorNotes
     data: { doctorNotes },
   });
 
-  revalidatePath("/clinic/[slug]/doctor/appointments", "page");
+  revalidatePath("/doctor/appointments", "page");
   return { success: true };
 }
 
@@ -96,8 +96,8 @@ export async function updateMyProfileAction(formData: FormData) {
   });
 
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/doctor/profile", "page");
-  revalidatePath("/clinic/[slug]/doctor", "page");
+  revalidatePath("/doctor/profile", "page");
+  revalidatePath("/doctor", "page");
   return { success: true };
 }
 
@@ -135,7 +135,7 @@ export async function createMyRuleAction(formData: FormData) {
     note: (formData.get("note") as string) || null,
   });
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
+  revalidatePath("/doctor/schedule", "page");
   return { success: true };
 }
 
@@ -149,7 +149,7 @@ export async function deleteMyRuleAction(ruleId: string) {
 
   const result = await DoctorService.deleteRule(ruleId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
+  revalidatePath("/doctor/schedule", "page");
   return { success: true };
 }
 
@@ -163,7 +163,7 @@ export async function toggleMyRuleActiveAction(ruleId: string, isActive: boolean
 
   const result = await DoctorService.toggleRuleActive(ruleId, isActive);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
+  revalidatePath("/doctor/schedule", "page");
   return { success: true };
 }
 
@@ -177,7 +177,7 @@ export async function generateMySlotsAction(ruleId: string) {
 
   const result = await DoctorService.generateSlotsForRule(ruleId, 30);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
+  revalidatePath("/doctor/schedule", "page");
   return { success: true, count: result.data.count };
 }
 
@@ -191,7 +191,7 @@ export async function toggleMySlotBlockedAction(slotId: string) {
 
   const result = await DoctorService.toggleSlotBlocked(slotId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
+  revalidatePath("/doctor/schedule", "page");
   return { success: true };
 }
 
@@ -224,7 +224,7 @@ export async function advanceMyQueueAction(queueId: string, to: number | null) {
   const { doctorId } = await requireDoctor();
   const res = await QueueService.setCurrentOrder(queueId, to, doctorId);
   if (!res.ok) return { error: res.error };
-  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
+  revalidatePath("/doctor/schedule", "page");
   return { success: true, currentOrder: res.data.currentOrder };
 }
 
@@ -232,6 +232,6 @@ export async function toggleMyQueueTrackingAction(queueId: string, track: boolea
   const { doctorId } = await requireDoctor();
   const res = await QueueService.toggleQueueTracking(queueId, track, doctorId);
   if (!res.ok) return { error: res.error };
-  revalidatePath("/clinic/[slug]/doctor/schedule", "page");
+  revalidatePath("/doctor/schedule", "page");
   return { success: true };
 }

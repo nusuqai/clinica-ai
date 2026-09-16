@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { AppointmentStatus, AvailabilityMode, DoctorTitle, Role } from "@prisma/client";
 
-import { getActiveClinicContext } from "@/lib/auth";
+import { getClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as UserService from "@/server/services/users";
 import * as AppointmentService from "@/server/services/appointments";
@@ -18,7 +18,7 @@ import { expectedOrderTime } from "@/lib/availability/queue-time";
 
 // Returns the admin's clinic id (throws if the caller is not a clinic ADMIN).
 async function requireAdmin(): Promise<string> {
-  const ctx = await getActiveClinicContext();
+  const ctx = await getClinicContext();
   if (!ctx || ctx.role !== Role.ADMIN) throw new Error("غير مصرح");
   return ctx.clinic.id;
 }
@@ -85,7 +85,7 @@ export async function createDoctorAction(formData: FormData) {
     return { error: ruleError };
   }
 
-  revalidatePath("/clinic/[slug]/admin/doctors", "page");
+  revalidatePath("/admin/doctors", "page");
   return { success: true };
 }
 
@@ -149,7 +149,7 @@ export async function linkDoctorAccountAction(formData: FormData) {
   });
 
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/doctors", "page");
+  revalidatePath("/admin/doctors", "page");
   return { success: true };
 }
 
@@ -183,8 +183,8 @@ export async function updateDoctorAction(formData: FormData) {
   });
 
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/doctors", "page");
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true };
 }
 
@@ -192,7 +192,7 @@ export async function setDoctorActiveAction(doctorId: string, isActive: boolean)
   await requireAdmin();
   const result = await DoctorService.setDoctorActive(doctorId, isActive);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/doctors", "page");
+  revalidatePath("/admin/doctors", "page");
   return { success: true };
 }
 
@@ -200,8 +200,8 @@ export async function deleteDoctorAction(doctorId: string) {
   await requireAdmin();
   const result = await DoctorService.deleteDoctor(doctorId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/doctors", "page");
-  revalidatePath("/clinic/[slug]/admin/users", "page");
+  revalidatePath("/admin/doctors", "page");
+  revalidatePath("/admin/users", "page");
   return { success: true };
 }
 
@@ -211,7 +211,7 @@ export async function updateUserRoleAction(userId: string, role: Role) {
   const clinicId = await requireAdmin();
   const result = await UserService.updateUserRole(userId, clinicId, role);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/users", "page");
+  revalidatePath("/admin/users", "page");
   return { success: true };
 }
 
@@ -219,7 +219,7 @@ export async function deleteUserAction(userId: string) {
   await requireAdmin();
   const result = await UserService.deleteUser(userId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/users", "page");
+  revalidatePath("/admin/users", "page");
   return { success: true };
 }
 
@@ -230,8 +230,8 @@ export async function updatePatientProfileAction(userId: string, formData: FormD
     phone: formData.has("phone") ? (formData.get("phone") as string) : undefined,
   });
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/users/[id]", "page");
-  revalidatePath("/clinic/[slug]/admin/users", "page");
+  revalidatePath("/admin/users/[id]", "page");
+  revalidatePath("/admin/users", "page");
   return { success: true as const };
 }
 
@@ -260,7 +260,7 @@ export async function updateAppointmentStatusAction(
     cancellationReason
   );
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/appointments", "page");
+  revalidatePath("/admin/appointments", "page");
   return { success: true };
 }
 
@@ -316,7 +316,7 @@ export async function createRuleAction(formData: FormData, clinicId: string) {
     note: (formData.get("note") as string) || null,
   });
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true };
 }
 
@@ -324,7 +324,7 @@ export async function deleteRuleAction(ruleId: string, doctorId: string) {
   await requireAdmin();
   const result = await DoctorService.deleteRule(ruleId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true };
 }
 
@@ -332,7 +332,7 @@ export async function toggleRuleActiveAction(ruleId: string, isActive: boolean, 
   await requireAdmin();
   const result = await DoctorService.toggleRuleActive(ruleId, isActive);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true };
 }
 
@@ -340,7 +340,7 @@ export async function generateSlotsAction(ruleId: string, doctorId: string) {
   await requireAdmin();
   const result = await DoctorService.generateSlotsForRule(ruleId, 30);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true, count: result.data.count };
 }
 
@@ -420,7 +420,7 @@ export async function advanceQueueAction(queueId: string, to: number | null) {
   if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.setCurrentOrder(queueId, to);
   if (!res.ok) return { error: res.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true, currentOrder: res.data.currentOrder };
 }
 
@@ -430,7 +430,7 @@ export async function completeCurrentAndAdvanceAction(queueId: string) {
   if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.completeCurrentAndAdvance(queueId);
   if (!res.ok) return { error: res.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true, currentOrder: res.data.currentOrder };
 }
 
@@ -439,7 +439,7 @@ export async function toggleQueueTrackingAction(queueId: string, track: boolean)
   if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.toggleQueueTracking(queueId, track);
   if (!res.ok) return { error: res.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true };
 }
 
@@ -448,7 +448,7 @@ export async function setQueueCapAction(queueId: string, cap: number | null) {
   if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.setQueueCap(queueId, cap);
   if (!res.ok) return { error: res.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true };
 }
 
@@ -468,7 +468,7 @@ export async function skipOrderAction(appointmentId: string) {
     return { error: "الحجز غير موجود" };
   const res = await QueueService.skipOrder(appointmentId);
   if (!res.ok) return { error: res.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true };
 }
 
@@ -479,7 +479,7 @@ export async function recallOrderAction(appointmentId: string) {
     return { error: "الحجز غير موجود" };
   const res = await QueueService.recallOrder(appointmentId);
   if (!res.ok) return { error: res.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true, orderNumber: res.data.orderNumber };
 }
 
@@ -489,7 +489,7 @@ export async function toggleSlotBlockedAction(slotId: string, doctorId: string) 
   await requireAdmin();
   const result = await DoctorService.toggleSlotBlocked(slotId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/doctors/[id]", "page");
+  revalidatePath("/admin/doctors/[id]", "page");
   return { success: true };
 }
 
@@ -499,7 +499,7 @@ export async function createBranchAction(input: Omit<BranchService.CreateBranchI
   const clinicId = await requireAdmin();
   const result = await BranchService.createBranch({ ...input, clinicId });
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/branches", "page");
+  revalidatePath("/admin/branches", "page");
   return { success: true, branchId: result.data.id };
 }
 
@@ -510,7 +510,7 @@ export async function updateBranchAction(input: BranchService.UpdateBranchInput)
   if (!branch) return { error: "الفرع غير موجود" };
   const result = await BranchService.updateBranch(input);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/branches", "page");
+  revalidatePath("/admin/branches", "page");
   return { success: true };
 }
 
@@ -520,7 +520,7 @@ export async function setBranchActiveAction(branchId: string, isActive: boolean)
   if (!branch) return { error: "الفرع غير موجود" };
   const result = await BranchService.setBranchActive(branchId, isActive);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/branches", "page");
+  revalidatePath("/admin/branches", "page");
   return { success: true };
 }
 
@@ -530,7 +530,7 @@ export async function setMainBranchAction(branchId: string) {
   if (!branch) return { error: "الفرع غير موجود" };
   const result = await BranchService.setMainBranch(clinicId, branchId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/branches", "page");
+  revalidatePath("/admin/branches", "page");
   return { success: true };
 }
 
@@ -540,7 +540,7 @@ export async function deleteBranchAction(branchId: string) {
   if (!branch) return { error: "الفرع غير موجود" };
   const result = await BranchService.deleteBranch(branchId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/branches", "page");
+  revalidatePath("/admin/branches", "page");
   return { success: true };
 }
 
@@ -552,7 +552,7 @@ export async function updateClinicInfoAction(
   const clinicId = await requireAdmin();
   const result = await ClinicInfoService.updateClinicInfo({ ...input, clinicId });
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/settings", "page");
+  revalidatePath("/admin/settings", "page");
   return { success: true };
 }
 
@@ -562,8 +562,8 @@ export async function createSpecialtyAction(name: string) {
   const clinicId = await requireAdmin();
   const result = await SpecialtyService.createSpecialty(clinicId, name);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/specialties", "page");
-  revalidatePath("/clinic/[slug]/admin/doctors", "page");
+  revalidatePath("/admin/specialties", "page");
+  revalidatePath("/admin/doctors", "page");
   return { success: true, id: result.data.id };
 }
 
@@ -571,8 +571,8 @@ export async function renameSpecialtyAction(specialtyId: string, name: string) {
   const clinicId = await requireAdmin();
   const result = await SpecialtyService.renameSpecialty(clinicId, specialtyId, name);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/specialties", "page");
-  revalidatePath("/clinic/[slug]/admin/doctors", "page");
+  revalidatePath("/admin/specialties", "page");
+  revalidatePath("/admin/doctors", "page");
   return { success: true };
 }
 
@@ -585,8 +585,8 @@ export async function deleteSpecialtyAction(specialtyId: string) {
   }
   const result = await SpecialtyService.deleteSpecialty(specialtyId);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/specialties", "page");
-  revalidatePath("/clinic/[slug]/admin/doctors", "page");
+  revalidatePath("/admin/specialties", "page");
+  revalidatePath("/admin/doctors", "page");
   return { success: true };
 }
 
@@ -602,7 +602,7 @@ export async function createKnowledgeDocAction(input: {
   const clinicId = await requireAdmin();
   const result = await KnowledgeService.createKnowledgeDoc({ ...input, clinicId });
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/knowledge", "page");
+  revalidatePath("/admin/knowledge", "page");
   return { success: true, id: result.data.id };
 }
 
@@ -620,7 +620,7 @@ export async function updateKnowledgeDocAction(input: {
   if (!doc) return { error: "المستند غير موجود" };
   const result = await KnowledgeService.updateKnowledgeDoc(input);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/knowledge", "page");
+  revalidatePath("/admin/knowledge", "page");
   return { success: true };
 }
 
@@ -630,7 +630,7 @@ export async function toggleKnowledgeDocActiveAction(id: string, isActive: boole
   if (!doc) return { error: "المستند غير موجود" };
   const result = await KnowledgeService.setKnowledgeDocActive(id, isActive);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/knowledge", "page");
+  revalidatePath("/admin/knowledge", "page");
   return { success: true };
 }
 
@@ -640,6 +640,6 @@ export async function deleteKnowledgeDocAction(id: string) {
   if (!doc) return { error: "المستند غير موجود" };
   const result = await KnowledgeService.deleteKnowledgeDoc(id);
   if (!result.ok) return { error: result.error };
-  revalidatePath("/clinic/[slug]/admin/knowledge", "page");
+  revalidatePath("/admin/knowledge", "page");
   return { success: true };
 }
