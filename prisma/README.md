@@ -40,10 +40,10 @@ migration is safe to ship.
 
 ### The workaround
 
-**Always run this against the local Supabase stack (`.env.localdb`) first. Never run it
-against `.env.hosted` until the change has been fully tested locally.** The hosted database
-is real data — the local stack (`npm run supabase:start`) is the disposable one to break
-things against.
+**Always run this against the local Supabase stack (`.env.local`) first. Never run it
+against `.env.dev` or `.env.prod` until the change has been fully tested locally.** Those
+hosted databases are real data — the local stack (`npm run supabase:start`) is the
+disposable one to break things against.
 
 1. Write the migration SQL by hand in a new `prisma/migrations/<timestamp>_<name>/migration.sql`
    file (match the naming convention of existing migration folders), based on the schema change
@@ -53,28 +53,28 @@ things against.
 2. Apply that SQL directly to the **local** database (bypasses the shadow DB entirely):
 
    ```bash
-   npx dotenv -e .env.localdb -- prisma db execute --schema prisma/schema.prisma --file prisma/migrations/<timestamp>_<name>/migration.sql
+   npx dotenv -e .env.local -- prisma db execute --schema prisma/schema.prisma --file prisma/migrations/<timestamp>_<name>/migration.sql
    ```
 
 3. Tell Prisma's **local** migration history that this migration is now applied, so
    `migrate dev`/`migrate deploy` won't try to run it again:
 
    ```bash
-   npx dotenv -e .env.localdb -- prisma migrate resolve --applied <timestamp>_<name>
+   npx dotenv -e .env.local -- prisma migrate resolve --applied <timestamp>_<name>
    ```
 
 4. Regenerate the Prisma client so the TypeScript types pick up the schema change:
 
    ```bash
-   npm run prisma:generate:local
+   npm run prisma:generate
    ```
 
 5. Test the change end-to-end against the local database.
 
 6. Only once fully verified locally: commit the migration folder, then repeat steps 2–4
-   with `.env.hosted` (`prisma:generate` instead of `prisma:generate:local`) to bring the
-   hosted dev database in sync. Deploying to production still goes through the normal
-   `npm run prisma:deploy` (`prisma migrate deploy`) — since that command doesn't use a
+   with `.env.dev` (`prisma:generate:dev` instead of `prisma:generate`) to bring the
+   dev-hosted database in sync. Deploying to production still goes through the normal
+   `npm run prisma:deploy:prod` (`prisma migrate deploy`) — since that command doesn't use a
    shadow database, it will apply the migration cleanly even though `migrate dev` couldn't
    validate it locally.
 

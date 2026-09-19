@@ -59,7 +59,7 @@ Dashboard → **Authentication → URL Configuration → Redirect URLs**, add:
 
 ### 4. Environment
 
-Add to `.env.hosted` / `.env.localdb`:
+Add to `.env.local` / `.env.dev` / `.env.prod`:
 
 ```
 RESEND_API_KEY=re_xxxxxxxx
