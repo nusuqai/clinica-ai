@@ -43,11 +43,11 @@ const emptyUsage = (): TokenUsage => ({
   model: DEFAULT_MODEL,
 });
 
-function buildAgent(ctx: AgentContext) {
+async function buildAgent(ctx: AgentContext) {
   return createReactAgent({
     llm: createModel(),
     tools: getToolsForRole(ctx),
-    prompt: buildSystemPrompt(ctx),
+    prompt: await buildSystemPrompt(ctx),
   });
 }
 
@@ -115,7 +115,7 @@ export async function* runAgentStream(
   ctx: AgentContext,
   prior: PriorMessage[],
 ): AsyncGenerator<AgentStreamEvent> {
-  const agent = buildAgent(ctx);
+  const agent = await buildAgent(ctx);
   const messages = toLangChainMessages(prior);
 
   let finalText = "";

@@ -1,7 +1,57 @@
-import { Channel, Role } from "@prisma/client";
+import { Channel, PhoneType, Role, SocialPlatform } from "@prisma/client";
 import type { AgentContext } from "./types";
+import { getClinicInfo, type ClinicInfo } from "@/server/services/clinicInfo";
 
-const CLINIC = "عيادة ClinicaAI";
+// Fallback used only if the clinic record can't be loaded (e.g. DB hiccup);
+// normally the agent identifies itself with the clinic's real name.
+const CLINIC_FALLBACK = "العيادة";
+
+const PHONE_TYPE_LABEL: Record<PhoneType, string> = {
+  [PhoneType.LANDLINE]: "أرضي",
+  [PhoneType.MOBILE]: "جوال",
+  [PhoneType.WHATSAPP]: "واتساب",
+};
+
+const SOCIAL_LABEL: Record<SocialPlatform, string> = {
+  [SocialPlatform.FACEBOOK]: "فيسبوك",
+  [SocialPlatform.INSTAGRAM]: "إنستغرام",
+  [SocialPlatform.X]: "إكس (تويتر)",
+  [SocialPlatform.TIKTOK]: "تيك توك",
+  [SocialPlatform.YOUTUBE]: "يوتيوب",
+  [SocialPlatform.WEBSITE]: "الموقع الإلكتروني",
+  [SocialPlatform.OTHER]: "أخرى",
+};
+
+// Builds the clinic-identity block injected at the top of the system prompt so
+// the agent speaks *as* the real clinic (name, description, contact channels)
+// instead of a generic product name. Detailed branch/hours data stays behind
+// the get_clinic_info / list_branches / get_branch_info tools.
+function buildClinicIdentity(clinic: ClinicInfo | null): {
+  name: string;
+  lines: string[];
+} {
+  if (!clinic) return { name: CLINIC_FALLBACK, lines: [] };
+  const lines: string[] = [];
+  if (clinic.description?.trim()) {
+    lines.push(`نبذة عن العيادة: ${clinic.description.trim()}`);
+  }
+  if (clinic.phones.length) {
+    const phones = clinic.phones
+      .map((p) => {
+        const label = p.label?.trim() || PHONE_TYPE_LABEL[p.type];
+        return `${p.number}${label ? ` (${label})` : ""}`;
+      })
+      .join("، ");
+    lines.push(`أرقام التواصل: ${phones}`);
+  }
+  if (clinic.socials.length) {
+    const socials = clinic.socials
+      .map((s) => `${SOCIAL_LABEL[s.platform]}: ${s.url}`)
+      .join("، ");
+    lines.push(`حسابات التواصل الاجتماعي: ${socials}`);
+  }
+  return { name: clinic.name, lines };
+}
 
 const BOOKING_FLOW =
   "عند رغبة المستخدم بالحجز: لا تسأله عن تاريخ محدد مباشرة ولا تفترض مواعيد. أولاً استخدم get_doctor_working_hours لعرض أيام وساعات عمل الطبيب والفرع الذي يداوم فيه كل يوم، دعه يختار يوماً يعمل فيه الطبيب فعلاً، ثم استخدم get_doctor_availability لعرض ما هو متاح في ذلك اليوم. لاحظ نظام الجدولة (mode): إن كان slot فاعرض الفترات (slots) بأوقاتها ليختار واحدة واحجز بـ book_appointment. وإن كان order (نظام الدور) فلا توجد أوقات ثابتة؛ أخبر المستخدم بعدد الأماكن المتبقية ورقم دوره القادم والوقت المتوقع لكشفه (expectedTime) إن توفّر، واحجز بـ book_order_appointment (بدون slotId) — سيحصل على رقم دور، ومع تفعيل التتبّع يمكنه معرفة الدور الجاري الآن ومدة الانتظار التقديرية. لا يُسمح للمريض بأكثر من موعد واحد قائم (قيد الانتظار أو مؤكَّد) مع الطبيب نفسه؛ فإذا رفضت الأداة الحجز لهذا السبب، أوضح له ذلك واطلب منه إتمام موعده الحالي أو إلغاءه قبل حجز موعد جديد مع الطبيب نفسه (يمكنه الحجز مع طبيب آخر). بعد إتمام الحجز أو إعادة الجدولة، اعرض للمستخدم كل تفاصيل الموعد كما أعادتها الأداة تماماً (اسم الطبيب، الفرع، التاريخ، والوقت أو رقم الدور والوقت المتوقع، والسعر إن وُجد) للتأكيد، واعتمد على قيم الأداة لا على ذاكرتك حتى ينتبه المستخدم لأي خطأ.";
@@ -37,7 +87,11 @@ const EXISTING_ACCOUNT_NOT_MEMBER_GUIDE = `هذا الشخص لديه حساب �
 
 const GUEST_WEB_GUIDE = `أنت تتحدث مع زائر لم يسجّل الدخول بعد. رحّب به وقدّم له معلومات عامة إن سأل: قائمة الأطباء وتخصصاتهم، ومواعيد عملهم، والفترات المتاحة، ومعلومات الفروع (العنوان، الهاتف، ساعات العمل، الموقف، كيفية الوصول) عبر list_branches وget_branch_info وget_clinic_info. لا يمكنك حجز أو إلغاء أو تعديل أي موعد له لأنه لا يملك حساباً — إذا رغب بالحجز، أخبره بلطف أنه يحتاج أولاً لإنشاء حساب أو تسجيل الدخول من الموقع، ثم يمكنه العودة لإتمام الحجز. ${BOOKING_FLOW}`;
 
-export function buildSystemPrompt(ctx: AgentContext): string {
+export async function buildSystemPrompt(ctx: AgentContext): Promise<string> {
+  // Load the real clinic so the agent identifies itself as that clinic (name,
+  // description, phones, socials) rather than a generic product name.
+  const clinic = await getClinicInfo(ctx.clinicId).catch(() => null);
+  const identity = buildClinicIdentity(clinic);
   // For an unidentified contact (role null): on WhatsApp, an existing account
   // that just isn't a member of this clinic (Case 2, actorId set) can be
   // registered here directly; a brand-new number (Case 1) is sent to the
@@ -58,7 +112,8 @@ export function buildSystemPrompt(ctx: AgentContext): string {
   const guide = (ctx.role ? ROLE_GUIDE[ctx.role] : unknownGuide) + claimSuffix;
   const now = new Date();
   return [
-    `أنت المساعد الذكي في ${CLINIC}. مهمتك تنفيذ المهام نيابةً عن المستخدم لا مجرّد الشرح.`,
+    `أنت المساعد الذكي الرسمي في «${identity.name}». أنت تمثّل هذه العيادة وتتحدث باسمها، ومهمتك تنفيذ المهام نيابةً عن المستخدم لا مجرّد الشرح. عرّف نفسك دائماً كمساعد «${identity.name}» ولا تنسب نفسك إلى أي جهة أو منتج آخر.`,
+    ...identity.lines,
     ctx.actorName ? `اسم المستخدم: ${ctx.actorName}.` : "",
     guide,
     `التاريخ والوقت الحالي: ${now.toLocaleString("ar-EG", { dateStyle: "full", timeStyle: "short" })} (ISO: ${now.toISOString()}).`,
