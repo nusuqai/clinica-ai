@@ -7,24 +7,28 @@ import { toggleClinicAiAction, toggleClinicVoiceReplyAction } from "@/server/act
 interface Props {
   initialEnabled: boolean;
   initialVoiceReplyEnabled: boolean;
-  balance: number;
-  lowBalance: boolean;
+  /** Replies remaining on the clinic's meter. */
+  unitBalance: number;
+  lowUnits: boolean;
+  /** The clinic still has units, so the agent can reply. */
   sufficient: boolean;
 }
 
-const fmtUsd = (n: number) =>
-  `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+const fmtUnits = (n: number) => n.toLocaleString("ar-EG");
 
 /**
  * Clinic-admin control for the AI agent: a global on/off switch plus a read-only
- * view of the prepaid balance. Top-ups and the markup are platform-controlled,
- * so they are shown here but not editable.
+ * view of the unit meter. Units are granted by the platform, so they are shown
+ * here but not editable.
+ *
+ * Units are the ONLY consumption figure a clinic sees — the underlying USD cost
+ * of a reply is platform accounting and never surfaces here.
  */
 export default function AiSettingsForm({
   initialEnabled,
   initialVoiceReplyEnabled,
-  balance,
-  lowBalance,
+  unitBalance,
+  lowUnits,
   sufficient,
 }: Props) {
   const [enabled, setEnabled] = useState(initialEnabled);
@@ -77,15 +81,18 @@ export default function AiSettingsForm({
         <div className="flex items-start gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-600">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <p>
-            رصيد المساعد الذكي غير كافٍ — لن يرد المساعد على العملاء حتى تتم إضافة رصيد. سيتم تحويل
-            رسائل العملاء إلى فريق العيادة.
+            نفدت وحدات المساعد الذكي — لن يرد المساعد على العملاء حتى تتم إضافة وحدات جديدة. سيتم
+            تحويل رسائل العملاء إلى فريق العيادة.
           </p>
         </div>
       )}
-      {sufficient && lowBalance && (
+      {sufficient && lowUnits && (
         <div className="flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-600">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-          <p>رصيد المساعد الذكي منخفض. يُنصح بالتواصل مع المنصة لإضافة رصيد.</p>
+          <p>
+            وحدات المساعد الذكي على وشك النفاد ({fmtUnits(unitBalance)} وحدة متبقية). يُنصح بالتواصل
+            مع المنصة لإضافة وحدات.
+          </p>
         </div>
       )}
 
@@ -167,27 +174,27 @@ export default function AiSettingsForm({
         </div>
       </div>
 
-      {/* Balance (read-only) */}
+      {/* Unit meter (read-only) */}
       <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
-        <p className="font-sans text-sm font-semibold text-foreground">رصيد الاستخدام</p>
+        <p className="font-sans text-sm font-semibold text-foreground">رصيد الوحدات</p>
         <div className="flex items-end justify-between">
           <div>
             <p
               className={`font-heading text-3xl font-bold ${
-                sufficient ? "text-foreground" : "text-red-600"
+                !sufficient ? "text-red-600" : lowUnits ? "text-amber-600" : "text-foreground"
               }`}
-              dir="ltr"
             >
-              {fmtUsd(balance)}
+              {fmtUnits(unitBalance)}{" "}
+              <span className="font-sans text-base font-normal text-muted-foreground">وحدة</span>
             </p>
             <p className="mt-1 font-sans text-xs text-muted-foreground">
-              الرصيد المتاح للمساعد الذكي (بالدولار)
+              كل رد يرسله المساعد الذكي يخصم وحدة واحدة. ردود فريق العيادة اليدوية لا تُخصم منها
+              شيء.
             </p>
           </div>
         </div>
         <p className="border-t border-border pt-3 font-sans text-xs text-muted-foreground">
-          تتم إدارة إضافة الرصيد ومضاعف التسعير من قِبل المنصة. للاستفسار أو إضافة رصيد، تواصل مع
-          فريق المنصة.
+          تتم إضافة الوحدات من قِبل المنصة. للاستفسار أو إضافة وحدات، تواصل مع فريق المنصة.
         </p>
       </div>
     </div>

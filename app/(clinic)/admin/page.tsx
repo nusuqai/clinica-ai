@@ -1,5 +1,15 @@
-import { Users, Stethoscope, CalendarDays, MessageCircle, Clock, CheckCircle } from "lucide-react";
+import Link from "next/link";
+import {
+  Users,
+  Stethoscope,
+  CalendarDays,
+  MessageCircle,
+  Clock,
+  CheckCircle,
+  Coins,
+} from "lucide-react";
 import { getDashboardStats, getRecentActivity } from "@/server/services/reports";
+import { getClinicUnitSummary } from "@/server/services/aiCredit";
 import { requireClinicMember } from "@/lib/auth";
 import StatCard from "@/components/admin/stat-card";
 import PageHeader from "@/components/admin/page-header";
@@ -7,14 +17,59 @@ import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 
 export default async function AdminHomePage() {
   const { clinic } = await requireClinicMember(["ADMIN"]);
-  const [stats, activity] = await Promise.all([
+  const [stats, activity, units] = await Promise.all([
     getDashboardStats(clinic.id),
     getRecentActivity(clinic.id, 8),
+    getClinicUnitSummary(clinic.id),
   ]);
 
   return (
     <div>
       <PageHeader title="لوحة التحكم" subtitle="نظرة عامة على النظام" />
+
+      {/* AI units — first, and its own row: when this hits zero the assistant
+          stops answering customers, so it should not be one tile among eight. */}
+      <Link href="/admin/ai/usage" className="mb-4 block">
+        <div
+          className={`flex items-center justify-between gap-4 rounded-2xl border p-5 transition-colors hover:bg-muted/40 ${
+            !units.unitsSufficient
+              ? "border-red-500/30 bg-red-500/10"
+              : units.lowUnits
+                ? "border-amber-500/30 bg-amber-500/10"
+                : "border-border bg-card"
+          }`}
+        >
+          <div className="flex items-center gap-4">
+            <div
+              className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl ${
+                !units.unitsSufficient
+                  ? "bg-red-500/10 text-red-600"
+                  : units.lowUnits
+                    ? "bg-amber-500/10 text-amber-600"
+                    : "bg-primary/10 text-primary"
+              }`}
+            >
+              <Coins className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="font-heading text-2xl font-bold text-foreground">
+                {units.unitBalance.toLocaleString("ar-EG")}{" "}
+                <span className="font-sans text-base font-normal text-muted-foreground">وحدة</span>
+              </p>
+              <p className="font-sans text-sm text-muted-foreground">
+                {!units.unitsSufficient
+                  ? "نفدت وحدات المساعد الذكي — توقّف الرد الآلي على العملاء"
+                  : units.lowUnits
+                    ? "وحدات المساعد الذكي على وشك النفاد"
+                    : "رصيد وحدات المساعد الذكي — وحدة لكل رد آلي"}
+              </p>
+            </div>
+          </div>
+          <span className="flex-shrink-0 font-sans text-sm text-primary hover:underline">
+            تقرير الاستهلاك
+          </span>
+        </div>
+      </Link>
 
       {/* KPI grid */}
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">

@@ -3,14 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { requirePlatformAdmin } from "@/lib/auth";
-import { topUpClinicCredit, adjustClinicCredit, setClinicMarkup } from "@/server/services/aiCredit";
+import {
+  setClinicMarkup,
+  topUpClinicUnits,
+  adjustClinicUnits,
+  setClinicLowUnitsThreshold,
+} from "@/server/services/aiCredit";
 
 const CREDITS_PATH = "/platform/credits";
 
 type ActionError = { ok: false; reason: "error"; message: string };
 
-/** Parses a user-entered amount straight to Decimal — never through a JS float.
- *  Rejects empty / non-numeric input so bad money never reaches the ledger. */
+/** Parses a user-entered decimal (the pricing markup) — never through a JS
+ *  float. Rejects empty / non-numeric input so bad values never reach the
+ *  cost calculation. */
 function parseDecimal(raw: string): Prisma.Decimal | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -23,52 +29,88 @@ function parseDecimal(raw: string): Prisma.Decimal | null {
   }
 }
 
-export async function topUpClinicAction(input: {
+/** Parses a unit count. Units are indivisible, so anything fractional or
+ *  non-numeric is rejected outright rather than rounded into the ledger. */
+function parseUnits(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (!/^-?\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
+/**
+ * Grant units to a clinic — the clinic-facing meter, one unit per agent reply.
+ * This is how a clinic is "charged 1000 units": the platform grants them here,
+ * and every answer the agent sends takes one back.
+ */
+export async function topUpClinicUnitsAction(input: {
   clinicId: string;
-  amount: string;
+  units: string;
   note?: string;
-}): Promise<{ ok: true; balance: string } | ActionError> {
+}): Promise<{ ok: true; unitBalance: number } | ActionError> {
   const admin = await requirePlatformAdmin();
-  const amount = parseDecimal(input.amount);
-  if (!amount || amount.lte(0)) {
-    return { ok: false, reason: "error", message: "المبلغ يجب أن يكون رقماً موجباً." };
+  const units = parseUnits(input.units);
+  if (units === null || units <= 0) {
+    return { ok: false, reason: "error", message: "عدد الوحدات يجب أن يكون رقماً صحيحاً موجباً." };
   }
   try {
-    const balance = await topUpClinicCredit(
+    const unitBalance = await topUpClinicUnits(
       input.clinicId,
-      amount,
+      units,
       admin.id,
       input.note?.trim() || undefined
     );
     revalidatePath(CREDITS_PATH);
-    return { ok: true, balance: balance.toFixed(4) };
+    return { ok: true, unitBalance };
   } catch (err) {
-    console.error("Failed to top up clinic credit:", err);
+    console.error("Failed to top up clinic units:", err);
     return { ok: false, reason: "error", message: "تعذر تنفيذ العملية." };
   }
 }
 
-export async function adjustClinicBalanceAction(input: {
+/** Signed unit correction (may be negative) — e.g. refunding a broken run. */
+export async function adjustClinicUnitsAction(input: {
   clinicId: string;
-  amount: string;
+  units: string;
   note?: string;
-}): Promise<{ ok: true; balance: string } | ActionError> {
+}): Promise<{ ok: true; unitBalance: number } | ActionError> {
   const admin = await requirePlatformAdmin();
-  const amount = parseDecimal(input.amount);
-  if (!amount || amount.isZero()) {
-    return { ok: false, reason: "error", message: "أدخل مبلغاً موجباً أو سالباً غير صفري." };
+  const units = parseUnits(input.units);
+  if (units === null || units === 0) {
+    return { ok: false, reason: "error", message: "أدخل عدداً صحيحاً موجباً أو سالباً غير صفري." };
   }
   try {
-    const balance = await adjustClinicCredit(
+    const unitBalance = await adjustClinicUnits(
       input.clinicId,
-      amount,
+      units,
       admin.id,
       input.note?.trim() || undefined
     );
     revalidatePath(CREDITS_PATH);
-    return { ok: true, balance: balance.toFixed(4) };
+    return { ok: true, unitBalance };
   } catch (err) {
-    console.error("Failed to adjust clinic credit:", err);
+    console.error("Failed to adjust clinic units:", err);
+    return { ok: false, reason: "error", message: "تعذر تنفيذ العملية." };
+  }
+}
+
+/** The unit count below which the clinic admin sees a low-balance warning. */
+export async function setClinicLowUnitsThresholdAction(input: {
+  clinicId: string;
+  threshold: string;
+}): Promise<{ ok: true; threshold: number } | ActionError> {
+  await requirePlatformAdmin();
+  const threshold = parseUnits(input.threshold);
+  if (threshold === null || threshold < 0) {
+    return { ok: false, reason: "error", message: "حد التنبيه يجب أن يكون رقماً صحيحاً غير سالب." };
+  }
+  try {
+    await setClinicLowUnitsThreshold(input.clinicId, threshold);
+    revalidatePath(CREDITS_PATH);
+    return { ok: true, threshold };
+  } catch (err) {
+    console.error("Failed to set clinic low-units threshold:", err);
     return { ok: false, reason: "error", message: "تعذر تنفيذ العملية." };
   }
 }

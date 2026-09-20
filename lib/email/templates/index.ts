@@ -213,3 +213,53 @@ export function emailChangeEmail(args: {
     }),
   };
 }
+
+// 7) INTERNAL — a clinic is running low on AI units, or has run out.
+//
+// Unlike every template above this one is not sent to a customer: it goes to the
+// platform's own admins, so it names the clinic, states the exact remaining
+// count, and links straight to the credits console. `severity` distinguishes a
+// warning ("top them up soon") from an outage ("the agent has already stopped
+// answering this clinic's customers"), which changes the urgency of the wording.
+export function clinicLowUnitsAlertEmail(args: {
+  clinicName: string;
+  clinicSlug: string;
+  unitBalance: number;
+  lowUnitsThreshold: number;
+  severity: "low" | "out";
+  actionUrl: string;
+}): BuiltEmail {
+  const isOut = args.severity === "out";
+  const units = args.unitBalance.toLocaleString("ar-EG");
+  const threshold = args.lowUnitsThreshold.toLocaleString("ar-EG");
+
+  return {
+    subject: isOut
+      ? `⛔ نفدت وحدات المساعد الذكي — عيادة «${args.clinicName}»`
+      : `⚠️ وحدات المساعد الذكي على وشك النفاد — عيادة «${args.clinicName}»`,
+    html: renderEmail({
+      preheader: isOut
+        ? `توقّف الرد الآلي لعيادة ${args.clinicName} — الرصيد صفر.`
+        : `تبقّى ${units} وحدة فقط لعيادة ${args.clinicName}.`,
+      heading: isOut ? "نفدت وحدات المساعد الذكي ⛔" : "وحدات المساعد الذكي على وشك النفاد ⚠️",
+      bodyHtml:
+        p(
+          isOut
+            ? `نفد رصيد وحدات المساعد الذكي لعيادة <strong>«${esc(args.clinicName)}»</strong>، و<strong>توقّف الرد الآلي على عملائها</strong>. تُحوَّل رسائل العملاء الآن إلى فريق العيادة يدوياً.`
+            : `اقترب رصيد وحدات المساعد الذكي لعيادة <strong>«${esc(args.clinicName)}»</strong> من النفاد.`
+        ) +
+        p(
+          `<strong>الرصيد المتبقي:</strong> ${units} وحدة<br/>` +
+            `<strong>حد التنبيه:</strong> ${threshold} وحدة<br/>` +
+            `<strong>معرّف العيادة:</strong> <span dir="ltr">${esc(args.clinicSlug)}</span>`
+        ) +
+        p(
+          isOut
+            ? "أضف وحدات من لوحة المنصة لاستئناف الرد الآلي فوراً."
+            : "يُنصح بإضافة وحدات من لوحة المنصة قبل توقّف الرد الآلي."
+        ) +
+        linkFallback(args.actionUrl),
+      cta: { label: "إدارة الأرصدة والوحدات", url: args.actionUrl },
+    }),
+  };
+}

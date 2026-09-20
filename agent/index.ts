@@ -41,7 +41,9 @@ export type AgentStreamEvent =
   | { type: "audio"; messageId: string }
   | { type: "error"; message: string };
 
-const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
+/** The model assumed when a provider response carries no model name. Exported
+ *  so billing can label a usage row it had to synthesize (see agentRunner). */
+export const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
 
 async function buildAgent(ctx: AgentContext) {
   return createReactAgent({
