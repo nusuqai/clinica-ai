@@ -44,6 +44,7 @@ import type {
   ConversationDetail,
 } from "@/server/services/messages";
 import { fetchConversations, fetchConversationDetail } from "@/server/actions/conversations";
+import type { AgentMessageMetadata } from "@/agent/types";
 
 interface ChatInboxProps {
   conversations: ConversationSummary[];
@@ -59,6 +60,13 @@ interface ChatInboxProps {
  */
 type PendingStatus = "sending" | "sent" | "failed_sync" | "failed_whatsapp";
 
+/** Formats an audio length as m:ss. */
+function formatDuration(totalSec: number): string {
+  const m = Math.floor(totalSec / 60);
+  const s = Math.floor(totalSec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 /** An admin reply rendered optimistically, before/independently of the server
  *  round-trip. Client-side only — these do not survive a reload. */
 interface PendingMessage {
@@ -73,11 +81,14 @@ interface PendingMessage {
 
 interface RenderedMessage {
   key: string;
+  /** Server message id (absent on optimistic bubbles) — used for media playback. */
+  id?: string;
   content: string;
   senderType: MessageItem["senderType"];
   sessionId: string | null;
   createdAt: Date;
   pending?: PendingMessage;
+  voice?: MessageItem["voice"];
 }
 
 export default function ChatInbox({
@@ -139,10 +150,12 @@ export default function ChatInbox({
         .filter((m) => !superseded.has(m.id))
         .map((m) => ({
           key: m.id,
+          id: m.id,
           content: m.content,
           senderType: m.senderType,
           sessionId: m.sessionId,
           createdAt: m.createdAt,
+          voice: m.voice,
         })),
       // Always newest, so appending keeps the createdAt-ascending order.
       ...mine.map((p) => ({
@@ -193,6 +206,9 @@ export default function ChatInbox({
 
       // Append to the thread only if it's the open conversation.
       if (row.conversationId === activeId) {
+        // Carry voice metadata through so a voice note shows its player live,
+        // not only after a reload.
+        const voice = (row.metadata as AgentMessageMetadata | null)?.voice;
         setMessages((prev) =>
           prev.some((m) => m.id === row.id)
             ? prev
@@ -205,6 +221,15 @@ export default function ChatInbox({
                   sessionId: row.sessionId,
                   createdAt: new Date(row.createdAt),
                   isRead: row.isRead,
+                  ...(voice
+                    ? {
+                        voice: {
+                          durationSec: voice.durationSec,
+                          transcript: voice.transcript,
+                          status: voice.status,
+                        },
+                      }
+                    : {}),
                 },
               ]
         );
@@ -662,12 +687,38 @@ export default function ChatInbox({
                             🤖 المساعد الذكي
                           </p>
                         )}
+                        {msg.voice && (
+                          <div className="mb-1">
+                            {msg.voice.status === "failed" ? (
+                              <p className="flex items-center gap-1 text-[11px] text-red-600">
+                                🎤 تعذّر تفريغ الرسالة الصوتية
+                              </p>
+                            ) : (
+                              <audio
+                                controls
+                                preload="none"
+                                src={msg.id ? `/api/admin/media/${msg.id}` : undefined}
+                                className="h-9 w-full max-w-[240px]"
+                              />
+                            )}
+                            {typeof msg.voice.durationSec === "number" && (
+                              <span
+                                className="mt-0.5 block text-[10px] text-muted-foreground"
+                                dir="ltr"
+                              >
+                                🎤 {formatDuration(msg.voice.durationSec)}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {isAgent ? (
                           <div className="prose prose-sm prose-neutral max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                           </div>
                         ) : (
-                          <p>{msg.content}</p>
+                          // For a voice message the content IS the transcript; render it
+                          // beneath the player. Skip the empty string of a spoken reply.
+                          msg.content && <p>{msg.content}</p>
                         )}
                         {status === "sending" ? (
                           <p className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">

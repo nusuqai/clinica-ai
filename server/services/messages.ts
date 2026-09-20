@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, Role, SenderType, type Prisma } from "@prisma/client";
+import type { AgentMessageMetadata, VoiceMessageMetadata } from "@/agent/types";
 
 export interface ConversationSummary {
   id: string;
@@ -15,6 +16,14 @@ export interface ConversationSummary {
   hasUnresolvedEscalation: boolean;
 }
 
+/** Voice fields the inbox needs to render a player (no URL — the audio streams
+ *  through /api/admin/media/<id>, which signs it on demand). */
+export interface MessageVoice {
+  durationSec: number | null;
+  transcript: string;
+  status: VoiceMessageMetadata["status"];
+}
+
 export interface MessageItem {
   id: string;
   content: string;
@@ -22,6 +31,8 @@ export interface MessageItem {
   sessionId: string | null;
   createdAt: Date;
   isRead: boolean;
+  /** Present when the message is/contains a voice note. */
+  voice?: MessageVoice;
 }
 
 export interface EscalationItem {
@@ -119,14 +130,26 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
     orderBy: { createdAt: "asc" },
   });
 
-  return messages.map((m) => ({
-    id: m.id,
-    content: m.content,
-    senderType: m.senderType,
-    sessionId: m.sessionId,
-    createdAt: m.createdAt,
-    isRead: m.isRead,
-  }));
+  return messages.map((m) => {
+    const voice = (m.metadata as AgentMessageMetadata | null)?.voice;
+    return {
+      id: m.id,
+      content: m.content,
+      senderType: m.senderType,
+      sessionId: m.sessionId,
+      createdAt: m.createdAt,
+      isRead: m.isRead,
+      ...(voice
+        ? {
+            voice: {
+              durationSec: voice.durationSec,
+              transcript: voice.transcript,
+              status: voice.status,
+            },
+          }
+        : {}),
+    };
+  });
 }
 
 export async function getConversationDetail(

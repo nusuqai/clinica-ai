@@ -1,9 +1,19 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, SenderType, type Role } from "@prisma/client";
-import { sendTextMessage, WhatsAppApiError } from "@/lib/meta/whatsapp";
+import {
+  sendTextMessage,
+  sendAudioMessage,
+  uploadMedia,
+  downloadMedia,
+  WhatsAppApiError,
+} from "@/lib/meta/whatsapp";
 import type { WhatsAppCredentials, WhatsAppRecipient } from "@/lib/meta/whatsapp";
 import type { UnsupportedMediaType } from "@/lib/meta/whatsapp-inbound";
+import { uploadPatientMedia } from "@/lib/supabase/storage";
+import { transcribeAudio } from "./transcription";
+import { synthesizeSpeech } from "./tts";
+import type { VoiceMessageMetadata } from "@/agent/types";
 import { showTypingIndicator } from "./whatsappTyping";
 import { runAgentStream, runAgentToText, type AgentContext, type PriorMessage } from "@/agent";
 import type { AgentStreamEvent } from "@/agent";
@@ -20,6 +30,8 @@ import {
 import {
   getClinicAiStatus,
   chargeUsage,
+  chargeTranscription,
+  chargeTts,
   isDuplicateChargeError,
   ensureOpenEscalation,
 } from "./aiCredit";
@@ -169,6 +181,43 @@ export async function* streamWebAgent(
   const sessionId = await resolveActiveSession(conversationId, membership.clinicId);
   await persistUserMessage(conversationId, sessionId, membership.clinicId, userText, userId);
 
+  yield* streamWebReply(membership, conversationId, sessionId, userId);
+}
+
+/** The web membership shape both web entrypoints resolve. */
+interface WebMembership {
+  role: Role;
+  clinicId: string;
+  clinic: { slug: string };
+  user: { fullName: string };
+}
+
+async function resolveWebMembership(userId: string): Promise<WebMembership> {
+  const membership = await prisma.clinicMember.findFirst({
+    where: { userId, clinic: { isActive: true } },
+    orderBy: { createdAt: "asc" },
+    select: {
+      role: true,
+      clinicId: true,
+      clinic: { select: { slug: true } },
+      user: { select: { fullName: true } },
+    },
+  });
+  if (!membership) throw new Error("No clinic membership for user");
+  return membership;
+}
+
+/**
+ * Shared web reply tail: gates, streams the agent, persists + charges the reply.
+ * The user message has already been persisted into `sessionId`. Used by both the
+ * text and voice web entrypoints.
+ */
+async function* streamWebReply(
+  membership: WebMembership,
+  conversationId: string,
+  sessionId: string,
+  userId: string
+): AsyncGenerator<AgentStreamEvent> {
   if (!(await isSessionAiEnabled(sessionId))) {
     yield { type: "handoff" };
     return;
@@ -227,6 +276,79 @@ export async function* streamWebAgent(
 }
 
 /**
+ * Web channel, voice note (issue #49): stores the recorded audio, transcribes
+ * it, persists the user message (transcript + voice metadata), charges
+ * transcription as its own ledger line, then streams the agent reply exactly
+ * like a text turn. Emits a `transcript` event so the widget can show what was
+ * understood. Voice-out (TTS) is a WhatsApp-only concern for now — the web
+ * widget already plays nothing back as audio.
+ */
+export async function* streamWebVoiceAgent(
+  userId: string,
+  audio: { bytes: Buffer; mimeType: string }
+): AsyncGenerator<AgentStreamEvent> {
+  const membership = await resolveWebMembership(userId);
+  const conversationId = await getOrCreateWebConversation(userId, membership.clinicId);
+  const sessionId = await resolveActiveSession(conversationId, membership.clinicId);
+
+  let transcript = "";
+  let durationSec: number | null = null;
+  let sttModel = "";
+  let voiceMeta: VoiceMessageMetadata | null = null;
+  try {
+    const stored = await uploadPatientMedia({
+      clinicId: membership.clinicId,
+      conversationId,
+      bytes: audio.bytes,
+      contentType: audio.mimeType,
+    });
+    const result = await transcribeAudio({ bytes: audio.bytes, mimeType: audio.mimeType });
+    transcript = result.text;
+    durationSec = result.durationSec;
+    sttModel = result.model;
+    voiceMeta = {
+      storagePath: stored.path,
+      mimeType: stored.contentType,
+      durationSec,
+      transcript,
+      model: sttModel,
+      status: transcript ? "transcribed" : "failed",
+    };
+  } catch (err) {
+    console.error("[web] voice storage/transcription failed:", err);
+  }
+
+  const content = transcript || "[رسالة صوتية]";
+  const userMsg = await persistUserMessage(
+    conversationId,
+    sessionId,
+    membership.clinicId,
+    content,
+    userId,
+    voiceMeta ? { voice: voiceMeta } : null
+  );
+
+  if (sttModel) {
+    await chargeTranscriptionSafe({
+      clinicId: membership.clinicId,
+      sessionId,
+      messageId: userMsg.id,
+      model: sttModel,
+      audioSeconds: durationSec,
+    });
+  }
+
+  yield { type: "transcript", text: content };
+
+  if (!transcript) {
+    yield { type: "error", message: VOICE_FAILED_NOTICE };
+    return;
+  }
+
+  yield* streamWebReply(membership, conversationId, sessionId, userId);
+}
+
+/**
  * WhatsApp channel, non-text message: records that something arrived so the
  * admin can see the gap in the thread, and tells the contact we only take text.
  *
@@ -278,6 +400,271 @@ export async function handleUnsupportedWhatsAppMessage(
   await deliverReply(contact, reply, creds);
 }
 
+/** A conversation's clinic-scoped fields the handlers need. */
+interface ConvInfo {
+  whatsappName: string | null;
+  clinicId: string;
+  clinic: { slug: string };
+}
+
+/** Loads the conversation row both WhatsApp handlers open with. */
+async function loadConversation(conversationId: string): Promise<ConvInfo | null> {
+  return prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: {
+      whatsappName: true,
+      clinicId: true,
+      clinic: { select: { slug: true } },
+    },
+  });
+}
+
+/**
+ * Matches (or eagerly provisions) the Profile behind a WhatsApp contact and
+ * links it to the conversation. Shared by the text and voice handlers.
+ *
+ * Profiles are keyed by phone; a hidden-phone (username) contact can't be
+ * matched that way, so it runs info-only until it registers in-chat. Eager
+ * onboarding provisions a brand-new visible number as a PATIENT the moment it
+ * writes in (when WhatsApp gave a usable name), so the PATIENT tools are bound
+ * on that very message. Idempotent + best-effort — never blocks the reply.
+ */
+async function resolveProfileAndLink(
+  clinicId: string,
+  conversationId: string,
+  conv: ConvInfo,
+  contact: WhatsAppContact
+): Promise<{ id: string; fullName: string | null } | null> {
+  const { phone, userId } = contact;
+  let profile = phone
+    ? await prisma.profile.findUnique({
+        where: { phone },
+        select: { id: true, fullName: true },
+      })
+    : null;
+
+  const name = conv.whatsappName?.trim() ?? "";
+  const usableName = name && name !== phone && name !== userId ? name : "";
+  if (!profile && usableName && phone) {
+    try {
+      const { profileId } = await getOrCreatePatientByPhone({ clinicId, phone, name: usableName });
+      profile = { id: profileId, fullName: usableName };
+    } catch (err) {
+      console.error("[whatsapp] eager patient provisioning failed:", err);
+    }
+  }
+
+  if (profile) {
+    await prisma.conversation
+      .update({ where: { id: conversationId }, data: { userId: profile.id } })
+      .catch(() => {}); // ignore unique clashes (already linked elsewhere)
+  }
+  return profile;
+}
+
+/** Meters a transcription charge off the reply's critical path (dup-safe). */
+async function chargeTranscriptionSafe(args: {
+  clinicId: string;
+  sessionId: string | null;
+  messageId: string | null;
+  model: string;
+  audioSeconds: number | null;
+}): Promise<void> {
+  try {
+    await chargeTranscription(args);
+  } catch (err) {
+    if (isDuplicateChargeError(err)) return;
+    console.error("[aiCredit] failed to charge transcription", err);
+  }
+}
+
+/** Meters a TTS charge off the reply's critical path (dup-safe). */
+async function chargeTtsSafe(args: {
+  clinicId: string;
+  sessionId: string | null;
+  messageId: string | null;
+  model: string;
+  characters: number;
+  audioSeconds: number | null;
+}): Promise<void> {
+  try {
+    await chargeTts(args);
+  } catch (err) {
+    if (isDuplicateChargeError(err)) return;
+    console.error("[aiCredit] failed to charge tts", err);
+  }
+}
+
+/**
+ * Sends a synthesized voice reply: uploads the OGG/Opus bytes to the clinic's
+ * WhatsApp number, then sends an audio message. Returns true on success; on any
+ * failure (closed 24h window, upload error) it returns false so the caller can
+ * fall back to text. Never throws — an already-persisted reply must not crash.
+ */
+async function deliverVoiceReply(
+  contact: WhatsAppContact,
+  bytes: Buffer,
+  mimeType: string,
+  creds: WhatsAppCredentials
+): Promise<boolean> {
+  const to = contactLabel(contact);
+  const recipient: WhatsAppRecipient = { phone: contact.phone, userId: contact.userId };
+  try {
+    const mediaId = await uploadMedia(creds, bytes, mimeType);
+    await sendAudioMessage(recipient, mediaId, creds);
+    console.log(`[wa-debug] deliverVoiceReply → SENT audio to ${to}`);
+    return true;
+  } catch (err) {
+    const code = err instanceof WhatsAppApiError ? err.code : undefined;
+    console.error(
+      `[wa-debug] voice reply NOT delivered to ${to} (code=${code}) — will fall back to text:`,
+      err
+    );
+    return false;
+  }
+}
+
+/**
+ * Shared reply path for both text and voice inbound: gates, runs the agent,
+ * persists + delivers the reply, and meters cost. The inbound user message has
+ * already been persisted into `sessionId` (so it's in the loaded history).
+ *
+ * When `wasVoice` and the clinic has `voiceReplyEnabled`, the reply is spoken
+ * (TTS) — mirroring the patient's modality. Text-in always yields text-out.
+ */
+async function respondAndReply(args: {
+  conversationId: string;
+  clinicId: string;
+  clinicSlug: string;
+  sessionId: string;
+  whatsappName: string | null;
+  profile: { id: string; fullName: string | null } | null;
+  contact: WhatsAppContact;
+  /** Meta message id of the inbound — for read receipt + typing indicator. */
+  metaMessageId: string;
+  creds: WhatsAppCredentials;
+  wasVoice: boolean;
+}): Promise<void> {
+  const {
+    conversationId,
+    clinicId,
+    clinicSlug,
+    sessionId,
+    whatsappName,
+    profile,
+    contact,
+    metaMessageId,
+    creds,
+    wasVoice,
+  } = args;
+
+  if (!(await isSessionAiEnabled(sessionId))) {
+    console.log(`[wa-debug] no reply: AI disabled for session ${sessionId} (human handoff)`);
+    return;
+  }
+
+  const status = await getClinicAiStatus(clinicId);
+  if (!status.aiEnabled) {
+    await ensureOpenEscalation(clinicId, conversationId, sessionId, "clinic_disabled");
+    console.log(`[wa-debug] no reply: clinic AI disabled clinicId=${clinicId}`);
+    return;
+  }
+  if (!status.sufficient) {
+    await ensureOpenEscalation(clinicId, conversationId, sessionId, "insufficient_credit");
+    console.log(`[wa-debug] no reply: insufficient credit clinicId=${clinicId}`);
+    return;
+  }
+
+  const prior = await getSessionMessages(sessionId);
+
+  // The contact's role is per-clinic; resolve it in this conversation's clinic.
+  let role: Role | null = null;
+  if (profile) {
+    const m = await prisma.clinicMember.findUnique({
+      where: { userId_clinicId: { userId: profile.id, clinicId } },
+      select: { role: true },
+    });
+    role = m?.role ?? null;
+  }
+
+  const ctx: AgentContext = {
+    actorId: profile?.id ?? null,
+    role,
+    clinicId,
+    clinicSlug,
+    contactPhone: contact.phone ?? "",
+    channel: Channel.WHATSAPP,
+    conversationId,
+    sessionId,
+    actorName: profile?.fullName ?? whatsappName ?? "",
+  };
+
+  // Buffered agent (no token streaming here), so show "typing…". Meta clears it
+  // when the reply lands.
+  showTypingIndicator(metaMessageId, creds);
+
+  const { text, toolCalls, usage } = await runAgentToText(ctx, toPrior(prior));
+  const reply = text || FALLBACK_REPLY;
+
+  // Voice reply only when the clinic opted in AND the patient spoke.
+  let voiceMeta: VoiceMessageMetadata | null = null;
+  let ttsCharacters = 0;
+  let ttsModel = "";
+  if (wasVoice && status.voiceReplyEnabled) {
+    const tts = await synthesizeSpeech(reply);
+    if (tts) {
+      ttsCharacters = tts.characters;
+      ttsModel = tts.model;
+      // Store the spoken reply so the dashboard can play it back too.
+      try {
+        const stored = await uploadPatientMedia({
+          clinicId,
+          conversationId,
+          bytes: tts.bytes,
+          contentType: tts.mimeType,
+        });
+        voiceMeta = {
+          storagePath: stored.path,
+          mimeType: stored.contentType,
+          durationSec: tts.durationSec,
+          transcript: "",
+          model: tts.model,
+          status: "spoken",
+        };
+      } catch (err) {
+        console.error("[whatsapp] failed to store TTS reply audio:", err);
+      }
+      // Deliver as voice; fall back to text if WhatsApp rejects the audio.
+      const sent = await deliverVoiceReply(contact, tts.bytes, tts.mimeType, creds);
+      const agentMsg = await persistAgentMessage(conversationId, sessionId, clinicId, reply, {
+        toolCalls,
+        ...(voiceMeta ? { voice: voiceMeta } : {}),
+      });
+      if (!sent) await deliverReply(contact, reply, creds);
+      await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage });
+      if (ttsModel) {
+        await chargeTtsSafe({
+          clinicId,
+          sessionId,
+          messageId: agentMsg.id,
+          model: ttsModel,
+          characters: ttsCharacters,
+          audioSeconds: tts.durationSec,
+        });
+      }
+      return;
+    }
+    // TTS unavailable — fall through to a plain text reply.
+    console.log("[wa-debug] voice reply requested but TTS unavailable — sending text");
+  }
+
+  const agentMsg = await persistAgentMessage(conversationId, sessionId, clinicId, reply, {
+    toolCalls,
+  });
+  await deliverReply(contact, reply, creds);
+  await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage });
+}
+
 /**
  * WhatsApp channel: resolves the session, persists the user message, runs the
  * agent (non-streaming), persists + sends the reply. Phone is matched to a
@@ -291,15 +678,7 @@ export async function handleWhatsAppMessage(
   messageId: string,
   creds: WhatsAppCredentials
 ): Promise<void> {
-  const { phone, userId } = contact;
-  const conv = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    select: {
-      whatsappName: true,
-      clinicId: true,
-      clinic: { select: { slug: true } },
-    },
-  });
+  const conv = await loadConversation(conversationId);
   // The conversation was just created/updated by the webhook, so this is defensive.
   if (!conv) {
     console.warn(
@@ -310,47 +689,7 @@ export async function handleWhatsAppMessage(
   console.log(`[wa-debug] handleWhatsAppMessage start convId=${conversationId}`);
   const clinicId = conv.clinicId;
 
-  // Profiles are keyed by phone; a hidden-phone (username) contact can't be
-  // matched that way, so it runs info-only until it registers in-chat.
-  let profile = phone
-    ? await prisma.profile.findUnique({
-        where: { phone },
-        select: { id: true, fullName: true },
-      })
-    : null;
-
-  // Eager onboarding: a brand-new WhatsApp number is provisioned as a PATIENT the
-  // moment it writes in — as long as WhatsApp gave us a real name to attach (its
-  // fallback "name" is just the phone/BSUID, which is not a usable patient name)
-  // AND the phone is visible (patient accounts are keyed by phone). The account +
-  // membership therefore already exist by the time the contact asks to book, so
-  // the PATIENT tools are bound on that very message — no "you're registered, now
-  // repeat your request" round-trip. Otherwise we stay info-only (role null) and
-  // the agent asks for the name, then registers via register_in_clinic. Idempotent
-  // + best-effort: it only creates on the very first message and never blocks the
-  // reply if provisioning fails.
-  const name = conv.whatsappName?.trim() ?? "";
-  const usableName = name && name !== phone && name !== userId ? name : "";
-  if (!profile && usableName && phone) {
-    try {
-      const { profileId } = await getOrCreatePatientByPhone({
-        clinicId,
-        phone,
-        name: usableName,
-      });
-      profile = { id: profileId, fullName: usableName };
-    } catch (err) {
-      console.error("[whatsapp] eager patient provisioning failed:", err);
-    }
-  }
-
-  // Link the conversation to the matched/created account so the admin inbox + role
-  // gating stay consistent.
-  if (profile) {
-    await prisma.conversation
-      .update({ where: { id: conversationId }, data: { userId: profile.id } })
-      .catch(() => {}); // ignore unique clashes (already linked elsewhere)
-  }
+  const profile = await resolveProfileAndLink(clinicId, conversationId, conv, contact);
 
   const sessionId = await resolveActiveSession(conversationId, clinicId);
   await persistUserMessage(conversationId, sessionId, clinicId, userText, profile?.id ?? null);
@@ -358,57 +697,123 @@ export async function handleWhatsAppMessage(
     `[wa-debug] user message STORED convId=${conversationId} sessionId=${sessionId} profileId=${profile?.id ?? "none"}`
   );
 
-  if (!(await isSessionAiEnabled(sessionId))) {
-    console.log(
-      `[wa-debug] no reply: AI disabled for session ${sessionId} (human handoff) — message stored, no WhatsApp reply`
-    );
-    return;
-  }
-
-  if (await clinicGateBlocks(clinicId, conversationId, sessionId)) {
-    console.log(
-      `[wa-debug] no reply: clinic gate blocks (AI off / out of credit) clinicId=${clinicId} — message stored, no WhatsApp reply`
-    );
-    return;
-  }
-
-  const prior = await getSessionMessages(sessionId);
-
-  // The contact's role is per-clinic; resolve it in this conversation's clinic.
-  let role: Role | null = null;
-  if (profile) {
-    const m = await prisma.clinicMember.findUnique({
-      where: {
-        userId_clinicId: { userId: profile.id, clinicId },
-      },
-      select: { role: true },
-    });
-    role = m?.role ?? null;
-  }
-
-  const ctx: AgentContext = {
-    actorId: profile?.id ?? null,
-    role,
+  await respondAndReply({
+    conversationId,
     clinicId,
     clinicSlug: conv.clinic.slug,
-    contactPhone: phone ?? "",
-    channel: Channel.WHATSAPP,
+    sessionId,
+    whatsappName: conv.whatsappName,
+    profile,
+    contact,
+    metaMessageId: messageId,
+    creds,
+    wasVoice: false,
+  });
+}
+
+/** Arabic notice when a voice note can't be transcribed. */
+const VOICE_FAILED_NOTICE =
+  "عذراً، لم نتمكن من فهم رسالتك الصوتية. هل يمكنك إعادة إرسالها أو كتابة طلبك نصاً؟ 🙏";
+
+/**
+ * WhatsApp channel, voice note (issue #49): downloads the audio, stores it in
+ * the private bucket, transcribes it, then feeds the transcript to the agent as
+ * an ordinary text turn (reusing `respondAndReply`). Transcription is charged as
+ * its own ledger line, separate from the reply.
+ *
+ * On transcription failure the audio is still stored, the message is recorded
+ * (so the admin sees it), and the contact gets a graceful notice + an
+ * escalation — the agent is not run on an empty transcript.
+ */
+export async function handleWhatsAppVoiceMessage(
+  conversationId: string,
+  contact: WhatsAppContact,
+  voice: { mediaId: string; mimeType: string },
+  messageId: string,
+  creds: WhatsAppCredentials
+): Promise<void> {
+  const conv = await loadConversation(conversationId);
+  if (!conv) {
+    console.warn(
+      `[wa-debug] DROP: conversation ${conversationId} not found in handleWhatsAppVoiceMessage`
+    );
+    return;
+  }
+  console.log(`[wa-debug] handleWhatsAppVoiceMessage start convId=${conversationId}`);
+  const clinicId = conv.clinicId;
+
+  const profile = await resolveProfileAndLink(clinicId, conversationId, conv, contact);
+  const sessionId = await resolveActiveSession(conversationId, clinicId);
+
+  // Download → store → transcribe. Any step can fail; we degrade gracefully.
+  let transcript = "";
+  let durationSec: number | null = null;
+  let sttModel = "";
+  let voiceMeta: VoiceMessageMetadata | null = null;
+  try {
+    const media = await downloadMedia(voice.mediaId, creds.accessToken);
+    const stored = await uploadPatientMedia({
+      clinicId,
+      conversationId,
+      bytes: media.bytes,
+      contentType: media.mimeType,
+    });
+    const result = await transcribeAudio({ bytes: media.bytes, mimeType: media.mimeType });
+    transcript = result.text;
+    durationSec = result.durationSec;
+    sttModel = result.model;
+    voiceMeta = {
+      storagePath: stored.path,
+      mimeType: stored.contentType,
+      durationSec,
+      transcript,
+      model: sttModel,
+      status: transcript ? "transcribed" : "failed",
+    };
+  } catch (err) {
+    console.error("[whatsapp] voice download/transcription failed:", err);
+  }
+
+  // Record the inbound: transcript as content when we have it, else a placeholder.
+  const content = transcript || "[رسالة صوتية]";
+  const userMsg = await persistUserMessage(
     conversationId,
     sessionId,
-    actorName: profile?.fullName ?? conv.whatsappName ?? "",
-  };
+    clinicId,
+    content,
+    profile?.id ?? null,
+    voiceMeta ? { voice: voiceMeta } : null
+  );
 
-  // The agent is fully buffered (no token streaming on this channel), so show
-  // "typing…" instead of leaving the contact in silence. Meta clears it when
-  // the reply lands, so there is nothing to stop afterwards.
-  showTypingIndicator(messageId, creds);
+  // Charge transcription (its own ledger line) whenever a model actually ran.
+  if (sttModel) {
+    await chargeTranscriptionSafe({
+      clinicId,
+      sessionId,
+      messageId: userMsg.id,
+      model: sttModel,
+      audioSeconds: durationSec,
+    });
+  }
 
-  const { text, toolCalls, usage } = await runAgentToText(ctx, toPrior(prior));
-  const reply = text || FALLBACK_REPLY;
+  if (!transcript) {
+    // Couldn't understand the audio — notify + escalate, don't run the agent.
+    await ensureOpenEscalation(clinicId, conversationId, sessionId, "voice_transcription_failed");
+    await persistAgentMessage(conversationId, sessionId, clinicId, VOICE_FAILED_NOTICE, null);
+    await deliverReply(contact, VOICE_FAILED_NOTICE, creds);
+    return;
+  }
 
-  const agentMsg = await persistAgentMessage(conversationId, sessionId, clinicId, reply, {
-    toolCalls,
+  await respondAndReply({
+    conversationId,
+    clinicId,
+    clinicSlug: conv.clinic.slug,
+    sessionId,
+    whatsappName: conv.whatsappName,
+    profile,
+    contact,
+    metaMessageId: messageId,
+    creds,
+    wasVoice: true,
   });
-  await deliverReply(contact, reply, creds);
-  await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage });
 }

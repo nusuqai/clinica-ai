@@ -3,6 +3,7 @@ import { Channel } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   handleWhatsAppMessage,
+  handleWhatsAppVoiceMessage,
   handleUnsupportedWhatsAppMessage,
 } from "@/server/services/agentRunner";
 import { handleVerification } from "@/lib/meta/webhook";
@@ -141,8 +142,21 @@ async function processMessage(
     name,
   });
 
-  // The agent only reads text, so media never reaches it — record what came in
-  // and tell the contact to send text instead.
+  // Voice notes are downloaded, stored, transcribed, then answered like text.
+  if (message.kind === "voice") {
+    console.log(`[wa-debug] routing → voice handler convId=${conversation.id}`);
+    await handleWhatsAppVoiceMessage(
+      conversation.id,
+      { phone, userId },
+      { mediaId: message.mediaId, mimeType: message.mimeType },
+      messageId,
+      creds
+    );
+    return;
+  }
+
+  // The agent only reads text, so other media never reaches it — record what came
+  // in and tell the contact to send text instead.
   if (message.kind === "unsupported") {
     console.log(`[wa-debug] routing → unsupported-media handler convId=${conversation.id}`);
     await handleUnsupportedWhatsAppMessage(

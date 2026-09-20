@@ -13,8 +13,11 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-se-sm bg-primary px-3.5 py-2 font-sans text-sm leading-relaxed text-white">
-          {message.content}
+        <div className="max-w-[80%] space-y-1 rounded-2xl rounded-se-sm bg-primary px-3.5 py-2 font-sans text-sm leading-relaxed text-white">
+          {message.audioUrl && (
+            <audio controls src={message.audioUrl} className="h-9 w-full max-w-[220px]" />
+          )}
+          {message.content && <p>{message.content}</p>}
         </div>
       </div>
     );

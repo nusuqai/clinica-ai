@@ -19,6 +19,9 @@ export interface PriorMessage {
 /** Events streamed to the web SSE layer as the agent works. */
 export type AgentStreamEvent =
   | { type: "token"; text: string }
+  /** Emitted once for a voice turn: the transcript of the user's audio, so the
+   *  UI can render what was understood before the reply streams. */
+  | { type: "transcript"; text: string }
   | { type: "tool_start"; name: string; args: Record<string, unknown> }
   | {
       type: "tool_result";
@@ -32,7 +35,8 @@ export type AgentStreamEvent =
       toolCalls: ToolCallRecord[];
       usage: TokenUsage;
     }
-  | { type: "handoff" };
+  | { type: "handoff" }
+  | { type: "error"; message: string };
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o";
 

@@ -13,4 +13,7 @@ export interface ChatMessage {
   toolCalls?: ClientToolCall[];
   streaming?: boolean;
   error?: boolean;
+  /** Local object URL for a voice message the user just recorded, so they can
+   *  play back their own submission immediately (not persisted across reloads). */
+  audioUrl?: string;
 }

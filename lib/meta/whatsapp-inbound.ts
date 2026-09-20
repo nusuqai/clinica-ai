@@ -11,17 +11,19 @@ export type { UnsupportedMediaType };
 
 export type InboundWhatsAppMessage =
   | { kind: "text"; text: string }
+  /** A voice note / audio message — downloaded, transcribed, then fed to the
+   *  agent as a text turn (issue #49). */
+  | { kind: "voice"; mediaId: string; mimeType: string }
   | ({ kind: "unsupported" } & UnsupportedMediaType)
   /** Bookkeeping traffic (reactions, edits, deletions) — answering it would be
    *  noise, so the webhook drops it without a trace. */
   | { kind: "ignore" };
 
-/** Cloud API `type` values the agent can't read, with their Arabic notices. */
+/** Cloud API `type` values the agent can't read, with their Arabic notices.
+ *  (audio/voice are handled separately now — see `classify`.) */
 const UNSUPPORTED_TYPES: Record<string, UnsupportedMediaType> = {
   image: MEDIA_NOTICES.image,
   video: MEDIA_NOTICES.video,
-  audio: MEDIA_NOTICES.audio,
-  voice: MEDIA_NOTICES.audio,
   document: MEDIA_NOTICES.file,
   sticker: MEDIA_NOTICES.sticker,
   location: MEDIA_NOTICES.location,
@@ -104,6 +106,17 @@ function classify(msg: Record<string, unknown>): InboundWhatsAppMessage {
   if (type === "button") {
     const text = (msg.button as { text?: string } | undefined)?.text;
     return text?.trim() ? { kind: "text", text: text.trim() } : { kind: "ignore" };
+  }
+
+  // Voice notes arrive as type "audio" (with `audio.voice = true`); some legacy
+  // payloads use "voice". Either way we carry the media id + mime downstream to
+  // download, store and transcribe.
+  if (type === "audio" || type === "voice") {
+    const media = (msg.audio ?? msg.voice) as { id?: string; mime_type?: string } | undefined;
+    if (media?.id) {
+      return { kind: "voice", mediaId: media.id, mimeType: media.mime_type ?? "audio/ogg" };
+    }
+    return { kind: "ignore" };
   }
 
   if (!type || SILENT_TYPES.has(type)) return { kind: "ignore" };

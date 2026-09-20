@@ -244,6 +244,104 @@ export async function markReadAndStartTyping(
   });
 }
 
+// ─── Media (download inbound, upload + send audio) ───────────────────────────
+
+export interface DownloadedMedia {
+  bytes: Buffer;
+  /** The media's mime type as Meta reports it (e.g. "audio/ogg; codecs=opus"). */
+  mimeType: string;
+}
+
+/**
+ * Downloads an inbound media object (e.g. a voice note) by its media id.
+ *
+ * Two hops, both authenticated with the clinic's token: first resolve the media
+ * id to a short-lived, single-use CDN URL, then fetch the bytes from it. The
+ * CDN URL also requires the Bearer token — a plain fetch without it 401s.
+ */
+export async function downloadMedia(
+  mediaId: string,
+  accessToken: string
+): Promise<DownloadedMedia> {
+  const metaRes = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/${mediaId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const meta = (await metaRes.json().catch(() => ({}))) as {
+    url?: string;
+    mime_type?: string;
+    error?: { message?: string; code?: number };
+  };
+  if (!metaRes.ok || !meta.url) {
+    throw new WhatsAppApiError(
+      meta.error?.message ?? `failed to resolve media ${mediaId} (${metaRes.status})`,
+      metaRes.status,
+      meta.error?.code
+    );
+  }
+
+  const binRes = await fetch(meta.url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!binRes.ok) {
+    throw new WhatsAppApiError(`failed to download media bytes (${binRes.status})`, binRes.status);
+  }
+  const bytes = Buffer.from(await binRes.arrayBuffer());
+  const mimeType =
+    meta.mime_type ?? binRes.headers.get("content-type") ?? "application/octet-stream";
+  return { bytes, mimeType };
+}
+
+/**
+ * Uploads media to a clinic's WhatsApp number and returns the resulting media
+ * id, which `sendAudioMessage` then references. Required before sending any
+ * media we generated ourselves (e.g. a TTS voice reply).
+ */
+export async function uploadMedia(
+  creds: WhatsAppCredentials,
+  bytes: Buffer,
+  mimeType: string
+): Promise<string> {
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", mimeType);
+  form.append("file", new Blob([new Uint8Array(bytes)], { type: mimeType }), "audio.ogg");
+
+  const res = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/${creds.phoneNumberId}/media`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${creds.accessToken}` },
+    body: form,
+  });
+  const json = (await res.json().catch(() => ({}))) as {
+    id?: string;
+    error?: { message?: string; code?: number };
+  };
+  if (!res.ok || !json.id) {
+    throw new WhatsAppApiError(
+      json.error?.message ?? `media upload failed (${res.status})`,
+      res.status,
+      json.error?.code
+    );
+  }
+  return json.id;
+}
+
+/**
+ * Sends a voice/audio message referencing a previously uploaded media id. Like
+ * free-form text, this only works inside the 24-hour service window.
+ */
+export async function sendAudioMessage(
+  recipient: WhatsAppRecipient,
+  mediaId: string,
+  creds: WhatsAppCredentials
+): Promise<void> {
+  await sendMessage(creds, {
+    recipient_type: "individual",
+    ...recipientAddress(recipient),
+    type: "audio",
+    audio: { id: mediaId },
+  });
+}
+
 // ─── Template management (WABA node) ─────────────────────────────────────────
 
 export type TemplateStatus =

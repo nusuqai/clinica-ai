@@ -83,7 +83,9 @@ export async function persistUserMessage(
   sessionId: string,
   clinicId: string,
   content: string,
-  senderId: string | null
+  senderId: string | null,
+  /** Optional metadata — e.g. `{ voice }` for a transcribed voice note. */
+  metadata: AgentMessageMetadata | null = null
 ): Promise<SessionMessage> {
   const m = await prisma.message.create({
     data: {
@@ -93,6 +95,7 @@ export async function persistUserMessage(
       senderId,
       content,
       isRead: false,
+      metadata: metadata ? (metadata as unknown as Prisma.InputJsonValue) : undefined,
       clinicId,
     },
   });
@@ -101,7 +104,7 @@ export async function persistUserMessage(
     id: m.id,
     content: m.content,
     senderType: SenderType.USER,
-    metadata: null,
+    metadata,
     createdAt: m.createdAt,
     clinicId: m.clinicId,
   };

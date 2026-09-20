@@ -1,5 +1,5 @@
 import "server-only";
-import { Prisma, AiLedgerType } from "@prisma/client";
+import { Prisma, AiLedgerType, AiUsageKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { TokenUsage } from "@/agent/types";
 
@@ -35,6 +35,36 @@ const PRICING: Record<string, { inputPerM: Prisma.Decimal; outputPerM: Prisma.De
 
 /** Used when a model isn't in the table — never bill an unknown model as free. */
 const FALLBACK_RATE = { inputPerM: D("2.5"), outputPerM: D("10") };
+
+/** Transcription (speech-to-text) list prices in USD per MINUTE of audio. */
+const TRANSCRIBE_PRICING: Record<string, Prisma.Decimal> = {
+  "gpt-4o-transcribe": D("0.006"),
+  "gpt-4o-mini-transcribe": D("0.003"),
+  "whisper-1": D("0.006"),
+};
+const FALLBACK_TRANSCRIBE_PER_MIN = D("0.006");
+
+/** TTS list prices in USD per 1,000,000 characters of spoken text. */
+const TTS_PRICING: Record<string, Prisma.Decimal> = {
+  "gpt-4o-mini-tts": D("15"),
+  "tts-1": D("15"),
+  "tts-1-hd": D("30"),
+};
+const FALLBACK_TTS_PER_M_CHARS = D("15");
+
+const SECONDS_PER_MINUTE = D(60);
+
+function transcribeRate(model: string): Prisma.Decimal {
+  if (TRANSCRIBE_PRICING[model]) return TRANSCRIBE_PRICING[model];
+  const key = Object.keys(TRANSCRIBE_PRICING).find((k) => model.startsWith(k));
+  return key ? TRANSCRIBE_PRICING[key] : FALLBACK_TRANSCRIBE_PER_MIN;
+}
+
+function ttsRate(model: string): Prisma.Decimal {
+  if (TTS_PRICING[model]) return TTS_PRICING[model];
+  const key = Object.keys(TTS_PRICING).find((k) => model.startsWith(k));
+  return key ? TTS_PRICING[key] : FALLBACK_TTS_PER_M_CHARS;
+}
 
 function rateFor(model: string): { inputPerM: Prisma.Decimal; outputPerM: Prisma.Decimal } {
   // Provider may report a dated variant (e.g. "gpt-4o-2024-08-06"); match on prefix.
@@ -77,6 +107,8 @@ export async function ensureClinicAiCredit(clinicId: string): Promise<void> {
 
 export interface ClinicAiStatus {
   aiEnabled: boolean;
+  /** Per-clinic voice-reply (TTS) switch — see schema. Default false. */
+  voiceReplyEnabled: boolean;
   balance: Prisma.Decimal;
   markup: Prisma.Decimal;
   lowBalanceThreshold: Prisma.Decimal;
@@ -98,6 +130,7 @@ export async function getClinicAiStatus(clinicId: string): Promise<ClinicAiStatu
     create: { clinicId },
     select: {
       aiEnabled: true,
+      voiceReplyEnabled: true,
       balance: true,
       markup: true,
       lowBalanceThreshold: true,
@@ -105,6 +138,7 @@ export async function getClinicAiStatus(clinicId: string): Promise<ClinicAiStatu
   });
   return {
     aiEnabled: row.aiEnabled,
+    voiceReplyEnabled: row.voiceReplyEnabled,
     balance: row.balance,
     markup: row.markup,
     lowBalanceThreshold: row.lowBalanceThreshold,
@@ -183,6 +217,146 @@ export async function chargeUsage(args: {
   });
 }
 
+/**
+ * Shared money path for a non-token (audio) charge — transcription or TTS.
+ * Mirrors `chargeUsage`: locks the credit row, reads the markup under the lock,
+ * decrements the balance, and appends a usage log + a signed-negative ledger
+ * row in one transaction. Idempotent on (messageId, kind): a webhook redelivery
+ * that re-charges the same audio rolls the whole txn back.
+ *
+ * For audio rows the token columns are null and `audioSeconds` carries the
+ * length; the per-unit list rate is snapshotted in `inputRatePerM` (per-minute
+ * for transcription, per-1M-chars for TTS) so historical cost stays correct.
+ */
+async function chargeAudioUsage(args: {
+  clinicId: string;
+  sessionId: string | null;
+  messageId: string | null;
+  kind: AiUsageKind;
+  ledgerType: AiLedgerType;
+  model: string;
+  audioSeconds: number | null;
+  ratePerM: Prisma.Decimal;
+  rawCost: Prisma.Decimal;
+}): Promise<void> {
+  const {
+    clinicId,
+    sessionId,
+    messageId,
+    kind,
+    ledgerType,
+    model,
+    audioSeconds,
+    ratePerM,
+    rawCost,
+  } = args;
+
+  await prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<{ markup: Prisma.Decimal }[]>`
+      SELECT "markup" FROM "clinic_ai_credits"
+      WHERE "clinicId" = ${clinicId}::uuid
+      FOR UPDATE`;
+    const markup = locked[0]?.markup ?? DEFAULT_MARKUP;
+
+    const chargedCost = rawCost.mul(markup);
+
+    const credit = await tx.clinicAiCredit.update({
+      where: { clinicId },
+      data: { balance: { decrement: chargedCost } },
+      select: { balance: true },
+    });
+
+    const usageRow = await tx.aiUsageLog.create({
+      data: {
+        clinicId,
+        sessionId,
+        messageId,
+        kind,
+        model,
+        audioSeconds: audioSeconds ?? null,
+        // Audio rows are not token-shaped.
+        promptTokens: null,
+        completionTokens: null,
+        totalTokens: null,
+        inputRatePerM: ratePerM,
+        outputRatePerM: D(0),
+        rawCost,
+        markup,
+        chargedCost,
+      },
+      select: { id: true },
+    });
+
+    await tx.aiCreditLedger.create({
+      data: {
+        clinicId,
+        type: ledgerType,
+        amount: chargedCost.neg(),
+        balanceAfter: credit.balance,
+        usageId: usageRow.id,
+      },
+    });
+  });
+}
+
+/**
+ * Charges transcription of one inbound voice message, as its own ledger line
+ * (type TRANSCRIPTION), separate from the agent reply. `messageId` is the
+ * inbound patient message; `audioSeconds` is the billed audio length.
+ */
+export async function chargeTranscription(args: {
+  clinicId: string;
+  sessionId: string | null;
+  messageId: string | null;
+  model: string;
+  audioSeconds: number | null;
+}): Promise<void> {
+  const seconds = args.audioSeconds && args.audioSeconds > 0 ? args.audioSeconds : 1;
+  const ratePerMin = transcribeRate(args.model);
+  const rawCost = ratePerMin.mul(seconds).div(SECONDS_PER_MINUTE);
+  await chargeAudioUsage({
+    clinicId: args.clinicId,
+    sessionId: args.sessionId,
+    messageId: args.messageId,
+    kind: AiUsageKind.TRANSCRIPTION,
+    ledgerType: AiLedgerType.TRANSCRIPTION,
+    model: args.model,
+    audioSeconds: args.audioSeconds,
+    ratePerM: ratePerMin,
+    rawCost,
+  });
+}
+
+/**
+ * Charges a synthesized (TTS) voice reply, as its own ledger line (type TTS),
+ * separate from the agent reply's token charge. `messageId` is the agent reply
+ * message; billed per character of spoken text.
+ */
+export async function chargeTts(args: {
+  clinicId: string;
+  sessionId: string | null;
+  messageId: string | null;
+  model: string;
+  characters: number;
+  audioSeconds: number | null;
+}): Promise<void> {
+  const chars = args.characters > 0 ? args.characters : 1;
+  const ratePerM = ttsRate(args.model);
+  // TOKENS_PER_MILLION is just 1,000,000 — reused here as chars-per-million.
+  const rawCost = ratePerM.mul(chars).div(TOKENS_PER_MILLION);
+  await chargeAudioUsage({
+    clinicId: args.clinicId,
+    sessionId: args.sessionId,
+    messageId: args.messageId,
+    kind: AiUsageKind.TTS,
+    ledgerType: AiLedgerType.TTS,
+    model: args.model,
+    audioSeconds: args.audioSeconds,
+    ratePerM,
+    rawCost,
+  });
+}
+
 /** True when the thrown error is a duplicate-messageId charge (already applied). */
 export function isDuplicateChargeError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
@@ -256,6 +430,18 @@ export async function setClinicAiEnabled(clinicId: string, enabled: boolean): Pr
     where: { clinicId },
     update: { aiEnabled: enabled },
     create: { clinicId, aiEnabled: enabled },
+  });
+}
+
+/** Clinic admin: flip the per-clinic voice-reply (TTS) switch. */
+export async function setClinicVoiceReplyEnabled(
+  clinicId: string,
+  enabled: boolean
+): Promise<void> {
+  await prisma.clinicAiCredit.upsert({
+    where: { clinicId },
+    update: { voiceReplyEnabled: enabled },
+    create: { clinicId, voiceReplyEnabled: enabled },
   });
 }
 

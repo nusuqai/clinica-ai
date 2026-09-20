@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, X, Send, Loader2, Bot } from "lucide-react";
+import { MessageCircle, X, Send, Loader2, Bot, Mic, Square } from "lucide-react";
 import ChatMessageView from "./chat-message";
 import { getWebChatMessages, getGuestChatMessages } from "@/server/actions/chat";
 import { useRealtimeMessages } from "@/hooks/use-realtime-messages";
@@ -26,8 +26,11 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [recording, setRecording] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -94,6 +97,9 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
                 : "agent",
           content: m.content,
           toolCalls: (m.metadata?.toolCalls as ClientToolCall[] | undefined) ?? undefined,
+          // Replay a stored voice note after reload via the owner-scoped
+          // signed-url endpoint.
+          audioUrl: m.metadata?.voice ? `/api/agent/media/${m.id}` : undefined,
         }))
       );
     });
@@ -170,6 +176,93 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
           if (!line.startsWith("data:")) continue;
           const ev = JSON.parse(line.slice(5).trim());
           handleEvent(agentId, ev);
+        }
+      }
+    } catch {
+      patchAgent(agentId, (m) => ({
+        ...m,
+        streaming: false,
+        error: true,
+        content: m.content || "تعذّر الاتصال بالمساعد. حاول مرة أخرى.",
+      }));
+    } finally {
+      setStreaming(false);
+      patchAgent(agentId, (m) => ({ ...m, streaming: false }));
+    }
+  }
+
+  async function startRecording() {
+    if (streaming || recording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size) chunksRef.current.push(e.data);
+      };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+        if (blob.size) sendVoice(blob);
+      };
+      recorderRef.current = mr;
+      mr.start();
+      setRecording(true);
+    } catch (err) {
+      console.error("microphone access failed", err);
+    }
+  }
+
+  function stopRecording() {
+    const mr = recorderRef.current;
+    if (mr && mr.state !== "inactive") mr.stop();
+    setRecording(false);
+  }
+
+  async function sendVoice(blob: Blob) {
+    if (streaming) return;
+    setStreaming(true);
+
+    const userMsgId = nextId();
+    const agentId = nextId();
+    // Play back the sender's own recording immediately (local, no round-trip).
+    const audioUrl = URL.createObjectURL(blob);
+    setMessages((prev) => [
+      ...prev,
+      { id: userMsgId, role: "user", content: "", audioUrl },
+      { id: agentId, role: "agent", content: "", streaming: true, toolCalls: [] },
+    ]);
+
+    try {
+      const fd = new FormData();
+      fd.append("audio", blob, "voice.webm");
+      if (guest && conversationId) fd.append("conversationId", conversationId);
+
+      const res = await fetch("/api/agent/voice", { method: "POST", body: fd });
+      if (!res.ok || !res.body) throw new Error("network");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          const ev = JSON.parse(line.slice(5).trim());
+          if (ev.type === "transcript") {
+            // Replace the placeholder with what the server understood.
+            setMessages((prev) =>
+              prev.map((m) => (m.id === userMsgId ? { ...m, content: String(ev.text) } : m))
+            );
+          } else {
+            handleEvent(agentId, ev);
+          }
         }
       }
     } catch {
@@ -284,23 +377,47 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
                     send();
                   }
                 }}
-                placeholder="اكتب رسالتك..."
+                placeholder={recording ? "جارٍ التسجيل..." : "اكتب رسالتك..."}
                 rows={1}
-                disabled={streaming}
+                disabled={streaming || recording}
                 dir="rtl"
                 className="max-h-40 flex-1 resize-none overflow-y-auto rounded-xl border border-border bg-card px-3 py-2 font-sans text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
               />
-              <button
-                onClick={send}
-                disabled={streaming || !input.trim()}
-                className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
-              >
-                {streaming ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </button>
+              {/* Record voice when there's nothing typed; send when there is. */}
+              {recording ? (
+                <button
+                  onClick={stopRecording}
+                  aria-label="إيقاف التسجيل"
+                  className="flex h-10 w-10 flex-shrink-0 animate-pulse items-center justify-center rounded-xl bg-red-500 text-white transition-colors hover:bg-red-600"
+                >
+                  <Square className="h-4 w-4" />
+                </button>
+              ) : input.trim() ? (
+                <button
+                  onClick={send}
+                  disabled={streaming}
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+                >
+                  {streaming ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={startRecording}
+                  disabled={streaming}
+                  aria-label="تسجيل رسالة صوتية"
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+                >
+                  {streaming ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mic className="h-4 w-4" />
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -59,6 +59,19 @@ enum AiLedgerType {
   TOPUP
   USAGE
   ADJUSTMENT
+  TRANSCRIPTION
+  TTS
+}
+
+// Discriminates what an AiUsageLog row is billing for. A single inbound voice
+// message produces a TRANSCRIPTION row (cost to understand the patient) and,
+// once the agent answers, a REPLY row on the reply message; a spoken answer adds
+// a TTS row. REPLY rows are token-shaped; TRANSCRIPTION/TTS rows are audio-shaped
+// (see `audioSeconds`, nullable token columns).
+enum AiUsageKind {
+  REPLY
+  TRANSCRIPTION
+  TTS
 }
 
 // Phone-number kinds shown on clinic/branch contact info.
@@ -701,7 +714,7 @@ model Message {
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session      ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   sender       Profile?     @relation("SenderProfile", fields: [senderId], references: [id], onDelete: SetNull)
-  aiUsage      AiUsageLog?
+  aiUsage      AiUsageLog[]
 
   @@index([conversationId])
   @@index([sessionId])
@@ -724,6 +737,10 @@ model ClinicAiCredit {
   // Per-clinic global AI auto-reply switch. Distinct from ChatSession.aiEnabled
   // (a per-session pause) — this turns the agent off across the whole clinic.
   aiEnabled           Boolean  @default(true)
+  // Per-clinic voice-reply (TTS) switch. When true AND the patient's turn was a
+  // voice message, the agent answers with synthesized speech; text-in always
+  // yields text-out. Default off so no clinic pays for TTS unexpectedly.
+  voiceReplyEnabled   Boolean  @default(false)
   balance             Decimal  @default(0) @db.Decimal(18, 8)
   markup              Decimal  @default(1.5) @db.Decimal(6, 4)
   lowBalanceThreshold Decimal  @default(5) @db.Decimal(18, 8)
@@ -741,26 +758,34 @@ model ClinicAiCredit {
 // cost actually deducted. `messageId` is unique: a webhook redelivery that
 // re-charges the same reply hits the constraint and rolls the whole txn back.
 model AiUsageLog {
-  id               String   @id @default(uuid()) @db.Uuid
-  clinicId         String   @db.Uuid
-  sessionId        String?  @db.Uuid
-  messageId        String?  @unique @db.Uuid
+  id               String      @id @default(uuid()) @db.Uuid
+  clinicId         String      @db.Uuid
+  sessionId        String?     @db.Uuid
+  messageId        String?     @db.Uuid
+  // What this row bills for. A message can now carry more than one usage row
+  // (a voice message: TRANSCRIPTION on the inbound + REPLY/TTS on the answer),
+  // so idempotency is (messageId, kind) rather than messageId alone.
+  kind             AiUsageKind @default(REPLY)
   model            String
-  promptTokens     Int
-  completionTokens Int
-  totalTokens      Int
-  inputRatePerM    Decimal  @db.Decimal(12, 4)
-  outputRatePerM   Decimal  @db.Decimal(12, 4)
-  rawCost          Decimal  @db.Decimal(18, 8)
-  markup           Decimal  @db.Decimal(6, 4)
-  chargedCost      Decimal  @db.Decimal(18, 8)
-  createdAt        DateTime @default(now())
+  // Token columns are REPLY-shaped and null for audio rows.
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  // Billed audio length for TRANSCRIPTION/TTS rows; null for REPLY rows.
+  audioSeconds     Int?
+  inputRatePerM    Decimal     @db.Decimal(12, 4)
+  outputRatePerM   Decimal     @db.Decimal(12, 4)
+  rawCost          Decimal     @db.Decimal(18, 8)
+  markup           Decimal     @db.Decimal(6, 4)
+  chargedCost      Decimal     @db.Decimal(18, 8)
+  createdAt        DateTime    @default(now())
 
   clinic  Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   session ChatSession?    @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   message Message?        @relation(fields: [messageId], references: [id], onDelete: SetNull)
   ledger  AiCreditLedger?
 
+  @@unique([messageId, kind])
   @@index([clinicId, createdAt])
   @@map("ai_usage_logs")
 }

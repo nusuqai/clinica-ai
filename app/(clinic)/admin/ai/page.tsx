@@ -27,6 +27,7 @@ export default async function AiSettingsPage() {
       <div className="max-w-xl">
         <AiSettingsForm
           initialEnabled={status.aiEnabled}
+          initialVoiceReplyEnabled={status.voiceReplyEnabled}
           balance={status.balance.toNumber()}
           lowBalance={status.lowBalance}
           sufficient={status.sufficient}

@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Bot, AlertTriangle } from "lucide-react";
-import { toggleClinicAiAction } from "@/server/actions/ai";
+import { Loader2, Bot, AlertTriangle, Mic } from "lucide-react";
+import { toggleClinicAiAction, toggleClinicVoiceReplyAction } from "@/server/actions/ai";
 
 interface Props {
   initialEnabled: boolean;
+  initialVoiceReplyEnabled: boolean;
   balance: number;
   lowBalance: boolean;
   sufficient: boolean;
@@ -19,10 +20,19 @@ const fmtUsd = (n: number) =>
  * view of the prepaid balance. Top-ups and the markup are platform-controlled,
  * so they are shown here but not editable.
  */
-export default function AiSettingsForm({ initialEnabled, balance, lowBalance, sufficient }: Props) {
+export default function AiSettingsForm({
+  initialEnabled,
+  initialVoiceReplyEnabled,
+  balance,
+  lowBalance,
+  sufficient,
+}: Props) {
   const [enabled, setEnabled] = useState(initialEnabled);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const [voiceEnabled, setVoiceEnabled] = useState(initialVoiceReplyEnabled);
+  const [voiceSaving, setVoiceSaving] = useState(false);
 
   const toggle = async () => {
     const next = !enabled;
@@ -39,6 +49,24 @@ export default function AiSettingsForm({ initialEnabled, balance, lowBalance, su
       });
     } else {
       setEnabled(!next);
+      setMessage({ ok: false, text: "تعذّر تحديث الإعداد." });
+    }
+  };
+
+  const toggleVoice = async () => {
+    const next = !voiceEnabled;
+    setVoiceSaving(true);
+    setMessage(null);
+    setVoiceEnabled(next);
+    const res = await toggleClinicVoiceReplyAction(next);
+    setVoiceSaving(false);
+    if (res.ok) {
+      setMessage({
+        ok: true,
+        text: next ? "تم تفعيل الرد الصوتي." : "تم إيقاف الرد الصوتي.",
+      });
+    } else {
+      setVoiceEnabled(!next);
       setMessage({ ok: false, text: "تعذّر تحديث الإعداد." });
     }
   };
@@ -100,6 +128,43 @@ export default function AiSettingsForm({ initialEnabled, balance, lowBalance, su
             {message.text}
           </p>
         )}
+      </div>
+
+      {/* Voice reply toggle */}
+      <div className="rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Mic className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-sans font-semibold text-foreground">الرد الصوتي</p>
+              <p className="font-sans text-sm text-muted-foreground">
+                عند التفعيل، يرد المساعد برسالة صوتية عندما يرسل العميل رسالة صوتية. تُحتسب تكلفة
+                إضافية للتحويل الصوتي.
+              </p>
+            </div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={voiceEnabled}
+            onClick={toggleVoice}
+            disabled={voiceSaving || !enabled}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              voiceEnabled ? "bg-primary" : "bg-muted"
+            }`}
+          >
+            {voiceSaving ? (
+              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
+            ) : (
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  voiceEnabled ? "-translate-x-6" : "-translate-x-1"
+                }`}
+              />
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Balance (read-only) */}

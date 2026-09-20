@@ -41,8 +41,29 @@ export interface ToolCallRecord {
   status: "ok" | "error";
 }
 
+/**
+ * Voice-note metadata (issue #49), attached to `Message.metadata.voice`. The
+ * audio bytes live in Supabase Storage at `storagePath`; the transcript is kept
+ * here so a message is transcribed exactly once and history reads never re-hit
+ * the audio. Present on USER voice messages, and on AGENT messages when the
+ * clinic replied with synthesized speech.
+ */
+export interface VoiceMessageMetadata {
+  /** Object path in the patient-media bucket (not a URL — signed on demand). */
+  storagePath: string;
+  mimeType: string;
+  /** Audio length in seconds; null when it couldn't be determined. */
+  durationSec: number | null;
+  /** Empty on an AGENT (TTS) message or a failed transcription. */
+  transcript: string;
+  /** Model that produced (STT) or spoke (TTS) this audio. */
+  model: string;
+  status: "transcribed" | "failed" | "spoken";
+}
+
 export interface AgentMessageMetadata {
-  toolCalls: ToolCallRecord[];
+  toolCalls?: ToolCallRecord[];
+  voice?: VoiceMessageMetadata;
 }
 
 /**
