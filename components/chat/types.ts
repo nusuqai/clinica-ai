@@ -13,7 +13,10 @@ export interface ChatMessage {
   toolCalls?: ClientToolCall[];
   streaming?: boolean;
   error?: boolean;
-  /** Local object URL for a voice message the user just recorded, so they can
-   *  play back their own submission immediately (not persisted across reloads). */
+  /** Playable audio for this message — a local object URL for the user's own
+   *  recording, or the media endpoint for a spoken (TTS) agent reply. */
   audioUrl?: string;
+  /** Autoplay the audio (only for a reply that just arrived live, never for
+   *  history loaded on reload). */
+  autoPlayAudio?: boolean;
 }

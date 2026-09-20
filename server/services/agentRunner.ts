@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { Channel, SenderType, type Role } from "@prisma/client";
+import { Channel, SenderType, type Role, type Prisma } from "@prisma/client";
 import {
   sendTextMessage,
   sendAudioMessage,
@@ -207,25 +207,34 @@ async function resolveWebMembership(userId: string): Promise<WebMembership> {
   return membership;
 }
 
+/** What `streamWebReply` returns after the stream finishes (null if it never
+ *  produced a reply — handoff / gate). Lets the voice entrypoint synthesize the
+ *  final text to speech. */
+interface WebReplyOutcome {
+  agentMessageId: string;
+  replyText: string;
+  toolCalls: ToolCallRecord[];
+}
+
 /**
  * Shared web reply tail: gates, streams the agent, persists + charges the reply.
  * The user message has already been persisted into `sessionId`. Used by both the
- * text and voice web entrypoints.
+ * text and voice web entrypoints. Returns the persisted reply (for TTS) or null.
  */
 async function* streamWebReply(
   membership: WebMembership,
   conversationId: string,
   sessionId: string,
   userId: string
-): AsyncGenerator<AgentStreamEvent> {
+): AsyncGenerator<AgentStreamEvent, WebReplyOutcome | null> {
   if (!(await isSessionAiEnabled(sessionId))) {
     yield { type: "handoff" };
-    return;
+    return null;
   }
 
   if (await clinicGateBlocks(membership.clinicId, conversationId, sessionId)) {
     yield { type: "handoff" };
-    return;
+    return null;
   }
 
   const prior = await getSessionMessages(sessionId);
@@ -255,11 +264,12 @@ async function* streamWebReply(
     yield ev;
   }
 
+  const replyText = finalText || FALLBACK_REPLY;
   const agentMsg = await persistAgentMessage(
     conversationId,
     sessionId,
     membership.clinicId,
-    finalText || FALLBACK_REPLY,
+    replyText,
     {
       toolCalls,
     }
@@ -273,6 +283,8 @@ async function* streamWebReply(
       usage,
     });
   }
+
+  return { agentMessageId: agentMsg.id, replyText, toolCalls };
 }
 
 /**
@@ -280,8 +292,9 @@ async function* streamWebReply(
  * it, persists the user message (transcript + voice metadata), charges
  * transcription as its own ledger line, then streams the agent reply exactly
  * like a text turn. Emits a `transcript` event so the widget can show what was
- * understood. Voice-out (TTS) is a WhatsApp-only concern for now — the web
- * widget already plays nothing back as audio.
+ * understood. When the clinic has `voiceReplyEnabled`, the final reply is also
+ * synthesized (TTS) and an `audio` event is emitted so the widget can play it —
+ * mirroring the patient's voice modality.
  */
 export async function* streamWebVoiceAgent(
   userId: string,
@@ -345,7 +358,54 @@ export async function* streamWebVoiceAgent(
     return;
   }
 
-  yield* streamWebReply(membership, conversationId, sessionId, userId);
+  const outcome = yield* streamWebReply(membership, conversationId, sessionId, userId);
+
+  // Voice-out: the patient spoke, so speak back — but only if the clinic opted in.
+  if (!outcome) return;
+  const status = await getClinicAiStatus(membership.clinicId);
+  if (!status.voiceReplyEnabled) return;
+
+  const tts = await synthesizeSpeech(outcome.replyText);
+  if (!tts) return;
+
+  try {
+    const stored = await uploadPatientMedia({
+      clinicId: membership.clinicId,
+      conversationId,
+      bytes: tts.bytes,
+      contentType: tts.mimeType,
+    });
+    // Attach the spoken audio to the reply message (preserving its tool calls)
+    // so /api/agent/media/<id> can stream it, live and after reload.
+    const replyVoice: VoiceMessageMetadata = {
+      storagePath: stored.path,
+      mimeType: stored.contentType,
+      durationSec: tts.durationSec,
+      transcript: "",
+      model: tts.model,
+      status: "spoken",
+    };
+    await prisma.message.update({
+      where: { id: outcome.agentMessageId },
+      data: {
+        metadata: {
+          toolCalls: outcome.toolCalls,
+          voice: replyVoice,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+    await chargeTtsSafe({
+      clinicId: membership.clinicId,
+      sessionId,
+      messageId: outcome.agentMessageId,
+      model: tts.model,
+      characters: tts.characters,
+      audioSeconds: tts.durationSec,
+    });
+    yield { type: "audio", messageId: outcome.agentMessageId };
+  } catch (err) {
+    console.error("[web] failed to attach TTS reply audio:", err);
+  }
 }
 
 /**

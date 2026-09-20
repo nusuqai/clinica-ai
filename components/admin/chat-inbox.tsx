@@ -263,7 +263,33 @@ export default function ChatInbox({
     [activeId, refreshConversations]
   );
 
-  useRealtimeConversations(clinicId, handleRealtimeMessage);
+  // A message row changed after insert (e.g. a TTS agent reply gets its
+  // metadata.voice attached post-stream) — patch the open thread so the audio
+  // player appears live, no reload.
+  const handleRealtimeUpdate = useCallback(
+    (row: RealtimeMessageRow) => {
+      if (row.conversationId !== activeId) return;
+      const voice = (row.metadata as AgentMessageMetadata | null)?.voice;
+      if (!voice) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === row.id
+            ? {
+                ...m,
+                voice: {
+                  durationSec: voice.durationSec,
+                  transcript: voice.transcript,
+                  status: voice.status,
+                },
+              }
+            : m
+        )
+      );
+    },
+    [activeId]
+  );
+
+  useRealtimeConversations(clinicId, handleRealtimeMessage, handleRealtimeUpdate);
 
   // EscalationProvider owns the single realtime subscription for escalations
   // (a second subscribed channel with the same name crashes the realtime

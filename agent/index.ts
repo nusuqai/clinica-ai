@@ -36,16 +36,12 @@ export type AgentStreamEvent =
       usage: TokenUsage;
     }
   | { type: "handoff" }
+  /** A spoken (TTS) reply is available for this agent message — the web widget
+   *  plays it back via the owner-scoped media endpoint. */
+  | { type: "audio"; messageId: string }
   | { type: "error"; message: string };
 
-const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o";
-
-const emptyUsage = (): TokenUsage => ({
-  promptTokens: 0,
-  completionTokens: 0,
-  totalTokens: 0,
-  model: DEFAULT_MODEL,
-});
+const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
 
 async function buildAgent(ctx: AgentContext) {
   return createReactAgent({
@@ -53,6 +49,25 @@ async function buildAgent(ctx: AgentContext) {
     tools: getToolsForRole(ctx),
     prompt: await buildSystemPrompt(ctx),
   });
+}
+
+/**
+ * Extracts visible reply text from a streamed chunk's content. Chat Completions
+ * delivers `content` as a plain string; the Responses API (used for reasoning
+ * models) delivers an array of typed parts — we take only the `text` parts, so
+ * hidden `reasoning` parts never leak to the patient.
+ */
+function chunkText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  let text = "";
+  for (const part of content) {
+    if (part && typeof part === "object") {
+      const p = part as { type?: string; text?: unknown };
+      if (p.type === "text" && typeof p.text === "string") text += p.text;
+    }
+  }
+  return text;
 }
 
 function toLangChainMessages(prior: PriorMessage[]): BaseMessage[] {
@@ -142,7 +157,7 @@ export async function* runAgentStream(
   for await (const ev of stream) {
     if (ev.event === "on_chat_model_stream") {
       const chunk = ev.data?.chunk as { content?: unknown } | undefined;
-      const text = typeof chunk?.content === "string" ? chunk.content : "";
+      const text = chunkText(chunk?.content);
       if (text) {
         finalText += text;
         yield { type: "token", text };
@@ -210,19 +225,69 @@ export async function* runAgentStream(
 /**
  * Non-streaming run for the WhatsApp channel. Returns final text + tool calls.
  */
+/**
+ * Runs the agent to a single buffered reply — no streaming. Used by channels
+ * that deliver one whole message (WhatsApp), so unlike `runAgentStream` this
+ * makes a plain `invoke` (no token/SSE events) and reconstructs the reply, tool
+ * calls and usage from the final message state.
+ */
 export async function runAgentToText(
   ctx: AgentContext,
   prior: PriorMessage[],
 ): Promise<{ text: string; toolCalls: ToolCallRecord[]; usage: TokenUsage }> {
-  let text = "";
-  let toolCalls: ToolCallRecord[] = [];
-  let usage: TokenUsage = emptyUsage();
-  for await (const ev of runAgentStream(ctx, prior)) {
-    if (ev.type === "done") {
-      text = ev.text;
-      toolCalls = ev.toolCalls;
-      usage = ev.usage;
-    }
+  const agent = await buildAgent(ctx);
+  const messages = toLangChainMessages(prior);
+
+  const result = (await agent.invoke(
+    { messages },
+    { configurable: { thread_id: ctx.sessionId } },
+  )) as { messages?: BaseMessage[] };
+  const out = result.messages ?? [];
+
+  // Pair each tool_call id with the ToolMessage that carries its result.
+  const toolResults = new Map<string, ToolMessage>();
+  for (const m of out) {
+    if (m instanceof ToolMessage && m.tool_call_id) toolResults.set(m.tool_call_id, m);
   }
-  return { text, toolCalls, usage };
+
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let totalTokens = 0;
+  let usageModel = DEFAULT_MODEL;
+  const toolCalls: ToolCallRecord[] = [];
+  let finalText = "";
+
+  for (const m of out) {
+    if (!(m instanceof AIMessage)) continue;
+
+    const u = m.usage_metadata;
+    if (u) {
+      promptTokens += u.input_tokens ?? 0;
+      completionTokens += u.output_tokens ?? 0;
+      totalTokens += u.total_tokens ?? 0;
+    }
+    const model = (m.response_metadata as { model_name?: string } | undefined)?.model_name;
+    if (model) usageModel = model;
+
+    for (const tc of m.tool_calls ?? []) {
+      const tm = tc.id ? toolResults.get(tc.id) : undefined;
+      const parsed = tm ? parseToolOutput(tm) : null;
+      const status: "ok" | "error" =
+        tm?.status === "error" ||
+        (parsed && typeof parsed === "object" && "error" in parsed)
+          ? "error"
+          : "ok";
+      toolCalls.push({ id: tc.id ?? "", name: tc.name, args: tc.args ?? {}, result: parsed, status });
+    }
+
+    // The final answer is the last AI message that carries visible text.
+    const text = chunkText(m.content);
+    if (text) finalText = text;
+  }
+
+  return {
+    text: finalText.trim(),
+    toolCalls,
+    usage: { promptTokens, completionTokens, totalTokens, model: usageModel },
+  };
 }

@@ -33,7 +33,7 @@ export interface Transcriber {
 }
 
 const OPENAI_BASE = "https://api.openai.com/v1";
-const DEFAULT_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-transcribe";
+const DEFAULT_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-transcribe";
 
 /** Nominal bitrates (bits/sec) per mime, used ONLY to estimate duration when
  *  the API doesn't report it. WhatsApp voice notes are OGG/Opus ~16 kbps. */

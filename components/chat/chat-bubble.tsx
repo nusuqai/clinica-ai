@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, X, Send, Loader2, Bot, Mic, Square } from "lucide-react";
+import { MessageCircle, X, Send, Loader2, Bot, Mic, Square, Trash2 } from "lucide-react";
 import ChatMessageView from "./chat-message";
 import { getWebChatMessages, getGuestChatMessages } from "@/server/actions/chat";
 import { useRealtimeMessages } from "@/hooks/use-realtime-messages";
@@ -31,6 +31,8 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  // Set when the user hits cancel, so `onstop` discards instead of sending.
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -197,11 +199,17 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream);
       chunksRef.current = [];
+      cancelledRef.current = false;
       mr.ondataavailable = (e) => {
         if (e.data.size) chunksRef.current.push(e.data);
       };
       mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
+        // Discarded by the cancel button — drop the audio, send nothing.
+        if (cancelledRef.current) {
+          chunksRef.current = [];
+          return;
+        }
         const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
         if (blob.size) sendVoice(blob);
       };
@@ -214,6 +222,14 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
   }
 
   function stopRecording() {
+    const mr = recorderRef.current;
+    if (mr && mr.state !== "inactive") mr.stop();
+    setRecording(false);
+  }
+
+  /** Stops recording and discards the audio without sending it. */
+  function cancelRecording() {
+    cancelledRef.current = true;
     const mr = recorderRef.current;
     if (mr && mr.state !== "inactive") mr.stop();
     setRecording(false);
@@ -310,6 +326,14 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
           content: String(ev.text ?? m.content),
         }));
         break;
+      case "audio":
+        // A spoken (TTS) reply is ready — play it back via the media endpoint.
+        patchAgent(agentId, (m) => ({
+          ...m,
+          audioUrl: `/api/agent/media/${String(ev.messageId)}`,
+          autoPlayAudio: true,
+        }));
+        break;
       case "handoff":
         patchAgent(agentId, (m) => ({
           ...m,
@@ -385,13 +409,22 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
               />
               {/* Record voice when there's nothing typed; send when there is. */}
               {recording ? (
-                <button
-                  onClick={stopRecording}
-                  aria-label="إيقاف التسجيل"
-                  className="flex h-10 w-10 flex-shrink-0 animate-pulse items-center justify-center rounded-xl bg-red-500 text-white transition-colors hover:bg-red-600"
-                >
-                  <Square className="h-4 w-4" />
-                </button>
+                <>
+                  <button
+                    onClick={cancelRecording}
+                    aria-label="إلغاء التسجيل"
+                    className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={stopRecording}
+                    aria-label="إرسال التسجيل"
+                    className="flex h-10 w-10 flex-shrink-0 animate-pulse items-center justify-center rounded-xl bg-red-500 text-white transition-colors hover:bg-red-600"
+                  >
+                    <Square className="h-4 w-4" />
+                  </button>
+                </>
               ) : input.trim() ? (
                 <button
                   onClick={send}

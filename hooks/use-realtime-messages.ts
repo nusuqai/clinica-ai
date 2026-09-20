@@ -109,10 +109,16 @@ export function useRealtimeEscalations(
 
 export function useRealtimeConversations(
   clinicId: string,
-  onNewMessage: (row: RealtimeMessageRow) => void
+  onNewMessage: (row: RealtimeMessageRow) => void,
+  /** Fired when an existing message row changes — e.g. a TTS agent reply gets
+   *  its `metadata.voice` attached after the row was first inserted, so the
+   *  admin sees the audio player without a reload. */
+  onUpdateMessage?: (row: RealtimeMessageRow) => void
 ) {
   const messageRef = useRef(onNewMessage);
   messageRef.current = onNewMessage;
+  const updateRef = useRef(onUpdateMessage);
+  updateRef.current = onUpdateMessage;
 
   useEffect(() => {
     const supabase = createClient();
@@ -132,6 +138,18 @@ export function useRealtimeConversations(
         },
         (payload) => {
           messageRef.current(payload.new as unknown as RealtimeMessageRow);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `clinicId=eq.${clinicId}`,
+        },
+        (payload) => {
+          updateRef.current?.(payload.new as unknown as RealtimeMessageRow);
         }
       )
       .subscribe();

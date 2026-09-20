@@ -51,6 +51,18 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
             )}
           </div>
         )}
+        {message.audioUrl && (
+          // Spoken (TTS) reply. autoPlay only for a reply that just arrived (the
+          // patient just sent voice, so a gesture exists); reloaded history keeps
+          // controls but never autoplays. Controls remain as a fallback if the
+          // browser blocks autoplay.
+          <audio
+            controls
+            autoPlay={!!message.autoPlayAudio}
+            src={message.audioUrl}
+            className="h-9 w-full max-w-[240px]"
+          />
+        )}
         {message.toolCalls?.map((call, i) => (
           <ToolCallCard key={i} call={call} />
         ))}

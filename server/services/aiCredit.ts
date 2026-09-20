@@ -26,6 +26,11 @@ const DEFAULT_MARKUP = D("1.5");
 /** OpenAI list prices in USD per 1,000,000 tokens (as of 2026). Snapshotted onto
  *  each usage log so historical cost stays correct when these change. */
 const PRICING: Record<string, { inputPerM: Prisma.Decimal; outputPerM: Prisma.Decimal }> = {
+  // GPT-5.6 reasoning family. Reasoning (thinking) tokens are billed as output
+  // tokens and are already included in the reply's output_tokens count, so no
+  // separate handling is needed here.
+  "gpt-5.6-luna": { inputPerM: D("0.2"), outputPerM: D("1.2") },
+  "gpt-5.6-terra": { inputPerM: D("2"), outputPerM: D("12") },
   "gpt-4o": { inputPerM: D("2.5"), outputPerM: D("10") },
   "gpt-4o-mini": { inputPerM: D("0.15"), outputPerM: D("0.6") },
   "gpt-4.1": { inputPerM: D("2"), outputPerM: D("8") },
@@ -38,6 +43,7 @@ const FALLBACK_RATE = { inputPerM: D("2.5"), outputPerM: D("10") };
 
 /** Transcription (speech-to-text) list prices in USD per MINUTE of audio. */
 const TRANSCRIBE_PRICING: Record<string, Prisma.Decimal> = {
+  "gpt-transcribe": D("0.0045"),
   "gpt-4o-transcribe": D("0.006"),
   "gpt-4o-mini-transcribe": D("0.003"),
   "whisper-1": D("0.006"),
