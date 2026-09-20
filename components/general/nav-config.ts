@@ -11,7 +11,6 @@ import {
   Globe,
   Smartphone,
   MessageSquare,
-  FileText,
   KeyRound,
   BookOpen,
   Bot,
@@ -51,10 +50,11 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
     { href: "/admin/messages", label: "الرسائل", icon: MessageSquare },
     {
       href: "/admin/whatsapp",
-      label: "واتساب والقوالب",
+      label: "واتساب",
       icon: Smartphone,
+      // Connecting the clinic to Meta (credentials, templates, setup guide) is
+      // platform-admin work and lives at /platform/whatsapp.
       children: [
-        { href: "/admin/whatsapp/templates", label: "القوالب", icon: FileText },
         {
           href: "/admin/whatsapp/automation",
           label: "التذكيرات والتقييم",
@@ -62,13 +62,8 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
         },
         {
           href: "/admin/whatsapp/configuration",
-          label: "الإعدادات",
+          label: "حالة الاتصال",
           icon: KeyRound,
-        },
-        {
-          href: "/admin/whatsapp/guide",
-          label: "دليل الإعداد",
-          icon: BookOpen,
         },
       ],
     },

@@ -12,6 +12,7 @@ export default async function DoctorLayout({ children }: { children: React.React
       clinicId={ctx.clinic.id}
       clinicName={ctx.clinic.name}
       clinicLogoUrl={ctx.clinic.logoUrl}
+      viaPlatformAdmin={ctx.viaPlatformAdmin}
     >
       {children}
     </DashboardShell>

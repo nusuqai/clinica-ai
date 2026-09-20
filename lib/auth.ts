@@ -38,6 +38,10 @@ export type ClinicContext = {
   user: CurrentUser;
   clinic: ClinicSummary;
   role: Role;
+  /** True when access comes from being a platform admin rather than from an
+      actual membership in this clinic. Surfaced as a banner in the dashboard
+      shell, so edits to someone else's clinic are never made unknowingly. */
+  viaPlatformAdmin: boolean;
 };
 
 const clinicSelect = {
@@ -115,11 +119,21 @@ export async function getClinicContext(): Promise<ClinicContext | null> {
     where: { userId_clinicId: { userId: user.id, clinicId: clinic.id } },
     select: { role: true },
   });
+  if (membership) return { user, clinic, role: membership.role, viaPlatformAdmin: false };
 
-  // Membership is the only way in — platform admins get no implicit access.
-  if (!membership) return null;
+  // A platform admin is a member of no clinic but may act as ADMIN inside any
+  // one of them. Granting that here — rather than only in requireClinicMember —
+  // is what makes it hold everywhere: every page, layout and server action
+  // resolves access through this function, so otherwise a platform admin clears
+  // a clinic's layout and is then bounced to /login by everything inside it.
+  //
+  // No host check needed: the clinic comes from the subdomain, so anywhere off a
+  // clinic host getHostClinic() already returned null and we never reached here.
+  if (user.profile.isPlatformAdmin) {
+    return { user, clinic, role: Role.ADMIN, viaPlatformAdmin: true };
+  }
 
-  return { user, clinic, role: membership.role };
+  return null;
 }
 
 /**

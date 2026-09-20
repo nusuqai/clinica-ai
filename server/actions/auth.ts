@@ -155,6 +155,16 @@ export async function signIn(formData: FormData) {
   });
   if (membership) redirect(roleHome(membership.role));
 
+  // A platform admin is a member of no clinic yet administers every one of them
+  // — the same grant getClinicContext applies once they're inside. Without it
+  // they'd fall into the non-member branch below and be signed straight back out
+  // of the clinic they came to manage.
+  const profile = await prisma.profile.findUnique({
+    where: { id: data.user.id },
+    select: { isPlatformAdmin: true },
+  });
+  if (profile?.isPlatformAdmin) redirect(roleHome(Role.ADMIN));
+
   // Authenticated but NOT a member of this clinic. The password check already
   // opened a session; we must not leave the visitor signed in to a clinic they
   // don't belong to — sign out immediately. The page then offers to create an

@@ -12,13 +12,15 @@ import {
   Search,
 } from "lucide-react";
 import {
-  listTemplatesAction,
-  deleteTemplateAction,
-  sendTemplateToNumberAction,
-} from "@/server/actions/whatsapp";
+  listClinicTemplatesAction,
+  deleteClinicTemplateAction,
+  sendClinicTemplateToNumberAction,
+} from "@/server/actions/platformWhatsapp";
 import type { MessageTemplate } from "@/lib/meta/whatsapp";
-import { languageLabel } from "./languages";
-import WhatsappPreview from "./whatsapp-preview";
+// These two stay under components/admin/whatsapp — the clinic-side reminders
+// page and the inbox template picker share them.
+import { languageLabel } from "@/components/admin/whatsapp/languages";
+import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
@@ -55,7 +57,13 @@ function StatusBadge({ status }: { status: string }) {
 
 const ALL = "__all__";
 
-export default function TemplatesList({ disabled }: { disabled: boolean }) {
+export default function TemplatesList({
+  clinicId,
+  disabled,
+}: {
+  clinicId: string;
+  disabled: boolean;
+}) {
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(!disabled);
   const [error, setError] = useState<string | null>(null);
@@ -71,18 +79,18 @@ export default function TemplatesList({ disabled }: { disabled: boolean }) {
     if (disabled) return;
     setLoading(true);
     setError(null);
-    const res = await listTemplatesAction();
+    const res = await listClinicTemplatesAction({ clinicId });
     setLoading(false);
     if (res.ok) setTemplates(res.templates);
     else setError(("message" in res && res.message) || "تعذّر تحميل القوالب.");
-  }, [disabled]);
+  }, [clinicId, disabled]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const handleDelete = async (name: string) => {
-    const res = await deleteTemplateAction(name);
+    const res = await deleteClinicTemplateAction({ clinicId, name });
     if (res.ok) void load();
   };
 
@@ -245,7 +253,15 @@ function FilterSelect({
   );
 }
 
-function SendToNumber({ template, onDone }: { template: MessageTemplate; onDone: () => void }) {
+function SendToNumber({
+  clinicId,
+  template,
+  onDone,
+}: {
+  clinicId: string;
+  template: MessageTemplate;
+  onDone: () => void;
+}) {
   const [phone, setPhone] = useState("");
   const [variables, setVariables] = useState<string[]>(
     Array.from({ length: template.variableCount }, () => "")
@@ -256,7 +272,8 @@ function SendToNumber({ template, onDone }: { template: MessageTemplate; onDone:
   const handleSend = async () => {
     setSending(true);
     setMessage(null);
-    const res = await sendTemplateToNumberAction({
+    const res = await sendClinicTemplateToNumberAction({
+      clinicId,
       phone,
       name: template.name,
       language: template.language,
