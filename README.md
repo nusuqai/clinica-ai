@@ -43,8 +43,9 @@ a clinic is reachable at `http://demo.localhost:3000` straight away.
 
 ## Getting started
 
-1. Copy `.env.example` to `.env.hosted` (pointing at a real Supabase project) and/or
-   `.env.localdb` (pointing at `npx supabase start`'s local stack), and fill in the values.
+1. Copy `.env.example` to `.env.local` (pointing at `npx supabase start`'s local stack),
+   `.env.dev` (pointing at the dev-hosted Supabase project), and/or `.env.prod` (pointing
+   at the production Supabase project), and fill in the values.
 
 2. Install dependencies:
 
@@ -65,24 +66,32 @@ a clinic is reachable at `http://demo.localhost:3000` straight away.
 4. Run the dev server:
 
    ```bash
-   npm run dev          # against the hosted Supabase project
-   npm run dev:local    # against the local Supabase stack
+   npm run dev          # against the local Supabase stack
+   npm run dev:dev      # against the dev-hosted Supabase project
+   npm run dev:prod     # against the production Supabase project
    ```
 
 ## Scripts
 
-| Script                                                | Description                                                 |
-| ----------------------------------------------------- | ----------------------------------------------------------- |
-| `dev` / `dev:local`                                   | Start the Next.js dev server (hosted or local Supabase env) |
-| `build` / `build:local`                               | Production build                                            |
-| `start` / `start:local`                               | Start the production server                                 |
-| `lint`                                                | Run ESLint                                                  |
-| `prisma:generate` / `prisma:generate:local`           | Generate the Prisma client                                  |
-| `prisma:migrate` / `prisma:migrate:local`             | Create and apply a new migration                            |
-| `prisma:deploy` / `prisma:deploy:local`               | Apply existing migrations (CI/production)                   |
-| `prisma:studio` / `prisma:studio:local`               | Open Prisma Studio                                          |
-| `supabase:start` / `supabase:stop` / `supabase:reset` | Manage the local Supabase stack                             |
-| `tunnel`                                              | Expose localhost via ngrok (for WhatsApp webhook testing)   |
+No suffix runs against `.env.local` (local Supabase stack), `:dev` against `.env.dev`
+(dev-hosted Supabase project), `:prod` against `.env.prod` (production). `build`/`start`
+are the exception — with no suffix they load no `.env` file at all, since Vercel injects
+its own env vars for real deploys; use `build:local`/`start:local` etc. to test a
+production build against a specific env locally.
+
+| Script                                                | Description                                               |
+| ----------------------------------------------------- | --------------------------------------------------------- |
+| `dev` / `dev:dev` / `dev:prod`                        | Start the Next.js dev server (local / dev-hosted / prod)  |
+| `build` / `build:local` / `build:dev` / `build:prod`  | Production build                                          |
+| `start` / `start:local` / `start:dev` / `start:prod`  | Start the production server                               |
+| `lint`                                                | Run ESLint                                                |
+| `prisma:generate` / `:dev` / `:prod`                  | Generate the Prisma client                                |
+| `prisma:migrate` / `:dev` / `:prod`                   | Create and apply a new migration                          |
+| `prisma:push`                                         | Push schema changes without a migration (local only)      |
+| `prisma:deploy` / `:dev` / `:prod`                    | Apply existing migrations (CI/production)                 |
+| `prisma:studio` / `:dev` / `:prod`                    | Open Prisma Studio                                        |
+| `supabase:start` / `supabase:stop` / `supabase:reset` | Manage the local Supabase stack                           |
+| `tunnel`                                              | Expose localhost via ngrok (for WhatsApp webhook testing) |
 
 ## AI Agent
 

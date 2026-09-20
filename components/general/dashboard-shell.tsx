@@ -86,6 +86,7 @@ export default function DashboardShell({
             </span>
           </div>
         )}
+
         <Topbar title={pageTitle} clinicName={clinicName} onMenuClick={() => setMobileOpen(true)} />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>

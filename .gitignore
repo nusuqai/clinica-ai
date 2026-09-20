@@ -39,6 +39,6 @@ supabase/.temp
 *.sw?
 
 .env
+.env.dev
 .env.local
-.env.hosted
-.env.localdb
+.env.prod
