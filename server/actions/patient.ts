@@ -29,6 +29,8 @@ export async function updateProfileAction(
     });
     revalidatePath("/dashboard", "page");
     revalidatePath("/dashboard/profile", "page");
+    revalidatePath("/profile", "page");
+    revalidatePath("/", "page"); // the home page's nav avatar shows the name
     return { ok: true };
   } catch (e) {
     return {
@@ -71,6 +73,7 @@ export async function cancelAppointmentAction(
   );
   if (!result.ok) return { ok: false, error: result.error };
 
+  revalidatePath("/", "page"); // the clinic home shows the patient's bookings too
   revalidatePath("/dashboard", "page");
   revalidatePath("/dashboard/appointments", "page");
   return { ok: true };

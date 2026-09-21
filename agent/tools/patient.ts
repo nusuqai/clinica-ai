@@ -167,6 +167,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         const appts = await AppointmentService.getPatientAppointments(
           patientId,
           {
+            clinicId: ctx.clinicId,
             upcoming: upcoming ?? false,
           },
         );

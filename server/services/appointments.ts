@@ -117,9 +117,13 @@ const reshapeDoctor = <
 
 // ─── Patient Queries ──────────────────────────────────────────────────────────
 
+// `clinicId` scopes a patient's appointments to one clinic. A Profile can be a
+// patient at several clinics, so every patient-facing page passes the host's
+// clinic — otherwise demo's dashboard would list another clinic's bookings too.
 export async function getPatientAppointments(
   patientId: string,
   options?: {
+    clinicId?: string;
     status?: AppointmentStatus;
     upcoming?: boolean;
     limit?: number;
@@ -128,6 +132,7 @@ export async function getPatientAppointments(
   const rows = await prisma.appointment.findMany({
     where: {
       patientId,
+      ...(options?.clinicId ? { clinicId: options.clinicId } : {}),
       ...(options?.upcoming
         ? upcomingAppointmentWhere()
         : options?.status
@@ -149,14 +154,15 @@ export async function getPatientAppointments(
   return rows.map((row) => ({ ...reshapeDoctor(row), ...queueView(row) }));
 }
 
-export async function getPatientStats(patientId: string) {
+export async function getPatientStats(patientId: string, clinicId?: string) {
+  const scope = { patientId, ...(clinicId ? { clinicId } : {}) };
   const [total, upcoming, completed, cancelled] = await Promise.all([
-    prisma.appointment.count({ where: { patientId } }),
+    prisma.appointment.count({ where: scope }),
     prisma.appointment.count({
-      where: { patientId, ...upcomingAppointmentWhere() },
+      where: { ...scope, ...upcomingAppointmentWhere() },
     }),
-    prisma.appointment.count({ where: { patientId, status: AppointmentStatus.COMPLETED } }),
-    prisma.appointment.count({ where: { patientId, status: AppointmentStatus.CANCELLED } }),
+    prisma.appointment.count({ where: { ...scope, status: AppointmentStatus.COMPLETED } }),
+    prisma.appointment.count({ where: { ...scope, status: AppointmentStatus.CANCELLED } }),
   ]);
   return { total, upcoming, completed, cancelled };
 }
