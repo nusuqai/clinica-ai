@@ -1,8 +1,9 @@
 # Clip 03 — Branches
 
 **Screen:** `/admin/branches` — الفروع (branch cards) → opens "تعديل الفرع" modal on one branch
-**Motion:** Running — a real action sequence, in this order (from your description): 0. Transition in from Clip 02 (specialties) — spoken over the hard-cut, before the branches page settles on screen
+**Motion:** Running — a real action sequence, in this order (from your description):
 
+0. Transition in from Clip 02 (specialties) — spoken over the hard-cut, before the branches page settles on screen
 1. Page shown (branch cards)
 2. Open the edit modal on a branch
 3. Add a phone number (فتح صف رقم جديد في قسم "أرقام هواتف الفرع")
