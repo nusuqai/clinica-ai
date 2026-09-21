@@ -12,8 +12,9 @@ import {
 import { Role } from "@prisma/client";
 import { requireClinicMember } from "@/lib/auth";
 import { getClinicUser } from "@/server/services/users";
-import { listPatientRecords } from "@/server/services/treatments";
+import { listPatientRecords, listRecordableVisits } from "@/server/services/treatments";
 import RecordTimeline from "@/components/medical/record-timeline";
+import AdminRecordModal from "@/components/medical/admin-record-modal";
 import EditPatientModal from "./_components/edit-patient-modal";
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -35,10 +36,15 @@ export default async function UserDetailPage({ params }: PageProps) {
 
   // Clinic-scoped: this clinic's records only. The same person's history at
   // another clinic is not this admin's to see.
-  const records =
-    user.role === Role.PATIENT
-      ? await listPatientRecords({ clinicId: clinic.id, patientId: id })
-      : [];
+  // Completed visits without a record feed the admin's "add record" form —
+  // admins may only document a visit that actually happened.
+  const isPatient = user.role === Role.PATIENT;
+  const [records, recordableVisits] = isPatient
+    ? await Promise.all([
+        listPatientRecords({ clinicId: clinic.id, patientId: id }),
+        listRecordableVisits(clinic.id, id),
+      ])
+    : [[], []];
 
   const initials = user.fullName
     .split(" ")
@@ -126,10 +132,29 @@ export default async function UserDetailPage({ params }: PageProps) {
       </div>
 
       {/* Clinical history — patients only; staff have no treatment records. */}
-      {user.role === Role.PATIENT && (
+      {isPatient && (
         <section className="mt-8">
-          <h2 className="mb-4 font-heading text-lg font-bold text-foreground">السجل العلاجي</h2>
-          <RecordTimeline records={records} emptyMessage="لا يوجد سجل علاجي لهذا المريض بعد" />
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-heading text-lg font-bold text-foreground">السجل العلاجي</h2>
+            <AdminRecordModal
+              mode="create"
+              patientId={user.id}
+              patientName={user.fullName}
+              visits={recordableVisits}
+            />
+          </div>
+          <RecordTimeline
+            records={records}
+            emptyMessage="لا يوجد سجل علاجي لهذا المريض بعد"
+            recordAction={(record) => (
+              <AdminRecordModal
+                mode="edit"
+                patientId={user.id}
+                patientName={user.fullName}
+                record={record}
+              />
+            )}
+          />
         </section>
       )}
     </div>

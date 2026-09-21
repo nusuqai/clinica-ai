@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { Role, type ProcedureKind } from "@prisma/client";
+import { AppointmentStatus, Role, type ProcedureKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getClinicContext } from "@/lib/auth";
 import * as TreatmentService from "@/server/services/treatments";
@@ -15,7 +15,9 @@ import { authorizePatientHistory } from "@/server/services/treatmentAccess";
 // Roles, as decided for v1:
 //   DOCTOR  — creates and edits their OWN records; reads the history of
 //             patients they treat in this clinic.
-//   ADMIN   — reads any record in their clinic; does not write.
+//   ADMIN   — reads any record in their clinic; creates a record only for a
+//             patient's COMPLETED appointment (attributed to that visit's
+//             doctor), and edits any record. Edits are audited the same way.
 //   PATIENT — reads only their own records, only in this clinic.
 
 // ─── Wire types ───────────────────────────────────────────────────────────────
@@ -153,6 +155,85 @@ export async function updateRecordAction(recordId: string, payload: TreatmentRec
 
   revalidatePath("/doctor/appointments", "page");
   revalidatePath("/doctor/patients", "page");
+  return { success: true };
+}
+
+// ─── Admin writes ─────────────────────────────────────────────────────────────
+
+async function requireAdmin(): Promise<
+  { ok: true; userId: string; clinicId: string } | { ok: false; error: string }
+> {
+  const ctx = await getClinicContext();
+  if (!ctx || ctx.role !== Role.ADMIN) return { ok: false, error: "غير مصرح" };
+  return { ok: true, userId: ctx.user.id, clinicId: ctx.clinic.id };
+}
+
+function revalidateAdminPatient(patientId: string) {
+  revalidatePath(`/admin/users/${patientId}`, "page");
+  revalidatePath("/doctor/appointments", "page");
+  revalidatePath("/doctor/patients", "page");
+}
+
+/**
+ * An admin files a record for one of a patient's COMPLETED appointments.
+ *
+ * The appointment is required and is the authority on everything else: the
+ * treating doctor is read from it server-side (never taken from the client),
+ * and it must belong to this clinic and this patient. Visits that haven't
+ * happened — pending, confirmed, cancelled, no-show — are refused: an admin
+ * documents what was done, not what is planned.
+ */
+export async function createRecordAsAdminAction(args: {
+  patientId: string;
+  appointmentId: string;
+  payload: TreatmentRecordPayload;
+}) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { error: auth.error };
+  if (!args.appointmentId) return { error: "اختر الزيارة المكتملة" };
+
+  const appt = await prisma.appointment.findFirst({
+    where: { id: args.appointmentId, clinicId: auth.clinicId, patientId: args.patientId },
+    select: { doctorId: true, status: true },
+  });
+  if (!appt) return { error: "الموعد غير موجود" };
+  if (appt.status !== AppointmentStatus.COMPLETED) {
+    return { error: "يمكن إضافة سجل علاجي للمواعيد المكتملة فقط" };
+  }
+
+  const res = await TreatmentService.createRecord({
+    clinicId: auth.clinicId,
+    doctorId: appt.doctorId,
+    authorId: auth.userId,
+    patientId: args.patientId,
+    appointmentId: args.appointmentId,
+    input: toServiceInput(args.payload),
+  });
+  if (!res.ok) return { error: res.error };
+
+  revalidateAdminPatient(args.patientId);
+  return { success: true, id: res.data.id };
+}
+
+/** An admin edits any record in their clinic. Audited like a doctor's edit. */
+export async function updateRecordAsAdminAction(recordId: string, payload: TreatmentRecordPayload) {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { error: auth.error };
+
+  const res = await TreatmentService.updateRecord({
+    recordId,
+    clinicId: auth.clinicId,
+    // No doctorId filter: admins may edit any record in their clinic.
+    editorId: auth.userId,
+    input: toServiceInput(payload),
+  });
+  if (!res.ok) return { error: res.error };
+
+  const record = await prisma.treatmentRecord.findFirst({
+    where: { id: recordId, clinicId: auth.clinicId },
+    select: { patientId: true },
+  });
+  if (record) revalidateAdminPatient(record.patientId);
   return { success: true };
 }
 

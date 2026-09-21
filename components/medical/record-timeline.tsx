@@ -1,4 +1,12 @@
-import { Stethoscope, Pill, ClipboardList, CalendarClock, MapPin, FileText } from "lucide-react";
+import {
+  Stethoscope,
+  Pill,
+  ClipboardList,
+  CalendarClock,
+  MapPin,
+  FileText,
+  UserPen,
+} from "lucide-react";
 import type { TreatmentRecordView } from "@/server/services/treatments";
 import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import { formatSlotDate } from "@/lib/slot-time";
@@ -59,6 +67,12 @@ export default function RecordTimeline({
                     <span className="flex items-center gap-1">
                       <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
                       {record.branchName}
+                    </span>
+                  )}
+                  {record.enteredByName && (
+                    <span className="flex items-center gap-1" title="أُدخل نيابةً عن الطبيب">
+                      <UserPen className="h-3.5 w-3.5 flex-shrink-0" />
+                      أدخله {record.enteredByName}
                     </span>
                   )}
                   {record.revisionCount > 0 && (

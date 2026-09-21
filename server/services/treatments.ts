@@ -74,10 +74,18 @@ export interface TreatmentRecordView {
   }[];
   /** How many times this record has been edited since it was written. */
   revisionCount: number;
+  /**
+   * Who typed it in, when that wasn't the treating doctor themselves — e.g. a
+   * clinic admin entering it on the doctor's behalf. Null when the doctor wrote it.
+   */
+  enteredByName: string | null;
 }
 
 const recordInclude = {
-  doctor: { select: { id: true, fullName: true, specialty: { select: { name: true } } } },
+  doctor: {
+    select: { id: true, fullName: true, profileId: true, specialty: { select: { name: true } } },
+  },
+  createdBy: { select: { id: true, fullName: true } },
   branch: { select: { name: true } },
   procedures: { orderBy: { createdAt: "asc" } },
   prescriptions: { orderBy: { createdAt: "asc" } },
@@ -118,6 +126,7 @@ function toView(row: RecordRow): TreatmentRecordView {
       instructions: p.instructions,
     })),
     revisionCount: row._count.revisions,
+    enteredByName: row.createdBy.id === row.doctor.profileId ? null : row.createdBy.fullName,
   };
 }
 
@@ -212,6 +221,45 @@ export async function mapRecordsByAppointment(
   return new Map(rows.flatMap((r) => (r.appointmentId ? [[r.appointmentId, r.id]] : [])));
 }
 
+export interface RecordableVisit {
+  id: string;
+  doctorName: string;
+  /** The visit day — slot date for slot-based, booking date for order-based. */
+  date: Date | null;
+}
+
+/**
+ * A patient's COMPLETED appointments in this clinic that have no record yet,
+ * newest first — the only visits an admin may file a record against. A visit
+ * that hasn't happened (or was cancelled / a no-show) has nothing clinical to
+ * document, so it never appears here.
+ */
+export async function listRecordableVisits(
+  clinicId: string,
+  patientId: string
+): Promise<RecordableVisit[]> {
+  const rows = await prisma.appointment.findMany({
+    where: {
+      clinicId,
+      patientId,
+      status: AppointmentStatus.COMPLETED,
+      treatmentRecord: null,
+    },
+    select: {
+      id: true,
+      bookingDate: true,
+      slot: { select: { date: true } },
+      doctor: { select: { fullName: true } },
+    },
+    orderBy: [{ slot: { date: "desc" } }, { bookingDate: "desc" }],
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    doctorName: r.doctor.fullName,
+    date: r.slot?.date ?? r.bookingDate,
+  }));
+}
+
 /** Count of a patient's records in this clinic — for the admin user header. */
 export async function countPatientRecords(clinicId: string, patientId: string): Promise<number> {
   return prisma.treatmentRecord.count({ where: { clinicId, patientId } });
@@ -277,24 +325,35 @@ function cleanPrescriptions(rows: PrescriptionInput[]) {
 /**
  * Write the clinical record for a visit.
  *
+ * `doctorId` is the TREATING doctor; `authorId` is whoever is typing — the
+ * doctor themselves, or a clinic admin entering it on their behalf.
+ *
  * `appointmentId` is optional — a walk-in or a back-filled paper note has no
  * scheduling row. When given, the appointment must belong to this clinic AND to
- * this doctor, and it supplies the default visit date and the branch snapshot.
- * Completing the visit is implied: recording what happened marks a still-open
- * appointment COMPLETED in the same transaction, so the two never disagree.
+ * this doctor (and to `patientId`, if that was given too), and it supplies the
+ * branch snapshot. Recording what happened also completes a still-open
+ * appointment, so the two never disagree.
  */
 export async function createRecord(args: {
   clinicId: string;
   doctorId: string;
-  /** The Profile writing it — the doctor's own account. */
+  /** The Profile writing it — the doctor, or an admin on the doctor's behalf. */
   authorId: string;
-  /** Required only without an appointment; otherwise the appointment decides. */
+  /** Required without an appointment; with one, it must match the appointment's. */
   patientId?: string;
   appointmentId?: string | null;
   input: TreatmentRecordInput;
 }): Promise<Result<{ id: string }>> {
   const invalid = validate(args.input);
   if (invalid) return err(invalid);
+
+  // An admin picks the doctor from a list, so the id is client-supplied: make
+  // sure it names a doctor of THIS clinic before filing anything against it.
+  const doctor = await prisma.doctor.findFirst({
+    where: { id: args.doctorId, clinicId: args.clinicId },
+    select: { id: true },
+  });
+  if (!doctor) return err("الطبيب غير موجود في هذه العيادة");
 
   let branchId: string | null = null;
   let patientId = args.patientId ?? "";
@@ -306,6 +365,9 @@ export async function createRecord(args: {
       select: { id: true, patientId: true, branchId: true, status: true },
     });
     if (!appt) return err("الموعد غير موجود أو غير مصرح");
+    if (args.patientId && appt.patientId !== args.patientId) {
+      return err("الموعد لا يخص هذا المريض");
+    }
 
     const existing = await prisma.treatmentRecord.findUnique({
       where: { appointmentId: appt.id },
