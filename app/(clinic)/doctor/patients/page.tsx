@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { Users, Phone, Calendar } from "lucide-react";
+import Link from "next/link";
+import { Users, Phone, Calendar, FileText } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { getDoctorPatients, getDoctorByProfileId } from "@/server/services/doctors";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
@@ -47,6 +48,9 @@ export default async function DoctorPatientsPage() {
                   <th className="px-4 py-3 text-start font-medium text-muted-foreground">
                     إجمالي المواعيد
                   </th>
+                  <th className="px-4 py-3 text-start font-medium text-muted-foreground">
+                    السجل العلاجي
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -88,6 +92,15 @@ export default async function DoctorPatientsPage() {
                         <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-muted font-sans text-xs font-semibold text-muted-foreground">
                           {patient.totalAppointments}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/doctor/patients/${patient.patientId}`}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          عرض السجل
+                        </Link>
                       </td>
                     </tr>
                   );
