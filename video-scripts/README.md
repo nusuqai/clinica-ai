@@ -21,6 +21,6 @@ Files:
 - `03-branches.md` — branches page, edit modal walkthrough (add/remove phone, hours, save, second branch)
 - `04-clinic-info.md` — clinic info page (paused): name, description, public phones, socials
 - `05-doctors.md` — doctors list → profile → edit modal → availability rules (order-based, capacity warning, branch-hours error)
-- `06-messages.md` — messages inbox + mobile recording, full patient↔AI conversation dub (two voices), biggest clip
+- `06-messages.md` — messages inbox + mobile recording, narrated patient↔AI conversation (single voice, like every other clip)
 - `07-appointments.md` — appointments board, verify AI's booking, WhatsApp confirmation reminder flips status, doctor's queue tab
 - `08-reports.md` — reports page (paused), closing clip — bookends the intro with brand + CTA
