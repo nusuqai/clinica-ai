@@ -2,11 +2,34 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Stethoscope, Menu, X } from "lucide-react";
+import { Stethoscope, Menu, X, UserRound } from "lucide-react";
+
+/** Round avatar (the patient's initials) that opens their profile page. */
+function ProfileAvatar({ name }: { name: string | null }) {
+  const initials =
+    (name ?? "")
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join("") || null;
+  return (
+    <Link
+      href="/profile"
+      title="الملف الشخصي"
+      aria-label="الملف الشخصي"
+      className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white/30 bg-white/10 font-heading text-sm font-bold text-white transition-colors hover:border-accent hover:bg-accent"
+    >
+      {initials ?? <UserRound className="h-4 w-4" />}
+    </Link>
+  );
+}
 
 interface LandingNavProps {
   isAuthenticated: boolean;
   isPatient: boolean;
+  /** Signed-in patient's name — shown as the avatar linking to /profile. */
+  userName?: string | null;
   /** Signed-in patient's dashboard URL (their clinic). */
   dashboardHref?: string;
   /** Brand shown in the nav (defaults to the product name). */
@@ -23,6 +46,7 @@ interface LandingNavProps {
 export function LandingNav({
   isAuthenticated,
   isPatient,
+  userName = null,
   dashboardHref = "/",
   brandName = "ClinicaAI",
   homeHref = "/",
@@ -61,6 +85,14 @@ export function LandingNav({
 
         {/* Desktop links */}
         <div className="hidden items-center gap-8 md:flex">
+          {isAuthenticated && isPatient && (
+            <a
+              href="#my-appointments"
+              className="font-sans text-sm text-white/80 transition-colors hover:text-accent"
+            >
+              مواعيدي
+            </a>
+          )}
           <a
             href="#doctors"
             className="font-sans text-sm text-white/80 transition-colors hover:text-accent"
@@ -78,12 +110,15 @@ export function LandingNav({
         {/* Auth buttons */}
         <div className="hidden items-center gap-3 md:flex">
           {isAuthenticated && isPatient ? (
-            <Link
-              href={dashboardHref}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-            >
-              لوحة تحكمي
-            </Link>
+            <>
+              <Link
+                href={dashboardHref}
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              >
+                لوحة تحكمي
+              </Link>
+              <ProfileAvatar name={userName} />
+            </>
           ) : isAuthenticated ? (
             <Link
               href={dashboardHref}
@@ -123,6 +158,15 @@ export function LandingNav({
       {menuOpen && (
         <div className="border-t border-white/10 bg-primary px-6 py-4 md:hidden">
           <div className="flex flex-col gap-4">
+            {isAuthenticated && isPatient && (
+              <a
+                href="#my-appointments"
+                className="font-sans text-sm font-medium text-accent"
+                onClick={() => setMenuOpen(false)}
+              >
+                مواعيدي
+              </a>
+            )}
             <a
               href="#doctors"
               className="font-sans text-sm text-white/80 hover:text-accent"
@@ -138,12 +182,21 @@ export function LandingNav({
               احجز موعد
             </a>
             {isAuthenticated && isPatient ? (
-              <Link
-                href={dashboardHref}
-                className="rounded-lg bg-accent px-4 py-2 text-center text-sm font-medium text-white"
-              >
-                لوحة تحكمي
-              </Link>
+              <>
+                <Link
+                  href="/profile"
+                  className="flex items-center gap-2 font-sans text-sm text-white/80 hover:text-accent"
+                >
+                  <UserRound className="h-4 w-4" />
+                  الملف الشخصي
+                </Link>
+                <Link
+                  href={dashboardHref}
+                  className="rounded-lg bg-accent px-4 py-2 text-center text-sm font-medium text-white"
+                >
+                  لوحة تحكمي
+                </Link>
+              </>
             ) : !isAuthenticated ? (
               <div className="flex flex-col gap-2">
                 <Link

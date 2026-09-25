@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 import { requireClinicMember } from "@/lib/auth";
 import { getDoctorByProfileId } from "@/server/services/doctors";
 import { getDoctorAppointments } from "@/server/services/appointments";
+import { mapRecordsByAppointment } from "@/server/services/treatments";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
+import RecordFormModal from "@/components/medical/record-form-modal";
 import AppointmentActions from "./_components/appointment-actions";
 import type { AppointmentStatus } from "@prisma/client";
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
@@ -25,6 +27,13 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
   const appointments = await getDoctorAppointments(doctor.id, {
     status: filterStatus,
   });
+
+  // Which of these visits already have a clinical record — one query for the
+  // whole page rather than one per row.
+  const recordsByAppointment = await mapRecordsByAppointment(
+    appointments.map((a) => a.id),
+    ctx.clinic.id
+  );
 
   return (
     <div>
@@ -158,11 +167,19 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <AppointmentActions
-                        appointmentId={appt.id}
-                        currentStatus={appt.status}
-                        currentNotes={appt.doctorNotes}
-                      />
+                      <div className="space-y-1.5">
+                        <AppointmentActions
+                          appointmentId={appt.id}
+                          currentStatus={appt.status}
+                          currentNotes={appt.doctorNotes}
+                        />
+                        <RecordFormModal
+                          appointmentId={appt.id}
+                          patientName={appt.patient.fullName}
+                          defaultVisitDate={appt.slot?.date ?? appt.bookingDate}
+                          hasRecord={recordsByAppointment.has(appt.id)}
+                        />
+                      </div>
                     </td>
                   </tr>
                 );

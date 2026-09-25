@@ -1,9 +1,20 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Phone, Mail, Calendar, ShieldCheck, ShieldAlert } from "lucide-react";
+import {
+  ArrowRight,
+  Phone,
+  Mail,
+  Calendar,
+  ShieldCheck,
+  ShieldAlert,
+  FileText,
+} from "lucide-react";
 import { Role } from "@prisma/client";
 import { requireClinicMember } from "@/lib/auth";
 import { getClinicUser } from "@/server/services/users";
+import { listPatientRecords, listRecordableVisits } from "@/server/services/treatments";
+import RecordTimeline from "@/components/medical/record-timeline";
+import AdminRecordModal from "@/components/medical/admin-record-modal";
 import EditPatientModal from "./_components/edit-patient-modal";
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -22,6 +33,18 @@ export default async function UserDetailPage({ params }: PageProps) {
 
   const user = await getClinicUser(id, clinic.id);
   if (!user) notFound();
+
+  // Clinic-scoped: this clinic's records only. The same person's history at
+  // another clinic is not this admin's to see.
+  // Completed visits without a record feed the admin's "add record" form —
+  // admins may only document a visit that actually happened.
+  const isPatient = user.role === Role.PATIENT;
+  const [records, recordableVisits] = isPatient
+    ? await Promise.all([
+        listPatientRecords({ clinicId: clinic.id, patientId: id }),
+        listRecordableVisits(clinic.id, id),
+      ])
+    : [[], []];
 
   const initials = user.fullName
     .split(" ")
@@ -87,6 +110,12 @@ export default async function UserDetailPage({ params }: PageProps) {
                 <Calendar className="h-3.5 w-3.5" />
                 {user.appointmentCount} موعد إجمالاً
               </span>
+              {user.role === Role.PATIENT && (
+                <span className="flex items-center gap-1.5 font-sans text-sm text-muted-foreground">
+                  <FileText className="h-3.5 w-3.5" />
+                  {records.length} زيارة مسجّلة
+                </span>
+              )}
             </div>
           </div>
 
@@ -101,6 +130,33 @@ export default async function UserDetailPage({ params }: PageProps) {
           </div>
         </div>
       </div>
+
+      {/* Clinical history — patients only; staff have no treatment records. */}
+      {isPatient && (
+        <section className="mt-8">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-heading text-lg font-bold text-foreground">السجل العلاجي</h2>
+            <AdminRecordModal
+              mode="create"
+              patientId={user.id}
+              patientName={user.fullName}
+              visits={recordableVisits}
+            />
+          </div>
+          <RecordTimeline
+            records={records}
+            emptyMessage="لا يوجد سجل علاجي لهذا المريض بعد"
+            recordAction={(record) => (
+              <AdminRecordModal
+                mode="edit"
+                patientId={user.id}
+                patientName={user.fullName}
+                record={record}
+              />
+            )}
+          />
+        </section>
+      )}
     </div>
   );
 }

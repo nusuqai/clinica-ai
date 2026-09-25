@@ -22,6 +22,7 @@ export default async function PatientAppointmentsPage({ searchParams }: PageProp
     : undefined;
 
   const appointments = await getPatientAppointments(ctx.user.id, {
+    clinicId: ctx.clinic.id,
     status: filterStatus,
   });
 

@@ -100,6 +100,17 @@ enum DoctorTitle {
   CONSULTANT
 }
 
+// What a TreatmentProcedure row records. Kept deliberately coarse — a clinic
+// types the procedure's own name in `name`; this only groups the timeline.
+enum ProcedureKind {
+  EXAMINATION // كشف / فحص سريري
+  LAB // تحليل معملي
+  IMAGING // أشعة / تصوير
+  SURGERY // تدخّل جراحي
+  THERAPY // جلسة علاجية
+  OTHER
+}
+
 // Social-media platforms for a clinic's public accounts.
 enum SocialPlatform {
   FACEBOOK
@@ -161,6 +172,10 @@ model Clinic {
   appointmentTemplates ClinicAppointmentTemplate[]
   appointmentFeedback  AppointmentFeedback[]
   knowledgeDocs        KnowledgeDoc[]
+  treatmentRecords     TreatmentRecord[]
+  treatmentProcedures  TreatmentProcedure[]
+  prescriptions        Prescription[]
+  treatmentRevisions   TreatmentRecordRevision[]
 
   @@map("clinics")
 }
@@ -218,6 +233,7 @@ model Branch {
   slots             Slot[]
   appointments      Appointment[]
   dayQueues         DoctorDayQueue[]
+  treatmentRecords  TreatmentRecord[]
 
   @@index([clinicId])
   @@map("branches")
@@ -382,10 +398,15 @@ model Profile {
   doctor              Doctor?
   appointments        Appointment[]
   conversations       Conversation[]
-  sentMessages        Message[]             @relation("SenderProfile")
+  sentMessages        Message[]                 @relation("SenderProfile")
   clinicMemberships   ClinicMember[]
-  reviewedRequests    ClinicRequest[]       @relation("RequestReviewer")
+  reviewedRequests    ClinicRequest[]           @relation("RequestReviewer")
   appointmentFeedback AppointmentFeedback[]
+  // Medical history: records ABOUT this profile as a patient, records it wrote
+  // as a doctor, and the edits it made to any record.
+  treatmentRecords    TreatmentRecord[]         @relation("PatientTreatmentRecords")
+  authoredRecords     TreatmentRecord[]         @relation("AuthoredTreatmentRecords")
+  treatmentEdits      TreatmentRecordRevision[] @relation("TreatmentRecordEdits")
 
   @@map("profiles")
 }
@@ -432,6 +453,7 @@ model Doctor {
   appointments      Appointment[]      @relation("DoctorAppointments")
   referralsMade     Appointment[]      @relation("ReferredAppointments")
   dayQueues         DoctorDayQueue[]
+  treatmentRecords  TreatmentRecord[]
 
   @@index([clinicId])
   @@index([specialtyId])
@@ -610,15 +632,17 @@ model Appointment {
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
-  clinic     Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  branch     Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  patient    Profile              @relation(fields: [patientId], references: [id])
-  doctor     Doctor               @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  referredBy Doctor?              @relation("ReferredAppointments", fields: [referredByDoctorId], references: [id])
-  slot       Slot?                @relation(fields: [slotId], references: [id])
-  rule       AvailabilityRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
-  queue      DoctorDayQueue?      @relation(fields: [queueId], references: [id], onDelete: SetNull)
-  feedback   AppointmentFeedback?
+  clinic          Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  branch          Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  patient         Profile              @relation(fields: [patientId], references: [id])
+  doctor          Doctor               @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  referredBy      Doctor?              @relation("ReferredAppointments", fields: [referredByDoctorId], references: [id])
+  slot            Slot?                @relation(fields: [slotId], references: [id])
+  rule            AvailabilityRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  queue           DoctorDayQueue?      @relation(fields: [queueId], references: [id], onDelete: SetNull)
+  feedback        AppointmentFeedback?
+  // The clinical record for this visit, if the doctor wrote one.
+  treatmentRecord TreatmentRecord?
 
   @@index([clinicId])
   @@index([branchId])
@@ -756,22 +780,22 @@ model Message {
 // can cost far under one cent, so 8 fractional digits keep sums of many tiny
 // charges exact. Never touched by JS floats.
 model ClinicAiCredit {
-  id                  String   @id @default(uuid()) @db.Uuid
-  clinicId            String   @unique @db.Uuid
+  id                  String    @id @default(uuid()) @db.Uuid
+  clinicId            String    @unique @db.Uuid
   // Per-clinic global AI auto-reply switch. Distinct from ChatSession.aiEnabled
   // (a per-session pause) — this turns the agent off across the whole clinic.
-  aiEnabled           Boolean  @default(true)
+  aiEnabled           Boolean   @default(true)
   // Per-clinic voice-reply (TTS) switch. When true AND the patient's turn was a
   // voice message, the agent answers with synthesized speech; text-in always
   // yields text-out. Default off so no clinic pays for TTS unexpectedly.
-  voiceReplyEnabled   Boolean  @default(false)
+  voiceReplyEnabled   Boolean   @default(false)
   // The clinic-facing meter: remaining agent replies. Decremented by exactly 1
   // inside the same transaction that logs a REPLY usage row, so a redelivered
   // webhook that fails the (messageId, kind) unique rolls the unit back too.
   // Starts at 0 — a clinic replies only once the platform grants it units.
-  unitBalance         Int      @default(0)
+  unitBalance         Int       @default(0)
   // Soft warning for the clinic admin's dashboard; does not block replies.
-  lowUnitsThreshold   Int      @default(50)
+  lowUnitsThreshold   Int       @default(50)
   // Dedupe stamps for the platform-admin low-credit alert emails. Set when the
   // alert is sent, cleared by a top-up that lifts the balance back above the
   // threshold — so each crossing mails once, not once per reply below it.
@@ -779,11 +803,11 @@ model ClinicAiCredit {
   // agent has stopped answering this clinic's customers".
   lowUnitsNotifiedAt  DateTime?
   unitsOutNotifiedAt  DateTime?
-  balance             Decimal  @default(0) @db.Decimal(18, 8)
-  markup              Decimal  @default(1.5) @db.Decimal(6, 4)
-  lowBalanceThreshold Decimal  @default(5) @db.Decimal(18, 8)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  balance             Decimal   @default(0) @db.Decimal(18, 8)
+  markup              Decimal   @default(1.5) @db.Decimal(6, 4)
+  lowBalanceThreshold Decimal   @default(5) @db.Decimal(18, 8)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
@@ -822,11 +846,11 @@ model AiUsageLog {
   unitsCharged     Int         @default(0)
   createdAt        DateTime    @default(now())
 
-  clinic      Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  session     ChatSession?    @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  message     Message?        @relation(fields: [messageId], references: [id], onDelete: SetNull)
-  ledger      AiCreditLedger?
-  unitLedger  AiUnitLedger?
+  clinic     Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  session    ChatSession?    @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  message    Message?        @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  ledger     AiCreditLedger?
+  unitLedger AiUnitLedger?
 
   @@unique([messageId, kind])
   @@index([clinicId, createdAt])
@@ -924,6 +948,133 @@ model ClinicAppointmentTemplate {
   @@unique([clinicId, purpose])
   @@index([clinicId])
   @@map("clinic_appointment_templates")
+}
+
+// ─── Medical history ──────────────────────────────────────────────────────────
+
+// What actually happened clinically during a visit — the counterpart to
+// Appointment, which only ever records SCHEDULING state (booked/completed/…).
+// One record per visit; a patient's timeline is their records ordered by
+// `visitDate` descending.
+//
+// SCOPING. Like every other table here the row carries `clinicId`, and every
+// read is filtered by the clinic resolved from the request host. A patient
+// signed in at demo.clinica-ai.nusuqai.com sees only the records demo wrote —
+// their history at another clinic is invisible, not merely unlinked. `branchId`
+// is snapshotted from the originating appointment so a future branch-scoped
+// staff role can filter on it without re-deriving the branch from the visit.
+//
+// `appointmentId` is optional and unique: normally the record is written from
+// the visit it documents, but a doctor can also add a standalone record (a
+// walk-in, or back-filling a paper note). It is SetNull, not Cascade — deleting
+// the scheduling row must never destroy the clinical one.
+//
+// `doctorId` is the TREATING doctor. It is Restrict (Prisma's default on a
+// required relation), so a doctor with history cannot be deleted out from under
+// their records.
+model TreatmentRecord {
+  id             String    @id @default(uuid()) @db.Uuid
+  clinicId       String    @db.Uuid
+  patientId      String    @db.Uuid
+  doctorId       String    @db.Uuid
+  branchId       String?   @db.Uuid
+  appointmentId  String?   @unique @db.Uuid
+  // The day of the visit this documents. Defaults to the appointment's date at
+  // creation time, but stays editable — paper notes get back-dated.
+  visitDate      DateTime  @db.Date
+  chiefComplaint String? // شكوى المريض — what they came in for, in their words
+  diagnosis      String? // التشخيص — free text; no ICD coding in v1
+  clinicalNotes  String? // ملاحظات الطبيب — examination findings, plan
+  followUpDate   DateTime? @db.Date // موعد المتابعة المقترح
+  createdById    String    @db.Uuid // the Profile that wrote it (the doctor's account)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  clinic        Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient       Profile                   @relation("PatientTreatmentRecords", fields: [patientId], references: [id], onDelete: Cascade)
+  doctor        Doctor                    @relation(fields: [doctorId], references: [id])
+  branch        Branch?                   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  appointment   Appointment?              @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  createdBy     Profile                   @relation("AuthoredTreatmentRecords", fields: [createdById], references: [id])
+  procedures    TreatmentProcedure[]
+  prescriptions Prescription[]
+  revisions     TreatmentRecordRevision[]
+
+  // The patient timeline query: this clinic's records for one patient, newest
+  // first. Covers the admin, doctor and patient views alike.
+  @@index([clinicId, patientId, visitDate])
+  @@index([clinicId, doctorId])
+  @@index([branchId])
+  @@map("treatment_records")
+}
+
+// A procedure performed during a visit — الإجراءات المُنفَّذة. Child of one
+// record; cascades with it. `cost` is optional and purely informational (there
+// is no billing module yet), stored as Decimal so it is never a JS float.
+model TreatmentProcedure {
+  id        String        @id @default(uuid()) @db.Uuid
+  recordId  String        @db.Uuid
+  clinicId  String        @db.Uuid
+  kind      ProcedureKind @default(OTHER)
+  name      String // the clinic's own wording, e.g. "خلع ضرس العقل"
+  note      String?
+  cost      Decimal?      @db.Decimal(10, 2)
+  createdAt DateTime      @default(now())
+
+  clinic Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  record TreatmentRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([recordId])
+  @@index([clinicId])
+  @@map("treatment_procedures")
+}
+
+// One prescribed drug line — روشتة. Several rows make up the visit's
+// prescription. Free-text rather than a drug catalog: a clinic writes what it
+// writes, and a catalog would need per-market data we don't have.
+model Prescription {
+  id           String   @id @default(uuid()) @db.Uuid
+  recordId     String   @db.Uuid
+  clinicId     String   @db.Uuid
+  drugName     String // اسم الدواء
+  dose         String? // الجرعة, e.g. "500 مجم"
+  frequency    String? // التكرار, e.g. "مرتين يومياً"
+  durationDays Int? // مدة العلاج بالأيام
+  instructions String? // تعليمات, e.g. "بعد الأكل"
+  createdAt    DateTime @default(now())
+
+  clinic Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  record TreatmentRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([recordId])
+  @@index([clinicId])
+  @@map("prescriptions")
+}
+
+// Append-only audit trail for TreatmentRecord. One row per edit, written in the
+// SAME transaction as the update, holding a snapshot of the values as they were
+// BEFORE that edit (including the procedure/prescription lines). Records stay
+// editable — doctors make typos — but nothing is ever silently rewritten: the
+// record's history shows who changed what and when.
+//
+// `snapshot` is Json rather than mirrored columns on purpose: it must keep
+// meaning even after the record's own shape changes, and it is only ever read
+// back for display, never queried into.
+model TreatmentRecordRevision {
+  id         String   @id @default(uuid()) @db.Uuid
+  recordId   String   @db.Uuid
+  clinicId   String   @db.Uuid
+  editedById String   @db.Uuid
+  editedAt   DateTime @default(now())
+  snapshot   Json
+
+  clinic   Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  record   TreatmentRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  editedBy Profile         @relation("TreatmentRecordEdits", fields: [editedById], references: [id])
+
+  @@index([recordId, editedAt])
+  @@index([clinicId])
+  @@map("treatment_record_revisions")
 }
 
 // A patient's feedback for a completed appointment. One row per appointment
