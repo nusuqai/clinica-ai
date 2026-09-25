@@ -13,14 +13,14 @@ export default async function AiSettingsPage() {
     <div>
       <PageHeader
         title="المساعد الذكي"
-        subtitle="تحكّم في الرد الآلي على العملاء وتابع رصيد الاستخدام"
+        subtitle="تحكّم في الرد الآلي على العملاء وتابع رصيد الوحدات"
         action={
           <Link
             href={`/admin/ai/usage`}
             className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground hover:bg-muted"
           >
             <BarChart3 className="h-4 w-4" />
-            تقرير التكاليف
+            تقرير الاستهلاك
           </Link>
         }
       />
@@ -28,8 +28,8 @@ export default async function AiSettingsPage() {
         <AiSettingsForm
           initialEnabled={status.aiEnabled}
           initialVoiceReplyEnabled={status.voiceReplyEnabled}
-          balance={status.balance.toNumber()}
-          lowBalance={status.lowBalance}
+          unitBalance={status.unitBalance}
+          lowUnits={status.lowUnits}
           sufficient={status.sufficient}
         />
       </div>

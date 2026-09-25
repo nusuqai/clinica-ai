@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ShieldAlert } from "lucide-react";
-import Sidebar from "./sidebar";
+import Sidebar, { type AiUnitsBadge } from "./sidebar";
 import Topbar from "./topbar";
 import { navConfig, roleMeta } from "./nav-config";
 import ChatBubble from "@/components/chat/chat-bubble";
@@ -22,6 +22,8 @@ interface DashboardShellProps {
       user who is a member of more than one clinic always knows where they are. */
   clinicName: string;
   clinicLogoUrl?: string | null;
+  /** Admin only — the clinic's remaining AI units, shown in the sidebar. */
+  aiUnits?: AiUnitsBadge | null;
   /** True when the viewer is a platform admin acting inside a clinic they are
       not a member of. Surfaced as a banner so destructive edits to someone
       else's clinic are never made unknowingly. */
@@ -36,6 +38,7 @@ export default function DashboardShell({
   clinicId,
   clinicName,
   clinicLogoUrl = null,
+  aiUnits = null,
   viaPlatformAdmin = false,
   initialUnresolvedEscalationConversationIds = [],
 }: DashboardShellProps) {
@@ -65,6 +68,7 @@ export default function DashboardShell({
         userEmail={userEmail}
         clinicName={clinicName}
         clinicLogoUrl={clinicLogoUrl}
+        aiUnits={aiUnits}
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed((v) => !v)}
         mobileOpen={mobileOpen}
