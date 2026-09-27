@@ -9,6 +9,12 @@ interface HeroSectionProps {
   isAuthenticated: boolean;
   /** When set, personalizes the hero for a specific clinic. */
   clinicName?: string;
+  /**
+   * Signed-in patient only: their nearest upcoming visit, pre-formatted on the
+   * server. Shown as a banner so it's visible without scrolling; links down to
+   * the full "my appointments" section.
+   */
+  nextAppointment?: { doctorName: string; when: string } | null;
 }
 
 export function HeroSection({
@@ -16,6 +22,7 @@ export function HeroSection({
   appointmentCount,
   isAuthenticated,
   clinicName,
+  nextAppointment = null,
 }: HeroSectionProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -86,6 +93,29 @@ export function HeroSection({
             تصفح الأطباء
           </a>
         </div>
+
+        {/* Signed-in patient: their next visit, one glance from the top */}
+        {nextAppointment && (
+          <a
+            href="#my-appointments"
+            className="group mx-auto mt-8 flex max-w-xl items-center gap-4 rounded-2xl border border-accent/30 bg-white/10 px-5 py-4 text-start backdrop-blur-sm transition-colors hover:border-accent/60 hover:bg-white/15"
+          >
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-accent">
+              <Calendar className="h-5 w-5 text-white" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-sans text-xs font-medium text-accent">موعدك القادم</p>
+              <p className="truncate font-sans font-semibold text-white">
+                د. {nextAppointment.doctorName}
+              </p>
+              <p className="truncate font-sans text-sm text-white/70">{nextAppointment.when}</p>
+            </div>
+            <span className="flex flex-shrink-0 items-center gap-1 font-sans text-sm font-medium text-white/80 group-hover:text-accent">
+              مواعيدي
+              <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+            </span>
+          </a>
+        )}
 
         {/* Stats */}
         <div className="mx-auto mt-16 grid max-w-2xl grid-cols-3 gap-6">

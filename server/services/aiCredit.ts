@@ -1,24 +1,60 @@
 import "server-only";
-import { Prisma, AiLedgerType, AiUsageKind } from "@prisma/client";
+import { Prisma, AiLedgerType, AiUnitLedgerType, AiUsageKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { sendClinicLowUnitsAlert } from "@/lib/email/send-transactional";
 import type { TokenUsage } from "@/agent/types";
 
 /**
- * Per-clinic AI credit metering — the money path.
+ * Per-clinic AI metering — the money path AND the unit path.
+ *
+ * TWO METERS, ONE OF THEM PREPAID (see the ClinicAiCredit schema comment):
+ *   - UNITS are what a clinic is granted, sees, and spends. One agent reply
+ *     costs exactly one unit, however many tokens it burned; transcription and
+ *     TTS cost none. This is the only meter that gates the agent.
+ *   - USD is pure telemetry: the real marked-up cost of every reply,
+ *     transcription and TTS call, computed by `computeCost` below. Nobody tops
+ *     it up — it only accrues — so it can never stop a clinic from replying.
+ * They move together in one transaction so they can never disagree about
+ * whether a reply happened.
  *
  * MONEY SAFETY (read before editing):
  *   - Every amount here is a Prisma.Decimal (decimal.js). JS floats never touch a
  *     rate, cost, markup or balance. `Number()` is only ever applied at the UI
- *     serialization boundary, never in this file.
- *   - The AiCreditLedger is the source of truth; `ClinicAiCredit.balance` is a
- *     denormalized cache. Every balance change happens inside one transaction
- *     that locks the credit row (SELECT … FOR UPDATE), mutates the balance, and
- *     appends a ledger row — so SUM(ledger.amount) always equals balance.
- *   - Charging is idempotent via AiUsageLog.messageId @unique: a webhook
- *     redelivery that re-charges the same reply rolls the whole txn back.
+ *     serialization boundary, never in this file. (Units are exact integers, so
+ *     they are the one thing here that is safe as a plain `number`.)
+ *   - The AiCreditLedger / AiUnitLedger are the sources of truth;
+ *     `ClinicAiCredit.balance` and `.unitBalance` are denormalized caches. Every
+ *     change happens inside one transaction that locks the credit row
+ *     (SELECT … FOR UPDATE), mutates the balance, and appends a ledger row — so
+ *     SUM(ledger.amount) always equals the cached balance.
+ *   - Charging is idempotent via AiUsageLog @@unique([messageId, kind]): a
+ *     webhook redelivery that re-charges the same reply rolls the whole txn
+ *     back, units included.
  */
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
+
+/**
+ * What one agent reply costs a clinic, in units. Flat by design: the clinic
+ * pays per answered message and never has to reason about tokens — the variable
+ * real cost lands on the platform's USD ledger instead. Voice does not change
+ * it; transcription and TTS are charged in USD only.
+ */
+export const UNITS_PER_REPLY = 1;
+
+/**
+ * Which low-credit alert a charge just triggered for the platform admins.
+ * "low" = the clinic crossed its warning threshold and should be topped up.
+ * "out" = it just spent its last unit, so the agent has stopped answering.
+ */
+export type UnitAlertSeverity = "low" | "out";
+
+export interface UnitAlert {
+  severity: UnitAlertSeverity;
+  /** Units left after the charge that triggered the alert. */
+  unitBalance: number;
+  lowUnitsThreshold: number;
+}
 
 const TOKENS_PER_MILLION = D(1_000_000);
 const DEFAULT_MARKUP = D("1.5");
@@ -115,17 +151,59 @@ export interface ClinicAiStatus {
   aiEnabled: boolean;
   /** Per-clinic voice-reply (TTS) switch — see schema. Default false. */
   voiceReplyEnabled: boolean;
-  balance: Prisma.Decimal;
+  /** Clinic-facing meter: replies remaining. The ONLY prepaid meter. */
+  unitBalance: number;
+  lowUnitsThreshold: number;
   markup: Prisma.Decimal;
-  lowBalanceThreshold: Prisma.Decimal;
-  /** Hard gate: agent replies only when true (balance strictly positive). */
+  /**
+   * Hard gate: the agent replies only when the clinic has a unit left to spend.
+   * Units are the only thing a clinic is granted, so they are the only thing
+   * that can stop it — the USD figures are cost telemetry and never gate.
+   */
   sufficient: boolean;
   /** Soft warning for the UI only — does not block replies. */
-  lowBalance: boolean;
+  lowUnits: boolean;
+}
+
+/** Just the unit meter, for display. */
+export interface ClinicUnitSummary {
+  unitBalance: number;
+  lowUnitsThreshold: number;
+  /** Running low — show a warning colour, but the agent still replies. */
+  lowUnits: boolean;
+  /** Out of units — the agent has stopped replying. */
+  unitsSufficient: boolean;
+  aiEnabled: boolean;
 }
 
 /**
- * Reads the clinic's AI gate + balance, creating the satellite lazily so a
+ * The unit meter alone, as a plain READ — no upsert, unlike getClinicAiStatus.
+ *
+ * That distinction is the point of this function: the meter is shown on every
+ * admin screen (sidebar, dashboard, reports), and a satellite-creating write on
+ * each of those renders would be a pointless write amplification. A clinic with
+ * no credit row yet simply reads as zero units; the row gets created the moment
+ * anything real happens (the runner's gate, a platform top-up, the AI settings
+ * page).
+ */
+export async function getClinicUnitSummary(clinicId: string): Promise<ClinicUnitSummary> {
+  const row = await prisma.clinicAiCredit.findUnique({
+    where: { clinicId },
+    select: { unitBalance: true, lowUnitsThreshold: true, aiEnabled: true },
+  });
+  const unitBalance = row?.unitBalance ?? 0;
+  const lowUnitsThreshold = row?.lowUnitsThreshold ?? 50;
+  return {
+    unitBalance,
+    lowUnitsThreshold,
+    lowUnits: unitBalance <= lowUnitsThreshold,
+    unitsSufficient: unitBalance >= UNITS_PER_REPLY,
+    aiEnabled: row?.aiEnabled ?? true,
+  };
+}
+
+/**
+ * Reads the clinic's AI gate + unit meter, creating the satellite lazily so a
  * clinic that predates the migration (or slipped past the backfill) is never a
  * missing-row error. Used by the runner gate and the settings page.
  */
@@ -137,43 +215,52 @@ export async function getClinicAiStatus(clinicId: string): Promise<ClinicAiStatu
     select: {
       aiEnabled: true,
       voiceReplyEnabled: true,
-      balance: true,
+      unitBalance: true,
+      lowUnitsThreshold: true,
       markup: true,
-      lowBalanceThreshold: true,
     },
   });
   return {
     aiEnabled: row.aiEnabled,
     voiceReplyEnabled: row.voiceReplyEnabled,
-    balance: row.balance,
+    unitBalance: row.unitBalance,
+    lowUnitsThreshold: row.lowUnitsThreshold,
     markup: row.markup,
-    lowBalanceThreshold: row.lowBalanceThreshold,
-    sufficient: row.balance.gt(0),
-    lowBalance: row.balance.lte(row.lowBalanceThreshold),
+    sufficient: row.unitBalance >= UNITS_PER_REPLY,
+    lowUnits: row.unitBalance <= row.lowUnitsThreshold,
   };
 }
 
 /**
- * Deducts the cost of one agent reply from the clinic balance, atomically.
+ * Charges one agent reply: ONE UNIT off the clinic's meter and its real cost off
+ * the platform's USD balance, atomically, in the same transaction.
+ *
+ * This is the ONLY place a unit is ever spent, and it is reached only from the
+ * agent runner after an AGENT message has been persisted — which is exactly what
+ * makes "units decrease only when the AI answers" true by construction. A human
+ * admin replying from the inbox goes through server/actions/messages.ts and
+ * never comes near this function, so it costs the clinic nothing.
  *
  * The credit row is locked FOR UPDATE first so concurrent turns for the same
- * clinic serialize and `balanceAfter` is always exact. The markup is read under
- * that lock so a mid-turn markup edit can't split the cost. The balance may dip
- * slightly negative on the turn that spent the last of the credit — that's
+ * clinic serialize and both `balanceAfter` values are exact. The markup is read
+ * under that lock so a mid-turn markup edit can't split the cost. Either balance
+ * may dip slightly negative on the turn that spent the last of it — that's
  * accepted; the next turn is blocked by the `sufficient` gate.
  *
- * Idempotent: a duplicate `messageId` violates the unique index and rolls the
- * whole txn back. Callers should swallow that specific error (already charged).
+ * Idempotent: a duplicate (messageId, kind) violates the unique index and rolls
+ * the whole txn back — the unit with it, so a redelivered webhook can never
+ * charge a clinic twice for one answer. Callers should swallow that specific
+ * error (already charged).
  */
 export async function chargeUsage(args: {
   clinicId: string;
   sessionId: string | null;
   messageId: string | null;
   usage: TokenUsage;
-}): Promise<void> {
+}): Promise<UnitAlert | null> {
   const { clinicId, sessionId, messageId, usage } = args;
 
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     // (1) Lock the credit row and read the CURRENT markup under the lock.
     const locked = await tx.$queryRaw<{ markup: Prisma.Decimal }[]>`
       SELECT "markup" FROM "clinic_ai_credits"
@@ -184,14 +271,24 @@ export async function chargeUsage(args: {
     // (2) Compute cost (Decimal only).
     const { rawCost, chargedCost, inputRatePerM, outputRatePerM } = computeCost(usage, markup);
 
-    // (3) Atomic decrement; the returned balance is the post-decrement value.
+    // (3) Atomic decrement of BOTH meters; the returned values are
+    //     post-decrement. One update, so the two can never diverge.
     const credit = await tx.clinicAiCredit.update({
       where: { clinicId },
-      data: { balance: { decrement: chargedCost } },
-      select: { balance: true },
+      data: {
+        balance: { decrement: chargedCost },
+        unitBalance: { decrement: UNITS_PER_REPLY },
+      },
+      select: {
+        balance: true,
+        unitBalance: true,
+        lowUnitsThreshold: true,
+        lowUnitsNotifiedAt: true,
+        unitsOutNotifiedAt: true,
+      },
     });
 
-    // (4) Append the usage log — messageId @unique makes this idempotent.
+    // (4) Append the usage log — (messageId, kind) @unique makes this idempotent.
     const usageRow = await tx.aiUsageLog.create({
       data: {
         clinicId,
@@ -206,6 +303,7 @@ export async function chargeUsage(args: {
         rawCost,
         markup,
         chargedCost,
+        unitsCharged: UNITS_PER_REPLY,
       },
       select: { id: true },
     });
@@ -220,7 +318,79 @@ export async function chargeUsage(args: {
         usageId: usageRow.id,
       },
     });
+
+    // (6) The same entry on the unit ledger, linked to the same usage row — so
+    //     every unit a clinic spent points at the reply that spent it.
+    await tx.aiUnitLedger.create({
+      data: {
+        clinicId,
+        type: AiUnitLedgerType.USAGE,
+        amount: -UNITS_PER_REPLY,
+        balanceAfter: credit.unitBalance,
+        usageId: usageRow.id,
+      },
+    });
+
+    // (7) Claim the platform alert, still under the row lock taken in (1).
+    //     Claiming here — rather than checking after the commit — is what makes
+    //     the email fire exactly once per crossing: concurrent turns for the
+    //     same clinic serialize on this row, so only one of them can find the
+    //     stamp unset and take it. The send itself happens after the commit.
+    const isOut = credit.unitBalance < UNITS_PER_REPLY;
+    const isLow = credit.unitBalance <= credit.lowUnitsThreshold;
+
+    let severity: UnitAlertSeverity | null = null;
+    if (isOut && !credit.unitsOutNotifiedAt) severity = "out";
+    else if (!isOut && isLow && !credit.lowUnitsNotifiedAt) severity = "low";
+    if (!severity) return null;
+
+    const now = new Date();
+    await tx.clinicAiCredit.update({
+      where: { clinicId },
+      data:
+        severity === "out"
+          ? // Stamp the low mark too when a clinic drops straight to empty
+            // (e.g. it was granted fewer units than its own threshold), so a
+            // partial top-up back into "low" doesn't mail a redundant warning.
+            { unitsOutNotifiedAt: now, lowUnitsNotifiedAt: credit.lowUnitsNotifiedAt ?? now }
+          : { lowUnitsNotifiedAt: now },
+    });
+
+    return {
+      severity,
+      unitBalance: credit.unitBalance,
+      lowUnitsThreshold: credit.lowUnitsThreshold,
+    };
   });
+}
+
+/**
+ * Sends the platform-admin alert claimed by `chargeUsage`. Kept separate so the
+ * mail goes out AFTER the billing transaction commits — never inside it, where
+ * a slow SMTP call would hold the clinic's row lock and a rollback could not
+ * unsend the message.
+ *
+ * Never throws: the alert is a courtesy to the platform, and the reply it was
+ * triggered by has already reached the patient.
+ */
+export async function notifyUnitAlert(clinicId: string, alert: UnitAlert): Promise<void> {
+  try {
+    const clinic = await prisma.clinic.findUnique({
+      where: { id: clinicId },
+      select: { name: true, slug: true },
+    });
+    if (!clinic) return;
+
+    await sendClinicLowUnitsAlert({
+      clinicName: clinic.name,
+      clinicSlug: clinic.slug,
+      unitBalance: alert.unitBalance,
+      lowUnitsThreshold: alert.lowUnitsThreshold,
+      severity: alert.severity,
+    });
+  } catch (err) {
+    console.error("[aiCredit] failed to notify unit alert", err);
+  }
 }
 
 /**
@@ -229,6 +399,10 @@ export async function chargeUsage(args: {
  * decrements the balance, and appends a usage log + a signed-negative ledger
  * row in one transaction. Idempotent on (messageId, kind): a webhook redelivery
  * that re-charges the same audio rolls the whole txn back.
+ *
+ * USD ONLY — no unit is spent here. A voice conversation costs the clinic the
+ * same one unit per answer as a text one; understanding the question and
+ * speaking the answer are costs the platform absorbs on its own ledger.
  *
  * For audio rows the token columns are null and `audioSeconds` carries the
  * length; the per-unit list rate is snapshotted in `inputRatePerM` (per-minute
@@ -289,6 +463,9 @@ async function chargeAudioUsage(args: {
         rawCost,
         markup,
         chargedCost,
+        // Explicit, though it is also the column default: audio never costs the
+        // clinic a unit. Keeps unit reporting a plain SUM over this column.
+        unitsCharged: 0,
       },
       select: { id: true },
     });
@@ -368,13 +545,23 @@ export function isDuplicateChargeError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
 }
 
-async function moveBalance(
+/**
+ * Moves a clinic's unit meter and records it. Take the credit row's lock, move
+ * `unitBalance`, append the signed unit-ledger row. Integers throughout — no
+ * Decimal, because a unit is indivisible.
+ *
+ * Units are the only thing a clinic is ever granted: there is deliberately no
+ * USD counterpart to this function. The dollar side is never topped up or
+ * adjusted by hand — it only ever accrues what replies actually cost, as
+ * telemetry (see chargeUsage).
+ */
+async function moveUnits(
   clinicId: string,
-  signedAmount: Prisma.Decimal,
-  type: AiLedgerType,
+  signedUnits: number,
+  type: AiUnitLedgerType,
   actorId: string | null,
   note: string | null
-): Promise<Prisma.Decimal> {
+): Promise<number> {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`
       SELECT "id" FROM "clinic_ai_credits"
@@ -382,43 +569,76 @@ async function moveBalance(
       FOR UPDATE`;
     const credit = await tx.clinicAiCredit.update({
       where: { clinicId },
-      data: { balance: { increment: signedAmount } },
-      select: { balance: true },
+      data: { unitBalance: { increment: signedUnits } },
+      select: { unitBalance: true, lowUnitsThreshold: true },
     });
-    await tx.aiCreditLedger.create({
+    await tx.aiUnitLedger.create({
       data: {
         clinicId,
         type,
-        amount: signedAmount,
-        balanceAfter: credit.balance,
+        amount: signedUnits,
+        balanceAfter: credit.unitBalance,
         actorId,
         note,
       },
     });
-    return credit.balance;
+
+    // Re-arm the alerts this top-up has resolved, so the NEXT time the clinic
+    // slides down it mails again. Only the stamps that no longer apply are
+    // cleared: a partial top-up that leaves the clinic still below its warning
+    // threshold re-arms the "out" alert (it can run dry again) but keeps the
+    // "low" one (the admins already know it is low — don't tell them twice).
+    if (credit.unitBalance > credit.lowUnitsThreshold) {
+      await tx.clinicAiCredit.update({
+        where: { clinicId },
+        data: { lowUnitsNotifiedAt: null, unitsOutNotifiedAt: null },
+      });
+    } else if (credit.unitBalance >= UNITS_PER_REPLY) {
+      await tx.clinicAiCredit.update({
+        where: { clinicId },
+        data: { unitsOutNotifiedAt: null },
+      });
+    }
+
+    return credit.unitBalance;
   });
 }
 
-/** Platform admin: add credit. `amount` must be a positive Decimal. */
-export async function topUpClinicCredit(
+/** Platform admin: grant units to a clinic. `units` must be a positive integer. */
+export async function topUpClinicUnits(
   clinicId: string,
-  amount: Prisma.Decimal,
+  units: number,
   actorId: string,
   note?: string
-): Promise<Prisma.Decimal> {
+): Promise<number> {
   await ensureClinicAiCredit(clinicId);
-  return moveBalance(clinicId, amount, AiLedgerType.TOPUP, actorId, note ?? null);
+  return moveUnits(clinicId, units, AiUnitLedgerType.TOPUP, actorId, note ?? null);
 }
 
-/** Platform admin: signed correction (may be negative). */
-export async function adjustClinicCredit(
+/** Platform admin: signed unit correction (may be negative). */
+export async function adjustClinicUnits(
   clinicId: string,
-  amount: Prisma.Decimal,
+  units: number,
   actorId: string,
   note?: string
-): Promise<Prisma.Decimal> {
+): Promise<number> {
   await ensureClinicAiCredit(clinicId);
-  return moveBalance(clinicId, amount, AiLedgerType.ADJUSTMENT, actorId, note ?? null);
+  return moveUnits(clinicId, units, AiUnitLedgerType.ADJUSTMENT, actorId, note ?? null);
+}
+
+/**
+ * Platform admin: set the unit count at which the clinic sees a low-balance
+ * warning. Not a ledger movement — it changes no balance.
+ */
+export async function setClinicLowUnitsThreshold(
+  clinicId: string,
+  threshold: number
+): Promise<void> {
+  await prisma.clinicAiCredit.upsert({
+    where: { clinicId },
+    update: { lowUnitsThreshold: threshold },
+    create: { clinicId, lowUnitsThreshold: threshold },
+  });
 }
 
 /** Platform admin: set the per-clinic markup multiplier. */

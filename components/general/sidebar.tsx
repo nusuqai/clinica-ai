@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { LucideIcon, ChevronRight, ChevronDown, X, LogOut, Stethoscope, Bell } from "lucide-react";
+import {
+  LucideIcon,
+  ChevronRight,
+  ChevronDown,
+  X,
+  LogOut,
+  Stethoscope,
+  Bell,
+  Coins,
+} from "lucide-react";
 import { signOut } from "@/server/actions/auth";
 import { useEscalationAlerts } from "./escalation-provider";
 
@@ -15,6 +24,15 @@ export interface NavItem {
   children?: NavItem[];
 }
 
+/** The clinic's AI unit meter, shown in the admin sidebar. */
+export interface AiUnitsBadge {
+  balance: number;
+  /** Running low — amber. */
+  low: boolean;
+  /** Out of units — red, and the agent has stopped answering. */
+  sufficient: boolean;
+}
+
 interface SidebarProps {
   navItems: NavItem[];
   roleLabel: string;
@@ -22,6 +40,8 @@ interface SidebarProps {
   userEmail: string;
   clinicName: string;
   clinicLogoUrl?: string | null;
+  /** Admin only — omitted for doctors and patients, who have no meter. */
+  aiUnits?: AiUnitsBadge | null;
   collapsed: boolean;
   onToggleCollapse: () => void;
   mobileOpen: boolean;
@@ -35,6 +55,7 @@ export default function Sidebar({
   userEmail,
   clinicName,
   clinicLogoUrl = null,
+  aiUnits = null,
   collapsed,
   onToggleCollapse,
   mobileOpen,
@@ -64,6 +85,7 @@ export default function Sidebar({
           userEmail={userEmail}
           clinicName={clinicName}
           clinicLogoUrl={clinicLogoUrl}
+          aiUnits={aiUnits}
           initials={initials}
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
@@ -92,6 +114,7 @@ export default function Sidebar({
           userEmail={userEmail}
           clinicName={clinicName}
           clinicLogoUrl={clinicLogoUrl}
+          aiUnits={aiUnits}
           initials={initials}
           collapsed={false}
           onToggleCollapse={onMobileClose}
@@ -109,6 +132,7 @@ interface SidebarContentProps {
   userEmail: string;
   clinicName: string;
   clinicLogoUrl?: string | null;
+  aiUnits?: AiUnitsBadge | null;
   initials: string;
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -122,6 +146,7 @@ function SidebarContent({
   userEmail,
   clinicName,
   clinicLogoUrl = null,
+  aiUnits = null,
   initials,
   collapsed,
   onToggleCollapse,
@@ -179,6 +204,11 @@ function SidebarContent({
           </span>
         </div>
       )}
+
+      {/* AI unit meter — admin only. Rendered here rather than in a page so the
+          clinic always knows what it has left, from wherever it is working.
+          Reflects the count at page load; the usage report is the live view. */}
+      {aiUnits && <AiUnitsPill units={aiUnits} collapsed={collapsed} />}
 
       {/* Nav items */}
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
@@ -260,6 +290,49 @@ function SidebarContent({
           {!collapsed && <span>طي القائمة</span>}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The clinic's remaining AI replies, always in view. Links to the usage report
+ * so "I'm running low" leads straight to "here's where they went". On the
+ * collapsed rail it shrinks to the bare number, which is the part that matters.
+ */
+function AiUnitsPill({ units, collapsed }: { units: AiUnitsBadge; collapsed: boolean }) {
+  const tone = !units.sufficient
+    ? "border-red-400/40 bg-red-500/15 text-red-300"
+    : units.low
+      ? "border-amber-400/40 bg-amber-400/15 text-amber-300"
+      : "border-white/10 bg-white/5 text-white/70";
+
+  const title = !units.sufficient
+    ? "نفدت وحدات المساعد الذكي — توقّف الرد الآلي"
+    : `${units.balance.toLocaleString("ar-EG")} وحدة متبقية للمساعد الذكي`;
+
+  return (
+    <div className={collapsed ? "px-2 pb-1 pt-2" : "px-4 pb-1 pt-2"}>
+      <Link
+        href="/admin/ai/usage"
+        title={title}
+        className={[
+          "flex items-center gap-2 rounded-xl border px-2.5 py-2 font-sans transition-colors hover:bg-white/10",
+          tone,
+          collapsed ? "justify-center" : "",
+        ].join(" ")}
+      >
+        <Coins className="h-4 w-4 flex-shrink-0" />
+        {collapsed ? (
+          <span className="sr-only">{title}</span>
+        ) : (
+          <span className="flex min-w-0 flex-1 items-baseline justify-between gap-2">
+            <span className="truncate text-xs opacity-80">وحدات المساعد</span>
+            <span className="font-heading text-sm font-bold">
+              {units.balance.toLocaleString("ar-EG")}
+            </span>
+          </span>
+        )}
+      </Link>
     </div>
   );
 }

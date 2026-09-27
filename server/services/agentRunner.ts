@@ -15,7 +15,13 @@ import { transcribeAudio } from "./transcription";
 import { synthesizeSpeech } from "./tts";
 import type { VoiceMessageMetadata } from "@/agent/types";
 import { showTypingIndicator } from "./whatsappTyping";
-import { runAgentStream, runAgentToText, type AgentContext, type PriorMessage } from "@/agent";
+import {
+  runAgentStream,
+  runAgentToText,
+  DEFAULT_MODEL,
+  type AgentContext,
+  type PriorMessage,
+} from "@/agent";
 import type { AgentStreamEvent } from "@/agent";
 import type { ToolCallRecord } from "@/agent/types";
 import {
@@ -34,6 +40,7 @@ import {
   chargeTts,
   isDuplicateChargeError,
   ensureOpenEscalation,
+  notifyUnitAlert,
 } from "./aiCredit";
 import { getOrCreatePatientByPhone } from "./patients";
 import type { TokenUsage } from "@/agent/types";
@@ -116,8 +123,9 @@ function toPrior(messages: SessionMessage[]): PriorMessage[] {
 /**
  * The clinic-level gate, checked after the per-session `isSessionAiEnabled`
  * pause and before running the agent. Returns true (agent must NOT reply) when
- * the clinic has turned its AI off or has run out of credit; in both cases the
- * already-persisted user message is surfaced to a human via an escalation.
+ * the clinic has turned its AI off or has spent all its units — the only two
+ * ways the agent can be stopped. In both cases the already-persisted user
+ * message is surfaced to a human via an escalation.
  */
 async function clinicGateBlocks(
   clinicId: string,
@@ -130,17 +138,21 @@ async function clinicGateBlocks(
     return true;
   }
   if (!status.sufficient) {
-    await ensureOpenEscalation(clinicId, conversationId, sessionId, "insufficient_credit");
+    await ensureOpenEscalation(clinicId, conversationId, sessionId, "insufficient_units");
     return true;
   }
   return false;
 }
 
 /**
- * Meters the cost of a reply against the clinic balance. Kept off the reply's
- * critical path: a duplicate charge (webhook redelivery) is expected and
- * swallowed, and any other failure is logged — never allowed to crash delivery
- * of an already-sent reply.
+ * Meters one reply: a unit off the clinic's meter and its real cost off the USD
+ * balance (one transaction — see chargeUsage). Called only from the three points
+ * where an AGENT message has just been persisted, which is why a human admin's
+ * reply from the inbox never costs a unit.
+ *
+ * Kept off the reply's critical path: a duplicate charge (webhook redelivery) is
+ * expected and swallowed, and any other failure is logged — never allowed to
+ * crash delivery of an already-sent reply.
  */
 async function chargeReply(args: {
   clinicId: string;
@@ -149,7 +161,11 @@ async function chargeReply(args: {
   usage: TokenUsage;
 }): Promise<void> {
   try {
-    await chargeUsage(args);
+    const alert = await chargeUsage(args);
+    // Sent after the billing transaction commits, and only on the turn that
+    // actually crossed the line — chargeUsage claims the alert under the row
+    // lock, so this fires once per crossing rather than once per reply.
+    if (alert) await notifyUnitAlert(args.clinicId, alert);
   } catch (err) {
     if (isDuplicateChargeError(err)) return;
     console.error("[aiCredit] failed to charge usage", err);
@@ -275,14 +291,18 @@ async function* streamWebReply(
     }
   );
 
-  if (usage) {
-    await chargeReply({
-      clinicId: membership.clinicId,
-      sessionId,
-      messageId: agentMsg.id,
-      usage,
-    });
-  }
+  // Unconditional: the unit is owed because the agent answered, not because the
+  // provider sent token metadata back. `runAgentStream` always ends with a
+  // `done` event (a mid-stream throw never reaches this line, so no reply is
+  // persisted and nothing is charged) — but on the rare turn that reports no
+  // usage we still bill the clinic its one unit and let the USD side compute to
+  // zero, rather than handing out a free reply.
+  await chargeReply({
+    clinicId: membership.clinicId,
+    sessionId,
+    messageId: agentMsg.id,
+    usage: usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0, model: DEFAULT_MODEL },
+  });
 
   return { agentMessageId: agentMsg.id, replyText, toolCalls };
 }
@@ -630,8 +650,8 @@ async function respondAndReply(args: {
     return;
   }
   if (!status.sufficient) {
-    await ensureOpenEscalation(clinicId, conversationId, sessionId, "insufficient_credit");
-    console.log(`[wa-debug] no reply: insufficient credit clinicId=${clinicId}`);
+    await ensureOpenEscalation(clinicId, conversationId, sessionId, "insufficient_units");
+    console.log(`[wa-debug] no reply: clinic out of AI units clinicId=${clinicId}`);
     return;
   }
 

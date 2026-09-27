@@ -9,8 +9,8 @@ export default async function PatientDashboardPage() {
   const ctx = await requireClinicMember(["PATIENT"]);
 
   const [stats, upcoming] = await Promise.all([
-    getPatientStats(ctx.user.id),
-    getPatientAppointments(ctx.user.id, { upcoming: true, limit: 3 }),
+    getPatientStats(ctx.user.id, ctx.clinic.id),
+    getPatientAppointments(ctx.user.id, { clinicId: ctx.clinic.id, upcoming: true, limit: 3 }),
   ]);
 
   return (

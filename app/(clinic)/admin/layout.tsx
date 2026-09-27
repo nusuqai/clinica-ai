@@ -1,13 +1,15 @@
 import { requireClinicMember } from "@/lib/auth";
 import DashboardShell from "@/components/general/dashboard-shell";
 import { getUnresolvedEscalationConversationIds } from "@/server/services/messages";
+import { getClinicUnitSummary } from "@/server/services/aiCredit";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireClinicMember(["ADMIN"]);
 
-  const initialUnresolvedEscalationConversationIds = await getUnresolvedEscalationConversationIds(
-    ctx.clinic.id
-  );
+  const [initialUnresolvedEscalationConversationIds, units] = await Promise.all([
+    getUnresolvedEscalationConversationIds(ctx.clinic.id),
+    getClinicUnitSummary(ctx.clinic.id),
+  ]);
 
   return (
     <DashboardShell
@@ -18,6 +20,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       clinicId={ctx.clinic.id}
       clinicName={ctx.clinic.name}
       clinicLogoUrl={ctx.clinic.logoUrl}
+      aiUnits={{
+        balance: units.unitBalance,
+        low: units.lowUnits,
+        sufficient: units.unitsSufficient,
+      }}
       viaPlatformAdmin={ctx.viaPlatformAdmin}
     >
       {children}

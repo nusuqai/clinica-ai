@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   Users,
   Stethoscope,
@@ -7,18 +8,26 @@ import {
   Clock,
   MessageCircle,
   UserX,
+  Coins,
+  Bot,
 } from "lucide-react";
 import { getDashboardStats, getDoctorLoad } from "@/server/services/reports";
+import { getClinicAiUsage } from "@/server/services/aiReports";
 import { requireClinicMember } from "@/lib/auth";
 import StatCard from "@/components/admin/stat-card";
 import BarList from "@/components/admin/bar-list";
 import PageHeader from "@/components/admin/page-header";
 
+const units = (n: number) => n.toLocaleString("ar-EG");
+const decimal = (n: number) =>
+  n.toLocaleString("ar-EG", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
 export default async function AdminReportsPage() {
   const { clinic } = await requireClinicMember(["ADMIN"]);
-  const [stats, doctorLoad] = await Promise.all([
+  const [stats, doctorLoad, ai] = await Promise.all([
     getDashboardStats(clinic.id),
     getDoctorLoad(clinic.id),
+    getClinicAiUsage(clinic.id),
   ]);
 
   const totalAppts = stats.totalAppointments || 1;
@@ -128,6 +137,69 @@ export default async function AdminReportsPage() {
 
           <BarList items={userBreakdown} max={stats.totalUsers || 1} color="bg-accent" />
         </div>
+      </div>
+
+      {/* AI assistant — the unit meter, summarized. The full breakdown (daily,
+          per channel, runway) lives on /admin/ai/usage; this is the at-a-glance
+          version so the clinic's overall report includes its AI spend. */}
+      <div className="mb-6 rounded-2xl border border-border bg-card p-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 font-heading font-semibold text-foreground">
+            <Bot className="h-5 w-5 text-primary" />
+            المساعد الذكي — وحدات آخر {ai.windowDays} يوماً
+          </h2>
+          <Link href="/admin/ai/usage" className="font-sans text-sm text-primary hover:underline">
+            التقرير التفصيلي
+          </Link>
+        </div>
+
+        <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+          <StatCard
+            label="الوحدات المتبقية"
+            value={units(ai.unitBalance)}
+            icon={Coins}
+            color={!ai.unitsSufficient ? "red" : ai.lowUnits ? "amber" : "primary"}
+          />
+          <StatCard
+            label="الوحدات المستهلكة"
+            value={units(ai.unitsUsed)}
+            icon={MessageCircle}
+            color="accent"
+          />
+          <StatCard
+            label="متوسط يومي"
+            value={decimal(ai.avgUnitsPerDay)}
+            icon={Clock}
+            color="accent"
+          />
+          <StatCard
+            label="وحدات لكل محادثة"
+            value={ai.sessions > 0 ? decimal(ai.unitsPerSession) : "—"}
+            icon={Users}
+            color="accent"
+          />
+        </div>
+
+        {ai.byChannel.length > 0 ? (
+          <BarList
+            items={ai.byChannel.map((c) => ({ label: c.label, sublabel: "وحدة", value: c.value }))}
+            color="bg-accent"
+          />
+        ) : (
+          <p className="font-sans text-sm text-muted-foreground">
+            لم يستهلك المساعد الذكي أي وحدات خلال هذه الفترة.
+          </p>
+        )}
+
+        {ai.projectedDaysLeft !== null && (
+          <p className="mt-4 border-t border-border pt-4 text-center font-sans text-xs text-muted-foreground">
+            بمعدل الاستهلاك الحالي تكفي الوحدات المتبقية نحو{" "}
+            <span className="font-semibold text-foreground">
+              {decimal(ai.projectedDaysLeft)} يوماً
+            </span>
+            .
+          </p>
+        )}
       </div>
 
       {/* Doctor load */}

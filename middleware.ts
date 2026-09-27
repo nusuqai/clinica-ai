@@ -30,7 +30,14 @@ const PUBLIC_TENANT_ROUTES = [
 // instead: a cross-host redirect from middleware is unreliable, because
 // `nextUrl` carries the server's own origin in dev, so Next rewrites the
 // Location back to a relative path and the request bounces here in a loop.
-const TENANT_ONLY_PREFIXES = ["/admin", "/doctor", "/dashboard", "/register", "/verify-otp"];
+const TENANT_ONLY_PREFIXES = [
+  "/admin",
+  "/doctor",
+  "/dashboard",
+  "/profile",
+  "/register",
+  "/verify-otp",
+];
 
 // Routes that accept unauthenticated guest requests (no Supabase session at
 // all) — the route handler itself scopes what a guest can do. `/api/inngest` is

@@ -19,6 +19,7 @@ import {
   Building2,
   Tags,
   BellRing,
+  FileText,
 } from "lucide-react";
 import type { NavItem } from "./sidebar";
 
@@ -26,6 +27,7 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
   patient: [
     { href: "/dashboard", label: "الرئيسية", icon: LayoutDashboard },
     { href: "/dashboard/appointments", label: "مواعيدي", icon: CalendarDays },
+    { href: "/dashboard/records", label: "سجلي العلاجي", icon: FileText },
     { href: "/dashboard/book", label: "احجز موعد", icon: CalendarPlus },
     // { href: "/dashboard/chat", label: "المساعد الذكي", icon: MessageCircle },
     { href: "/dashboard/profile", label: "الملف الشخصي", icon: UserCircle },

@@ -20,3 +20,22 @@ export async function findAuthUserIdByEmail(email: string): Promise<string | nul
   `;
   return rows[0]?.id ?? null;
 }
+
+/**
+ * Email addresses of every platform admin. Identity lives in `auth.users` while
+ * the `isPlatformAdmin` flag lives on `public.profiles`, so this joins the two
+ * in one query rather than paging the admin API.
+ *
+ * Used as the default audience for internal platform alerts (e.g. a clinic
+ * running out of AI units), so those work with no extra configuration — set
+ * PLATFORM_ALERT_EMAIL to send somewhere else instead.
+ */
+export async function platformAdminEmails(): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ email: string }[]>`
+    SELECT u.email AS email
+    FROM auth.users u
+    JOIN public.profiles p ON p.id = u.id
+    WHERE p."isPlatformAdmin" = true AND u.email IS NOT NULL
+  `;
+  return rows.map((r) => r.email).filter(Boolean);
+}

@@ -6,6 +6,12 @@ import * as AppointmentService from "@/server/services/appointments";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { HeroSection } from "@/components/landing/hero-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
+import {
+  MyAppointmentsSection,
+  PAST_VISITS_LIMIT,
+  describeWhen,
+} from "@/components/landing/my-appointments-section";
+import * as TreatmentService from "@/server/services/treatments";
 import { DoctorsClient } from "@/components/landing/doctors-client";
 import { FeaturesSection } from "@/components/landing/features-section";
 import { SpecialtiesSection } from "@/components/landing/specialties-section";
@@ -33,12 +39,38 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
   const dashboardHref = ctx ? roleHome(ctx.role) : loginHref;
 
   // ── Data (scoped to THIS clinic) ────────────────────────────────────────────
-  const [doctors, allAppointments] = await Promise.all([
-    DoctorService.listActiveDoctors(clinic.id),
-    AppointmentService.listAppointments(clinic.id, {
-      status: AppointmentStatus.COMPLETED,
-    }),
-  ]);
+  const [doctors, allAppointments, myUpcoming, myStats, myPastVisits, myRecords] =
+    await Promise.all([
+      DoctorService.listActiveDoctors(clinic.id),
+      AppointmentService.listAppointments(clinic.id, {
+        status: AppointmentStatus.COMPLETED,
+      }),
+      // A signed-in patient of THIS clinic also sees their own bookings here —
+      // scoped to this clinic, so bookings made at another clinic never show up.
+      isPatient && ctx
+        ? AppointmentService.getPatientAppointments(ctx.user.id, {
+            clinicId: clinic.id,
+            upcoming: true,
+            limit: 6,
+          })
+        : Promise.resolve(null),
+      isPatient && ctx
+        ? AppointmentService.getPatientStats(ctx.user.id, clinic.id)
+        : Promise.resolve(null),
+      isPatient && ctx
+        ? AppointmentService.getPatientAppointments(ctx.user.id, {
+            clinicId: clinic.id,
+            status: AppointmentStatus.COMPLETED,
+            limit: PAST_VISITS_LIMIT,
+          })
+        : Promise.resolve([]),
+      isPatient && ctx
+        ? TreatmentService.listPatientRecords({ clinicId: clinic.id, patientId: ctx.user.id })
+        : Promise.resolve([]),
+    ]);
+  const nextAppointment = myUpcoming?.[0]
+    ? { doctorName: myUpcoming[0].doctor.profile.fullName, when: describeWhen(myUpcoming[0]) }
+    : null;
 
   const doctorCount = doctors.length;
   const appointmentCount = allAppointments.length;
@@ -69,6 +101,7 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
       <LandingNav
         isAuthenticated={isAuthenticated}
         isPatient={isPatient}
+        userName={isPatient ? (ctx?.user.profile.fullName ?? null) : null}
         dashboardHref={dashboardHref}
         brandName={clinic.name}
         logoUrl={clinic.logoUrl}
@@ -95,7 +128,18 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
           appointmentCount={appointmentCount}
           isAuthenticated={isAuthenticated}
           clinicName={clinic.name}
+          nextAppointment={nextAppointment}
         />
+
+        {myUpcoming && myStats && (
+          <MyAppointmentsSection
+            clinicName={clinic.name}
+            appointments={myUpcoming}
+            pastVisits={myPastVisits}
+            records={myRecords}
+            stats={myStats}
+          />
+        )}
 
         <HowItWorksSection />
 
