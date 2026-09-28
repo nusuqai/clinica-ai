@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast, Toaster } from "sonner";
 import { useRealtimeEscalations, RealtimeEscalationRow } from "@/hooks/use-realtime-messages";
+import { playEscalationSound } from "@/lib/notification-sound";
 
 interface EscalationAlertsValue {
   hasUnresolved: boolean;
@@ -61,6 +62,7 @@ export default function EscalationProvider({
     (row) => {
       bump(row, 1);
       console.log("[escalation] insert payload", row);
+      playEscalationSound();
       toast("طلب تصعيد جديد", {
         description: row.reason ?? "مستخدم يطلب التحدث مع موظف",
       });
