@@ -43,8 +43,9 @@ export type InboundWhatsAppMessage =
       data: unknown;
       summary: string;
     }
-  /** An emoji reaction to a previous message — archived, no reply. */
-  | { kind: "reaction"; emoji: string }
+  /** An emoji reaction to a previous message — attached to that message (by its
+   *  wamid), not stored as its own bubble. Empty emoji = the patient removed it. */
+  | { kind: "reaction"; emoji: string; targetWamid: string }
   /** A type we don't recognise — archived with a placeholder, then escalated. */
   | ({ kind: "unsupported" } & UnsupportedMediaType)
   /** Bookkeeping traffic (system notices, edits, reaction removals) — answering
@@ -215,11 +216,14 @@ function classify(msg: Record<string, unknown>): InboundWhatsAppMessage {
     return { kind: "ignore" };
   }
 
-  // Emoji reaction to an earlier message — archived, no reply. An empty emoji is
-  // a reaction *removal*: nothing to record.
+  // Emoji reaction to an earlier message — attached to that message by its wamid.
+  // An empty emoji is a reaction *removal* (still routed, to clear the chip). No
+  // target id → nothing to attach to.
   if (type === "reaction") {
-    const emoji = (msg.reaction as { emoji?: string } | undefined)?.emoji?.trim();
-    return emoji ? { kind: "reaction", emoji } : { kind: "ignore" };
+    const reaction = msg.reaction as { emoji?: string; message_id?: string } | undefined;
+    const targetWamid = reaction?.message_id;
+    if (!targetWamid) return { kind: "ignore" };
+    return { kind: "reaction", emoji: reaction?.emoji?.trim() ?? "", targetWamid };
   }
 
   if (!type || SILENT_TYPES.has(type)) return { kind: "ignore" };

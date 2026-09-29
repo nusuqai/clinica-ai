@@ -113,6 +113,9 @@ export interface AgentMessageMetadata {
   media?: MediaAttachmentMetadata;
   /** A structured message (location/contacts/order). */
   structured?: StructuredMessageMetadata;
+  /** The patient's emoji reaction to THIS message (WhatsApp), shown as a chip on
+   *  the bubble. Latest reaction wins; cleared when the patient removes it. */
+  reaction?: string;
 }
 
 /**

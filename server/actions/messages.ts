@@ -128,7 +128,13 @@ export async function sendAdminReply(
     try {
       const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
       if (!creds) throw new Error("WhatsApp is not configured for this clinic");
-      await sendTextMessage(recipient, content, creds);
+      const wamid = await sendTextMessage(recipient, content, creds);
+      // Record the wamid so a patient's reaction can attach to this reply.
+      if (wamid) {
+        await prisma.message
+          .update({ where: { id: message.id }, data: { whatsappMessageId: wamid } })
+          .catch(() => {});
+      }
     } catch (err) {
       // The reply is already saved in the conversation; a failed WhatsApp
       // delivery (missing config, closed window, API error) shouldn't crash the
@@ -280,11 +286,16 @@ export async function sendAdminMediaReply(
       const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
       if (!creds) throw new Error("WhatsApp is not configured for this clinic");
       const waMediaId = await uploadMedia(creds, bytes, baseMime, media.filename ?? "attachment");
-      await sendMediaMessage(
+      const wamid = await sendMediaMessage(
         recipient,
         { kind, mediaId: waMediaId, caption: caption || undefined, filename: media.filename },
         creds
       );
+      if (wamid) {
+        await prisma.message
+          .update({ where: { id: message.id }, data: { whatsappMessageId: wamid } })
+          .catch(() => {});
+      }
     } catch (err) {
       console.error("Failed to send WhatsApp media:", err);
       whatsappSendFailed = true;
@@ -405,8 +416,9 @@ export async function sendWhatsappTemplate(
   const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
   if (!creds) return { ok: false, reason: "not_configured" };
 
+  let templateWamid: string | null = null;
   try {
-    await sendTemplateMessage(
+    templateWamid = await sendTemplateMessage(
       recipient,
       {
         name: input.name,
@@ -431,6 +443,7 @@ export async function sendWhatsappTemplate(
         content: input.renderedText,
         isRead: true,
         clinicId: ctx.clinic.id,
+        whatsappMessageId: templateWamid,
       },
     });
     await prisma.escalation.updateMany({

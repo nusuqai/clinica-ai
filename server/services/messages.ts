@@ -70,6 +70,8 @@ export interface MessageItem {
   structured?: MessageStructured;
   /** Present when this message has an unresolved escalation. */
   escalation?: MessageEscalation;
+  /** The patient's emoji reaction to this message (WhatsApp), if any. */
+  reaction?: string;
 }
 
 export interface EscalationItem {
@@ -213,6 +215,7 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
         : {}),
       ...(structured ? { structured: { kind: structured.kind } } : {}),
       ...(escalation ? { escalation } : {}),
+      ...(meta?.reaction ? { reaction: meta.reaction } : {}),
     };
   });
 }

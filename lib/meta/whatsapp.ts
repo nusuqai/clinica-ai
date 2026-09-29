@@ -125,6 +125,14 @@ function sendMessage(
   });
 }
 
+/** Pulls the sent message's wamid from a Cloud API send response. */
+function sentWamid(json: Record<string, unknown>): string | null {
+  const messages = json.messages;
+  if (!Array.isArray(messages) || messages.length === 0) return null;
+  const id = (messages[0] as { id?: string }).id;
+  return id ?? null;
+}
+
 /**
  * How to address an outbound message. A classic contact is reached by phone
  * (`to`); a contact whose phone is hidden behind a WhatsApp username is reached
@@ -177,16 +185,21 @@ export async function sendTextMessage(
   recipient: WhatsAppRecipient,
   text: string,
   creds: WhatsAppCredentials
-): Promise<void> {
+): Promise<string | null> {
   const address = recipientAddress(recipient);
+  // On a multi-chunk reply, the first chunk's wamid is what a reaction would
+  // reference (it's the visible message the patient taps).
+  let firstWamid: string | null = null;
   for (const body of chunkText(markdownToWhatsApp(text))) {
-    await sendMessage(creds, {
+    const res = await sendMessage(creds, {
       recipient_type: "individual",
       ...address,
       type: "text",
       text: { preview_url: true, body },
     });
+    firstWamid ??= sentWamid(res);
   }
+  return firstWamid;
 }
 
 /**
@@ -198,7 +211,7 @@ export async function sendTemplateMessage(
   recipient: WhatsAppRecipient,
   template: { name: string; languageCode: string; variables?: string[] },
   creds: WhatsAppCredentials
-): Promise<void> {
+): Promise<string | null> {
   const components =
     template.variables && template.variables.length > 0
       ? [
@@ -212,7 +225,7 @@ export async function sendTemplateMessage(
         ]
       : undefined;
 
-  await sendMessage(creds, {
+  const res = await sendMessage(creds, {
     ...recipientAddress(recipient),
     type: "template",
     template: {
@@ -221,6 +234,7 @@ export async function sendTemplateMessage(
       ...(components ? { components } : {}),
     },
   });
+  return sentWamid(res);
 }
 
 /**
@@ -334,13 +348,14 @@ export async function sendAudioMessage(
   recipient: WhatsAppRecipient,
   mediaId: string,
   creds: WhatsAppCredentials
-): Promise<void> {
-  await sendMessage(creds, {
+): Promise<string | null> {
+  const res = await sendMessage(creds, {
     recipient_type: "individual",
     ...recipientAddress(recipient),
     type: "audio",
     audio: { id: mediaId },
   });
+  return sentWamid(res);
 }
 
 /** The media message types staff can send outbound (stickers aren't produced). */
@@ -356,16 +371,17 @@ export async function sendMediaMessage(
   recipient: WhatsAppRecipient,
   media: { kind: OutboundMediaKind; mediaId: string; caption?: string; filename?: string },
   creds: WhatsAppCredentials
-): Promise<void> {
+): Promise<string | null> {
   const payload: Record<string, unknown> = { id: media.mediaId };
   if (media.caption && media.kind !== "audio") payload.caption = media.caption;
   if (media.kind === "document" && media.filename) payload.filename = media.filename;
-  await sendMessage(creds, {
+  const res = await sendMessage(creds, {
     recipient_type: "individual",
     ...recipientAddress(recipient),
     type: media.kind,
     [media.kind]: payload,
   });
+  return sentWamid(res);
 }
 
 // ─── Template management (WABA node) ─────────────────────────────────────────

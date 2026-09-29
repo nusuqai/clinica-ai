@@ -152,6 +152,7 @@ interface RenderedMessage {
   mediaLocalUrl?: string;
   structured?: MessageItem["structured"];
   escalation?: MessageItem["escalation"];
+  reaction?: MessageItem["reaction"];
 }
 
 export default function ChatInbox({
@@ -228,6 +229,7 @@ export default function ChatInbox({
           media: m.media,
           structured: m.structured,
           escalation: m.escalation,
+          reaction: m.reaction,
         })),
       // Always newest, so appending keeps the createdAt-ascending order.
       ...mine.map((p) => ({
@@ -374,24 +376,31 @@ export default function ChatInbox({
     [activeId, refreshConversations]
   );
 
-  // A message row changed after insert (e.g. a TTS agent reply gets its
-  // metadata.voice attached post-stream) — patch the open thread so the audio
-  // player appears live, no reload.
+  // A message row changed after insert — a TTS agent reply gets its metadata.voice
+  // attached post-stream, or a patient reacts to a message (metadata.reaction).
+  // Patch the open thread so the audio player / reaction chip appears live.
   const handleRealtimeUpdate = useCallback(
     (row: RealtimeMessageRow) => {
       if (row.conversationId !== activeId) return;
-      const voice = (row.metadata as AgentMessageMetadata | null)?.voice;
-      if (!voice) return;
+      const meta = row.metadata as AgentMessageMetadata | null;
+      const voice = meta?.voice;
+      // `reaction` can be present (added), or absent (removed) — reflect both.
+      const reaction = meta?.reaction;
       setMessages((prev) =>
         prev.map((m) =>
           m.id === row.id
             ? {
                 ...m,
-                voice: {
-                  durationSec: voice.durationSec,
-                  transcript: voice.transcript,
-                  status: voice.status,
-                },
+                reaction,
+                ...(voice
+                  ? {
+                      voice: {
+                        durationSec: voice.durationSec,
+                        transcript: voice.transcript,
+                        status: voice.status,
+                      },
+                    }
+                  : {}),
               }
             : m
         )
@@ -1073,6 +1082,11 @@ export default function ChatInbox({
                               minute: "2-digit",
                             })}
                           </p>
+                        )}
+                        {msg.reaction && (
+                          <div className="mt-1 inline-flex items-center rounded-full border border-border bg-background px-1.5 py-0.5 text-sm leading-none shadow-sm">
+                            {msg.reaction}
+                          </div>
                         )}
                       </div>
                     </div>

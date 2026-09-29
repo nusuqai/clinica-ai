@@ -23,6 +23,7 @@ import type {
   VoiceMessageMetadata,
   MediaAttachmentMetadata,
   StructuredMessageMetadata,
+  AgentMessageMetadata,
 } from "@/agent/types";
 import { showTypingIndicator } from "./whatsappTyping";
 import {
@@ -40,6 +41,7 @@ import {
   getSessionMessages,
   persistUserMessage,
   persistAgentMessage,
+  setMessageWhatsappId,
   isSessionAiEnabled,
   type SessionMessage,
 } from "./agentSession";
@@ -100,7 +102,7 @@ async function deliverReply(
   contact: WhatsAppContact,
   reply: string,
   creds: WhatsAppCredentials
-): Promise<void> {
+): Promise<string | null> {
   const to = contactLabel(contact);
   // Reach a hidden-phone contact by their BSUID; everyone else by phone.
   const recipient: WhatsAppRecipient = {
@@ -109,8 +111,9 @@ async function deliverReply(
   };
   try {
     console.log(`[wa-debug] deliverReply → sending to ${to} (${reply.length} chars)`);
-    await sendTextMessage(recipient, reply, creds);
+    const wamid = await sendTextMessage(recipient, reply, creds);
     console.log(`[wa-debug] deliverReply → SENT to ${to}`);
+    return wamid;
   } catch (err) {
     if (err instanceof WhatsAppApiError && err.isOutsideServiceWindow) {
       console.error(
@@ -119,7 +122,7 @@ async function deliverReply(
       console.error(
         `[wa-debug] NOT DELIVERED to ${to}: 24h window closed (Meta 131047) — reply is in DB/dashboard but WhatsApp rejected it`
       );
-      return;
+      return null;
     }
     console.error(`[whatsapp] reply not delivered to ${to}:`, err);
     const code = err instanceof WhatsAppApiError ? err.code : undefined;
@@ -127,6 +130,7 @@ async function deliverReply(
       `[wa-debug] NOT DELIVERED to ${to}: Cloud API error code=${code} — reply is in DB/dashboard but WhatsApp did not accept it:`,
       err
     );
+    return null;
   }
 }
 
@@ -605,21 +609,21 @@ async function deliverVoiceReply(
   bytes: Buffer,
   mimeType: string,
   creds: WhatsAppCredentials
-): Promise<boolean> {
+): Promise<{ sent: boolean; wamid: string | null }> {
   const to = contactLabel(contact);
   const recipient: WhatsAppRecipient = { phone: contact.phone, userId: contact.userId };
   try {
     const mediaId = await uploadMedia(creds, bytes, mimeType);
-    await sendAudioMessage(recipient, mediaId, creds);
+    const wamid = await sendAudioMessage(recipient, mediaId, creds);
     console.log(`[wa-debug] deliverVoiceReply → SENT audio to ${to}`);
-    return true;
+    return { sent: true, wamid };
   } catch (err) {
     const code = err instanceof WhatsAppApiError ? err.code : undefined;
     console.error(
       `[wa-debug] voice reply NOT delivered to ${to} (code=${code}) — will fall back to text:`,
       err
     );
-    return false;
+    return { sent: false, wamid: null };
   }
 }
 
@@ -734,12 +738,14 @@ async function respondAndReply(args: {
         console.error("[whatsapp] failed to store TTS reply audio:", err);
       }
       // Deliver as voice; fall back to text if WhatsApp rejects the audio.
-      const sent = await deliverVoiceReply(contact, tts.bytes, tts.mimeType, creds);
+      const voiceOut = await deliverVoiceReply(contact, tts.bytes, tts.mimeType, creds);
       const agentMsg = await persistAgentMessage(conversationId, sessionId, clinicId, reply, {
         toolCalls,
         ...(voiceMeta ? { voice: voiceMeta } : {}),
       });
-      if (!sent) await deliverReply(contact, reply, creds);
+      const textWamid = voiceOut.sent ? null : await deliverReply(contact, reply, creds);
+      // Record the wamid of whatever actually went out, so a reaction can attach.
+      await setMessageWhatsappId(agentMsg.id, voiceOut.wamid ?? textWamid);
       await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage });
       if (ttsModel) {
         await chargeTtsSafe({
@@ -760,7 +766,8 @@ async function respondAndReply(args: {
   const agentMsg = await persistAgentMessage(conversationId, sessionId, clinicId, reply, {
     toolCalls,
   });
-  await deliverReply(contact, reply, creds);
+  const wamid = await deliverReply(contact, reply, creds);
+  await setMessageWhatsappId(agentMsg.id, wamid);
   await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage });
 }
 
@@ -791,7 +798,15 @@ export async function handleWhatsAppMessage(
   const profile = await resolveProfileAndLink(clinicId, conversationId, conv, contact);
 
   const sessionId = await resolveActiveSession(conversationId, clinicId);
-  await persistUserMessage(conversationId, sessionId, clinicId, userText, profile?.id ?? null);
+  await persistUserMessage(
+    conversationId,
+    sessionId,
+    clinicId,
+    userText,
+    profile?.id ?? null,
+    null,
+    messageId
+  );
   console.log(
     `[wa-debug] user message STORED convId=${conversationId} sessionId=${sessionId} profileId=${profile?.id ?? "none"}`
   );
@@ -881,7 +896,8 @@ export async function handleWhatsAppVoiceMessage(
     clinicId,
     content,
     profile?.id ?? null,
-    voiceMeta ? { voice: voiceMeta } : null
+    voiceMeta ? { voice: voiceMeta } : null,
+    messageId
   );
 
   // Charge transcription (its own ledger line) whenever a model actually ran.
@@ -995,7 +1011,8 @@ export async function handleWhatsAppImageMessage(
     clinicId,
     content,
     profile?.id ?? null,
-    mediaMeta ? { media: mediaMeta } : null
+    mediaMeta ? { media: mediaMeta } : null,
+    messageId
   );
 
   // The one-time vision call is its own USD-only ledger line.
@@ -1072,6 +1089,7 @@ export async function handleWhatsAppMediaMessage(
     filename?: string;
     caption?: string;
   },
+  messageId: string,
   creds: WhatsAppCredentials
 ): Promise<void> {
   const conv = await loadConversation(conversationId);
@@ -1116,7 +1134,8 @@ export async function handleWhatsAppMediaMessage(
     clinicId,
     content,
     profile?.id ?? null,
-    mediaMeta ? { media: mediaMeta } : null
+    mediaMeta ? { media: mediaMeta } : null,
+    messageId
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
@@ -1131,6 +1150,7 @@ export async function handleWhatsAppStructuredMessage(
   conversationId: string,
   contact: WhatsAppContact,
   structured: { structuredKind: StructuredKind; data: unknown; summary: string },
+  messageId: string,
   creds: WhatsAppCredentials
 ): Promise<void> {
   const conv = await loadConversation(conversationId);
@@ -1149,31 +1169,39 @@ export async function handleWhatsAppStructuredMessage(
     clinicId,
     structured.summary,
     profile?.id ?? null,
-    { structured: structuredMeta }
+    { structured: structuredMeta },
+    messageId
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
 }
 
 /**
- * WhatsApp channel, emoji reaction: archived so the thread stays complete, with
- * no reply and no escalation — a reaction carries no request to answer.
+ * WhatsApp channel, emoji reaction: attaches the emoji to the message it reacts
+ * to (matched by wamid) rather than storing a separate bubble. An empty emoji is
+ * a removal (clears the chip). If the reacted message isn't one we stored (e.g.
+ * it predates wamid tracking), the reaction is dropped silently.
  */
 export async function handleWhatsAppReaction(
   conversationId: string,
-  contact: WhatsAppContact,
+  targetWamid: string,
   emoji: string
 ): Promise<void> {
-  const conv = await loadConversation(conversationId);
-  if (!conv) return;
-  const clinicId = conv.clinicId;
-  const profile = await resolveProfileAndLink(clinicId, conversationId, conv, contact);
-  const sessionId = await resolveActiveSession(conversationId, clinicId);
-  await persistUserMessage(
-    conversationId,
-    sessionId,
-    clinicId,
-    `[تفاعل] ${emoji}`,
-    profile?.id ?? null
-  );
+  const target = await prisma.message.findFirst({
+    where: { conversationId, whatsappMessageId: targetWamid },
+    select: { id: true, metadata: true },
+  });
+  if (!target) {
+    console.log(`[wa-debug] reaction for unknown wamid ${targetWamid} — dropped`);
+    return;
+  }
+
+  const meta = { ...((target.metadata as AgentMessageMetadata | null) ?? {}) };
+  if (emoji) meta.reaction = emoji;
+  else delete meta.reaction;
+
+  await prisma.message.update({
+    where: { id: target.id },
+    data: { metadata: meta as unknown as Prisma.InputJsonValue },
+  });
 }

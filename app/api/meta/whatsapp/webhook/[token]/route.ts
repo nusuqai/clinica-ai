@@ -187,6 +187,7 @@ async function processMessage(
         filename: message.filename,
         caption: message.caption,
       },
+      messageId,
       creds
     );
     return;
@@ -201,15 +202,17 @@ async function processMessage(
       conversation.id,
       { phone, userId },
       { structuredKind: message.structuredKind, data: message.data, summary: message.summary },
+      messageId,
       creds
     );
     return;
   }
 
-  // Emoji reaction: archived silently, no reply.
+  // Emoji reaction: attached to the message it reacts to (by wamid), not stored
+  // as a separate bubble.
   if (message.kind === "reaction") {
     console.log(`[wa-debug] routing → reaction handler convId=${conversation.id}`);
-    await handleWhatsAppReaction(conversation.id, { phone, userId }, message.emoji);
+    await handleWhatsAppReaction(conversation.id, message.targetWamid, message.emoji);
     return;
   }
 

@@ -85,7 +85,9 @@ export async function persistUserMessage(
   content: string,
   senderId: string | null,
   /** Optional metadata — e.g. `{ voice }` for a transcribed voice note. */
-  metadata: AgentMessageMetadata | null = null
+  metadata: AgentMessageMetadata | null = null,
+  /** The inbound WhatsApp message id (wamid), so a later reaction can attach. */
+  whatsappMessageId: string | null = null
 ): Promise<SessionMessage> {
   const m = await prisma.message.create({
     data: {
@@ -96,6 +98,7 @@ export async function persistUserMessage(
       content,
       isRead: false,
       metadata: metadata ? (metadata as unknown as Prisma.InputJsonValue) : undefined,
+      whatsappMessageId,
       clinicId,
     },
   });
@@ -137,6 +140,18 @@ export async function persistAgentMessage(
     createdAt: m.createdAt,
     clinicId: m.clinicId,
   };
+}
+
+/** Records the WhatsApp wamid on an already-persisted message (agent/staff
+ *  replies get their wamid only after the send returns). Best-effort. */
+export async function setMessageWhatsappId(
+  messageId: string,
+  whatsappMessageId: string | null
+): Promise<void> {
+  if (!whatsappMessageId) return;
+  await prisma.message
+    .update({ where: { id: messageId }, data: { whatsappMessageId } })
+    .catch((err) => console.error("[wa] failed to store wamid:", err));
 }
 
 async function touchConversation(conversationId: string) {

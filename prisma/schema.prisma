@@ -754,7 +754,11 @@ model Message {
   senderType     SenderType
   senderId       String?    @db.Uuid // null when senderType = AGENT
   content        String
-  metadata       Json? // { toolCalls: [{ name, args, result, status }] } — set on AGENT messages that ran tools
+  metadata       Json? // { toolCalls, voice, media, structured, reaction } — see agent/types.ts
+  // The WhatsApp Cloud API message id (wamid) for messages that came in on / went
+  // out over WhatsApp. Lets an inbound reaction (which references the reacted
+  // message by wamid) be attached to the right message. Null for web messages.
+  whatsappMessageId String? @db.Text
   isRead         Boolean    @default(false)
   createdAt      DateTime   @default(now())
 
@@ -768,6 +772,7 @@ model Message {
   @@index([conversationId])
   @@index([sessionId])
   @@index([clinicId, createdAt])
+  @@index([conversationId, whatsappMessageId])
   @@map("messages")
 }
 
