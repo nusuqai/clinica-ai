@@ -162,7 +162,8 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
     jsonTool(
       {
         name: "list_my_appointments",
-        description: "اعرض مواعيد المريض الحالي (القادمة أو كلها).",
+        description:
+          "اعرض مواعيد المريض الحالي (القادمة أو كلها). استخدمها أيضاً عندما يسأل المريض «ما هو دوري؟» أو «كم رقمي؟». لكل موعد: bookingType (slot موعد بوقت ثابت، order نظام الدور، arrival أسبقية الحضور)، وorderNumber، وarrived. في أسبقية الحضور (arrival): إن كان arrived=false فلا رقم بعد — أخبر المريض أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور؛ وإن كان arrived=true فاذكر رقمه (orderNumber)، ومع تفعيل التتبّع اذكر الدور الجاري الآن (currentOrder) ومدة الانتظار التقديرية (estimatedWaitMin).",
         schema: z.object({ upcoming: z.boolean().nullable() }),
       },
       async ({ upcoming }) => {
