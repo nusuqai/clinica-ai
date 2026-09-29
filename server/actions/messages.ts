@@ -202,7 +202,14 @@ export async function createStaffMediaUpload(
  */
 export async function sendAdminMediaReply(
   conversationId: string,
-  media: { path: string; mimeType: string; filename?: string; caption?: string }
+  media: {
+    path: string;
+    mimeType: string;
+    filename?: string;
+    caption?: string;
+    width?: number;
+    height?: number;
+  }
 ): Promise<SendAdminReplyResult> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
@@ -243,6 +250,7 @@ export async function sendAdminMediaReply(
       sizeBytes: bytes.byteLength,
       ...(media.filename ? { filename: media.filename } : {}),
       ...(caption ? { caption } : {}),
+      ...(media.width && media.height ? { width: media.width, height: media.height } : {}),
     };
     message = await prisma.message.create({
       data: {

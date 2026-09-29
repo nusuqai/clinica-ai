@@ -4,23 +4,25 @@ import { Bot, Headset, FileText, ExternalLink } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolCallCard } from "./tool-cards";
+import { ChatImage } from "@/components/ui/chat-image";
 import type { ChatMessage } from "./types";
 
 /** Renders a media attachment (image/video/document) sent in the chat. */
 function MediaAttachment({ media }: { media: NonNullable<ChatMessage["media"]> }) {
-  if (media.kind === "image" || media.kind === "sticker") {
-    // eslint-disable-next-line @next/next/no-img-element
+  if (media.kind === "image") {
     return (
-      <img
+      <ChatImage
         src={media.url}
         alt={media.caption ?? "صورة"}
-        className={
-          media.kind === "sticker"
-            ? "h-24 w-24 object-contain"
-            : "max-h-64 max-w-full rounded-lg object-cover"
-        }
+        width={media.width}
+        height={media.height}
+        maxWidth={260}
       />
     );
+  }
+  if (media.kind === "sticker") {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={media.url} alt="ملصق" loading="lazy" className="h-24 w-24 object-contain" />;
   }
   if (media.kind === "video") {
     return (

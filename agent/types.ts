@@ -80,6 +80,10 @@ export interface MediaAttachmentMetadata {
   caption?: string;
   /** Byte length of the stored object. */
   sizeBytes?: number;
+  /** Intrinsic pixel dimensions of an image, when known (staff-sent images) —
+   *  lets the UI reserve exact space and avoid layout shift. */
+  width?: number;
+  height?: number;
   /**
    * The one-time vision description of an image (Arabic), reused on every later
    * turn so the image is transcribed-to-text exactly once. Present only on an

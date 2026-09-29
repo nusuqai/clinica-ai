@@ -38,6 +38,9 @@ export interface MessageMedia {
   caption?: string;
   /** The agent's vision description, when it read the image. */
   analysis?: string;
+  /** Intrinsic image dimensions, when known (staff-sent). */
+  width?: number;
+  height?: number;
 }
 
 /** A structured (no-file) message — location/contacts/order — for a small badge. */
@@ -203,6 +206,8 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
               filename: media.filename,
               caption: media.caption,
               analysis: media.analysis,
+              width: media.width,
+              height: media.height,
             },
           }
         : {}),

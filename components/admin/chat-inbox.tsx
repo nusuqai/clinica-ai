@@ -28,6 +28,8 @@ import {
 import { WhatsappIcon } from "@/components/icons/whatsapp-icon";
 import WhatsappTemplatePicker from "@/components/admin/whatsapp-template-picker";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
+import { escalationReasonLabel } from "@/lib/escalation-reasons";
+import { ChatImage } from "@/components/ui/chat-image";
 import { createClient } from "@/lib/supabase/client";
 import {
   sendAdminReply,
@@ -50,7 +52,11 @@ import type {
   MessageItem,
   ConversationDetail,
 } from "@/server/services/messages";
-import { fetchConversations, fetchConversationDetail } from "@/server/actions/conversations";
+import {
+  fetchConversations,
+  fetchConversationDetail,
+  fetchMessages,
+} from "@/server/actions/conversations";
 import type { AgentMessageMetadata } from "@/agent/types";
 
 interface ChatInboxProps {
@@ -84,6 +90,28 @@ interface PendingMedia {
   localUrl?: string;
   caption?: string;
   file: File;
+  /** Intrinsic dimensions for an image (read client-side before upload). */
+  width?: number;
+  height?: number;
+}
+
+/** Reads an image file's pixel dimensions in the browser (null if not an image
+ *  or it can't be decoded), so the sent bubble reserves exact space. */
+function readImageSize(file: File): Promise<{ width: number; height: number } | null> {
+  if (!file.type.startsWith("image/")) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      resolve(null);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  });
 }
 
 /** An admin reply rendered optimistically, before/independently of the server
@@ -217,6 +245,8 @@ export default function ChatInbox({
                 mimeType: p.media.mimeType,
                 filename: p.media.filename,
                 caption: p.media.caption,
+                width: p.media.width,
+                height: p.media.height,
               },
               mediaLocalUrl: p.media.localUrl,
             }
@@ -303,6 +333,17 @@ export default function ChatInbox({
                 },
               ]
         );
+
+        // An inbound (patient) message may have raised a per-message escalation,
+        // which the bare realtime row can't carry. Refetch the thread so the
+        // "escalated" badge + resolve button appear live, no manual refresh.
+        if (row.senderType === SenderType.USER) {
+          fetchMessages(row.conversationId)
+            .then((fresh) => {
+              if (fresh.length) setMessages(fresh);
+            })
+            .catch((err) => console.error("Failed to refresh messages:", err));
+        }
       }
 
       // Patch the sidebar in place — preview, timestamp, unread, order.
@@ -495,6 +536,8 @@ export default function ChatInbox({
           mimeType: media.mimeType || "application/octet-stream",
           filename: media.filename,
           caption: media.caption,
+          width: media.width,
+          height: media.height,
         });
         if (!result.ok) {
           patchPending(clientId, { status: "failed_sync" });
@@ -517,29 +560,36 @@ export default function ChatInbox({
     const conversationId = activeId;
     const caption = reply.trim();
     const clientId = crypto.randomUUID();
-    const media: PendingMedia = {
-      kind: clientMediaKind(file.type),
-      mimeType: file.type || "application/octet-stream",
-      filename: file.name,
-      localUrl: URL.createObjectURL(file),
-      caption: caption || undefined,
-      file,
-    };
     setReply("");
     setPendingFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
-    setPending((prev) => [
-      ...prev,
-      {
-        clientId,
-        conversationId,
-        content: caption,
-        createdAt: new Date(),
-        status: "sending",
-        media,
-      },
-    ]);
-    void deliverMedia(clientId, conversationId, media);
+    void (async () => {
+      // Read image dimensions up front so both the optimistic bubble and the
+      // stored message reserve exact space (no layout shift on load).
+      const size = await readImageSize(file);
+      const media: PendingMedia = {
+        kind: clientMediaKind(file.type),
+        mimeType: file.type || "application/octet-stream",
+        filename: file.name,
+        localUrl: URL.createObjectURL(file),
+        caption: caption || undefined,
+        file,
+        width: size?.width,
+        height: size?.height,
+      };
+      setPending((prev) => [
+        ...prev,
+        {
+          clientId,
+          conversationId,
+          content: caption,
+          createdAt: new Date(),
+          status: "sending",
+          media,
+        },
+      ]);
+      await deliverMedia(clientId, conversationId, media);
+    })();
   };
 
   const handleResolveEscalation = (escalationId: string) => {
@@ -793,7 +843,7 @@ export default function ChatInbox({
                           "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[10px]",
                           isUnresolved ? "bg-red-100 text-red-700" : "text-muted-foreground",
                         ].join(" ")}
-                        title={shown.map((e) => e.reason ?? "بدون سبب").join(" · ")}
+                        title={shown.map((e) => escalationReasonLabel(e.reason)).join(" · ")}
                       >
                         {isUnresolved && <AlertTriangle className="h-3 w-3" />}
                         {isUnresolved
@@ -919,16 +969,21 @@ export default function ChatInbox({
                               const mediaUrl = msg.id
                                 ? `/api/admin/media/${msg.id}`
                                 : msg.mediaLocalUrl;
-                              return msg.media.kind === "image" || msg.media.kind === "sticker" ? (
+                              return msg.media.kind === "image" ? (
+                                <ChatImage
+                                  src={mediaUrl}
+                                  alt={msg.media.caption ?? "صورة"}
+                                  width={msg.media.width}
+                                  height={msg.media.height}
+                                  maxWidth={240}
+                                />
+                              ) : msg.media.kind === "sticker" ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                   src={mediaUrl}
-                                  alt={msg.media.caption ?? "صورة"}
-                                  className={
-                                    msg.media.kind === "sticker"
-                                      ? "h-24 w-24 object-contain"
-                                      : "max-h-64 max-w-[240px] rounded-lg object-cover"
-                                  }
+                                  alt="ملصق"
+                                  loading="lazy"
+                                  className="h-24 w-24 object-contain"
                                 />
                               ) : msg.media.kind === "video" ? (
                                 <video
@@ -972,7 +1027,9 @@ export default function ChatInbox({
                         {msg.escalation && !resolvedEscalations.has(msg.escalation.id) && (
                           <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
                             <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
-                            <span className="flex-1">مُحوّلة إلى الفريق للمراجعة</span>
+                            <span className="flex-1">
+                              {escalationReasonLabel(msg.escalation.reason)}
+                            </span>
                             <button
                               onClick={() => handleResolveEscalation(msg.escalation!.id)}
                               className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 font-medium text-white transition-colors hover:bg-amber-700"

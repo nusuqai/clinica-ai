@@ -73,20 +73,6 @@ export interface WhatsAppContact {
 /** A label for logs when a contact has no phone. */
 const contactLabel = (c: WhatsAppContact) => c.phone ?? c.userId ?? "unknown";
 
-/**
- * Soft acknowledgement for any attachment the agent can't act on (video,
- * document, sticker, location, contact, order, an image when analysis is off and
- * there's no caption, or an unknown type). We DO store it and a human is
- * escalated, so the honest message is "we received it and a human will look",
- * not the old "send text only".
- */
-const MEDIA_ACK_PREFIX = "📎 استلمنا";
-const MEDIA_ACK = `${MEDIA_ACK_PREFIX} مرفقك وسيقوم فريق العيادة بمراجعته والرد عليك قريباً. 🙏`;
-
-/** Media usually arrives in bursts (a photo album, a voice note plus a file),
- *  so the acknowledgement is repeated at most once per window. */
-const UNSUPPORTED_NOTICE_COOLDOWN_MS = 60_000;
-
 /** Arabic placeholder shown in the thread for a stored, unreadable attachment. */
 function mediaPlaceholder(kind: ArchivedMediaKind | "image"): string {
   switch (kind) {
@@ -471,35 +457,6 @@ export async function* streamWebVoiceAgent(
 }
 
 /**
- * Sends the soft "we received your attachment, a human will look" ack, throttled
- * to once per cooldown window so a burst (photo album, file + caption) doesn't
- * spam it. The attachment is already stored and a human already escalated; this
- * is just so the patient isn't left in silence. Never charged — it's a canned
- * notice, not an AI reply.
- */
-async function sendMediaAck(
-  conversationId: string,
-  sessionId: string,
-  clinicId: string,
-  contact: WhatsAppContact,
-  creds: WhatsAppCredentials
-): Promise<void> {
-  const recentReply = await prisma.message.findFirst({
-    where: {
-      conversationId,
-      senderType: SenderType.AGENT,
-      createdAt: { gte: new Date(Date.now() - UNSUPPORTED_NOTICE_COOLDOWN_MS) },
-    },
-    orderBy: { createdAt: "desc" },
-    select: { content: true },
-  });
-  if (recentReply?.content.startsWith(MEDIA_ACK_PREFIX)) return;
-
-  await persistAgentMessage(conversationId, sessionId, clinicId, MEDIA_ACK, null);
-  await deliverReply(contact, MEDIA_ACK, creds);
-}
-
-/**
  * WhatsApp channel, unknown/unsupported type: records that something arrived so
  * the admin sees the gap in the thread, escalates it to a human, and sends the
  * soft ack. No bytes to store for an unknown type — just the placeholder.
@@ -525,7 +482,6 @@ export async function handleUnsupportedWhatsAppMessage(
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
-  await sendMediaAck(conversationId, sessionId, clinicId, contact, creds);
 }
 
 /** A conversation's clinic-scoped fields the handlers need. */
@@ -1098,8 +1054,8 @@ export async function handleWhatsAppImageMessage(
     return;
   }
 
-  // Image with no caption → don't run the agent; acknowledge and let a human take it.
-  await sendMediaAck(conversationId, sessionId, clinicId, contact, creds);
+  // Image with no caption → the agent stays silent; the escalation above lets a
+  // human take it.
 }
 
 /**
@@ -1164,7 +1120,6 @@ export async function handleWhatsAppMediaMessage(
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
-  await sendMediaAck(conversationId, sessionId, clinicId, contact, creds);
 }
 
 /**
@@ -1198,7 +1153,6 @@ export async function handleWhatsAppStructuredMessage(
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
-  await sendMediaAck(conversationId, sessionId, clinicId, contact, creds);
 }
 
 /**

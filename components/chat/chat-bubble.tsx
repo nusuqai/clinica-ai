@@ -21,6 +21,8 @@ function mediaFrom(id: string, metadata: unknown): ChatMessage["media"] | undefi
         mimeType?: string;
         filename?: string;
         caption?: string;
+        width?: number;
+        height?: number;
       };
     } | null
   )?.media;
@@ -31,6 +33,8 @@ function mediaFrom(id: string, metadata: unknown): ChatMessage["media"] | undefi
     mimeType: media.mimeType,
     filename: media.filename,
     caption: media.caption,
+    width: media.width,
+    height: media.height,
   };
 }
 

@@ -27,5 +27,7 @@ export interface ChatMessage {
     mimeType?: string;
     filename?: string;
     caption?: string;
+    width?: number;
+    height?: number;
   };
 }
