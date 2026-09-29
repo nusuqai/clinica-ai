@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import {
   handleWhatsAppMessage,
   handleWhatsAppVoiceMessage,
+  handleWhatsAppImageMessage,
+  handleWhatsAppMediaMessage,
+  handleWhatsAppStructuredMessage,
+  handleWhatsAppReaction,
   handleUnsupportedWhatsAppMessage,
 } from "@/server/services/agentRunner";
 import { handleVerification } from "@/lib/meta/webhook";
@@ -155,8 +159,61 @@ async function processMessage(
     return;
   }
 
-  // The agent only reads text, so other media never reaches it — record what came
-  // in and tell the contact to send text instead.
+  // Images are archived, and read by the agent only if the clinic enabled it.
+  if (message.kind === "image") {
+    console.log(`[wa-debug] routing → image handler convId=${conversation.id}`);
+    await handleWhatsAppImageMessage(
+      conversation.id,
+      { phone, userId },
+      { mediaId: message.mediaId, mimeType: message.mimeType, caption: message.caption },
+      messageId,
+      creds
+    );
+    return;
+  }
+
+  // Video / document / sticker: archived, then escalated to a human.
+  if (message.kind === "media") {
+    console.log(
+      `[wa-debug] routing → media(${message.mediaKind}) handler convId=${conversation.id}`
+    );
+    await handleWhatsAppMediaMessage(
+      conversation.id,
+      { phone, userId },
+      {
+        mediaKind: message.mediaKind,
+        mediaId: message.mediaId,
+        mimeType: message.mimeType,
+        filename: message.filename,
+        caption: message.caption,
+      },
+      creds
+    );
+    return;
+  }
+
+  // Location / contact card / order: stored as text, then escalated.
+  if (message.kind === "structured") {
+    console.log(
+      `[wa-debug] routing → structured(${message.structuredKind}) handler convId=${conversation.id}`
+    );
+    await handleWhatsAppStructuredMessage(
+      conversation.id,
+      { phone, userId },
+      { structuredKind: message.structuredKind, data: message.data, summary: message.summary },
+      creds
+    );
+    return;
+  }
+
+  // Emoji reaction: archived silently, no reply.
+  if (message.kind === "reaction") {
+    console.log(`[wa-debug] routing → reaction handler convId=${conversation.id}`);
+    await handleWhatsAppReaction(conversation.id, { phone, userId }, message.emoji);
+    return;
+  }
+
+  // An unknown/unsupported type — record what came in and escalate to a human.
   if (message.kind === "unsupported") {
     console.log(`[wa-debug] routing → unsupported-media handler convId=${conversation.id}`);
     await handleUnsupportedWhatsAppMessage(

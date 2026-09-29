@@ -28,6 +28,7 @@ export default async function AiSettingsPage() {
         <AiSettingsForm
           initialEnabled={status.aiEnabled}
           initialVoiceReplyEnabled={status.voiceReplyEnabled}
+          initialImageAnalysisEnabled={status.imageAnalysisEnabled}
           unitBalance={status.unitBalance}
           lowUnits={status.lowUnits}
           sufficient={status.sufficient}

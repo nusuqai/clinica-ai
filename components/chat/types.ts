@@ -19,4 +19,13 @@ export interface ChatMessage {
   /** Autoplay the audio (only for a reply that just arrived live, never for
    *  history loaded on reload). */
   autoPlayAudio?: boolean;
+  /** A media attachment (e.g. an image or document a staff member sent). The URL
+   *  streams from the owner-scoped media endpoint. */
+  media?: {
+    kind: "image" | "video" | "audio" | "document" | "sticker";
+    url: string;
+    mimeType?: string;
+    filename?: string;
+    caption?: string;
+  };
 }

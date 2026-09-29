@@ -9,11 +9,21 @@ import {
   WhatsAppApiError,
 } from "@/lib/meta/whatsapp";
 import type { WhatsAppCredentials, WhatsAppRecipient } from "@/lib/meta/whatsapp";
-import type { UnsupportedMediaType } from "@/lib/meta/whatsapp-inbound";
+import type {
+  UnsupportedMediaType,
+  ArchivedMediaKind,
+  StructuredKind,
+} from "@/lib/meta/whatsapp-inbound";
+import { MEDIA_NOTICES } from "@/lib/meta/inbound";
 import { uploadPatientMedia } from "@/lib/supabase/storage";
 import { transcribeAudio } from "./transcription";
 import { synthesizeSpeech } from "./tts";
-import type { VoiceMessageMetadata } from "@/agent/types";
+import { describeImage } from "./vision";
+import type {
+  VoiceMessageMetadata,
+  MediaAttachmentMetadata,
+  StructuredMessageMetadata,
+} from "@/agent/types";
 import { showTypingIndicator } from "./whatsappTyping";
 import {
   runAgentStream,
@@ -38,8 +48,10 @@ import {
   chargeUsage,
   chargeTranscription,
   chargeTts,
+  chargeExtraction,
   isDuplicateChargeError,
   ensureOpenEscalation,
+  escalateMessage,
   notifyUnitAlert,
 } from "./aiCredit";
 import { getOrCreatePatientByPhone } from "./patients";
@@ -61,13 +73,33 @@ export interface WhatsAppContact {
 /** A label for logs when a contact has no phone. */
 const contactLabel = (c: WhatsAppContact) => c.phone ?? c.userId ?? "unknown";
 
-const UNSUPPORTED_PREFIX = "عذراً، لا يمكننا استقبال";
-const unsupportedReply = (noun: string) =>
-  `${UNSUPPORTED_PREFIX} ${noun}. الرجاء إرسال رسالتك كنص فقط. 🙏`;
+/**
+ * Soft acknowledgement for any attachment the agent can't act on (video,
+ * document, sticker, location, contact, order, an image when analysis is off and
+ * there's no caption, or an unknown type). We DO store it and a human is
+ * escalated, so the honest message is "we received it and a human will look",
+ * not the old "send text only".
+ */
+const MEDIA_ACK_PREFIX = "📎 استلمنا";
+const MEDIA_ACK = `${MEDIA_ACK_PREFIX} مرفقك وسيقوم فريق العيادة بمراجعته والرد عليك قريباً. 🙏`;
 
 /** Media usually arrives in bursts (a photo album, a voice note plus a file),
- *  so the notice is repeated at most once per window. */
+ *  so the acknowledgement is repeated at most once per window. */
 const UNSUPPORTED_NOTICE_COOLDOWN_MS = 60_000;
+
+/** Arabic placeholder shown in the thread for a stored, unreadable attachment. */
+function mediaPlaceholder(kind: ArchivedMediaKind | "image"): string {
+  switch (kind) {
+    case "image":
+      return MEDIA_NOTICES.image.placeholder;
+    case "video":
+      return MEDIA_NOTICES.video.placeholder;
+    case "document":
+      return MEDIA_NOTICES.file.placeholder;
+    case "sticker":
+      return MEDIA_NOTICES.sticker.placeholder;
+  }
+}
 
 /**
  * Sends a reply over the Cloud API without letting a delivery failure escape.
@@ -113,11 +145,21 @@ async function deliverReply(
 }
 
 function toPrior(messages: SessionMessage[]): PriorMessage[] {
-  return messages.map((m) => ({
-    senderType: m.senderType,
-    content: m.content,
-    toolCalls: m.metadata?.toolCalls,
-  }));
+  return messages.map((m) => {
+    // An image the agent was allowed to read was described once and the text
+    // stored on the message; inject it here so the agent "sees" the image on the
+    // arrival turn AND reuses the same description on every later turn — the image
+    // itself is never re-sent (issue #52).
+    const analysis = m.metadata?.media?.analysis;
+    const content = analysis
+      ? `${m.content}\n\n[صورة أرسلها العميل — وصفها: ${analysis}]`
+      : m.content;
+    return {
+      senderType: m.senderType,
+      content,
+      toolCalls: m.metadata?.toolCalls,
+    };
+  });
 }
 
 /**
@@ -429,41 +471,19 @@ export async function* streamWebVoiceAgent(
 }
 
 /**
- * WhatsApp channel, non-text message: records that something arrived so the
- * admin can see the gap in the thread, and tells the contact we only take text.
- *
- * The notice is sent whether or not the AI is enabled — it reports a hard
- * limitation of the channel (nobody, human or agent, can read the attachment),
- * not an agent opinion.
+ * Sends the soft "we received your attachment, a human will look" ack, throttled
+ * to once per cooldown window so a burst (photo album, file + caption) doesn't
+ * spam it. The attachment is already stored and a human already escalated; this
+ * is just so the patient isn't left in silence. Never charged — it's a canned
+ * notice, not an AI reply.
  */
-export async function handleUnsupportedWhatsAppMessage(
-  clinicId: string,
+async function sendMediaAck(
   conversationId: string,
+  sessionId: string,
+  clinicId: string,
   contact: WhatsAppContact,
-  media: UnsupportedMediaType,
   creds: WhatsAppCredentials
 ): Promise<void> {
-  // A hidden-phone contact can't be matched to a Profile by phone; the notice
-  // is channel-level and doesn't need one, so leave it unattributed in that case.
-  const profile = contact.phone
-    ? await prisma.profile.findUnique({
-        where: { phone: contact.phone },
-        select: { id: true },
-      })
-    : null;
-
-  const sessionId = await resolveActiveSession(conversationId, clinicId);
-  // Always recorded, even when the notice below is suppressed, so the admin
-  // sees every item the contact actually sent.
-  await persistUserMessage(
-    conversationId,
-    sessionId,
-    clinicId,
-    media.placeholder,
-
-    profile?.id ?? null
-  );
-
   const recentReply = await prisma.message.findFirst({
     where: {
       conversationId,
@@ -473,11 +493,39 @@ export async function handleUnsupportedWhatsAppMessage(
     orderBy: { createdAt: "desc" },
     select: { content: true },
   });
-  if (recentReply?.content.startsWith(UNSUPPORTED_PREFIX)) return;
+  if (recentReply?.content.startsWith(MEDIA_ACK_PREFIX)) return;
 
-  const reply = unsupportedReply(media.noun);
-  await persistAgentMessage(conversationId, sessionId, clinicId, reply, null);
-  await deliverReply(contact, reply, creds);
+  await persistAgentMessage(conversationId, sessionId, clinicId, MEDIA_ACK, null);
+  await deliverReply(contact, MEDIA_ACK, creds);
+}
+
+/**
+ * WhatsApp channel, unknown/unsupported type: records that something arrived so
+ * the admin sees the gap in the thread, escalates it to a human, and sends the
+ * soft ack. No bytes to store for an unknown type — just the placeholder.
+ */
+export async function handleUnsupportedWhatsAppMessage(
+  clinicId: string,
+  conversationId: string,
+  contact: WhatsAppContact,
+  media: UnsupportedMediaType,
+  creds: WhatsAppCredentials
+): Promise<void> {
+  const conv = await loadConversation(conversationId);
+  if (!conv) return;
+  const profile = await resolveProfileAndLink(clinicId, conversationId, conv, contact);
+  const sessionId = await resolveActiveSession(conversationId, clinicId);
+
+  const userMsg = await persistUserMessage(
+    conversationId,
+    sessionId,
+    clinicId,
+    media.placeholder,
+    profile?.id ?? null
+  );
+
+  await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
+  await sendMediaAck(conversationId, sessionId, clinicId, contact, creds);
 }
 
 /** A conversation's clinic-scoped fields the handlers need. */
@@ -572,6 +620,21 @@ async function chargeTtsSafe(args: {
   } catch (err) {
     if (isDuplicateChargeError(err)) return;
     console.error("[aiCredit] failed to charge tts", err);
+  }
+}
+
+/** Meters the one-time image-extraction (vision) charge, dup-safe. */
+async function chargeExtractionSafe(args: {
+  clinicId: string;
+  sessionId: string | null;
+  messageId: string | null;
+  usage: TokenUsage;
+}): Promise<void> {
+  try {
+    await chargeExtraction(args);
+  } catch (err) {
+    if (isDuplicateChargeError(err)) return;
+    console.error("[aiCredit] failed to charge extraction", err);
   }
 }
 
@@ -896,4 +959,267 @@ export async function handleWhatsAppVoiceMessage(
     creds,
     wasVoice: true,
   });
+}
+
+/**
+ * WhatsApp channel, image (issue #52): downloads and ARCHIVES the photo (always,
+ * so the clinic keeps a record independent of WhatsApp), then — only if the clinic
+ * enabled image analysis and the AI gates are open — reads it ONCE with the vision
+ * model, stores that description on the message, and answers from it.
+ *
+ * When analysis is off (or unavailable), the image is still archived and a human
+ * is escalated to review it; the agent only answers a caption if one was sent.
+ */
+export async function handleWhatsAppImageMessage(
+  conversationId: string,
+  contact: WhatsAppContact,
+  image: { mediaId: string; mimeType: string; caption?: string },
+  messageId: string,
+  creds: WhatsAppCredentials
+): Promise<void> {
+  const conv = await loadConversation(conversationId);
+  if (!conv) {
+    console.warn(`[wa-debug] DROP: conversation ${conversationId} not found in image handler`);
+    return;
+  }
+  const clinicId = conv.clinicId;
+  const profile = await resolveProfileAndLink(clinicId, conversationId, conv, contact);
+  const sessionId = await resolveActiveSession(conversationId, clinicId);
+
+  // Download + archive (ALWAYS — regardless of the analysis toggle).
+  let bytes: Buffer | null = null;
+  let stored: { path: string; contentType: string; size: number } | null = null;
+  try {
+    const media = await downloadMedia(image.mediaId, creds.accessToken);
+    bytes = media.bytes;
+    stored = await uploadPatientMedia({
+      clinicId,
+      conversationId,
+      bytes: media.bytes,
+      contentType: media.mimeType,
+    });
+  } catch (err) {
+    console.error("[whatsapp] image download/store failed:", err);
+  }
+
+  // Only read (and pay for) the image when it will actually feed a reply: the
+  // clinic opted in, the AI is on for this session + clinic, and units remain.
+  const status = await getClinicAiStatus(clinicId);
+  const gatesOpen = (await isSessionAiEnabled(sessionId)) && status.aiEnabled && status.sufficient;
+  const wantAnalysis = gatesOpen && status.imageAnalysisEnabled && !!bytes;
+
+  let analysis = "";
+  let extractionUsage: TokenUsage | null = null;
+  if (wantAnalysis && bytes) {
+    try {
+      const result = await describeImage({ bytes, mimeType: image.mimeType });
+      analysis = result.description;
+      extractionUsage = result.usage;
+    } catch (err) {
+      console.error("[whatsapp] image description failed:", err);
+    }
+  }
+
+  const mediaMeta: MediaAttachmentMetadata | null = stored
+    ? {
+        kind: "image",
+        storagePath: stored.path,
+        mimeType: stored.contentType,
+        sizeBytes: stored.size,
+        ...(image.caption ? { caption: image.caption } : {}),
+        ...(analysis ? { analysis, analysisModel: extractionUsage?.model } : {}),
+      }
+    : null;
+
+  // Content = the patient's caption (their words) or a "[صورة]" placeholder.
+  const content = image.caption?.trim() || mediaPlaceholder("image");
+  const userMsg = await persistUserMessage(
+    conversationId,
+    sessionId,
+    clinicId,
+    content,
+    profile?.id ?? null,
+    mediaMeta ? { media: mediaMeta } : null
+  );
+
+  // The one-time vision call is its own USD-only ledger line.
+  if (extractionUsage) {
+    await chargeExtractionSafe({
+      clinicId,
+      sessionId,
+      messageId: userMsg.id,
+      usage: extractionUsage,
+    });
+  }
+
+  // Analysis succeeded → answer from the (now stored) description. respondAndReply
+  // rebuilds context, and toPrior injects the description as text for this turn.
+  if (analysis) {
+    await respondAndReply({
+      conversationId,
+      clinicId,
+      clinicSlug: conv.clinic.slug,
+      sessionId,
+      whatsappName: conv.whatsappName,
+      profile,
+      contact,
+      metaMessageId: messageId,
+      creds,
+      wasVoice: false,
+    });
+    return;
+  }
+
+  // No analysis (toggle off, gated, or vision failed): the agent can't see the
+  // image, so escalate for a human to review it (never disables the AI).
+  await escalateMessage(
+    clinicId,
+    conversationId,
+    sessionId,
+    userMsg.id,
+    status.imageAnalysisEnabled ? "image_needs_review" : "image_analysis_disabled"
+  );
+
+  // Still answer a caption as ordinary text if one was sent (respondAndReply
+  // gates + escalates on its own if the clinic is off/out of units).
+  if (image.caption?.trim()) {
+    await respondAndReply({
+      conversationId,
+      clinicId,
+      clinicSlug: conv.clinic.slug,
+      sessionId,
+      whatsappName: conv.whatsappName,
+      profile,
+      contact,
+      metaMessageId: messageId,
+      creds,
+      wasVoice: false,
+    });
+    return;
+  }
+
+  // Image with no caption → don't run the agent; acknowledge and let a human take it.
+  await sendMediaAck(conversationId, sessionId, clinicId, contact, creds);
+}
+
+/**
+ * WhatsApp channel, downloadable media the agent can't read (video, document,
+ * sticker): archives the bytes and escalates to a human. The AI never acts on it.
+ */
+export async function handleWhatsAppMediaMessage(
+  conversationId: string,
+  contact: WhatsAppContact,
+  media: {
+    mediaKind: ArchivedMediaKind;
+    mediaId: string;
+    mimeType: string;
+    filename?: string;
+    caption?: string;
+  },
+  creds: WhatsAppCredentials
+): Promise<void> {
+  const conv = await loadConversation(conversationId);
+  if (!conv) return;
+  const clinicId = conv.clinicId;
+  const profile = await resolveProfileAndLink(clinicId, conversationId, conv, contact);
+  const sessionId = await resolveActiveSession(conversationId, clinicId);
+
+  let stored: { path: string; contentType: string; size: number } | null = null;
+  try {
+    const dl = await downloadMedia(media.mediaId, creds.accessToken);
+    stored = await uploadPatientMedia({
+      clinicId,
+      conversationId,
+      bytes: dl.bytes,
+      contentType: dl.mimeType,
+    });
+  } catch (err) {
+    console.error(`[whatsapp] ${media.mediaKind} download/store failed:`, err);
+  }
+
+  const mediaMeta: MediaAttachmentMetadata | null = stored
+    ? {
+        kind: media.mediaKind,
+        storagePath: stored.path,
+        mimeType: stored.contentType,
+        sizeBytes: stored.size,
+        ...(media.filename ? { filename: media.filename } : {}),
+        ...(media.caption ? { caption: media.caption } : {}),
+      }
+    : null;
+
+  const placeholder = mediaPlaceholder(media.mediaKind);
+  const content = media.caption?.trim()
+    ? `${placeholder} ${media.caption.trim()}`
+    : media.filename?.trim()
+      ? `${placeholder} ${media.filename.trim()}`
+      : placeholder;
+  const userMsg = await persistUserMessage(
+    conversationId,
+    sessionId,
+    clinicId,
+    content,
+    profile?.id ?? null,
+    mediaMeta ? { media: mediaMeta } : null
+  );
+
+  await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
+  await sendMediaAck(conversationId, sessionId, clinicId, contact, creds);
+}
+
+/**
+ * WhatsApp channel, structured message (location, contact card, order): there is
+ * no file to download, so the raw payload is kept for the record and a readable
+ * summary is the message content. Archive-only — a human is escalated.
+ */
+export async function handleWhatsAppStructuredMessage(
+  conversationId: string,
+  contact: WhatsAppContact,
+  structured: { structuredKind: StructuredKind; data: unknown; summary: string },
+  creds: WhatsAppCredentials
+): Promise<void> {
+  const conv = await loadConversation(conversationId);
+  if (!conv) return;
+  const clinicId = conv.clinicId;
+  const profile = await resolveProfileAndLink(clinicId, conversationId, conv, contact);
+  const sessionId = await resolveActiveSession(conversationId, clinicId);
+
+  const structuredMeta: StructuredMessageMetadata = {
+    kind: structured.structuredKind,
+    data: structured.data,
+  };
+  const userMsg = await persistUserMessage(
+    conversationId,
+    sessionId,
+    clinicId,
+    structured.summary,
+    profile?.id ?? null,
+    { structured: structuredMeta }
+  );
+
+  await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
+  await sendMediaAck(conversationId, sessionId, clinicId, contact, creds);
+}
+
+/**
+ * WhatsApp channel, emoji reaction: archived so the thread stays complete, with
+ * no reply and no escalation — a reaction carries no request to answer.
+ */
+export async function handleWhatsAppReaction(
+  conversationId: string,
+  contact: WhatsAppContact,
+  emoji: string
+): Promise<void> {
+  const conv = await loadConversation(conversationId);
+  if (!conv) return;
+  const clinicId = conv.clinicId;
+  const profile = await resolveProfileAndLink(clinicId, conversationId, conv, contact);
+  const sessionId = await resolveActiveSession(conversationId, clinicId);
+  await persistUserMessage(
+    conversationId,
+    sessionId,
+    clinicId,
+    `[تفاعل] ${emoji}`,
+    profile?.id ?? null
+  );
 }

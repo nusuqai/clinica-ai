@@ -1,13 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { Channel, Role, SenderType } from "@prisma/client";
+import { Channel, Role, SenderType, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getClinicContext } from "@/lib/auth";
-import { sendTextMessage, sendTemplateMessage, type WhatsAppRecipient } from "@/lib/meta/whatsapp";
+import {
+  sendTextMessage,
+  sendTemplateMessage,
+  sendMediaMessage,
+  uploadMedia,
+  type WhatsAppRecipient,
+} from "@/lib/meta/whatsapp";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
+import {
+  createPatientMediaUploadUrl,
+  downloadPatientMedia,
+  outboundMediaKind,
+} from "@/lib/supabase/storage";
 import { resolveActiveSession } from "@/server/services/agentSession";
+import type { AgentMessageMetadata, MediaAttachmentMetadata } from "@/agent/types";
 
 /**
  * How to address an outbound message to a conversation's WhatsApp contact:
@@ -141,8 +153,153 @@ export async function sendAdminReply(
 }
 
 /**
+ * Mints a one-time signed URL so the staff browser can upload an attachment
+ * DIRECTLY to the private bucket (bypassing the server request-body limit, so
+ * files up to 100 MB work). The browser then calls `sendAdminMediaReply` with the
+ * returned path. Rejected before the upload if the WhatsApp window has closed.
+ */
+export type CreateUploadResult =
+  | { ok: true; path: string; token: string; bucket: string }
+  | { ok: false; reason: SendAdminReplyFailure };
+
+export async function createStaffMediaUpload(
+  conversationId: string,
+  mimeType: string
+): Promise<CreateUploadResult> {
+  const ctx = await getClinicContext();
+  if (!ctx) return { ok: false, reason: "unauthorized" };
+  if (ctx.role !== Role.ADMIN) return { ok: false, reason: "forbidden" };
+
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: conversationId, clinicId: ctx.clinic.id },
+    select: { id: true, channel: true },
+  });
+  if (!conversation) return { ok: false, reason: "not_found" };
+  if (conversation.channel === Channel.WHATSAPP) {
+    if (!isWithinWhatsappWindow(await lastInboundAt(conversationId))) {
+      return { ok: false, reason: "outside_window" };
+    }
+  }
+
+  try {
+    const target = await createPatientMediaUploadUrl({
+      clinicId: ctx.clinic.id,
+      conversationId,
+      mimeType: mimeType || "application/octet-stream",
+    });
+    return { ok: true, path: target.path, token: target.token, bucket: target.bucket };
+  } catch (err) {
+    console.error("Failed to create staff media upload url:", err);
+    return { ok: false, reason: "server_error" };
+  }
+}
+
+/**
+ * Persists a staff attachment (already uploaded to the bucket by the browser) as
+ * an ADMIN message and relays it to the patient over WhatsApp. Free for the
+ * clinic (staff replies never touch the AI meter). Mirrors `sendAdminReply`'s
+ * optimistic-friendly result shape.
+ */
+export async function sendAdminMediaReply(
+  conversationId: string,
+  media: { path: string; mimeType: string; filename?: string; caption?: string }
+): Promise<SendAdminReplyResult> {
+  const ctx = await getClinicContext();
+  if (!ctx) return { ok: false, reason: "unauthorized" };
+  if (ctx.role !== Role.ADMIN) return { ok: false, reason: "forbidden" };
+
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: conversationId, clinicId: ctx.clinic.id },
+  });
+  if (!conversation) return { ok: false, reason: "not_found" };
+
+  // Never trust a client-supplied path: it must live under this clinic +
+  // conversation's prefix (the same prefix the signed URL was minted for).
+  if (!media.path.startsWith(`${ctx.clinic.id}/${conversationId}/`)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  if (conversation.channel === Channel.WHATSAPP) {
+    if (!isWithinWhatsappWindow(await lastInboundAt(conversationId))) {
+      return { ok: false, reason: "outside_window" };
+    }
+  }
+
+  // Read the bytes back for the WhatsApp relay + the stored size. A missing
+  // object means the browser upload never landed.
+  const bytes = await downloadPatientMedia(media.path);
+  if (!bytes) return { ok: false, reason: "server_error" };
+
+  const kind = outboundMediaKind(media.mimeType);
+  const baseMime = media.mimeType.split(";")[0].trim().toLowerCase() || "application/octet-stream";
+  const caption = media.caption?.trim() ?? "";
+
+  let message;
+  try {
+    const sessionId = await resolveActiveSession(conversationId, ctx.clinic.id);
+    const mediaMeta: MediaAttachmentMetadata = {
+      kind,
+      storagePath: media.path,
+      mimeType: baseMime,
+      sizeBytes: bytes.byteLength,
+      ...(media.filename ? { filename: media.filename } : {}),
+      ...(caption ? { caption } : {}),
+    };
+    message = await prisma.message.create({
+      data: {
+        conversationId,
+        sessionId,
+        senderType: SenderType.ADMIN,
+        senderId: ctx.user.id,
+        content: caption,
+        isRead: true,
+        clinicId: ctx.clinic.id,
+        metadata: { media: mediaMeta } as unknown as Prisma.InputJsonValue,
+      },
+    });
+    await prisma.escalation.updateMany({
+      where: { conversationId, resolvedAt: null },
+      data: { resolvedAt: new Date() },
+    });
+  } catch (err) {
+    console.error("Failed to save admin media reply:", err);
+    return { ok: false, reason: "server_error" };
+  }
+
+  let whatsappSendFailed = false;
+  const recipient = whatsappRecipient(conversation);
+  if (recipient) {
+    try {
+      const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
+      if (!creds) throw new Error("WhatsApp is not configured for this clinic");
+      const waMediaId = await uploadMedia(creds, bytes, baseMime, media.filename ?? "attachment");
+      await sendMediaMessage(
+        recipient,
+        { kind, mediaId: waMediaId, caption: caption || undefined, filename: media.filename },
+        creds
+      );
+    } catch (err) {
+      console.error("Failed to send WhatsApp media:", err);
+      whatsappSendFailed = true;
+    }
+  }
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { updatedAt: new Date() },
+  });
+  revalidatePath("/admin/messages", "page");
+  return {
+    ok: true,
+    messageId: message.id,
+    createdAt: message.createdAt.toISOString(),
+    whatsappSendFailed,
+  };
+}
+
+/**
  * Re-sends an already-persisted reply over WhatsApp. Used by the inbox retry
  * action after a delivery failure — it must not create a second message row.
+ * Handles both text and media replies.
  */
 export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: boolean }> {
   const ctx = await getClinicContext();
@@ -167,6 +324,26 @@ export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: bo
   try {
     const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
     if (!creds) return { ok: false };
+
+    const mediaMeta = (message.metadata as AgentMessageMetadata | null)?.media;
+    if (mediaMeta?.storagePath) {
+      const bytes = await downloadPatientMedia(mediaMeta.storagePath);
+      if (!bytes) return { ok: false };
+      const kind = outboundMediaKind(mediaMeta.mimeType);
+      const waMediaId = await uploadMedia(
+        creds,
+        bytes,
+        mediaMeta.mimeType,
+        mediaMeta.filename ?? "attachment"
+      );
+      await sendMediaMessage(
+        recipient,
+        { kind, mediaId: waMediaId, caption: mediaMeta.caption, filename: mediaMeta.filename },
+        creds
+      );
+      return { ok: true };
+    }
+
     await sendTextMessage(recipient, message.content, creds);
     return { ok: true };
   } catch (err) {
@@ -269,6 +446,25 @@ export async function sendWhatsappTemplate(
     console.error("Template sent but failed to persist:", err);
     return { ok: false, reason: "server_error" };
   }
+}
+
+/**
+ * Resolves a single message-level escalation (the "mark as resolved" button
+ * beside an escalated media message). Clinic-scoped to the admin. Does NOT touch
+ * the AI switch — it only clears the flag so the bubble's badge disappears.
+ */
+export async function resolveMessageEscalation(escalationId: string): Promise<{ ok: boolean }> {
+  const ctx = await getClinicContext();
+  if (!ctx || ctx.role !== Role.ADMIN) return { ok: false };
+
+  const result = await prisma.escalation.updateMany({
+    where: { id: escalationId, clinicId: ctx.clinic.id, resolvedAt: null },
+    data: { resolvedAt: new Date() },
+  });
+  if (result.count === 0) return { ok: false };
+
+  revalidatePath("/admin/messages", "page");
+  return { ok: true };
 }
 
 export async function setSessionAiEnabled(sessionId: string, enabled: boolean): Promise<void> {

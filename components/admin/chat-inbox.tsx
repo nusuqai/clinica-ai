@@ -21,13 +21,20 @@ import {
   RotateCw,
   UserRound,
   ExternalLink,
+  Paperclip,
+  X,
+  CheckCircle2,
 } from "lucide-react";
 import { WhatsappIcon } from "@/components/icons/whatsapp-icon";
 import WhatsappTemplatePicker from "@/components/admin/whatsapp-template-picker";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
+import { createClient } from "@/lib/supabase/client";
 import {
   sendAdminReply,
+  sendAdminMediaReply,
+  createStaffMediaUpload,
   retryWhatsappDelivery,
+  resolveMessageEscalation,
   setSessionAiEnabled,
   type SendAdminReplyResult,
 } from "@/server/actions/messages";
@@ -67,6 +74,18 @@ function formatDuration(totalSec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** Optimistic media on a pending staff attachment (kept until the server row
+ *  arrives). `file` is retained so a failed send can be retried. */
+interface PendingMedia {
+  kind: "image" | "video" | "audio" | "document";
+  mimeType: string;
+  filename?: string;
+  /** Local object URL for instant preview before the upload lands. */
+  localUrl?: string;
+  caption?: string;
+  file: File;
+}
+
 /** An admin reply rendered optimistically, before/independently of the server
  *  round-trip. Client-side only — these do not survive a reload. */
 interface PendingMessage {
@@ -77,6 +96,17 @@ interface PendingMessage {
   status: PendingStatus;
   /** Set once the message row exists; lets it replace the server bubble. */
   serverId?: string;
+  /** Set when this is a media attachment, not a text reply. */
+  media?: PendingMedia;
+}
+
+/** Categorises a browser File's mime into the outbound media kind. */
+function clientMediaKind(mime: string): "image" | "video" | "audio" | "document" {
+  const base = (mime || "").split(";")[0].trim().toLowerCase();
+  if (base.startsWith("image/")) return "image";
+  if (base.startsWith("video/")) return "video";
+  if (base.startsWith("audio/")) return "audio";
+  return "document";
 }
 
 interface RenderedMessage {
@@ -89,6 +119,11 @@ interface RenderedMessage {
   createdAt: Date;
   pending?: PendingMessage;
   voice?: MessageItem["voice"];
+  media?: MessageItem["media"];
+  /** Local preview URL for a still-uploading attachment (no server id yet). */
+  mediaLocalUrl?: string;
+  structured?: MessageItem["structured"];
+  escalation?: MessageItem["escalation"];
 }
 
 export default function ChatInbox({
@@ -109,6 +144,12 @@ export default function ChatInbox({
   const [listPending, startListTransition] = useTransition();
   const [aiTogglePending, startAiToggle] = useTransition();
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  // A file the admin picked to attach, staged before send (the textarea becomes
+  // its optional caption).
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Escalation ids being resolved (optimistically hidden while the call runs).
+  const [resolvedEscalations, setResolvedEscalations] = useState<Set<string>>(new Set());
   // Ticks so the 24-hour-window gate re-evaluates as time passes without a
   // reload — the window can lapse while the admin sits on a thread.
   const [nowTs, setNowTs] = useState(() => Date.now());
@@ -156,6 +197,9 @@ export default function ChatInbox({
           sessionId: m.sessionId,
           createdAt: m.createdAt,
           voice: m.voice,
+          media: m.media,
+          structured: m.structured,
+          escalation: m.escalation,
         })),
       // Always newest, so appending keeps the createdAt-ascending order.
       ...mine.map((p) => ({
@@ -166,6 +210,17 @@ export default function ChatInbox({
         sessionId: null,
         createdAt: p.createdAt,
         pending: p,
+        ...(p.media
+          ? {
+              media: {
+                kind: p.media.kind,
+                mimeType: p.media.mimeType,
+                filename: p.media.filename,
+                caption: p.media.caption,
+              },
+              mediaLocalUrl: p.media.localUrl,
+            }
+          : {}),
       })),
     ];
   }, [messages, pending, activeId]);
@@ -206,9 +261,12 @@ export default function ChatInbox({
 
       // Append to the thread only if it's the open conversation.
       if (row.conversationId === activeId) {
-        // Carry voice metadata through so a voice note shows its player live,
-        // not only after a reload.
-        const voice = (row.metadata as AgentMessageMetadata | null)?.voice;
+        // Carry voice/media metadata through so an attachment shows live, not
+        // only after a reload.
+        const meta = row.metadata as AgentMessageMetadata | null;
+        const voice = meta?.voice;
+        const media = meta?.media;
+        const structured = meta?.structured;
         setMessages((prev) =>
           prev.some((m) => m.id === row.id)
             ? prev
@@ -230,6 +288,18 @@ export default function ChatInbox({
                         },
                       }
                     : {}),
+                  ...(media
+                    ? {
+                        media: {
+                          kind: media.kind,
+                          mimeType: media.mimeType,
+                          filename: media.filename,
+                          caption: media.caption,
+                          analysis: media.analysis,
+                        },
+                      }
+                    : {}),
+                  ...(structured ? { structured: { kind: structured.kind } } : {}),
                 },
               ]
         );
@@ -399,6 +469,103 @@ export default function ChatInbox({
     void deliver(clientId, activeId, text);
   };
 
+  /** Uploads a staged file straight to Storage (signed URL), then persists +
+   *  relays it. Used for the first attempt and for retrying a sync failure. */
+  const deliverMedia = useCallback(
+    async (clientId: string, conversationId: string, media: PendingMedia) => {
+      try {
+        const up = await createStaffMediaUpload(conversationId, media.mimeType);
+        if (!up.ok) {
+          patchPending(clientId, { status: "failed_sync" });
+          return;
+        }
+        const supabase = createClient();
+        const { error: upErr } = await supabase.storage
+          .from(up.bucket)
+          .uploadToSignedUrl(up.path, up.token, media.file, {
+            contentType: media.mimeType || undefined,
+          });
+        if (upErr) {
+          console.error("Storage upload failed:", upErr);
+          patchPending(clientId, { status: "failed_sync" });
+          return;
+        }
+        const result = await sendAdminMediaReply(conversationId, {
+          path: up.path,
+          mimeType: media.mimeType || "application/octet-stream",
+          filename: media.filename,
+          caption: media.caption,
+        });
+        if (!result.ok) {
+          patchPending(clientId, { status: "failed_sync" });
+          return;
+        }
+        patchPending(clientId, {
+          serverId: result.messageId,
+          status: result.whatsappSendFailed ? "failed_whatsapp" : "sent",
+        });
+      } catch (err) {
+        console.error("Failed to send admin media:", err);
+        patchPending(clientId, { status: "failed_sync" });
+      }
+    },
+    [patchPending]
+  );
+
+  const handleSendMedia = (file: File) => {
+    if (!activeId || isOutsideWindow) return;
+    const conversationId = activeId;
+    const caption = reply.trim();
+    const clientId = crypto.randomUUID();
+    const media: PendingMedia = {
+      kind: clientMediaKind(file.type),
+      mimeType: file.type || "application/octet-stream",
+      filename: file.name,
+      localUrl: URL.createObjectURL(file),
+      caption: caption || undefined,
+      file,
+    };
+    setReply("");
+    setPendingFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setPending((prev) => [
+      ...prev,
+      {
+        clientId,
+        conversationId,
+        content: caption,
+        createdAt: new Date(),
+        status: "sending",
+        media,
+      },
+    ]);
+    void deliverMedia(clientId, conversationId, media);
+  };
+
+  const handleResolveEscalation = (escalationId: string) => {
+    // Optimistically hide the badge; restore it if the server rejects.
+    setResolvedEscalations((prev) => new Set(prev).add(escalationId));
+    void (async () => {
+      try {
+        const res = await resolveMessageEscalation(escalationId);
+        if (!res.ok) {
+          setResolvedEscalations((prev) => {
+            const next = new Set(prev);
+            next.delete(escalationId);
+            return next;
+          });
+        }
+      } catch (err) {
+        console.error("Failed to resolve escalation:", err);
+        setResolvedEscalations((prev) => {
+          const next = new Set(prev);
+          next.delete(escalationId);
+          return next;
+        });
+      }
+    })();
+  };
+
   // A template send is already persisted server-side; show it immediately as a
   // "sent" bubble (retired once the server row arrives), like a normal reply.
   const handleTemplateSent = (msg: { messageId: string; createdAt: string; content: string }) => {
@@ -439,6 +606,12 @@ export default function ChatInbox({
       return;
     }
 
+    // A media send that never persisted — re-upload + resend from the kept File.
+    if (entry.media) {
+      void deliverMedia(clientId, entry.conversationId, entry.media);
+      return;
+    }
+
     void deliver(clientId, entry.conversationId, entry.content);
   };
 
@@ -458,7 +631,8 @@ export default function ChatInbox({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      if (pendingFile) handleSendMedia(pendingFile);
+      else handleSend();
     }
   };
 
@@ -737,6 +911,55 @@ export default function ChatInbox({
                             )}
                           </div>
                         )}
+                        {msg.media && (msg.id || msg.mediaLocalUrl) && (
+                          <div className="mb-1">
+                            {(() => {
+                              // Prefer the signed endpoint once persisted; fall back
+                              // to the local object URL while still uploading.
+                              const mediaUrl = msg.id
+                                ? `/api/admin/media/${msg.id}`
+                                : msg.mediaLocalUrl;
+                              return msg.media.kind === "image" || msg.media.kind === "sticker" ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={mediaUrl}
+                                  alt={msg.media.caption ?? "صورة"}
+                                  className={
+                                    msg.media.kind === "sticker"
+                                      ? "h-24 w-24 object-contain"
+                                      : "max-h-64 max-w-[240px] rounded-lg object-cover"
+                                  }
+                                />
+                              ) : msg.media.kind === "video" ? (
+                                <video
+                                  controls
+                                  preload="none"
+                                  src={mediaUrl}
+                                  className="max-h-64 w-full max-w-[240px] rounded-lg"
+                                />
+                              ) : (
+                                // document (or archived audio) — a download link.
+                                <a
+                                  href={mediaUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/50 px-3 py-2 text-xs text-foreground hover:bg-muted"
+                                >
+                                  <FileText className="h-4 w-4 flex-shrink-0" />
+                                  <span className="max-w-[180px] truncate">
+                                    {msg.media.filename ?? "ملف مرفق"}
+                                  </span>
+                                  <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
+                                </a>
+                              );
+                            })()}
+                            {msg.media.analysis && (
+                              <p className="mt-1 text-[10px] italic text-muted-foreground">
+                                🔍 {msg.media.analysis}
+                              </p>
+                            )}
+                          </div>
+                        )}
                         {isAgent ? (
                           <div className="prose prose-sm prose-neutral max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
@@ -745,6 +968,19 @@ export default function ChatInbox({
                           // For a voice message the content IS the transcript; render it
                           // beneath the player. Skip the empty string of a spoken reply.
                           msg.content && <p>{msg.content}</p>
+                        )}
+                        {msg.escalation && !resolvedEscalations.has(msg.escalation.id) && (
+                          <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                            <span className="flex-1">مُحوّلة إلى الفريق للمراجعة</span>
+                            <button
+                              onClick={() => handleResolveEscalation(msg.escalation!.id)}
+                              className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 font-medium text-white transition-colors hover:bg-amber-700"
+                            >
+                              <CheckCircle2 className="h-3 w-3" />
+                              تحديد كمحلولة
+                            </button>
+                          </div>
                         )}
                         {status === "sending" ? (
                           <p className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -811,23 +1047,76 @@ export default function ChatInbox({
                   </button>
                 </div>
               ) : (
-                <div className="flex items-end gap-2">
-                  <textarea
-                    value={reply}
-                    onChange={(e) => setReply(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
-                    rows={2}
-                    className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 font-sans text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
-                    dir="rtl"
-                  />
-                  <button
-                    onClick={handleSend}
-                    disabled={!reply.trim()}
-                    className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
-                  >
-                    <Send className="h-4 w-4" />
-                  </button>
+                <div className="flex flex-col gap-2">
+                  {/* Staged attachment preview */}
+                  {pendingFile && (
+                    <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2">
+                      {pendingFile.type.startsWith("image/") ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={URL.createObjectURL(pendingFile)}
+                          alt={pendingFile.name}
+                          className="h-10 w-10 rounded object-cover"
+                        />
+                      ) : (
+                        <FileText className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="flex-1 truncate text-xs text-foreground">
+                        {pendingFile.name}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setPendingFile(null);
+                          if (fileInputRef.current) fileInputRef.current.value = "";
+                        }}
+                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label="إلغاء المرفق"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-end gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) setPendingFile(f);
+                      }}
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      aria-label="إرفاق ملف"
+                    >
+                      <Paperclip className="h-4 w-4" />
+                    </button>
+                    <textarea
+                      value={reply}
+                      onChange={(e) => setReply(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder={
+                        pendingFile
+                          ? "أضف تعليقاً (اختياري)..."
+                          : "اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
+                      }
+                      rows={2}
+                      className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 font-sans text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+                      dir="rtl"
+                    />
+                    <button
+                      onClick={() => {
+                        if (pendingFile) handleSendMedia(pendingFile);
+                        else handleSend();
+                      }}
+                      disabled={!pendingFile && !reply.trim()}
+                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

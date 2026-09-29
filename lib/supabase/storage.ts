@@ -34,6 +34,7 @@ function baseMime(mime: string): string {
 /** Maps a media mime type to a file extension for the stored object. */
 function extForMime(mime: string): string {
   const map: Record<string, string> = {
+    // Audio (voice notes).
     "audio/ogg": "ogg",
     "audio/opus": "ogg",
     "audio/mpeg": "mp3",
@@ -43,6 +44,26 @@ function extForMime(mime: string): string {
     "audio/webm": "webm",
     "audio/amr": "amr",
     "audio/3gpp": "3gp",
+    // Images.
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    // Video.
+    "video/mp4": "mp4",
+    "video/3gpp": "3gp",
+    "video/quicktime": "mov",
+    // Documents.
+    "application/pdf": "pdf",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.ms-powerpoint": "ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+    "text/plain": "txt",
+    "text/csv": "csv",
+    "application/zip": "zip",
   };
   // Strip any `; codecs=…` parameter before matching.
   const base = mime.split(";")[0].trim().toLowerCase();
@@ -62,6 +83,47 @@ export interface StoredMedia {
   contentType: string;
   /** Byte length of the stored object. */
   size: number;
+}
+
+/** Categorises a mime type into the media kind used for outbound sends + the
+ *  stored metadata. Anything non-media is treated as a document. */
+export function outboundMediaKind(mime: string): "image" | "video" | "audio" | "document" {
+  const base = mime.split(";")[0].trim().toLowerCase();
+  if (base.startsWith("image/")) return "image";
+  if (base.startsWith("video/")) return "video";
+  if (base.startsWith("audio/")) return "audio";
+  return "document";
+}
+
+export interface UploadTarget {
+  /** Object path within the bucket — persist this once the upload lands. */
+  path: string;
+  /** One-time token the browser passes to `uploadToSignedUrl`. */
+  token: string;
+  bucket: string;
+}
+
+/**
+ * Mints a one-time signed upload URL so a browser (staff, sending an attachment)
+ * can upload DIRECTLY to the private bucket — bypassing the server's request body
+ * limit, so files up to the bucket's size cap (100 MB) work. The path is minted
+ * server-side under the clinic/conversation prefix; the caller uploads with
+ * `supabase.storage.from(bucket).uploadToSignedUrl(path, token, file)`.
+ */
+export async function createPatientMediaUploadUrl(args: {
+  clinicId: string;
+  conversationId: string;
+  mimeType: string;
+}): Promise<UploadTarget> {
+  const supabase = createAdminClient();
+  const path = `${args.clinicId}/${args.conversationId}/${crypto.randomUUID()}.${extForMime(args.mimeType)}`;
+  const { data, error } = await supabase.storage
+    .from(PATIENT_MEDIA_BUCKET)
+    .createSignedUploadUrl(path);
+  if (error || !data?.token) {
+    throw new Error(`failed to create upload url: ${error?.message ?? "unknown"}`);
+  }
+  return { path, token: data.token, bucket: PATIENT_MEDIA_BUCKET };
 }
 
 /** Uploads patient media to the private bucket and returns its storage path. */

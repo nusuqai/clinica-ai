@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { Role } from "@prisma/client";
 import { getClinicContext } from "@/lib/auth";
-import { setClinicAiEnabled, setClinicVoiceReplyEnabled } from "@/server/services/aiCredit";
+import {
+  setClinicAiEnabled,
+  setClinicVoiceReplyEnabled,
+  setClinicImageAnalysisEnabled,
+} from "@/server/services/aiCredit";
 
 const AI_PATH = "/admin/ai";
 
@@ -49,6 +53,24 @@ export async function toggleClinicVoiceReplyAction(
     return { ok: true, enabled };
   } catch (err) {
     console.error("Failed to toggle clinic voice reply:", err);
+    return { ok: false, reason: "error" };
+  }
+}
+
+/** Clinic admin: turn image analysis (vision) on/off. When on, the agent reads a
+ *  patient's photo and answers based on it; when off, images are still archived
+ *  but a human reviews them (issue #52). */
+export async function toggleClinicImageAnalysisAction(
+  enabled: boolean
+): Promise<{ ok: true; enabled: boolean } | ActionError> {
+  const auth = await requireAdminClinic();
+  if (!auth.ok) return auth;
+  try {
+    await setClinicImageAnalysisEnabled(auth.ctx.clinic.id, enabled);
+    revalidatePath(AI_PATH, "page");
+    return { ok: true, enabled };
+  } catch (err) {
+    console.error("Failed to toggle clinic image analysis:", err);
     return { ok: false, reason: "error" };
   }
 }

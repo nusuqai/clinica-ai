@@ -1,44 +1,87 @@
 /**
  * Classifies inbound WhatsApp Cloud API webhook payloads.
  *
- * The agent only understands text, so anything else has to be recognised and
- * answered with a notice rather than fed to the LLM as a placeholder string.
+ * Every message a patient sends is archived so the clinic keeps a record
+ * independent of WhatsApp. Text and voice are answerable directly; an image is
+ * answerable when the clinic enabled image analysis. Everything else (video,
+ * document, sticker, location, contacts, order) is stored and handed to a human.
+ * Reactions are archived silently; only true bookkeeping (system notices, edits)
+ * is dropped.
  */
 
 import { MEDIA_NOTICES, type UnsupportedMediaType } from "./inbound";
 
 export type { UnsupportedMediaType };
 
+/** Downloadable, human-only media kinds (image is handled separately). */
+export type ArchivedMediaKind = "video" | "document" | "sticker";
+/** Structured (no-file) message kinds. */
+export type StructuredKind = "location" | "contacts" | "order";
+
 export type InboundWhatsAppMessage =
   | { kind: "text"; text: string }
   /** A voice note / audio message — downloaded, transcribed, then fed to the
    *  agent as a text turn (issue #49). */
   | { kind: "voice"; mediaId: string; mimeType: string }
+  /** A photo — downloaded + archived; read by the agent only when the clinic
+   *  enabled image analysis (issue #52). */
+  | { kind: "image"; mediaId: string; mimeType: string; caption?: string }
+  /** Downloadable media the agent can't read — archived, then escalated. */
+  | {
+      kind: "media";
+      mediaKind: ArchivedMediaKind;
+      mediaId: string;
+      mimeType: string;
+      filename?: string;
+      caption?: string;
+    }
+  /** A structured message (location / contact card / order) — no file to store,
+   *  so the raw payload is kept and a readable summary is the content. */
+  | {
+      kind: "structured";
+      structuredKind: StructuredKind;
+      data: unknown;
+      summary: string;
+    }
+  /** An emoji reaction to a previous message — archived, no reply. */
+  | { kind: "reaction"; emoji: string }
+  /** A type we don't recognise — archived with a placeholder, then escalated. */
   | ({ kind: "unsupported" } & UnsupportedMediaType)
-  /** Bookkeeping traffic (reactions, edits, deletions) — answering it would be
-   *  noise, so the webhook drops it without a trace. */
+  /** Bookkeeping traffic (system notices, edits, reaction removals) — answering
+   *  it would be noise, so the webhook drops it without a trace. */
   | { kind: "ignore" };
-
-/** Cloud API `type` values the agent can't read, with their Arabic notices.
- *  (audio/voice are handled separately now — see `classify`.) */
-const UNSUPPORTED_TYPES: Record<string, UnsupportedMediaType> = {
-  image: MEDIA_NOTICES.image,
-  video: MEDIA_NOTICES.video,
-  document: MEDIA_NOTICES.file,
-  sticker: MEDIA_NOTICES.sticker,
-  location: MEDIA_NOTICES.location,
-  contacts: MEDIA_NOTICES.contact,
-  order: MEDIA_NOTICES.order,
-};
 
 const UNKNOWN_TYPE: UnsupportedMediaType = MEDIA_NOTICES.unknown;
 
-/** Carry no answerable content — dropped without a trace. */
+/** Carry no answerable content — dropped without a trace. Reactions are NOT
+ *  here anymore: they're archived (see `classify`). */
 const SILENT_TYPES = new Set([
-  "reaction",
   // Number changes, identity updates, "security code changed" notices.
   "system",
 ]);
+
+/** Builds a readable Arabic one-liner for a structured message. */
+function summariseStructured(kind: StructuredKind, data: Record<string, unknown>): string {
+  if (kind === "location") {
+    const lat = data.latitude;
+    const lng = data.longitude;
+    const name = (data.name as string | undefined)?.trim();
+    const address = (data.address as string | undefined)?.trim();
+    const label = name || address || "";
+    const link = lat != null && lng != null ? ` https://maps.google.com/?q=${lat},${lng}` : "";
+    return `📍 موقع${label ? `: ${label}` : ""}${link}`.trim();
+  }
+  if (kind === "contacts") {
+    const list = Array.isArray(data) ? data : [];
+    const names = list
+      .map((c) => (c as { name?: { formatted_name?: string } }).name?.formatted_name)
+      .filter(Boolean);
+    return `👤 جهة اتصال${names.length ? `: ${names.join("، ")}` : ""}`;
+  }
+  // order
+  const items = (data.product_items as unknown[] | undefined)?.length ?? 0;
+  return `🛒 طلب${items ? ` (${items} منتج)` : ""}`;
+}
 
 /**
  * Pulls the WhatsApp sender id (`metadata.phone_number_id`) out of a raw
@@ -119,9 +162,69 @@ function classify(msg: Record<string, unknown>): InboundWhatsAppMessage {
     return { kind: "ignore" };
   }
 
+  // A photo: downloaded + archived, and read by the agent only if the clinic
+  // enabled image analysis (decided downstream, not here).
+  if (type === "image") {
+    const img = msg.image as { id?: string; mime_type?: string; caption?: string } | undefined;
+    if (img?.id) {
+      return {
+        kind: "image",
+        mediaId: img.id,
+        mimeType: img.mime_type ?? "image/jpeg",
+        caption: img.caption?.trim() || undefined,
+      };
+    }
+    return { kind: "ignore" };
+  }
+
+  // Video / document / sticker: downloadable but the agent can't read them —
+  // archived, then escalated to a human.
+  if (type === "video" || type === "document" || type === "sticker") {
+    const media = msg[type] as
+      { id?: string; mime_type?: string; filename?: string; caption?: string } | undefined;
+    if (media?.id) {
+      return {
+        kind: "media",
+        mediaKind: type,
+        mediaId: media.id,
+        mimeType:
+          media.mime_type ??
+          (type === "video"
+            ? "video/mp4"
+            : type === "sticker"
+              ? "image/webp"
+              : "application/octet-stream"),
+        filename: media.filename?.trim() || undefined,
+        caption: media.caption?.trim() || undefined,
+      };
+    }
+    return { kind: "ignore" };
+  }
+
+  // Structured, no-file messages: kept verbatim + summarised, then escalated.
+  if (type === "location" || type === "contacts" || type === "order") {
+    const data = msg[type] as Record<string, unknown> | unknown[] | undefined;
+    if (data) {
+      return {
+        kind: "structured",
+        structuredKind: type,
+        data,
+        summary: summariseStructured(type, data as Record<string, unknown>),
+      };
+    }
+    return { kind: "ignore" };
+  }
+
+  // Emoji reaction to an earlier message — archived, no reply. An empty emoji is
+  // a reaction *removal*: nothing to record.
+  if (type === "reaction") {
+    const emoji = (msg.reaction as { emoji?: string } | undefined)?.emoji?.trim();
+    return emoji ? { kind: "reaction", emoji } : { kind: "ignore" };
+  }
+
   if (!type || SILENT_TYPES.has(type)) return { kind: "ignore" };
 
-  return { kind: "unsupported", ...(UNSUPPORTED_TYPES[type] ?? UNKNOWN_TYPE) };
+  return { kind: "unsupported", ...UNKNOWN_TYPE };
 }
 
 /**

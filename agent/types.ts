@@ -61,9 +61,54 @@ export interface VoiceMessageMetadata {
   status: "transcribed" | "failed" | "spoken";
 }
 
+/**
+ * A downloadable media attachment a patient sent over WhatsApp, archived to the
+ * private bucket so the clinic keeps a record independent of WhatsApp (the bytes
+ * live at `storagePath`; the DB only points at them). Only `image` is ever read
+ * by the agent — and only when the clinic enabled image analysis: the one-time
+ * vision description then lives in `analysis`, so the image is never re-read and
+ * every later turn reuses that text. All other kinds are archive-only.
+ */
+export interface MediaAttachmentMetadata {
+  kind: "image" | "video" | "audio" | "document" | "sticker";
+  /** Object path in the patient-media bucket (not a URL — signed on demand). */
+  storagePath: string;
+  mimeType: string;
+  /** Original filename, for documents. */
+  filename?: string;
+  /** Caption the patient attached to the media, if any. */
+  caption?: string;
+  /** Byte length of the stored object. */
+  sizeBytes?: number;
+  /**
+   * The one-time vision description of an image (Arabic), reused on every later
+   * turn so the image is transcribed-to-text exactly once. Present only on an
+   * `image` the agent was allowed to read; absent when analysis was off.
+   */
+  analysis?: string;
+  /** Model that produced `analysis` (snapshot for the record). */
+  analysisModel?: string;
+}
+
+/**
+ * A structured (non-file) WhatsApp message — a shared location, contact card, or
+ * catalog order. There are no bytes to store, so the raw payload is kept here for
+ * the record and a human-readable summary is the message content. Archive-only:
+ * the agent never acts on these; a human is escalated.
+ */
+export interface StructuredMessageMetadata {
+  kind: "location" | "contacts" | "order";
+  /** The raw Cloud API sub-object (location/contacts/order), kept verbatim. */
+  data: unknown;
+}
+
 export interface AgentMessageMetadata {
   toolCalls?: ToolCallRecord[];
   voice?: VoiceMessageMetadata;
+  /** A downloadable media attachment (image/video/document/sticker/audio). */
+  media?: MediaAttachmentMetadata;
+  /** A structured message (location/contacts/order). */
+  structured?: StructuredMessageMetadata;
 }
 
 /**

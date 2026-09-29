@@ -151,6 +151,8 @@ export interface ClinicAiStatus {
   aiEnabled: boolean;
   /** Per-clinic voice-reply (TTS) switch — see schema. Default false. */
   voiceReplyEnabled: boolean;
+  /** Per-clinic image-analysis (vision) switch — see schema. Default false. */
+  imageAnalysisEnabled: boolean;
   /** Clinic-facing meter: replies remaining. The ONLY prepaid meter. */
   unitBalance: number;
   lowUnitsThreshold: number;
@@ -215,6 +217,7 @@ export async function getClinicAiStatus(clinicId: string): Promise<ClinicAiStatu
     select: {
       aiEnabled: true,
       voiceReplyEnabled: true,
+      imageAnalysisEnabled: true,
       unitBalance: true,
       lowUnitsThreshold: true,
       markup: true,
@@ -223,6 +226,7 @@ export async function getClinicAiStatus(clinicId: string): Promise<ClinicAiStatu
   return {
     aiEnabled: row.aiEnabled,
     voiceReplyEnabled: row.voiceReplyEnabled,
+    imageAnalysisEnabled: row.imageAnalysisEnabled,
     unitBalance: row.unitBalance,
     lowUnitsThreshold: row.lowUnitsThreshold,
     markup: row.markup,
@@ -540,6 +544,72 @@ export async function chargeTts(args: {
   });
 }
 
+/**
+ * Charges the one-time vision call that describes an inbound image (issue #52),
+ * as its own ledger line (type EXTRACTION), separate from the agent reply.
+ * `messageId` is the inbound patient image message; billed on the vision call's
+ * own token usage (image tokens are already inside `promptTokens`).
+ *
+ * Token-shaped like a reply, but USD ONLY — no unit is spent (the platform
+ * absorbs the cost of understanding the patient, same as transcription/TTS).
+ * Idempotent on (messageId, EXTRACTION): a redelivery rolls the whole txn back.
+ */
+export async function chargeExtraction(args: {
+  clinicId: string;
+  sessionId: string | null;
+  messageId: string | null;
+  usage: TokenUsage;
+}): Promise<void> {
+  const { clinicId, sessionId, messageId, usage } = args;
+
+  await prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<{ markup: Prisma.Decimal }[]>`
+      SELECT "markup" FROM "clinic_ai_credits"
+      WHERE "clinicId" = ${clinicId}::uuid
+      FOR UPDATE`;
+    const markup = locked[0]?.markup ?? DEFAULT_MARKUP;
+
+    const { rawCost, chargedCost, inputRatePerM, outputRatePerM } = computeCost(usage, markup);
+
+    const credit = await tx.clinicAiCredit.update({
+      where: { clinicId },
+      data: { balance: { decrement: chargedCost } },
+      select: { balance: true },
+    });
+
+    const usageRow = await tx.aiUsageLog.create({
+      data: {
+        clinicId,
+        sessionId,
+        messageId,
+        kind: AiUsageKind.EXTRACTION,
+        model: usage.model,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
+        inputRatePerM,
+        outputRatePerM,
+        rawCost,
+        markup,
+        chargedCost,
+        // Vision never costs the clinic a unit — only the reply it feeds does.
+        unitsCharged: 0,
+      },
+      select: { id: true },
+    });
+
+    await tx.aiCreditLedger.create({
+      data: {
+        clinicId,
+        type: AiLedgerType.EXTRACTION,
+        amount: chargedCost.neg(),
+        balanceAfter: credit.balance,
+        usageId: usageRow.id,
+      },
+    });
+  });
+}
+
 /** True when the thrown error is a duplicate-messageId charge (already applied). */
 export function isDuplicateChargeError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
@@ -671,6 +741,18 @@ export async function setClinicVoiceReplyEnabled(
   });
 }
 
+/** Clinic admin: flip the per-clinic image-analysis (vision) switch. */
+export async function setClinicImageAnalysisEnabled(
+  clinicId: string,
+  enabled: boolean
+): Promise<void> {
+  await prisma.clinicAiCredit.upsert({
+    where: { clinicId },
+    update: { imageAnalysisEnabled: enabled },
+    create: { clinicId, imageAnalysisEnabled: enabled },
+  });
+}
+
 /**
  * Raises an Escalation so a human sees the message in the admin inbox when the
  * agent won't reply (AI disabled or out of credit). Deduped: only one open
@@ -691,5 +773,30 @@ export async function ensureOpenEscalation(
   if (open) return;
   await prisma.escalation.create({
     data: { clinicId, conversationId, sessionId, reason },
+  });
+}
+
+/**
+ * Raises an Escalation tied to a SPECIFIC inbound message — media the agent can't
+ * read (image with analysis off, video, document, etc.). Unlike
+ * `ensureOpenEscalation` this is deduped per message (so each attachment the
+ * agent couldn't handle is individually flagged and resolvable in the inbox), and
+ * it likewise NEVER disables the AI — the agent keeps answering the next messages.
+ * Idempotent on messageId so a webhook redelivery doesn't double-flag.
+ */
+export async function escalateMessage(
+  clinicId: string,
+  conversationId: string,
+  sessionId: string,
+  messageId: string,
+  reason: string
+): Promise<void> {
+  const existing = await prisma.escalation.findFirst({
+    where: { messageId },
+    select: { id: true },
+  });
+  if (existing) return;
+  await prisma.escalation.create({
+    data: { clinicId, conversationId, sessionId, messageId, reason },
   });
 }

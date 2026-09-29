@@ -31,12 +31,15 @@ export async function GET(
     where: { id: messageId, clinicId: ctx.clinic.id },
     select: { metadata: true },
   });
-  const voice = (message?.metadata as AgentMessageMetadata | null)?.voice;
-  if (!voice?.storagePath) {
+  const meta = message?.metadata as AgentMessageMetadata | null;
+  // A message carries either a voice note or a (image/video/document/sticker)
+  // attachment — both live in the same private bucket.
+  const storagePath = meta?.voice?.storagePath ?? meta?.media?.storagePath;
+  if (!storagePath) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  const url = await getPatientMediaSignedUrl(voice.storagePath);
+  const url = await getPatientMediaSignedUrl(storagePath);
   if (!url) return NextResponse.json({ error: "media_unavailable" }, { status: 502 });
 
   return NextResponse.redirect(url);

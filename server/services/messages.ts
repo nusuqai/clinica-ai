@@ -1,7 +1,12 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, Role, SenderType, type Prisma } from "@prisma/client";
-import type { AgentMessageMetadata, VoiceMessageMetadata } from "@/agent/types";
+import type {
+  AgentMessageMetadata,
+  VoiceMessageMetadata,
+  MediaAttachmentMetadata,
+  StructuredMessageMetadata,
+} from "@/agent/types";
 
 export interface ConversationSummary {
   id: string;
@@ -24,6 +29,29 @@ export interface MessageVoice {
   status: VoiceMessageMetadata["status"];
 }
 
+/** Attachment fields the inbox needs to render/download a stored media object
+ *  (image/video/document/sticker). The bytes stream through /api/admin/media/<id>. */
+export interface MessageMedia {
+  kind: MediaAttachmentMetadata["kind"];
+  mimeType: string;
+  filename?: string;
+  caption?: string;
+  /** The agent's vision description, when it read the image. */
+  analysis?: string;
+}
+
+/** A structured (no-file) message — location/contacts/order — for a small badge. */
+export interface MessageStructured {
+  kind: StructuredMessageMetadata["kind"];
+}
+
+/** An open escalation tied to this message (media the agent couldn't read). Drives
+ *  the "escalated" badge + the per-message "resolve" button in the inbox. */
+export interface MessageEscalation {
+  id: string;
+  reason: string | null;
+}
+
 export interface MessageItem {
   id: string;
   content: string;
@@ -33,6 +61,12 @@ export interface MessageItem {
   isRead: boolean;
   /** Present when the message is/contains a voice note. */
   voice?: MessageVoice;
+  /** Present when the message carries a stored media attachment. */
+  media?: MessageMedia;
+  /** Present when the message is a structured (location/contact/order) message. */
+  structured?: MessageStructured;
+  /** Present when this message has an unresolved escalation. */
+  escalation?: MessageEscalation;
 }
 
 export interface EscalationItem {
@@ -130,8 +164,21 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
     orderBy: { createdAt: "asc" },
   });
 
+  // Open, message-linked escalations for this conversation → per-message badge.
+  const openEscalations = await prisma.escalation.findMany({
+    where: { conversationId, resolvedAt: null, messageId: { not: null } },
+    select: { id: true, messageId: true, reason: true },
+  });
+  const escalationByMessage = new Map(
+    openEscalations.map((e) => [e.messageId as string, { id: e.id, reason: e.reason }])
+  );
+
   return messages.map((m) => {
-    const voice = (m.metadata as AgentMessageMetadata | null)?.voice;
+    const meta = m.metadata as AgentMessageMetadata | null;
+    const voice = meta?.voice;
+    const media = meta?.media;
+    const structured = meta?.structured;
+    const escalation = escalationByMessage.get(m.id);
     return {
       id: m.id,
       content: m.content,
@@ -148,6 +195,19 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
             },
           }
         : {}),
+      ...(media
+        ? {
+            media: {
+              kind: media.kind,
+              mimeType: media.mimeType,
+              filename: media.filename,
+              caption: media.caption,
+              analysis: media.analysis,
+            },
+          }
+        : {}),
+      ...(structured ? { structured: { kind: structured.kind } } : {}),
+      ...(escalation ? { escalation } : {}),
     };
   });
 }

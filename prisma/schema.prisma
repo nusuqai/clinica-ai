@@ -61,6 +61,7 @@ enum AiLedgerType {
   ADJUSTMENT
   TRANSCRIPTION
   TTS
+  EXTRACTION
 }
 
 // Movement kinds on the per-clinic AI UNIT ledger — the clinic-facing meter.
@@ -78,11 +79,15 @@ enum AiUnitLedgerType {
 // message produces a TRANSCRIPTION row (cost to understand the patient) and,
 // once the agent answers, a REPLY row on the reply message; a spoken answer adds
 // a TTS row. REPLY rows are token-shaped; TRANSCRIPTION/TTS rows are audio-shaped
-// (see `audioSeconds`, nullable token columns).
+// (see `audioSeconds`, nullable token columns). An inbound image the agent is
+// allowed to read produces an EXTRACTION row (the one-time vision call that
+// describes it) on the inbound message; that description is stored and reused, so
+// the image is never re-read. EXTRACTION rows are token-shaped like REPLY.
 enum AiUsageKind {
   REPLY
   TRANSCRIPTION
   TTS
+  EXTRACTION
 }
 
 // Phone-number kinds shown on clinic/branch contact info.
@@ -719,6 +724,11 @@ model Escalation {
   conversationId String       @db.Uuid
   sessionId      String       @db.Uuid
   clinicId       String       @db.Uuid
+  // The specific inbound message that triggered this escalation, when there is
+  // one (media the agent can't read). Lets the inbox mark that exact bubble and
+  // offer a per-message "resolve" button. Null for session-level escalations
+  // (the escalate_to_human tool, or the credit/AI-off gates).
+  messageId      String?      @db.Uuid
   reason         String?
   createdAt      DateTime     @default(now())
   // Set when an admin re-enables the AI for the session or sends a manual
@@ -727,10 +737,12 @@ model Escalation {
   clinic         Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session        ChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  message        Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
 
   @@index([conversationId])
   @@index([sessionId])
   @@index([clinicId])
+  @@index([messageId])
   @@map("escalations")
 }
 
@@ -749,8 +761,9 @@ model Message {
   clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session      ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  sender       Profile?     @relation("SenderProfile", fields: [senderId], references: [id], onDelete: SetNull)
+  sender       Profile?      @relation("SenderProfile", fields: [senderId], references: [id], onDelete: SetNull)
   aiUsage      AiUsageLog[]
+  escalations  Escalation[]
 
   @@index([conversationId])
   @@index([sessionId])
@@ -789,6 +802,12 @@ model ClinicAiCredit {
   // voice message, the agent answers with synthesized speech; text-in always
   // yields text-out. Default off so no clinic pays for TTS unexpectedly.
   voiceReplyEnabled   Boolean   @default(false)
+  // Per-clinic image-analysis switch. When true AND the patient sent an image,
+  // the agent reads it (a one-time vision call describes it, EXTRACTION-billed)
+  // and answers from that description. When off, the image is still archived but
+  // never read — the agent only answers any caption text and a human is
+  // escalated. Default off so no clinic pays for vision unexpectedly.
+  imageAnalysisEnabled Boolean  @default(false)
   // The clinic-facing meter: remaining agent replies. Decremented by exactly 1
   // inside the same transaction that logs a REPLY usage row, so a redelivered
   // webhook that fails the (messageId, kind) unique rolls the unit back too.

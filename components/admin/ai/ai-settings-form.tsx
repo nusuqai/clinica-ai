@@ -1,12 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Bot, AlertTriangle, Mic } from "lucide-react";
-import { toggleClinicAiAction, toggleClinicVoiceReplyAction } from "@/server/actions/ai";
+import { Loader2, Bot, AlertTriangle, Mic, Image as ImageIcon } from "lucide-react";
+import {
+  toggleClinicAiAction,
+  toggleClinicVoiceReplyAction,
+  toggleClinicImageAnalysisAction,
+} from "@/server/actions/ai";
 
 interface Props {
   initialEnabled: boolean;
   initialVoiceReplyEnabled: boolean;
+  initialImageAnalysisEnabled: boolean;
   /** Replies remaining on the clinic's meter. */
   unitBalance: number;
   lowUnits: boolean;
@@ -27,6 +32,7 @@ const fmtUnits = (n: number) => n.toLocaleString("ar-EG");
 export default function AiSettingsForm({
   initialEnabled,
   initialVoiceReplyEnabled,
+  initialImageAnalysisEnabled,
   unitBalance,
   lowUnits,
   sufficient,
@@ -37,6 +43,9 @@ export default function AiSettingsForm({
 
   const [voiceEnabled, setVoiceEnabled] = useState(initialVoiceReplyEnabled);
   const [voiceSaving, setVoiceSaving] = useState(false);
+
+  const [imageEnabled, setImageEnabled] = useState(initialImageAnalysisEnabled);
+  const [imageSaving, setImageSaving] = useState(false);
 
   const toggle = async () => {
     const next = !enabled;
@@ -71,6 +80,24 @@ export default function AiSettingsForm({
       });
     } else {
       setVoiceEnabled(!next);
+      setMessage({ ok: false, text: "تعذّر تحديث الإعداد." });
+    }
+  };
+
+  const toggleImage = async () => {
+    const next = !imageEnabled;
+    setImageSaving(true);
+    setMessage(null);
+    setImageEnabled(next);
+    const res = await toggleClinicImageAnalysisAction(next);
+    setImageSaving(false);
+    if (res.ok) {
+      setMessage({
+        ok: true,
+        text: next ? "تم تفعيل تحليل الصور." : "تم إيقاف تحليل الصور.",
+      });
+    } else {
+      setImageEnabled(!next);
       setMessage({ ok: false, text: "تعذّر تحديث الإعداد." });
     }
   };
@@ -167,6 +194,43 @@ export default function AiSettingsForm({
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                   voiceEnabled ? "-translate-x-6" : "-translate-x-1"
+                }`}
+              />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Image analysis toggle */}
+      <div className="rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <ImageIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-sans font-semibold text-foreground">تحليل الصور</p>
+              <p className="font-sans text-sm text-muted-foreground">
+                عند التفعيل، يقرأ المساعد الصورة التي يرسلها العميل ويرد بناءً عليها. عند الإيقاف
+                تُحفظ الصورة وتُحوَّل إلى فريق العيادة. تُحتسب تكلفة إضافية لتحليل الصورة.
+              </p>
+            </div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={imageEnabled}
+            onClick={toggleImage}
+            disabled={imageSaving || !enabled}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              imageEnabled ? "bg-primary" : "bg-muted"
+            }`}
+          >
+            {imageSaving ? (
+              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
+            ) : (
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  imageEnabled ? "-translate-x-6" : "-translate-x-1"
                 }`}
               />
             )}

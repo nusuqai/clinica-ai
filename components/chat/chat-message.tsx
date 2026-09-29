@@ -1,10 +1,45 @@
 "use client";
 
-import { Bot, Headset } from "lucide-react";
+import { Bot, Headset, FileText, ExternalLink } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolCallCard } from "./tool-cards";
 import type { ChatMessage } from "./types";
+
+/** Renders a media attachment (image/video/document) sent in the chat. */
+function MediaAttachment({ media }: { media: NonNullable<ChatMessage["media"]> }) {
+  if (media.kind === "image" || media.kind === "sticker") {
+    // eslint-disable-next-line @next/next/no-img-element
+    return (
+      <img
+        src={media.url}
+        alt={media.caption ?? "صورة"}
+        className={
+          media.kind === "sticker"
+            ? "h-24 w-24 object-contain"
+            : "max-h-64 max-w-full rounded-lg object-cover"
+        }
+      />
+    );
+  }
+  if (media.kind === "video") {
+    return (
+      <video controls preload="none" src={media.url} className="max-h-64 max-w-full rounded-lg" />
+    );
+  }
+  return (
+    <a
+      href={media.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/50 px-3 py-2 text-xs hover:bg-muted"
+    >
+      <FileText className="h-4 w-4 flex-shrink-0" />
+      <span className="max-w-[180px] truncate">{media.filename ?? "ملف مرفق"}</span>
+      <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
+    </a>
+  );
+}
 
 export default function ChatMessageView({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
@@ -17,6 +52,7 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
           {message.audioUrl && (
             <audio controls src={message.audioUrl} className="h-9 w-full max-w-[220px]" />
           )}
+          {message.media && <MediaAttachment media={message.media} />}
           {message.content && <p>{message.content}</p>}
         </div>
       </div>
@@ -62,6 +98,11 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
             src={message.audioUrl}
             className="h-9 w-full max-w-[240px]"
           />
+        )}
+        {message.media && (
+          <div className="rounded-2xl rounded-ss-sm bg-muted px-3 py-2">
+            <MediaAttachment media={message.media} />
+          </div>
         )}
         {message.toolCalls?.map((call, i) => (
           <ToolCallCard key={i} call={call} />

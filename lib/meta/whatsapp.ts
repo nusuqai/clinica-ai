@@ -299,12 +299,13 @@ export async function downloadMedia(
 export async function uploadMedia(
   creds: WhatsAppCredentials,
   bytes: Buffer,
-  mimeType: string
+  mimeType: string,
+  filename: string = "attachment"
 ): Promise<string> {
   const form = new FormData();
   form.append("messaging_product", "whatsapp");
   form.append("type", mimeType);
-  form.append("file", new Blob([new Uint8Array(bytes)], { type: mimeType }), "audio.ogg");
+  form.append("file", new Blob([new Uint8Array(bytes)], { type: mimeType }), filename);
 
   const res = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/${creds.phoneNumberId}/media`, {
     method: "POST",
@@ -339,6 +340,31 @@ export async function sendAudioMessage(
     ...recipientAddress(recipient),
     type: "audio",
     audio: { id: mediaId },
+  });
+}
+
+/** The media message types staff can send outbound (stickers aren't produced). */
+export type OutboundMediaKind = "image" | "video" | "audio" | "document";
+
+/**
+ * Sends a media message (image/video/audio/document) by a previously uploaded
+ * media id. Like free-form text this only works inside the 24-hour window. A
+ * caption rides on image/video/document (audio ignores it); `filename` is honored
+ * for documents so the recipient sees a sensible name.
+ */
+export async function sendMediaMessage(
+  recipient: WhatsAppRecipient,
+  media: { kind: OutboundMediaKind; mediaId: string; caption?: string; filename?: string },
+  creds: WhatsAppCredentials
+): Promise<void> {
+  const payload: Record<string, unknown> = { id: media.mediaId };
+  if (media.caption && media.kind !== "audio") payload.caption = media.caption;
+  if (media.kind === "document" && media.filename) payload.filename = media.filename;
+  await sendMessage(creds, {
+    recipient_type: "individual",
+    ...recipientAddress(recipient),
+    type: media.kind,
+    [media.kind]: payload,
   });
 }
 

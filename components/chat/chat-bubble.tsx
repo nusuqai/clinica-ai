@@ -11,6 +11,29 @@ import type { ChatMessage, ClientToolCall } from "./types";
 let idCounter = 0;
 const nextId = () => `local-${Date.now()}-${idCounter++}`;
 
+/** Builds the ChatMessage.media field from a stored message's metadata. The bytes
+ *  stream from the owner-scoped media endpoint (works for the signed-in patient). */
+function mediaFrom(id: string, metadata: unknown): ChatMessage["media"] | undefined {
+  const media = (
+    metadata as {
+      media?: {
+        kind: "image" | "video" | "audio" | "document" | "sticker";
+        mimeType?: string;
+        filename?: string;
+        caption?: string;
+      };
+    } | null
+  )?.media;
+  if (!media) return undefined;
+  return {
+    kind: media.kind,
+    url: `/api/agent/media/${id}`,
+    mimeType: media.mimeType,
+    filename: media.filename,
+    caption: media.caption,
+  };
+}
+
 // A guest's conversation isn't tied to an account, so its id is the browser's
 // only handle on it — persisted here so a reload doesn't start a new one.
 const GUEST_CONVERSATION_KEY = "clinica_guest_conversation_id";
@@ -102,6 +125,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
           // Replay a stored voice note after reload via the owner-scoped
           // signed-url endpoint.
           audioUrl: m.metadata?.voice ? `/api/agent/media/${m.id}` : undefined,
+          media: mediaFrom(m.id, m.metadata),
         }))
       );
     });
@@ -127,6 +151,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
             id: m.id,
             role: "admin" as const,
             content: m.content,
+            media: mediaFrom(m.id, m.metadata),
           }));
         return newAdminMessages.length ? [...prev, ...newAdminMessages] : prev;
       });
