@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
 import { AppointmentStatus, AvailabilityMode, DayOfWeek, type Prisma } from "@prisma/client";
+import { QUEUE_MODES, isArrivalMode } from "@/lib/availability/modes";
 
 // getUTCDay() index → DayOfWeek enum.
 const DAY_BY_INDEX: DayOfWeek[] = [
@@ -22,9 +23,10 @@ export function toDateOnly(date: Date): Date {
 }
 
 /**
- * Find the active ORDER_BASED availability rule that applies to a doctor on a
- * given date. When branchId is given it must match; otherwise the first
- * order-based rule for that weekday is used.
+ * Find the active queue-based (ORDER_BASED or ARRIVAL_BASED) availability rule
+ * that applies to a doctor on a given date. When branchId is given it must
+ * match; otherwise the first queue rule for that weekday is used. The returned
+ * rule carries its `mode`, which callers branch on (arrival vs order booking).
  */
 export async function getOrderRuleForDate(doctorId: string, date: Date, branchId?: string | null) {
   const dayOfWeek = DAY_BY_INDEX[toDateOnly(date).getUTCDay()];
@@ -33,7 +35,7 @@ export async function getOrderRuleForDate(doctorId: string, date: Date, branchId
       doctorId,
       dayOfWeek,
       isActive: true,
-      mode: AvailabilityMode.ORDER_BASED,
+      mode: { in: QUEUE_MODES },
       ...(branchId ? { branchId } : {}),
     },
     orderBy: { startTime: "asc" },
@@ -83,7 +85,10 @@ async function ensureQueue(
 
 export interface OrderBookingResult {
   id: string;
-  orderNumber: number;
+  mode: AvailabilityMode;
+  // ORDER_BASED: the queue position handed out now. ARRIVAL_BASED: null — the
+  // patient only reserves; the order number is assigned at check-in by arrival.
+  orderNumber: number | null;
   bookingDate: Date;
   estimatedDurationMin: number | null;
   currentOrder: number;
@@ -91,9 +96,15 @@ export interface OrderBookingResult {
 }
 
 /**
- * Book an order-based (queue) appointment: assign the next order number for the
- * (doctor, branch, day) and reject once the daily cap is reached. The order
- * number is handed out atomically so concurrent bookings never collide.
+ * Book a queue appointment (ORDER_BASED or ARRIVAL_BASED): claim one slot under
+ * the day's cap atomically so concurrent bookings never overshoot the cap.
+ *
+ *  - ORDER_BASED: the order number is handed out now (nextOrder), so the patient
+ *    leaves with a fixed queue position.
+ *  - ARRIVAL_BASED (أسبقية الحضور): booking only reserves a place — orderNumber
+ *    stays null and arrivedAt is unset. Reception assigns the order number at
+ *    check-in via markArrived(), by physical arrival order. nextOrder here is
+ *    just the reservation counter that enforces the cap.
  */
 export async function bookOrderAppointment(
   patientId: string,
@@ -129,16 +140,18 @@ export async function bookOrderAppointment(
       );
 
     const rule = await getOrderRuleForDate(doctorId, day, opts?.branchId);
-    if (!rule) return err("هذا الطبيب لا يعمل بنظام الدور في هذا اليوم");
+    if (!rule) return err("هذا الطبيب لا يعمل بنظام الدور أو أسبقية الحضور في هذا اليوم");
     if (!rule.branchId) return err("قاعدة الدور بدون فرع محدد");
     const orderRule = { ...rule, branchId: rule.branchId };
+    const arrival = isArrivalMode(rule.mode);
 
     const result = await prisma.$transaction(async (tx) => {
       const queue = await ensureQueue(tx, orderRule, doctor.clinicId, day);
 
-      // Atomically hand out the next order number, but only while under the cap.
-      // Postgres re-checks the WHERE after locking the row, so two concurrent
-      // bookings can't both slip past the cap.
+      // Atomically claim one place under the cap. Postgres re-checks the WHERE
+      // after locking the row, so two concurrent bookings can't both slip past
+      // the cap. nextOrder is the booking counter for both modes (for arrival it
+      // just counts reservations; the serving order is assigned later at arrival).
       const bumped = await tx.doctorDayQueue.updateMany({
         where: {
           id: queue.id,
@@ -153,7 +166,8 @@ export async function bookOrderAppointment(
       const after = await tx.doctorDayQueue.findUniqueOrThrow({
         where: { id: queue.id },
       });
-      const orderNumber = after.nextOrder - 1;
+      // Arrival-priority: no order number at booking (assigned on check-in).
+      const orderNumber = arrival ? null : after.nextOrder - 1;
 
       const appt = await tx.appointment.create({
         data: {
@@ -184,6 +198,7 @@ export async function bookOrderAppointment(
 
     return ok({
       id: result.appt.id,
+      mode: rule.mode,
       orderNumber: result.orderNumber,
       bookingDate: day,
       estimatedDurationMin: result.estimatedDurationMin,
@@ -207,6 +222,7 @@ export function estimateWaitMinutes(
 
 export interface OrderBookingInfo {
   available: boolean;
+  mode: AvailabilityMode; // ORDER_BASED or ARRIVAL_BASED
   ruleId: string;
   branchId: string | null;
   dailyCap: number | null;
@@ -241,6 +257,7 @@ export async function getOrderBookingInfo(
   const cap = queue?.dailyCap ?? rule.dailyCap;
   return {
     available: cap == null || booked < cap,
+    mode: rule.mode,
     ruleId: rule.id,
     branchId: rule.branchId,
     dailyCap: cap,
@@ -261,7 +278,7 @@ export async function getDayQueue(doctorId: string, date: Date, branchId?: strin
     where: { doctorId, date: day, ...(branchId ? { branchId } : {}) },
     include: {
       branch: { select: { id: true, name: true } },
-      rule: { select: { startTime: true } }, // session start for expected-time calc
+      rule: { select: { startTime: true, mode: true } }, // session start + mode (arrival vs order)
       appointments: {
         where: { status: { not: AppointmentStatus.CANCELLED } },
         select: {
@@ -269,14 +286,56 @@ export async function getDayQueue(doctorId: string, date: Date, branchId?: strin
           orderNumber: true,
           status: true,
           skippedAt: true,
+          arrivedAt: true,
           patientNotes: true,
           patient: { select: { fullName: true, phone: true } },
         },
-        orderBy: { orderNumber: "asc" },
+        // Arrival-priority reservations have a null orderNumber until check-in;
+        // keep them last, then order the assigned ones by their arrival number.
+        orderBy: [{ orderNumber: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }],
       },
     },
   });
   return queue;
+}
+
+/**
+ * Check a reserved ARRIVAL_BASED patient in at the clinic: hand out the next
+ * arrival/serving order number atomically and stamp arrivedAt. Idempotent — a
+ * patient already checked in keeps their existing number. Order-based bookings
+ * (which already have a number) are rejected.
+ */
+export async function markArrived(
+  appointmentId: string,
+  doctorId?: string
+): Promise<Result<{ orderNumber: number }>> {
+  try {
+    const appt = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: { id: true, queueId: true, doctorId: true, orderNumber: true, arrivedAt: true },
+    });
+    if (!appt || appt.queueId == null) return err("الحجز غير موجود في طابور أسبقية الحضور");
+    if (doctorId && appt.doctorId !== doctorId) return err("غير مصرّح");
+    // Already checked in (or an order-based booking that owns a number already).
+    if (appt.orderNumber != null) return ok({ orderNumber: appt.orderNumber });
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Atomically claim the next arrival order for this queue.
+      const q = await tx.doctorDayQueue.update({
+        where: { id: appt.queueId! },
+        data: { nextArrival: { increment: 1 } },
+      });
+      const orderNumber = q.nextArrival - 1;
+      await tx.appointment.update({
+        where: { id: appointmentId },
+        data: { orderNumber, arrivedAt: new Date() },
+      });
+      return orderNumber;
+    });
+    return ok({ orderNumber: result });
+  } catch (e) {
+    return err(e instanceof Error ? e.message : "فشل تسجيل حضور المريض");
+  }
 }
 
 /**

@@ -39,7 +39,9 @@ export function describeWhen(appt: PatientAppointment): string {
     ? formatSlotTime(appt.slot.startTime)
     : appt.orderNumber != null
       ? `دورك رقم ${appt.orderNumber}`
-      : "";
+      : appt.arrivalBased
+        ? "رقمك عند الوصول"
+        : "";
   return [day, time].filter(Boolean).join(" · ");
 }
 
@@ -287,6 +289,12 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
                 </p>
               )}
             </>
+          ) : appt.arrivalBased ? (
+            // Arrival-priority reservation not yet checked in — no number yet.
+            <p className="flex items-center gap-1.5">
+              <Hash className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              أسبقية الحضور — يُحدَّد رقم دورك عند وصولك للعيادة
+            </p>
           ) : null}
           {appt.branch && (
             <p className="flex items-center gap-1.5">

@@ -10,6 +10,7 @@ import {
   SkipForward,
   Undo2,
   CheckCircle2,
+  UserCheck,
 } from "lucide-react";
 import {
   getDayQueueAction,
@@ -17,10 +18,11 @@ import {
   skipOrderAction,
   recallOrderAction,
   completeCurrentAndAdvanceAction,
+  markArrivedAction,
 } from "@/server/actions/admin";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import Modal from "@/components/admin/modal";
-import type { AppointmentStatus } from "@prisma/client";
+import type { AppointmentStatus, AvailabilityMode } from "@prisma/client";
 
 interface QueuePatient {
   id: string;
@@ -29,14 +31,17 @@ interface QueuePatient {
   phone: string | null;
   status: AppointmentStatus;
   skipped: boolean;
+  arrived: boolean;
   expectedTime: string | null;
 }
 interface QueueData {
   id: string;
   date: string;
+  mode: AvailabilityMode;
   branchName: string | null;
   currentOrder: number;
   nextOrder: number;
+  nextArrival: number;
   serveNextOrder: number;
   dailyCap: number | null;
   trackCurrentOrder: boolean;
@@ -122,7 +127,35 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
     });
   }
 
+  // Arrival-priority: check a reserved patient in — hands out their arrival number.
+  function markArrived(appointmentId: string) {
+    startTransition(async () => {
+      const res = await markArrivedAction(appointmentId);
+      if (res?.error) {
+        setError(res.error);
+        return;
+      }
+      await load();
+    });
+  }
+
+  const isArrival = queue?.mode === "ARRIVAL_BASED";
+  // Reservations handed out (both modes cap on nextOrder).
   const booked = queue ? queue.nextOrder - 1 : 0;
+  // Highest serving order handed out — the ceiling for "next patient" logic.
+  // Order-based: same as booked. Arrival-based: only patients checked in so far.
+  const assignedMax = queue ? (isArrival ? queue.nextArrival - 1 : queue.nextOrder - 1) : 0;
+
+  // Arrival-priority reservations not yet checked in (no order number). Reception
+  // hands out their number by clicking "وصل" as each patient arrives.
+  const reservedPatients = queue
+    ? queue.patients.filter(
+        (p) => p.orderNumber == null && (p.status === "PENDING" || p.status === "CONFIRMED")
+      )
+    : [];
+  // Patients already in the served order (assigned a number). For order-based
+  // this is everyone; for arrival-based it's those who have arrived.
+  const orderedPatients = queue ? queue.patients.filter((p) => p.orderNumber != null) : [];
 
   // The patient currently being served (order == currentOrder, still active).
   // A recalled patient can sit here while still carrying a skip flag, so don't
@@ -134,10 +167,16 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
     ) ?? null;
 
   // Is there still a patient to call after the current one?
-  const hasNext = queue ? queue.serveNextOrder <= booked : false;
+  const hasNext = queue ? queue.serveNextOrder <= assignedMax : false;
   // Doctor started but no one is being served and nothing is left to call →
-  // the queue is done for the day.
-  const queueFinished = !!queue && queue.currentOrder > 0 && !currentPatient && !hasNext;
+  // the queue is done. In arrival mode, reserved patients who haven't arrived
+  // yet mean the day isn't over — more numbers may still be handed out.
+  const queueFinished =
+    !!queue &&
+    queue.currentOrder > 0 &&
+    !currentPatient &&
+    !hasNext &&
+    reservedPatients.length === 0;
 
   return (
     <div className="space-y-4">
@@ -186,7 +225,7 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
             <div>
               <p className="font-sans text-xs text-muted-foreground">التالي</p>
               <p className="font-heading text-3xl font-bold tabular-nums text-muted-foreground">
-                {queue.serveNextOrder <= booked ? queue.serveNextOrder : "—"}
+                {queue.serveNextOrder <= assignedMax ? queue.serveNextOrder : "—"}
               </p>
             </div>
             <div className="h-10 w-px bg-border" />
@@ -195,6 +234,12 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                 الحجوزات: <span className="font-medium text-foreground">{booked}</span>
                 {queue.dailyCap != null && ` / ${queue.dailyCap}`}
               </p>
+              {isArrival && (
+                <p className="font-sans text-xs text-muted-foreground">
+                  وصلوا: <span className="font-medium text-foreground">{assignedMax}</span>
+                  {reservedPatients.length > 0 && ` · بانتظار الوصول: ${reservedPatients.length}`}
+                </p>
+              )}
               {queue.branchName && (
                 <p className="font-sans text-xs text-muted-foreground">{queue.branchName}</p>
               )}
@@ -254,12 +299,58 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
             </div>
           </div>
 
+          {/* Arrival-priority: reserved patients not yet checked in. Reception
+              clicks "وصل" as each arrives; that hands out their queue number by
+              arrival order and moves them into the ordered list below. */}
+          {isArrival && reservedPatients.length > 0 && (
+            <div className="overflow-hidden rounded-2xl border border-dashed border-border bg-card">
+              <div className="bg-muted/30 px-5 py-2.5 font-sans text-xs font-medium text-muted-foreground">
+                بانتظار الوصول ({reservedPatients.length}) — سجّل وصول المريض ليأخذ رقم دوره حسب
+                أسبقية الحضور
+              </div>
+              <div className="divide-y divide-border">
+                {reservedPatients.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-muted font-heading text-sm font-bold text-muted-foreground">
+                        —
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-sans text-sm font-medium text-foreground">
+                          {p.patientName}
+                        </p>
+                        {p.phone && (
+                          <span className="font-sans text-xs text-muted-foreground" dir="ltr">
+                            {p.phone}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => markArrived(p.id)}
+                      disabled={isPending}
+                      title="تسجيل وصول المريض وإعطاؤه رقم الدور"
+                      className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      <UserCheck className="h-4 w-4" />
+                      وصل
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Ordered patient list */}
-          {queue.patients.length === 0 ? (
-            <p className="font-sans text-sm text-muted-foreground">لا يوجد مرضى في الطابور.</p>
+          {orderedPatients.length === 0 ? (
+            <p className="font-sans text-sm text-muted-foreground">
+              {isArrival && reservedPatients.length > 0
+                ? "لم يصل أي مريض بعد."
+                : "لا يوجد مرضى في الطابور."}
+            </p>
           ) : (
             <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
-              {queue.patients.map((p) => {
+              {orderedPatients.map((p) => {
                 const isCurrent = currentPatient?.id === p.id;
                 const isDone =
                   !p.skipped && p.orderNumber != null && p.orderNumber < queue.currentOrder;

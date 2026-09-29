@@ -108,6 +108,7 @@ export async function getOrderBookingInfoAction(
   doctorId: string,
   dateStr: string
 ): Promise<{
+  mode: "order" | "arrival";
   available: boolean;
   remaining: number | null;
   nextOrderNumber: number;
@@ -117,14 +118,20 @@ export async function getOrderBookingInfoAction(
 } | null> {
   const info = await QueueService.getOrderBookingInfo(doctorId, new Date(dateStr));
   if (!info) return null;
+  const arrival = info.mode === "ARRIVAL_BASED";
   const nextOrderNumber = info.booked + 1;
   return {
+    mode: arrival ? "arrival" : "order",
     available: info.available,
     remaining: info.remaining,
     nextOrderNumber,
-    currentOrder: info.trackCurrentOrder ? info.currentOrder : null,
+    // Arrival-priority: the "now serving" number and the projected order/time are
+    // meaningless before check-in (the number is assigned on arrival), so hide them.
+    currentOrder: !arrival && info.trackCurrentOrder ? info.currentOrder : null,
     estimatedDurationMin: info.estimatedDurationMin,
-    expectedTime: expectedOrderTime(info.sessionStart, nextOrderNumber, info.estimatedDurationMin),
+    expectedTime: arrival
+      ? null
+      : expectedOrderTime(info.sessionStart, nextOrderNumber, info.estimatedDurationMin),
   };
 }
 
@@ -134,7 +141,12 @@ export async function bookOrderAppointmentAction(
   doctorId: string,
   dateStr: string,
   patientNotes?: string
-): Promise<{ ok: boolean; error?: string; orderNumber?: number }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  mode?: "order" | "arrival";
+  orderNumber?: number | null;
+}> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
   if (ctx.role !== Role.PATIENT) return { ok: false, error: "هذه الخدمة للمرضى فقط" };
@@ -146,7 +158,12 @@ export async function bookOrderAppointmentAction(
 
   revalidatePath("/dashboard", "page");
   revalidatePath("/dashboard/appointments", "page");
-  return { ok: true, orderNumber: result.data.orderNumber };
+  // Arrival-priority bookings have no order number yet (assigned at check-in).
+  return {
+    ok: true,
+    mode: result.data.mode === "ARRIVAL_BASED" ? "arrival" : "order",
+    orderNumber: result.data.orderNumber,
+  };
 }
 
 export async function bookAppointmentAction(

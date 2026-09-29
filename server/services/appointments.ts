@@ -4,6 +4,7 @@ import { ok, err, type Result } from "./_result";
 import { AppointmentStatus, AvailabilityMode } from "@prisma/client";
 import { advanceQueueOnComplete, estimateWaitMinutes } from "./queue";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
+import { isQueueMode } from "@/lib/availability/modes";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,7 +21,9 @@ export interface PatientAppointment {
   orderNumber: number | null;
   bookingDate: Date | null;
   estimatedDurationMin: number | null;
-  isOrderBased: boolean;
+  isOrderBased: boolean; // true for any queue booking (order or arrival)
+  arrivalBased: boolean; // arrival-priority (أسبقية الحضور): number assigned at check-in
+  arrived: boolean; // arrival-priority: whether the patient has been checked in yet
   currentOrder: number | null; // null when tracking is off (or slot-based)
   estimatedWaitMin: number | null;
   expectedTime: string | null; // "HH:MM" — order-based expected examination time
@@ -48,6 +51,7 @@ type WithQueueInfo = {
   orderNumber: number | null;
   bookingDate: Date | null;
   estimatedDurationMin: number | null;
+  arrivedAt: Date | null;
   rule: { mode: AvailabilityMode; startTime: string } | null;
   queue: { currentOrder: number; trackCurrentOrder: boolean } | null;
 };
@@ -56,7 +60,12 @@ type WithQueueInfo = {
 // estimated wait, expected examination time) from the persisted appointment +
 // queue snapshot.
 function queueView(row: WithQueueInfo) {
-  const isOrderBased = row.rule?.mode === AvailabilityMode.ORDER_BASED || row.orderNumber != null;
+  // A queue booking is one whose rule is a queue mode, or (defensively) any row
+  // that carries an order number. Arrival-priority reservations have no order
+  // number until check-in, so lean on the rule mode to classify them.
+  const isOrderBased = isQueueMode(row.rule?.mode) || row.orderNumber != null;
+  const arrivalBased = row.rule?.mode === AvailabilityMode.ARRIVAL_BASED;
+  const arrived = row.arrivedAt != null;
   const tracking = row.queue?.trackCurrentOrder ?? false;
   const currentOrder = isOrderBased && tracking ? (row.queue?.currentOrder ?? 0) : null;
   const estimatedWaitMin =
@@ -72,6 +81,8 @@ function queueView(row: WithQueueInfo) {
     bookingDate: row.bookingDate,
     estimatedDurationMin: row.estimatedDurationMin,
     isOrderBased,
+    arrivalBased,
+    arrived,
     currentOrder,
     estimatedWaitMin,
     expectedTime,
@@ -95,6 +106,8 @@ export interface AdminAppointment {
   orderNumber: number | null;
   bookingDate: Date | null;
   isOrderBased: boolean;
+  arrivalBased: boolean;
+  arrived: boolean;
 }
 
 // The doctor carries its own name and links to a Specialty; keep the
@@ -200,6 +213,8 @@ export async function listAppointments(
       orderNumber: q.orderNumber,
       bookingDate: q.bookingDate,
       isOrderBased: q.isOrderBased,
+      arrivalBased: q.arrivalBased,
+      arrived: q.arrived,
     };
   });
 }
@@ -246,6 +261,8 @@ export interface DoctorAppointmentView {
   orderNumber: number | null;
   bookingDate: Date | null;
   isOrderBased: boolean;
+  arrivalBased: boolean;
+  arrived: boolean;
   currentOrder: number | null;
   estimatedWaitMin: number | null;
   estimatedDurationMin: number | null;

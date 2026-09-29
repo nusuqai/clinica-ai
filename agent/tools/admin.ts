@@ -12,6 +12,7 @@ import * as BranchService from "@/server/services/branches";
 import * as SpecialtyService from "@/server/services/specialties";
 import { getDashboardStats } from "@/server/services/reports";
 import type { AgentContext } from "@/agent/types";
+import { modeTag } from "@/lib/availability/modes";
 import { jsonTool, dateStr, timeStr } from "./shared";
 
 export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
@@ -222,7 +223,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             status: a.status,
             patientName: a.patient.fullName,
             doctorName: a.doctor.profile.fullName,
-            bookingType: a.isOrderBased ? "order" : "slot",
+            bookingType: a.arrivalBased ? "arrival" : a.isOrderBased ? "order" : "slot",
             date: a.slot
               ? dateStr(a.slot.date)
               : a.bookingDate
@@ -259,7 +260,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             startTime: r.startTime,
             endTime: r.endTime,
             slotDurationMin: r.slotDurationMin,
-            mode: r.mode === "ORDER_BASED" ? "order" : "slot",
+            mode: modeTag(r.mode), // "slot" | "order" | "arrival"
             estimatedDurationMin: r.estimatedDurationMin,
             dailyCap: r.dailyCap,
             isActive: r.isActive,
@@ -286,19 +287,19 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),
           slotDurationMin: z.number().nullable(),
           mode: z
-            .enum(["SLOT_BASED", "ORDER_BASED"])
+            .enum(["SLOT_BASED", "ORDER_BASED", "ARRIVAL_BASED"])
             .nullable()
             .describe(
-              "نظام الجدولة: SLOT_BASED فترات بأوقات ثابتة (الافتراضي)، أو ORDER_BASED نظام الدور (طابور بأرقام).",
+              "نظام الجدولة: SLOT_BASED فترات بأوقات ثابتة (الافتراضي)، ORDER_BASED نظام الدور (طابور بأرقام تُعطى عند الحجز)، أو ARRIVAL_BASED أسبقية الحضور (يحجز المريض مكاناً ويُعطى رقم دوره عند وصوله للعيادة).",
             ),
           estimatedDurationMin: z
             .number()
             .nullable()
-            .describe("لنظام الدور فقط: متوسط دقائق الكشف لكل مريض."),
+            .describe("لنظام الدور أو أسبقية الحضور فقط: متوسط دقائق الكشف لكل مريض."),
           dailyCap: z
             .number()
             .nullable()
-            .describe("لنظام الدور فقط: الحد الأقصى لعدد الحجوزات في اليوم."),
+            .describe("لنظام الدور أو أسبقية الحضور فقط: الحد الأقصى لعدد الحجوزات في اليوم."),
           referralOnly: z
             .boolean()
             .nullable()

@@ -318,6 +318,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_day_queue: "عرض طابور الدور",
   advance_queue: "تقديم الدور الحالي",
   set_queue_tracking: "تفعيل/إيقاف تتبّع الدور",
+  mark_arrived: "تسجيل وصول المريض",
   list_referral_slots: "عرض فترات التحويل",
   refer_patient: "تحويل المريض لطبيب آخر",
   send_message_to_conversation: "إرسال رسالة للمحادثة",

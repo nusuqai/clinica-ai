@@ -13,6 +13,7 @@ import Modal from "@/components/admin/modal";
 import { DayOfWeek, AvailabilityMode, type AvailabilityRule } from "@prisma/client";
 import { formatSlotDate } from "@/lib/slot-time";
 import { queueCapacityHint } from "@/lib/availability/queue-capacity";
+import { isQueueMode, MODE_BADGE_AR } from "@/lib/availability/modes";
 
 export interface DoctorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -65,13 +66,13 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
   const [selBranch, setSelBranch] = useState<string>(branches[0]?.id ?? "");
   const [selDay, setSelDay] = useState<DayOfWeek>(DayOfWeek.SAT);
   const [selMode, setSelMode] = useState<AvailabilityMode>(AvailabilityMode.SLOT_BASED);
-  const isOrder = selMode === AvailabilityMode.ORDER_BASED;
+  const isQueue = isQueueMode(selMode); // نظام الدور or أسبقية الحضور
   // Tracked only to render the live queue-capacity hint; inputs stay uncontrolled.
   const [selStart, setSelStart] = useState("09:00");
   const [selEnd, setSelEnd] = useState("17:00");
   const [selEstDur, setSelEstDur] = useState(10);
   const [selCap, setSelCap] = useState(50);
-  const capHint = isOrder ? queueCapacityHint(selStart, selEnd, selEstDur, selCap) : null;
+  const capHint = isQueue ? queueCapacityHint(selStart, selEnd, selEstDur, selCap) : null;
 
   // Live helper: the selected branch's opening window for the selected day.
   const branchWindow = (() => {
@@ -208,9 +209,9 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
                       {rule.branch.name}
                     </span>
                   )}
-                  {rule.mode === AvailabilityMode.ORDER_BASED ? (
+                  {isQueueMode(rule.mode) ? (
                     <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-sans text-xs font-medium text-indigo-700">
-                      نظام الدور
+                      {MODE_BADGE_AR[rule.mode]}
                       {rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : ""}
                       {rule.estimatedDurationMin != null
                         ? ` · ~${rule.estimatedDurationMin} د/مريض`
@@ -273,7 +274,7 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
                 {/* Queue (order-based) rules need no slot generation — the day
                     is implicitly available and order numbers are handed out on
                     booking, so the generate button is slot-based only. */}
-                {rule.mode !== AvailabilityMode.ORDER_BASED && (
+                {!isQueueMode(rule.mode) && (
                   <button
                     onClick={() => handleGenerate(rule.id)}
                     disabled={generatingId === rule.id}
@@ -382,10 +383,17 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
               >
                 <option value={AvailabilityMode.SLOT_BASED}>مواعيد بأوقات ثابتة</option>
                 <option value={AvailabilityMode.ORDER_BASED}>نظام الدور (طابور)</option>
+                <option value={AvailabilityMode.ARRIVAL_BASED}>أسبقية الحضور</option>
               </select>
+              {selMode === AvailabilityMode.ARRIVAL_BASED && (
+                <p className="mt-1 font-sans text-xs text-muted-foreground">
+                  يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور
+                  (يسجّل الاستقبال وصوله).
+                </p>
+              )}
             </div>
 
-            {isOrder ? (
+            {isQueue ? (
               <>
                 <div className="space-y-1.5">
                   <label className="font-sans text-sm font-medium text-foreground">

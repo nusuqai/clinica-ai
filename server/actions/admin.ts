@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { AppointmentStatus, AvailabilityMode, DoctorTitle, Role } from "@prisma/client";
+import { parseMode } from "@/lib/availability/modes";
 
 import { getClinicContext } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
@@ -303,10 +304,7 @@ export async function createRuleAction(formData: FormData, clinicId: string) {
     endTime: formData.get("endTime") as string,
     slotDurationMin: formData.get("slotDurationMin") ? Number(formData.get("slotDurationMin")) : 30,
     clinicId: clinicId,
-    mode:
-      formData.get("mode") === "ORDER_BASED"
-        ? AvailabilityMode.ORDER_BASED
-        : AvailabilityMode.SLOT_BASED,
+    mode: parseMode(formData.get("mode")),
     estimatedDurationMin: formData.get("estimatedDurationMin")
       ? Number(formData.get("estimatedDurationMin"))
       : null,
@@ -382,9 +380,13 @@ export async function getDayQueueAction(doctorId: string, date: string) {
     queue: {
       id: queue.id,
       date,
+      // Scheduling mode of the queue's rule (ORDER_BASED vs ARRIVAL_BASED); drives
+      // the arrival-priority controls (check-in) in the queue panel.
+      mode: queue.rule?.mode ?? AvailabilityMode.ORDER_BASED,
       branchName: queue.branch?.name ?? null,
       currentOrder: queue.currentOrder,
       nextOrder: queue.nextOrder,
+      nextArrival: queue.nextArrival,
       serveNextOrder: queue.serveNextOrder,
       dailyCap: queue.dailyCap,
       trackCurrentOrder: queue.trackCurrentOrder,
@@ -396,6 +398,7 @@ export async function getDayQueueAction(doctorId: string, date: string) {
         status: a.status,
         notes: a.patientNotes,
         skipped: a.skippedAt != null,
+        arrived: a.arrivedAt != null,
         expectedTime:
           sessionStart != null && a.orderNumber != null
             ? expectedOrderTime(sessionStart, a.orderNumber, queue.estimatedDurationMin)
@@ -403,6 +406,18 @@ export async function getDayQueueAction(doctorId: string, date: string) {
       })),
     },
   };
+}
+
+// Arrival-priority: check a reserved patient in at the clinic, handing out their
+// arrival/serving order number. Scoped to the admin's clinic.
+export async function markArrivedAction(appointmentId: string) {
+  const clinicId = await requireAdmin();
+  if (!(await requireAppointmentInClinic(appointmentId, clinicId)))
+    return { error: "الحجز غير موجود" };
+  const res = await QueueService.markArrived(appointmentId);
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/admin/doctors/[id]", "page");
+  return { success: true, orderNumber: res.data.orderNumber };
 }
 
 async function requireQueueInClinic(queueId: string, clinicId: string) {

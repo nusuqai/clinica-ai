@@ -25,7 +25,7 @@ interface Slot {
   endTime: string;
 }
 
-type Mode = "SLOT_BASED" | "ORDER_BASED";
+type Mode = "SLOT_BASED" | "ORDER_BASED" | "ARRIVAL_BASED";
 
 interface AvailableDay {
   date: string;
@@ -33,6 +33,8 @@ interface AvailableDay {
 }
 
 interface OrderInfo {
+  // "order" = number handed out now; "arrival" = number handed out at check-in.
+  mode: "order" | "arrival";
   available: boolean;
   remaining: number | null;
   nextOrderNumber: number;
@@ -98,6 +100,7 @@ export function BookAppointmentModal({
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState(false);
   const [bookedOrder, setBookedOrder] = useState<number | null>(null);
+  const [bookedArrival, setBookedArrival] = useState(false);
   const [bookingError, setBookingError] = useState("");
 
   // Load the doctor's available days once, up-front. Only dates + mode — each
@@ -159,7 +162,7 @@ export function BookAppointmentModal({
     setDayLoading((m) => ({ ...m, [date]: true }));
     setDayError((m) => ({ ...m, [date]: "" }));
     try {
-      if (mode === "ORDER_BASED") {
+      if (mode !== "SLOT_BASED") {
         const info = await getOrderBookingInfoAction(doctor.id, date);
         if (!info) {
           setDayError((m) => ({ ...m, [date]: "تعذّر تحميل حالة الطابور" }));
@@ -190,6 +193,7 @@ export function BookAppointmentModal({
       } else {
         const res = await bookOrderAppointmentAction(doctor.id, selection.date, notes || undefined);
         if (res.ok) {
+          setBookedArrival(res.mode === "arrival");
           setBookedOrder(res.orderNumber ?? null);
           setSuccess(true);
         } else {
@@ -305,10 +309,10 @@ export function BookAppointmentModal({
                                 month: "long",
                               })}
                             </span>
-                            {mode === "ORDER_BASED" && (
+                            {mode !== "SLOT_BASED" && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 font-sans text-[11px] font-medium text-accent">
                                 <Users className="h-3 w-3" />
-                                طابور
+                                {mode === "ARRIVAL_BASED" ? "أسبقية الحضور" : "طابور"}
                               </span>
                             )}
                           </span>
@@ -437,10 +441,12 @@ export function BookAppointmentModal({
                       <div className="flex items-center justify-between">
                         <span className="font-sans text-sm text-text/70">نظام الحجز</span>
                         <span className="font-sans text-sm font-medium text-text">
-                          الدور — رقمك {selection.info.nextOrderNumber}
+                          {selection.info.mode === "arrival"
+                            ? "أسبقية الحضور — رقمك عند الوصول"
+                            : `الدور — رقمك ${selection.info.nextOrderNumber}`}
                         </span>
                       </div>
-                      {selection.info.expectedTime && (
+                      {selection.info.mode !== "arrival" && selection.info.expectedTime && (
                         <div className="flex items-center justify-between">
                           <span className="font-sans text-sm text-text/70">الوقت المتوقع</span>
                           <span className="font-sans text-sm font-medium text-text">
@@ -499,7 +505,9 @@ export function BookAppointmentModal({
                   {isPending
                     ? "جارٍ الحجز..."
                     : selection.mode === "ORDER_BASED"
-                      ? "تأكيد حجز الدور"
+                      ? selection.info.mode === "arrival"
+                        ? "تأكيد الحجز"
+                        : "تأكيد حجز الدور"
                       : "تأكيد الحجز"}
                 </button>
               </div>
@@ -514,9 +522,18 @@ export function BookAppointmentModal({
               </div>
               <div>
                 <p className="font-heading text-xl font-bold text-text">
-                  {bookedOrder != null ? "تم حجز دورك!" : "تم الحجز بنجاح!"}
+                  {bookedArrival
+                    ? "تم حجز مكانك!"
+                    : bookedOrder != null
+                      ? "تم حجز دورك!"
+                      : "تم الحجز بنجاح!"}
                 </p>
-                {bookedOrder != null ? (
+                {bookedArrival ? (
+                  <p className="mt-1 font-sans text-sm text-text/60">
+                    احضر إلى العيادة وسيتم إعطاؤك رقم دورك حسب أسبقية وصولك.
+                    <span className="mt-0.5 block text-text/50">في انتظار التأكيد من العيادة</span>
+                  </p>
+                ) : bookedOrder != null ? (
                   <p className="mt-1 font-sans text-sm text-text/60">
                     رقمك في الطابور: <span className="font-bold text-accent">{bookedOrder}</span>
                     <span className="mt-0.5 block text-text/50">في انتظار التأكيد من العيادة</span>
@@ -567,6 +584,34 @@ function QueueBox({
       </div>
     );
   }
+  // Arrival-priority: no fixed number at booking — reception assigns it on arrival.
+  if (info.mode === "arrival") {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="rounded-lg bg-accent/5 px-3 py-2.5">
+          <p className="font-sans text-sm text-text">
+            احجز مكانك الآن، ويُحدَّد رقم دورك{" "}
+            <span className="font-bold text-accent">عند وصولك</span> إلى العيادة حسب أسبقية الحضور.
+          </p>
+          <div className="mt-1 flex flex-col gap-0.5 font-sans text-xs text-text/60">
+            <span>من يصل أولاً يُخدَم أولاً — لا يوجد وقت أو رقم ثابت مسبقاً.</span>
+            {info.remaining != null && <span>المتبقّي اليوم: {info.remaining} مكان</span>}
+          </div>
+        </div>
+        <button
+          onClick={onSelect}
+          className={`w-full rounded-lg border px-3 py-2.5 text-center font-sans text-sm font-medium transition-all ${
+            selected
+              ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
+              : "border-accent/40 bg-background text-accent hover:bg-accent/5"
+          }`}
+        >
+          {selected ? "✓ تم اختيار الحجز" : "احجز مكاني"}
+        </button>
+      </div>
+    );
+  }
+
   const wait = queueWait(info);
   return (
     <div className="flex flex-col gap-3">

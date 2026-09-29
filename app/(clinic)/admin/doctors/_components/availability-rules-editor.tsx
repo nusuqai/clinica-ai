@@ -5,6 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { DayOfWeek, AvailabilityMode } from "@prisma/client";
 import { createRuleAction, deleteRuleAction, getDoctorRulesAction } from "@/server/actions/admin";
 import { queueCapacityHint } from "@/lib/availability/queue-capacity";
+import { isQueueMode, MODE_BADGE_AR } from "@/lib/availability/modes";
 
 export interface EditorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -110,7 +111,8 @@ export default function AvailabilityRulesEditor(props: Props) {
   const [nMode, setNMode] = useState<AvailabilityMode>(AvailabilityMode.SLOT_BASED);
   const [nEstDur, setNEstDur] = useState(10);
   const [nCap, setNCap] = useState(50);
-  const isOrder = nMode === AvailabilityMode.ORDER_BASED;
+  // Both queue modes (نظام الدور / أسبقية الحضور) use the estimate + cap fields.
+  const isQueue = isQueueMode(nMode);
 
   const doctorId = props.mode === "live" ? props.doctorId : null;
 
@@ -157,8 +159,8 @@ export default function AvailabilityRulesEditor(props: Props) {
       endTime: nEnd,
       slotDurationMin: nDur,
       mode: nMode,
-      estimatedDurationMin: isOrder ? nEstDur : null,
-      dailyCap: isOrder ? nCap : null,
+      estimatedDurationMin: isQueue ? nEstDur : null,
+      dailyCap: isQueue ? nCap : null,
       referralOnly: nReferralOnly,
       note: nNote.trim() || null,
     };
@@ -291,9 +293,9 @@ export default function AvailabilityRulesEditor(props: Props) {
                     <span className="rounded-full bg-primary/10 px-2 py-0.5 font-sans text-xs text-primary">
                       {branchName(rule.branchId)}
                     </span>
-                    {rule.mode === AvailabilityMode.ORDER_BASED ? (
+                    {isQueueMode(rule.mode) ? (
                       <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-sans text-xs font-medium text-indigo-700">
-                        نظام الدور
+                        {MODE_BADGE_AR[rule.mode]}
                         {rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : ""}
                       </span>
                     ) : (
@@ -406,10 +408,17 @@ export default function AvailabilityRulesEditor(props: Props) {
                 >
                   <option value={AvailabilityMode.SLOT_BASED}>مواعيد بأوقات ثابتة</option>
                   <option value={AvailabilityMode.ORDER_BASED}>نظام الدور (طابور)</option>
+                  <option value={AvailabilityMode.ARRIVAL_BASED}>أسبقية الحضور</option>
                 </select>
+                {nMode === AvailabilityMode.ARRIVAL_BASED && (
+                  <p className="mt-1 font-sans text-xs text-muted-foreground">
+                    يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور
+                    (يسجّل الاستقبال وصوله).
+                  </p>
+                )}
               </div>
 
-              {isOrder ? (
+              {isQueue ? (
                 <>
                   <div className="space-y-1">
                     <label className="font-sans text-xs font-medium text-muted-foreground">

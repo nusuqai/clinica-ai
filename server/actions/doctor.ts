@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { AvailabilityMode, Role, type AppointmentStatus, type DayOfWeek } from "@prisma/client";
+import { Role, type AppointmentStatus, type DayOfWeek } from "@prisma/client";
+import { parseMode } from "@/lib/availability/modes";
 import * as QueueService from "@/server/services/queue";
 
 import { getClinicContext } from "@/lib/auth";
@@ -123,10 +124,7 @@ export async function createMyRuleAction(formData: FormData) {
     endTime: formData.get("endTime") as string,
     slotDurationMin: formData.get("slotDurationMin") ? Number(formData.get("slotDurationMin")) : 30,
     clinicId,
-    mode:
-      formData.get("mode") === "ORDER_BASED"
-        ? AvailabilityMode.ORDER_BASED
-        : AvailabilityMode.SLOT_BASED,
+    mode: parseMode(formData.get("mode")),
     estimatedDurationMin: formData.get("estimatedDurationMin")
       ? Number(formData.get("estimatedDurationMin"))
       : null,

@@ -84,7 +84,8 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             id: a.id,
             status: a.status,
             patientName: a.patient.fullName,
-            bookingType: a.isOrderBased ? "order" : "slot",
+            bookingType: a.arrivalBased ? "arrival" : a.isOrderBased ? "order" : "slot",
+            arrived: a.arrived,
             date: a.slot
               ? dateStr(a.slot.date)
               : a.bookingDate
@@ -215,19 +216,19 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             .regex(/^\d{2}:\d{2}$/, "يجب أن يكون الوقت بصيغة HH:MM"),
           slotDurationMin: z.number().nullable(),
           mode: z
-            .enum(["SLOT_BASED", "ORDER_BASED"])
+            .enum(["SLOT_BASED", "ORDER_BASED", "ARRIVAL_BASED"])
             .nullable()
             .describe(
-              "نظام الجدولة: SLOT_BASED فترات بأوقات ثابتة (الافتراضي)، أو ORDER_BASED نظام الدور (طابور بأرقام).",
+              "نظام الجدولة: SLOT_BASED فترات بأوقات ثابتة (الافتراضي)، ORDER_BASED نظام الدور (طابور بأرقام تُعطى عند الحجز)، أو ARRIVAL_BASED أسبقية الحضور (يحجز المريض مكاناً ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور).",
             ),
           estimatedDurationMin: z
             .number()
             .nullable()
-            .describe("لنظام الدور فقط: متوسط دقائق الكشف لكل مريض (لحساب وقت الانتظار)."),
+            .describe("لنظام الدور أو أسبقية الحضور فقط: متوسط دقائق الكشف لكل مريض (لحساب وقت الانتظار)."),
           dailyCap: z
             .number()
             .nullable()
-            .describe("لنظام الدور فقط: الحد الأقصى لعدد الحجوزات في اليوم."),
+            .describe("لنظام الدور أو أسبقية الحضور فقط: الحد الأقصى لعدد الحجوزات في اليوم."),
           referralOnly: z
             .boolean()
             .nullable()
@@ -378,14 +379,19 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
       async ({ date }) => {
         const queue = await QueueService.getDayQueue(doctorId, new Date(date));
         if (!queue) return { date, hasQueue: false, patients: [] };
+        const arrival = queue.rule?.mode === "ARRIVAL_BASED";
         return {
           date,
           hasQueue: true,
           queueId: queue.id,
           branch: queue.branch?.name ?? null,
+          // "arrival" = أسبقية الحضور: reserved patients (arrived=false, no order
+          // number) get their number when you check them in with mark_arrived.
+          mode: arrival ? "arrival" : "order",
           currentOrder: queue.currentOrder,
           serveNextOrder: queue.serveNextOrder, // next order to serve
-          nextOrder: queue.nextOrder, // booking counter (next number to hand out)
+          nextOrder: queue.nextOrder, // booking counter (reservations handed out)
+          nextArrival: queue.nextArrival, // arrival mode: next arrival number to hand out
           dailyCap: queue.dailyCap,
           trackCurrentOrder: queue.trackCurrentOrder,
           patients: queue.appointments.map((a) => ({
@@ -394,6 +400,7 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
             patientName: a.patient.fullName,
             status: a.status,
             skipped: a.skippedAt != null,
+            arrived: a.arrivedAt != null,
             expectedTime:
               queue.rule?.startTime && a.orderNumber != null
                 ? expectedOrderTime(
@@ -474,6 +481,19 @@ export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
         const res = await QueueService.recallOrder(appointmentId, doctorId);
         if (!res.ok) return { error: res.error };
         return { appointmentId, recalled: true, orderNumber: res.data.orderNumber };
+      },
+    ),
+    jsonTool(
+      {
+        name: "mark_arrived",
+        description:
+          "لطوابير «أسبقية الحضور» فقط: سجّل وصول مريض حاجز عند حضوره للعيادة، فيُعطى رقم دوره التالي حسب أسبقية الحضور. استخدمها للحجوزات التي لا رقم لها بعد (orderNumber فارغ، arrived=false) من get_day_queue. لا تأثير على حجوزات نظام الدور العادي (لها رقم منذ الحجز).",
+        schema: z.object({ appointmentId: z.string() }),
+      },
+      async ({ appointmentId }) => {
+        const res = await QueueService.markArrived(appointmentId, doctorId);
+        if (!res.ok) return { error: res.error };
+        return { appointmentId, arrived: true, orderNumber: res.data.orderNumber };
       },
     ),
   ];

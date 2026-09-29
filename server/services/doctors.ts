@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, err, type Result } from "./_result";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
+import { QUEUE_MODES, isQueueMode } from "@/lib/availability/modes";
 import {
   AppointmentStatus,
   AvailabilityMode,
@@ -277,16 +278,16 @@ export async function getAvailableDaysForBooking(
     byDate.set(s.date.toISOString().split("T")[0], AvailabilityMode.SLOT_BASED);
   }
 
-  // ── Order-based (queue) days ────────────────────────────────────────────────
+  // ── Queue days (order / arrival) ─────────────────────────────────────────────
   const orderRules = await prisma.availabilityRule.findMany({
     where: {
       doctorId,
       isActive: true,
-      mode: AvailabilityMode.ORDER_BASED,
+      mode: { in: QUEUE_MODES },
       referralOnly: false, // referral-only rules aren't directly bookable
       branchId: { not: null }, // queue booking requires a concrete branch
     },
-    select: { dayOfWeek: true, dailyCap: true, branchId: true, endTime: true },
+    select: { dayOfWeek: true, dailyCap: true, branchId: true, endTime: true, mode: true },
   });
 
   if (orderRules.length > 0) {
@@ -323,7 +324,7 @@ export async function getAvailableDaysForBooking(
             const cap = q?.cap ?? rule.dailyCap;
             const booked = q?.booked ?? 0;
             if (cap == null || booked < cap) {
-              byDate.set(dateStr, AvailabilityMode.ORDER_BASED);
+              byDate.set(dateStr, rule.mode);
             }
           }
         }
@@ -704,8 +705,8 @@ export async function createRule(input: CreateRuleInput): Promise<Result<{ id: s
     if (validationError) return err(validationError);
 
     const mode = input.mode ?? AvailabilityMode.SLOT_BASED;
-    const isOrderBased = mode === AvailabilityMode.ORDER_BASED;
-    if (isOrderBased && input.dailyCap != null && input.dailyCap < 1)
+    const queueMode = isQueueMode(mode);
+    if (queueMode && input.dailyCap != null && input.dailyCap < 1)
       return err("الحد الأقصى للحجوزات يجب أن يكون 1 على الأقل.");
 
     const rule = await prisma.availabilityRule.create({
@@ -718,14 +719,14 @@ export async function createRule(input: CreateRuleInput): Promise<Result<{ id: s
         slotDurationMin: input.slotDurationMin ?? 30,
         clinicId: input.clinicId,
         mode,
-        estimatedDurationMin: isOrderBased ? (input.estimatedDurationMin ?? null) : null,
-        dailyCap: isOrderBased ? (input.dailyCap ?? null) : null,
+        estimatedDurationMin: queueMode ? (input.estimatedDurationMin ?? null) : null,
+        dailyCap: queueMode ? (input.dailyCap ?? null) : null,
         referralOnly: input.referralOnly ?? false,
         note: input.note?.trim() || null,
       },
     });
-    // Order-based rules have no fixed slots — bookings are queued at runtime.
-    if (!isOrderBased) await generateSlotsForRule(rule.id, 30);
+    // Queue rules (order / arrival) have no fixed slots — bookings are queued at runtime.
+    if (!queueMode) await generateSlotsForRule(rule.id, 30);
     return ok({ id: rule.id });
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل إنشاء قاعدة التوفر");
@@ -778,10 +779,11 @@ export async function generateSlotsForRule(
     });
     if (!rule) return err("القاعدة غير موجودة");
 
-    // Order-based (queue) rules have no fixed slots — the day is implicitly
-    // available and order numbers are handed out lazily on booking. Nothing to
-    // generate; creating Slot rows here would wrongly turn the rule slot-based.
-    if (rule.mode === AvailabilityMode.ORDER_BASED) return ok({ count: 0 });
+    // Queue rules (order / arrival) have no fixed slots — the day is implicitly
+    // available and order numbers are handed out lazily (at booking for order,
+    // at check-in for arrival). Nothing to generate; creating Slot rows here
+    // would wrongly turn the rule slot-based.
+    if (isQueueMode(rule.mode)) return ok({ count: 0 });
 
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
@@ -938,17 +940,19 @@ export async function getDoctorScheduleDays(
     else day.slotCounts!.available++;
   }
 
-  // Order-based days — days that already have a queue (i.e. at least one booking).
+  // Queue days (order / arrival) — days that already have a queue (i.e. at least
+  // one booking). The mode comes from the queue's rule so arrival days render
+  // with their own controls; fall back to ORDER_BASED if the rule was deleted.
   const queues = await prisma.doctorDayQueue.findMany({
     where: { doctorId, date: { gte: from, lte: to } },
-    select: { date: true, nextOrder: true, dailyCap: true },
+    select: { date: true, nextOrder: true, dailyCap: true, rule: { select: { mode: true } } },
   });
   for (const q of queues) {
     const key = q.date.toISOString().split("T")[0];
     if (byDate.has(key)) continue; // a slot day already owns this date (rare overlap)
     byDate.set(key, {
       date: key,
-      mode: AvailabilityMode.ORDER_BASED,
+      mode: q.rule?.mode ?? AvailabilityMode.ORDER_BASED,
       queue: { booked: q.nextOrder - 1, cap: q.dailyCap },
     });
   }

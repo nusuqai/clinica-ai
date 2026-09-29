@@ -104,9 +104,9 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
     }
     setOpenDate(date);
     // Already loaded or loading — nothing to fetch.
-    const cached = mode === "ORDER_BASED" ? dayQueue[date] : daySlots[date];
+    const cached = mode !== "SLOT_BASED" ? dayQueue[date] : daySlots[date];
     if (cached || loading[date]) return;
-    if (mode === "ORDER_BASED") loadQueueDay(date);
+    if (mode !== "SLOT_BASED") loadQueueDay(date);
     else loadSlotDay(date);
   }
 
@@ -136,7 +136,8 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
       {days.map((day) => {
         const { date, mode } = day;
         const isOpen = openDate === date;
-        const isQueue = mode === "ORDER_BASED";
+        const isQueue = mode !== "SLOT_BASED";
+        const queueLabel = mode === "ARRIVAL_BASED" ? "أسبقية الحضور" : "نظام الدور";
         const dateObj = new Date(date + "T00:00:00Z");
 
         // Slot header counts stay fresh after a block toggle by deriving from the
@@ -163,7 +164,7 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
                 {isQueue ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-px font-sans text-[10px] font-medium text-primary">
                     <ListOrdered className="h-3 w-3" />
-                    نظام الدور
+                    {queueLabel}
                     {day.queue && (
                       <span className="tabular-nums">
                         {" "}

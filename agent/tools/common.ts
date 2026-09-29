@@ -7,6 +7,7 @@ import * as QueueService from "@/server/services/queue";
 import { getClinicInfo } from "@/server/services/clinicInfo";
 import { listSpecialties } from "@/server/services/specialties";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
+import { modeTag } from "@/lib/availability/modes";
 import { jsonTool, money, timeStr } from "./shared";
 
 /** Arabic label for a doctor's rank (null when unset). */
@@ -175,7 +176,7 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
               to: r.endTime,
               branchId: r.branchId,
               branch: r.branch?.name ?? null,
-              mode: r.mode === "ORDER_BASED" ? "order" : "slot",
+              mode: modeTag(r.mode), // "slot" | "order" | "arrival"
             })),
         };
       },
@@ -199,31 +200,37 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
         const doctor = await DoctorService.getDoctor(doctorId, clinicId);
         if (!doctor) return { error: "الطبيب غير موجود" };
 
-        // Order-based (queue) day: report remaining capacity + live position
+        // Queue day (order / arrival): report remaining capacity + live position
         // instead of fixed slots. Book via book_order_appointment (no slotId).
         const orderInfo = await QueueService.getOrderBookingInfo(
           doctorId,
           new Date(date),
         );
         if (orderInfo) {
+          const arrival = orderInfo.mode === "ARRIVAL_BASED";
           return {
             doctorId,
             doctorName: doctor.profile.fullName,
             date,
-            mode: "order",
+            // "arrival" (أسبقية الحضور): the patient reserves and gets a number on
+            // arrival, so there's no next number / expected time to promise here.
+            mode: arrival ? "arrival" : "order",
             branchId: orderInfo.branchId,
             available: orderInfo.available,
             dailyCap: orderInfo.dailyCap,
             booked: orderInfo.booked,
             remaining: orderInfo.remaining,
-            currentOrder: orderInfo.trackCurrentOrder ? orderInfo.currentOrder : null,
+            currentOrder:
+              !arrival && orderInfo.trackCurrentOrder ? orderInfo.currentOrder : null,
             estimatedDurationMin: orderInfo.estimatedDurationMin,
-            nextOrderNumber: orderInfo.booked + 1,
-            expectedTime: expectedOrderTime(
-              orderInfo.sessionStart,
-              orderInfo.booked + 1,
-              orderInfo.estimatedDurationMin,
-            ),
+            nextOrderNumber: arrival ? null : orderInfo.booked + 1,
+            expectedTime: arrival
+              ? null
+              : expectedOrderTime(
+                  orderInfo.sessionStart,
+                  orderInfo.booked + 1,
+                  orderInfo.estimatedDurationMin,
+                ),
           };
         }
 

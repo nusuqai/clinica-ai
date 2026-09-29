@@ -502,7 +502,8 @@ model DoctorBranch {
 // How a doctor's availability rule schedules patients.
 enum AvailabilityMode {
   SLOT_BASED // fixed time slots — patient picks a specific time
-  ORDER_BASED // queue / نظام الدور — sequential order numbers, no fixed times
+  ORDER_BASED // queue / نظام الدور — sequential order numbers handed out at booking
+  ARRIVAL_BASED // أسبقية الحضور — patient reserves; the order number is handed out at check-in, by physical arrival order
 }
 
 model AvailabilityRule {
@@ -548,7 +549,10 @@ model DoctorDayQueue {
   branchId             String?  @db.Uuid
   ruleId               String?  @db.Uuid
   date                 DateTime @db.Date
-  nextOrder            Int      @default(1) // next order number to hand out (booking counter)
+  nextOrder            Int      @default(1) // next booking counter to hand out. ORDER_BASED: also the serving order. ARRIVAL_BASED: reservation counter (caps bookings); serving order comes from nextArrival instead.
+  // ARRIVAL_BASED only: next arrival/serving order to hand out at check-in.
+  // Bumped when reception marks a reserved patient as arrived. Unused by ORDER_BASED.
+  nextArrival          Int      @default(1)
   currentOrder         Int      @default(0) // "now serving" — 0 = not started
   // Next order to serve when the doctor clicks "next patient". Normally
   // currentOrder+1, but a recall moves currentOrder back to a returning patient
@@ -613,8 +617,12 @@ model Appointment {
   ruleId               String?           @db.Uuid // which rule/mode produced this booking
   queueId              String?           @db.Uuid // order-based: the day queue this booking belongs to
   bookingDate          DateTime?         @db.Date // order-based: the day (slot-based derives from slot)
-  orderNumber          Int? // order-based: queue position
+  orderNumber          Int? // order-based: queue position. ARRIVAL_BASED: null until the patient is checked in (then set to their arrival order)
   estimatedDurationMin Int? // order-based: snapshot at booking (stable wait calc)
+  // ARRIVAL_BASED (أسبقية الحضور): set when reception checks the patient in at the
+  // clinic. Assigning arrivedAt is what hands out orderNumber. Null = reserved but
+  // not yet arrived. Always null for SLOT_BASED / ORDER_BASED bookings.
+  arrivedAt            DateTime?
   status               AppointmentStatus @default(PENDING)
   // Order-based: set when the doctor temporarily skips this order (patient not
   // present). Keeps status PENDING; cleared on recall. Skipped orders are passed

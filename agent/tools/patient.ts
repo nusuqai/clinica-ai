@@ -24,8 +24,10 @@ async function appointmentCard(appointmentId: string) {
     specialty: a.doctor.specialty?.name ?? null,
     branch: a.branch?.name ?? null,
     branchAddress: a.branch?.address ?? null,
-    // Slot-based bookings carry a fixed time; order-based carry a queue number.
-    bookingType: a.isOrderBased ? "order" : "slot",
+    // Slot-based bookings carry a fixed time; order-based carry a queue number;
+    // arrival-priority (أسبقية الحضور) reserve a place and get a number on arrival.
+    bookingType: a.arrivalBased ? "arrival" : a.isOrderBased ? "order" : "slot",
+    arrived: a.arrived, // arrival-priority: whether the patient has been checked in
     date: a.slot ? dateStr(a.slot.date) : a.bookingDate ? dateStr(a.bookingDate) : null,
     startTime: a.slot ? timeStr(a.slot.startTime) : null,
     endTime: a.slot ? timeStr(a.slot.endTime) : null,
@@ -67,7 +69,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "book_order_appointment",
         description:
-          "احجز دوراً (نظام الطابور) للمريض الحالي لدى طبيب يعمل بنظام الدور في تاريخ محدّد (YYYY-MM-DD). لا يوجد وقت ثابت؛ يحصل المريض على رقم دور. استخدم get_doctor_availability أولاً للتأكد أن اليوم بنظام الدور (mode=order) وأن هناك أماكن متاحة.",
+          "احجز دوراً للمريض الحالي لدى طبيب يعمل بنظام الدور أو بأسبقية الحضور في تاريخ محدّد (YYYY-MM-DD). لا يوجد وقت ثابت. استخدم get_doctor_availability أولاً وتأكّد أن اليوم من نوع طابور. إن كان mode=order يحصل المريض على رقم دور فوراً. وإن كان mode=arrival (أسبقية الحضور) فهو يحجز مكاناً فقط ولا يحصل على رقم الآن؛ يُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور — أخبره بذلك.",
         schema: z.object({
           doctorId: z.string(),
           date: z
@@ -178,7 +180,8 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
             doctorName: a.doctor.profile.fullName,
             specialty: a.doctor.specialty,
             branch: a.branch?.name ?? null,
-            bookingType: a.isOrderBased ? "order" : "slot",
+            bookingType: a.arrivalBased ? "arrival" : a.isOrderBased ? "order" : "slot",
+            arrived: a.arrived,
             date: a.slot
               ? dateStr(a.slot.date)
               : a.bookingDate
