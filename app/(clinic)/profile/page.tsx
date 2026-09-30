@@ -5,7 +5,6 @@ import {
   CalendarDays,
   Clock,
   FileText,
-  LayoutDashboard,
   Mail,
   Phone,
   Stethoscope,
@@ -152,12 +151,6 @@ export default async function PatientProfilePage() {
               hint="القادمة والسابقة والسجل العلاجي"
             />
             <QuickLink href="/#book" icon={Stethoscope} label="احجز موعداً" hint="اختر طبيبك" />
-            <QuickLink
-              href="/dashboard"
-              icon={LayoutDashboard}
-              label="لوحة التحكم"
-              hint="كل التفاصيل في مكان واحد"
-            />
           </aside>
         </div>
       </main>

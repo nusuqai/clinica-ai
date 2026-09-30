@@ -18,6 +18,10 @@ export interface PriorMessage {
 
 /** Events streamed to the web SSE layer as the agent works. */
 export type AgentStreamEvent =
+  /** Emitted first on a GUEST turn: the (possibly just-created) conversation id,
+   *  so the browser can persist it and reload history / receive admin replies —
+   *  a guest has no account to resolve the conversation from. */
+  | { type: "init"; conversationId: string }
   | { type: "token"; text: string }
   /** Emitted once for a voice turn: the transcript of the user's audio, so the
    *  UI can render what was understood before the reply streams. */

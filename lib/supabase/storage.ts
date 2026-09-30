@@ -182,3 +182,57 @@ export async function downloadPatientMedia(path: string): Promise<Buffer | null>
   }
   return Buffer.from(await data.arrayBuffer());
 }
+
+/** Deletes a stored object. Best-effort: logs and returns false on failure so a
+ *  DB-row delete can still proceed (a stray object is harmless; a stuck row is
+ *  not). Lives in the same private bucket as all patient media. */
+export async function deletePatientMediaObject(path: string): Promise<boolean> {
+  const supabase = createAdminClient();
+  const { error } = await supabase.storage.from(PATIENT_MEDIA_BUCKET).remove([path]);
+  if (error) {
+    console.error(`[storage] failed to delete patient-media ${path}:`, error);
+    return false;
+  }
+  return true;
+}
+
+// ─── Appointment attachments (lab results, x-rays, documents) ──────────────────
+
+/** The original filename's extension, lower-cased, if it has a sane one;
+ *  otherwise derived from the mime type. Keeps a downloaded lab/x-ray file
+ *  opening in the right app. */
+function extForAttachment(fileName: string, mime: string): string {
+  const dot = fileName.lastIndexOf(".");
+  if (dot > 0 && dot < fileName.length - 1) {
+    const ext = fileName.slice(dot + 1).toLowerCase();
+    if (/^[a-z0-9]{1,8}$/.test(ext)) return ext;
+  }
+  return extForMime(mime);
+}
+
+/**
+ * Mints a one-time signed upload URL so a staff browser can upload a visit
+ * attachment DIRECTLY to the private bucket — bypassing the server request-body
+ * limit, so multi-MB scans/PDFs work. The path is minted server-side under the
+ * clinic/appointment prefix; the caller uploads with
+ * `supabase.storage.from(bucket).uploadToSignedUrl(path, token, file)`.
+ *
+ * Layout: `<clinicId>/appointments/<appointmentId>/<uuid>.<ext>`.
+ */
+export async function createAppointmentAttachmentUploadUrl(args: {
+  clinicId: string;
+  appointmentId: string;
+  fileName: string;
+  mimeType: string;
+}): Promise<UploadTarget> {
+  const supabase = createAdminClient();
+  const ext = extForAttachment(args.fileName, args.mimeType);
+  const path = `${args.clinicId}/appointments/${args.appointmentId}/${crypto.randomUUID()}.${ext}`;
+  const { data, error } = await supabase.storage
+    .from(PATIENT_MEDIA_BUCKET)
+    .createSignedUploadUrl(path);
+  if (error || !data?.token) {
+    throw new Error(`failed to create attachment upload url: ${error?.message ?? "unknown"}`);
+  }
+  return { path, token: data.token, bucket: PATIENT_MEDIA_BUCKET };
+}

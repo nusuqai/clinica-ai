@@ -57,7 +57,11 @@ export default async function DoctorPatientHistoryPage({ params }: PageProps) {
       </div>
 
       <h2 className="mb-4 font-heading text-lg font-bold text-foreground">السجل العلاجي</h2>
-      <RecordTimeline records={records} emptyMessage="لا يوجد سجل علاجي لهذا المريض بعد" />
+      <RecordTimeline
+        records={records}
+        emptyMessage="لا يوجد سجل علاجي لهذا المريض بعد"
+        appointmentBasePath="/doctor/appointments"
+      />
     </div>
   );
 }

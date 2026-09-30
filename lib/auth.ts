@@ -166,7 +166,10 @@ export async function requirePlatformAdmin(): Promise<CurrentUser> {
 export function roleHome(role: Role): string {
   if (role === Role.ADMIN) return "/admin";
   if (role === Role.DOCTOR) return "/doctor";
-  return "/dashboard";
+  // Patients have no dashboard: their home is the clinic's landing page, which
+  // shows their appointments, history and records inline and carries the chat
+  // assistant + booking. See the removal of app/(clinic)/dashboard.
+  return "/";
 }
 
 /** A user's first clinic membership, used to route them in from the root domain. */

@@ -33,8 +33,8 @@ const PUBLIC_TENANT_ROUTES = [
 const TENANT_ONLY_PREFIXES = [
   "/admin",
   "/doctor",
-  "/dashboard",
   "/profile",
+  "/appointments",
   "/register",
   "/verify-otp",
 ];
@@ -73,6 +73,17 @@ export async function middleware(request: NextRequest) {
     return h;
   };
   const passThrough = () => NextResponse.next({ request: { headers: requestHeaders() } });
+
+  // The patient dashboard has been removed — a patient's home is now the clinic's
+  // landing page (`/`), which shows their appointments, history and records and
+  // carries the chat assistant + booking. Redirect any surviving /dashboard*
+  // link (bookmarks, older emailed links) to the landing page on the same host.
+  if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
 
   const isHostAgnostic = HOST_AGNOSTIC_PREFIXES.some((p) => pathname.startsWith(p));
 

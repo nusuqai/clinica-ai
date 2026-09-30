@@ -110,15 +110,9 @@ export function LandingNav({
         {/* Auth buttons */}
         <div className="hidden items-center gap-3 md:flex">
           {isAuthenticated && isPatient ? (
-            <>
-              <Link
-                href={dashboardHref}
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-              >
-                لوحة تحكمي
-              </Link>
-              <ProfileAvatar name={userName} />
-            </>
+            // A patient's home is this landing page, so there's no separate
+            // dashboard to link to — just their profile.
+            <ProfileAvatar name={userName} />
           ) : isAuthenticated ? (
             <Link
               href={dashboardHref}
@@ -182,21 +176,14 @@ export function LandingNav({
               احجز موعد
             </a>
             {isAuthenticated && isPatient ? (
-              <>
-                <Link
-                  href="/profile"
-                  className="flex items-center gap-2 font-sans text-sm text-white/80 hover:text-accent"
-                >
-                  <UserRound className="h-4 w-4" />
-                  الملف الشخصي
-                </Link>
-                <Link
-                  href={dashboardHref}
-                  className="rounded-lg bg-accent px-4 py-2 text-center text-sm font-medium text-white"
-                >
-                  لوحة تحكمي
-                </Link>
-              </>
+              <Link
+                href="/profile"
+                className="flex items-center gap-2 font-sans text-sm text-white/80 hover:text-accent"
+                onClick={() => setMenuOpen(false)}
+              >
+                <UserRound className="h-4 w-4" />
+                الملف الشخصي
+              </Link>
             ) : !isAuthenticated ? (
               <div className="flex flex-col gap-2">
                 <Link

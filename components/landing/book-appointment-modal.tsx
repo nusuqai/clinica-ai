@@ -229,7 +229,8 @@ export function BookAppointmentModal({
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-text/40 transition-colors hover:bg-muted hover:text-text"
+            aria-label="إغلاق"
+            className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg p-2 text-text/40 transition-colors hover:bg-muted hover:text-text"
           >
             <X className="h-5 w-5" />
           </button>

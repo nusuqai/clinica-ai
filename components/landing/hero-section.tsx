@@ -51,7 +51,7 @@ export function HeroSection({
         <div className="absolute left-1/2 top-1/2 h-[400px] w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-accent/5" />
       </div>
 
-      <div className="relative mx-auto max-w-7xl px-6 py-32 text-center">
+      <div className="relative mx-auto max-w-7xl px-6 py-16 text-center sm:py-24 lg:py-32">
         {/* Badge */}
         <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-1.5">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
@@ -118,7 +118,7 @@ export function HeroSection({
         )}
 
         {/* Stats */}
-        <div className="mx-auto mt-16 grid max-w-2xl grid-cols-3 gap-6">
+        <div className="mx-auto mt-16 grid max-w-2xl grid-cols-3 gap-3 sm:gap-6">
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-5 backdrop-blur-sm">
             <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/20">
               <Users className="h-5 w-5 text-accent" />

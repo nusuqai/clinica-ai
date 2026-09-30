@@ -1,38 +1,26 @@
 import {
   LayoutDashboard,
   CalendarDays,
-  CalendarPlus,
-  MessageCircle,
   UserCircle,
   Users,
   Clock,
   Stethoscope,
   BarChart3,
-  Globe,
   Smartphone,
   MessageSquare,
   KeyRound,
   BookOpen,
-  Bot,
-  Wallet,
   MapPin,
   Building2,
   Tags,
   BellRing,
-  FileText,
 } from "lucide-react";
 import type { NavItem } from "./sidebar";
 
-export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
-  patient: [
-    { href: "/dashboard", label: "الرئيسية", icon: LayoutDashboard },
-    { href: "/dashboard/appointments", label: "مواعيدي", icon: CalendarDays },
-    { href: "/dashboard/records", label: "سجلي العلاجي", icon: FileText },
-    { href: "/dashboard/book", label: "احجز موعد", icon: CalendarPlus },
-    // { href: "/dashboard/chat", label: "المساعد الذكي", icon: MessageCircle },
-    { href: "/dashboard/profile", label: "الملف الشخصي", icon: UserCircle },
-    { href: "/", label: "الموقع الرئيسي", icon: Globe },
-  ],
+// Patients have no dashboard shell: their home is the clinic landing page (see
+// the removal of app/(clinic)/dashboard). Only staff (doctor/admin) use the
+// sidebar dashboard.
+export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
   doctor: [
     { href: "/doctor", label: "الرئيسية", icon: LayoutDashboard },
     { href: "/doctor/appointments", label: "المواعيد", icon: CalendarDays },
@@ -82,11 +70,7 @@ export const navConfig: Record<"patient" | "doctor" | "admin", NavItem[]> = {
   ],
 };
 
-export const roleMeta: Record<
-  "patient" | "doctor" | "admin",
-  { label: string; pageTitle: string }
-> = {
-  patient: { label: "مريض", pageTitle: "لوحة تحكم المريض" },
+export const roleMeta: Record<"doctor" | "admin", { label: string; pageTitle: string }> = {
   doctor: { label: "طبيب", pageTitle: "لوحة تحكم الطبيب" },
   admin: { label: "مشرف", pageTitle: "لوحة تحكم المسؤول" },
 };

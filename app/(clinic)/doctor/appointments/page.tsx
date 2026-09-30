@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { getDoctorByProfileId } from "@/server/services/doctors";
 import { getDoctorAppointments } from "@/server/services/appointments";
@@ -179,6 +181,13 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
                           defaultVisitDate={appt.slot?.date ?? appt.bookingDate}
                           hasRecord={recordsByAppointment.has(appt.id)}
                         />
+                        <Link
+                          href={`/doctor/appointments/${appt.id}`}
+                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                        >
+                          <ArrowLeft className="h-3.5 w-3.5" />
+                          التفاصيل
+                        </Link>
                       </div>
                     </td>
                   </tr>

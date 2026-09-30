@@ -5,7 +5,11 @@ import { inngest, type AppointmentNotifyData } from "@/lib/inngest/client";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { sendTemplateMessage, WhatsAppApiError, type WhatsAppRecipient } from "@/lib/meta/whatsapp";
 import { effectiveEndUtc, effectiveStartUtc } from "@/lib/appointment-timing";
-import { buildTemplateVariables, buildTokenContext } from "@/lib/appointment-templates";
+import {
+  buildTemplateVariables,
+  buildTokenContext,
+  buildFollowUpTokenContext,
+} from "@/lib/appointment-templates";
 import { fillTemplate } from "@/lib/meta/template-render";
 
 /**
@@ -32,6 +36,12 @@ const COARSE_BUFFER_MS = 18 * 60 * 60 * 1000;
 // Widest reminder lead we pre-filter for; the exact per-clinic lead is applied
 // in the refinement pass. 48h leaves headroom above the 24h default.
 const MAX_LEAD_MS = 48 * 60 * 60 * 1000;
+
+// Follow-up reminders key on a TreatmentRecord.followUpDate (a DATE, weeks out
+// in the usual case). Pre-filter a wide window then refine per-binding lead in
+// JS. We still fire for a short grace after the date if a tick was missed.
+const MAX_FOLLOWUP_LEAD_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
+const FOLLOWUP_GRACE_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
 
 const OPEN_STATUSES = [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED];
 
@@ -180,6 +190,56 @@ async function findDueFeedback(now: Date): Promise<DueRow[]> {
     .map((a) => ({ id: a.id, clinicId: a.clinicId }));
 }
 
+// ─── Pass 4: follow-up reminders ────────────────────────────────────────────
+
+/**
+ * Treatment records with a suggested follow-up date coming due (within the
+ * clinic's FOLLOWUP_REMINDER lead) that have not been reminded yet. Gated on an
+ * enabled binding via a relation filter, so a clinic without a linked template
+ * is never selected. The `id` returned is the RECORD id (the follow-up's
+ * subject), not an appointment id.
+ */
+async function findDueFollowUps(now: Date): Promise<DueRow[]> {
+  const coarseFrom = new Date(now.getTime() - FOLLOWUP_GRACE_MS);
+  const coarseTo = new Date(now.getTime() + MAX_FOLLOWUP_LEAD_MS);
+
+  const candidates = await prisma.treatmentRecord.findMany({
+    where: {
+      followUpReminderSentAt: null,
+      followUpDate: { not: null, gte: coarseFrom, lte: coarseTo },
+      clinic: {
+        appointmentTemplates: {
+          some: { purpose: "FOLLOWUP_REMINDER", enabled: true },
+        },
+      },
+    },
+    select: {
+      id: true,
+      clinicId: true,
+      followUpDate: true,
+      clinic: {
+        select: {
+          appointmentTemplates: {
+            where: { purpose: "FOLLOWUP_REMINDER", enabled: true },
+            select: { leadMinutes: true },
+          },
+        },
+      },
+    },
+  });
+
+  return candidates
+    .filter((r) => {
+      const binding = r.clinic.appointmentTemplates[0];
+      if (!binding || !r.followUpDate) return false;
+      const target = r.followUpDate.getTime();
+      const leadStart = target - binding.leadMinutes * 60_000;
+      const dueEnd = target + FOLLOWUP_GRACE_MS;
+      return leadStart <= now.getTime() && now.getTime() < dueEnd;
+    })
+    .map((r) => ({ id: r.id, clinicId: r.clinicId }));
+}
+
 // ─── The cron ───────────────────────────────────────────────────────────────
 
 export const appointmentsSweep = inngest.createFunction(
@@ -219,7 +279,25 @@ export const appointmentsSweep = inngest.createFunction(
       );
     }
 
-    return { noShows, reminders: reminders.length, feedback: feedback.length };
+    const followUps = await step.run("find-due-followups", () => findDueFollowUps(now));
+    if (followUps.length > 0) {
+      await step.sendEvent(
+        "queue-followups",
+        followUps.map((r) => ({
+          name: "appointment/notify" as const,
+          // Follow-ups carry the RECORD id, not an appointment id.
+          data: { recordId: r.id, clinicId: r.clinicId, purpose: "FOLLOWUP_REMINDER" as const },
+          id: `followup-${r.id}`,
+        }))
+      );
+    }
+
+    return {
+      noShows,
+      reminders: reminders.length,
+      feedback: feedback.length,
+      followUps: followUps.length,
+    };
   }
 );
 
@@ -275,6 +353,7 @@ async function getWhatsappThread(clinicId: string, patient: { id: string; phone:
 const PURPOSE_LABEL = {
   CONFIRM_REMINDER: "تذكير بالموعد — برجاء تأكيد الحجز",
   FEEDBACK_REQUEST: "طلب تقييم بعد الزيارة",
+  FOLLOWUP_REMINDER: "تذكير بموعد المتابعة — حان وقت الحجز",
 } as const;
 
 /**
@@ -309,106 +388,236 @@ export const appointmentNotify = inngest.createFunction(
     retries: 4,
   },
   async ({ event, step }) => {
-    const { appointmentId, clinicId, purpose } = event.data as AppointmentNotifyData;
+    const data = event.data as AppointmentNotifyData;
+    const { clinicId, purpose } = data;
 
     const result = await step.run("send", async () => {
-      const appt = await prisma.appointment.findUnique({
-        where: { id: appointmentId },
-        select: {
-          id: true,
-          status: true,
-          orderNumber: true,
-          bookingDate: true,
-          reminderSentAt: true,
-          feedbackRequestedAt: true,
-          patient: { select: { id: true, fullName: true, phone: true } },
-          doctor: {
-            select: {
-              fullName: true,
-              title: true,
-              specialty: { select: { name: true } },
-            },
-          },
-          branch: { select: { name: true, address: true } },
-          slot: { select: { startTime: true, date: true } },
-          clinic: { select: { id: true, name: true } },
-        },
-      });
-      if (!appt) return "gone";
-
-      // Re-check state at send time — it may have changed since discovery.
-      if (purpose === "CONFIRM_REMINDER") {
-        if (appt.status !== AppointmentStatus.PENDING || appt.reminderSentAt) return "stale";
-      } else {
-        if (appt.status !== AppointmentStatus.COMPLETED || appt.feedbackRequestedAt) return "stale";
+      if (purpose === "FOLLOWUP_REMINDER") {
+        return sendFollowUpReminder(data.recordId!, clinicId);
       }
-
-      // The binding is the gate: no enabled binding → don't send, and DON'T set
-      // the dedupe flag, so it fires later if the clinic links a template.
-      const binding = await prisma.clinicAppointmentTemplate.findUnique({
-        where: { clinicId_purpose: { clinicId, purpose } },
-      });
-      if (!binding || !binding.enabled) return "no_binding";
-
-      const creds = await getClinicWhatsappCredentials(clinicId);
-      if (!creds) return "no_creds";
-
-      const thread = await getWhatsappThread(clinicId, appt.patient);
-      const recipient = thread ? conversationRecipient(thread) : null;
-      if (!recipient) return "no_recipient";
-
-      const context = buildTokenContext(appt);
-      const variables = buildTemplateVariables(binding.variableMap, context);
-
-      try {
-        await sendTemplateMessage(
-          recipient,
-          { name: binding.templateName, languageCode: binding.languageCode, variables },
-          { phoneNumberId: creds.phoneNumberId, accessToken: creds.accessToken }
-        );
-      } catch (err) {
-        // A permanent Meta rejection (unknown template, bad number) will never
-        // succeed on retry — mark it handled so we stop re-queuing it, and log.
-        if (err instanceof WhatsAppApiError && !err.isOutsideServiceWindow) {
-          await markHandled(appointmentId, purpose);
-          console.error(`appointment/notify permanent failure (${appointmentId}):`, err.message);
-          return "send_failed_permanent";
-        }
-        throw err; // transient → let Inngest retry with backoff
-      }
-
-      await markHandled(appointmentId, purpose);
-
-      // Thread the outbound so the patient's reply has context (best-effort).
-      if (thread) {
-        await prisma.message.create({
-          data: {
-            clinicId,
-            conversationId: thread.id,
-            senderType: SenderType.AGENT,
-            content: renderBindingText(binding, variables, PURPOSE_LABEL[purpose]),
-            metadata: {
-              automation: purpose,
-              appointmentId,
-              template: binding.templateName,
-              language: binding.languageCode,
-              variables,
-            },
-            isRead: true,
-          },
-        });
-        await prisma.conversation.update({
-          where: { id: thread.id },
-          data: { updatedAt: new Date() },
-        });
-      }
-
-      return "sent";
+      return sendAppointmentNotify(data.appointmentId!, clinicId, purpose);
     });
 
-    return { appointmentId, purpose, result };
+    return { ...data, result };
   }
 );
+
+/**
+ * Sends one appointment-scoped automation (confirm reminder or feedback request)
+ * and returns a short outcome tag. Re-checks state at send time, gates on an
+ * enabled binding, and threads the outbound into the patient's inbox.
+ */
+async function sendAppointmentNotify(
+  appointmentId: string,
+  clinicId: string,
+  purpose: "CONFIRM_REMINDER" | "FEEDBACK_REQUEST"
+): Promise<string> {
+  const appt = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+    select: {
+      id: true,
+      status: true,
+      orderNumber: true,
+      bookingDate: true,
+      reminderSentAt: true,
+      feedbackRequestedAt: true,
+      patient: { select: { id: true, fullName: true, phone: true } },
+      doctor: {
+        select: {
+          fullName: true,
+          title: true,
+          specialty: { select: { name: true } },
+        },
+      },
+      branch: { select: { name: true, address: true } },
+      slot: { select: { startTime: true, date: true } },
+      clinic: { select: { id: true, name: true } },
+    },
+  });
+  if (!appt) return "gone";
+
+  // Re-check state at send time — it may have changed since discovery.
+  if (purpose === "CONFIRM_REMINDER") {
+    if (appt.status !== AppointmentStatus.PENDING || appt.reminderSentAt) return "stale";
+  } else {
+    if (appt.status !== AppointmentStatus.COMPLETED || appt.feedbackRequestedAt) return "stale";
+  }
+
+  // The binding is the gate: no enabled binding → don't send, and DON'T set
+  // the dedupe flag, so it fires later if the clinic links a template.
+  const binding = await prisma.clinicAppointmentTemplate.findUnique({
+    where: { clinicId_purpose: { clinicId, purpose } },
+  });
+  if (!binding || !binding.enabled) return "no_binding";
+
+  const creds = await getClinicWhatsappCredentials(clinicId);
+  if (!creds) return "no_creds";
+
+  const thread = await getWhatsappThread(clinicId, appt.patient);
+  const recipient = thread ? conversationRecipient(thread) : null;
+  if (!recipient) return "no_recipient";
+
+  const context = buildTokenContext(appt);
+  const variables = buildTemplateVariables(binding.variableMap, context);
+
+  try {
+    await sendTemplateMessage(
+      recipient,
+      { name: binding.templateName, languageCode: binding.languageCode, variables },
+      { phoneNumberId: creds.phoneNumberId, accessToken: creds.accessToken }
+    );
+  } catch (err) {
+    // A permanent Meta rejection (unknown template, bad number) will never
+    // succeed on retry — mark it handled so we stop re-queuing it, and log.
+    if (err instanceof WhatsAppApiError && !err.isOutsideServiceWindow) {
+      await markHandled(appointmentId, purpose);
+      console.error(`appointment/notify permanent failure (${appointmentId}):`, err.message);
+      return "send_failed_permanent";
+    }
+    throw err; // transient → let Inngest retry with backoff
+  }
+
+  await markHandled(appointmentId, purpose);
+
+  // Thread the outbound so the patient's reply has context (best-effort).
+  if (thread) {
+    await prisma.message.create({
+      data: {
+        clinicId,
+        conversationId: thread.id,
+        senderType: SenderType.AGENT,
+        content: renderBindingText(binding, variables, PURPOSE_LABEL[purpose]),
+        metadata: {
+          automation: purpose,
+          appointmentId,
+          template: binding.templateName,
+          language: binding.languageCode,
+          variables,
+        },
+        isRead: true,
+      },
+    });
+    await prisma.conversation.update({
+      where: { id: thread.id },
+      data: { updatedAt: new Date() },
+    });
+  }
+
+  return "sent";
+}
+
+/**
+ * Sends the follow-up reminder for one treatment record: the "time to book your
+ * follow-up" template, drawn from the record's own patient/doctor/clinic. This
+ * fires days before the visit's followUpDate — well outside WhatsApp's 24h
+ * service window — so it MUST be an approved template (free-form is refused
+ * there). When the patient replies, the normal agent takes over inside the
+ * window and books the visit.
+ *
+ * Skips (and marks handled) if the patient already has an upcoming booking with
+ * that doctor — there is nothing to nudge.
+ */
+async function sendFollowUpReminder(recordId: string, clinicId: string): Promise<string> {
+  const record = await prisma.treatmentRecord.findUnique({
+    where: { id: recordId },
+    select: {
+      id: true,
+      followUpDate: true,
+      followUpReminderSentAt: true,
+      patient: { select: { id: true, fullName: true, phone: true } },
+      doctor: {
+        select: {
+          id: true,
+          fullName: true,
+          title: true,
+          specialty: { select: { name: true } },
+        },
+      },
+      branch: { select: { name: true, address: true } },
+      clinic: { select: { id: true, name: true } },
+    },
+  });
+  if (!record) return "gone";
+
+  // Re-check at send time: still unsent, and the follow-up date wasn't cleared.
+  if (record.followUpReminderSentAt || !record.followUpDate) return "stale";
+
+  // Already re-booked with this doctor? Nothing to remind — mark handled so we
+  // stop, without sending.
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const alreadyBooked = await prisma.appointment.findFirst({
+    where: {
+      clinicId,
+      patientId: record.patient.id,
+      doctorId: record.doctor.id,
+      status: { in: OPEN_STATUSES },
+      OR: [{ slot: { startTime: { gt: new Date() } } }, { bookingDate: { gte: today } }],
+    },
+    select: { id: true },
+  });
+  if (alreadyBooked) {
+    await markFollowUpHandled(recordId);
+    return "already_booked";
+  }
+
+  const binding = await prisma.clinicAppointmentTemplate.findUnique({
+    where: { clinicId_purpose: { clinicId, purpose: "FOLLOWUP_REMINDER" } },
+  });
+  if (!binding || !binding.enabled) return "no_binding";
+
+  const creds = await getClinicWhatsappCredentials(clinicId);
+  if (!creds) return "no_creds";
+
+  const thread = await getWhatsappThread(clinicId, record.patient);
+  const recipient = thread ? conversationRecipient(thread) : null;
+  if (!recipient) return "no_recipient";
+
+  const context = buildFollowUpTokenContext(record);
+  const variables = buildTemplateVariables(binding.variableMap, context);
+
+  try {
+    await sendTemplateMessage(
+      recipient,
+      { name: binding.templateName, languageCode: binding.languageCode, variables },
+      { phoneNumberId: creds.phoneNumberId, accessToken: creds.accessToken }
+    );
+  } catch (err) {
+    if (err instanceof WhatsAppApiError && !err.isOutsideServiceWindow) {
+      await markFollowUpHandled(recordId);
+      console.error(`follow-up reminder permanent failure (${recordId}):`, err.message);
+      return "send_failed_permanent";
+    }
+    throw err; // transient → let Inngest retry with backoff
+  }
+
+  await markFollowUpHandled(recordId);
+
+  if (thread) {
+    await prisma.message.create({
+      data: {
+        clinicId,
+        conversationId: thread.id,
+        senderType: SenderType.AGENT,
+        content: renderBindingText(binding, variables, PURPOSE_LABEL.FOLLOWUP_REMINDER),
+        metadata: {
+          automation: "FOLLOWUP_REMINDER",
+          recordId,
+          template: binding.templateName,
+          language: binding.languageCode,
+          variables,
+        },
+        isRead: true,
+      },
+    });
+    await prisma.conversation.update({
+      where: { id: thread.id },
+      data: { updatedAt: new Date() },
+    });
+  }
+
+  return "sent";
+}
 
 /** Stamps the purpose-specific dedupe flag so the message is never re-sent. */
 async function markHandled(
@@ -421,5 +630,13 @@ async function markHandled(
       purpose === "CONFIRM_REMINDER"
         ? { reminderSentAt: new Date() }
         : { feedbackRequestedAt: new Date() },
+  });
+}
+
+/** Stamps a record's follow-up dedupe flag so the reminder is never re-sent. */
+async function markFollowUpHandled(recordId: string): Promise<void> {
+  await prisma.treatmentRecord.update({
+    where: { id: recordId },
+    data: { followUpReminderSentAt: new Date() },
   });
 }

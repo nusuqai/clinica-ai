@@ -223,7 +223,7 @@ export async function sendEmailChange(args: {
     type: "email_change_new",
     email: args.currentEmail,
     newEmail: args.newEmail,
-    next: "/dashboard",
+    next: "/",
   });
   const { subject, html } = emailChangeEmail({
     name: args.name,

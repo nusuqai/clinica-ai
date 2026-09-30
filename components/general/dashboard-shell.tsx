@@ -8,7 +8,7 @@ import { navConfig, roleMeta } from "./nav-config";
 import ChatBubble from "@/components/chat/chat-bubble";
 import EscalationProvider from "./escalation-provider";
 
-export type DashboardRole = "patient" | "doctor" | "admin";
+export type DashboardRole = "doctor" | "admin";
 
 interface DashboardShellProps {
   children: React.ReactNode;

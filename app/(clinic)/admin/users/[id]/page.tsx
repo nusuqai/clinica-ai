@@ -13,7 +13,10 @@ import { Role } from "@prisma/client";
 import { requireClinicMember } from "@/lib/auth";
 import { getClinicUser } from "@/server/services/users";
 import { listPatientRecords, listRecordableVisits } from "@/server/services/treatments";
+import { listAttachmentsForAppointments } from "@/server/services/attachments";
 import RecordTimeline from "@/components/medical/record-timeline";
+import RecordRevisions from "@/components/medical/record-revisions";
+import AppointmentAttachments from "@/components/appointments/appointment-attachments";
 import AdminRecordModal from "@/components/medical/admin-record-modal";
 import EditPatientModal from "./_components/edit-patient-modal";
 
@@ -45,6 +48,11 @@ export default async function UserDetailPage({ params }: PageProps) {
         listRecordableVisits(clinic.id, id),
       ])
     : [[], []];
+
+  // Files attached to those visits, so each record shows its own attachments
+  // (lab results, x-rays, documents) inline alongside the clinical details.
+  const appointmentIds = records.flatMap((r) => (r.appointmentId ? [r.appointmentId] : []));
+  const attachmentsByAppointment = await listAttachmentsForAppointments(appointmentIds, clinic.id);
 
   const initials = user.fullName
     .split(" ")
@@ -146,6 +154,17 @@ export default async function UserDetailPage({ params }: PageProps) {
           <RecordTimeline
             records={records}
             emptyMessage="لا يوجد سجل علاجي لهذا المريض بعد"
+            appointmentBasePath="/admin/appointments"
+            renderRevisionBadge={(record) => <RecordRevisions record={record} />}
+            renderAttachments={(record) =>
+              record.appointmentId ? (
+                <AppointmentAttachments
+                  appointmentId={record.appointmentId}
+                  attachments={attachmentsByAppointment[record.appointmentId] ?? []}
+                  canManage
+                />
+              ) : null
+            }
             recordAction={(record) => (
               <AdminRecordModal
                 mode="edit"

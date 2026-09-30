@@ -94,7 +94,7 @@ export function DoctorsClient({
             <button
               key={spec}
               onClick={() => setFilter(spec)}
-              className={`rounded-full border px-4 py-1.5 font-sans text-sm font-medium transition-all ${
+              className={`inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 font-sans text-sm font-medium transition-all ${
                 filter === spec
                   ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
                   : "border-border bg-white text-text/70 hover:border-accent/40 hover:text-accent"

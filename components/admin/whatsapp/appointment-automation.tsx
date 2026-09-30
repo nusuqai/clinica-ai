@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, Loader2, MessageSquareHeart, Save, Trash2 } from "lucide-react";
+import { BellRing, Loader2, MessageSquareHeart, CalendarClock, Save, Trash2 } from "lucide-react";
 import type { AppointmentTemplatePurpose } from "@prisma/client";
 import { listTemplatesAction } from "@/server/actions/whatsapp";
 import {
@@ -39,6 +39,12 @@ const PURPOSES: PurposeMeta[] = [
     title: "طلب التقييم بعد الزيارة",
     hint: "يُرسَل بعد اكتمال الزيارة لطلب رأي المريض في الخدمة.",
     icon: <MessageSquareHeart className="h-4 w-4 text-accent" />,
+  },
+  {
+    purpose: "FOLLOWUP_REMINDER",
+    title: "تذكير بموعد المتابعة",
+    hint: "يُرسَل قبل موعد المتابعة الذي حدّده الطبيب في السجل العلاجي، يدعو المريض لحجز زيارة متابعة. استخدم حقل «تاريخ الموعد» ليعرض تاريخ المتابعة المقترح.",
+    icon: <CalendarClock className="h-4 w-4 text-accent" />,
   },
 ];
 
@@ -121,15 +127,20 @@ function BindingCard({
   onSaved: () => void;
 }) {
   const isReminder = meta.purpose === "CONFIRM_REMINDER";
+  const isFollowUp = meta.purpose === "FOLLOWUP_REMINDER";
 
   const [selected, setSelected] = useState<string>(
     initial ? templateKey(initial.templateName, initial.languageCode) : ""
   );
   const [variableMap, setVariableMap] = useState<string[]>(initial?.variableMap ?? []);
   const [enabled, setEnabled] = useState<boolean>(initial?.enabled ?? true);
-  // Reminder is edited in hours; feedback in minutes.
+  // Confirm reminder is edited in hours before the visit; follow-up in DAYS
+  // before the follow-up date; feedback in minutes after completion.
   const [leadHours, setLeadHours] = useState<number>(
     initial ? Math.round(initial.leadMinutes / 60) : 24
+  );
+  const [leadDays, setLeadDays] = useState<number>(
+    initial ? Math.max(1, Math.round(initial.leadMinutes / 1440)) : 3
   );
   const [delayMinutes, setDelayMinutes] = useState<number>(initial?.delayMinutes ?? 120);
   const [saving, setSaving] = useState(false);
@@ -162,8 +173,8 @@ function BindingCard({
       languageCode: template.language,
       variableMap,
       enabled,
-      leadMinutes: isReminder ? leadHours * 60 : undefined,
-      delayMinutes: isReminder ? undefined : delayMinutes,
+      leadMinutes: isFollowUp ? leadDays * 1440 : isReminder ? leadHours * 60 : undefined,
+      delayMinutes: isReminder || isFollowUp ? undefined : delayMinutes,
     });
     setSaving(false);
     if (res.ok) {
@@ -263,9 +274,22 @@ function BindingCard({
       {/* Timing */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-foreground">
-          {isReminder ? "يُرسَل قبل الموعد بـ (ساعات)" : "يُرسَل بعد اكتمال الزيارة بـ (دقائق)"}
+          {isFollowUp
+            ? "يُرسَل قبل موعد المتابعة بـ (أيام)"
+            : isReminder
+              ? "يُرسَل قبل الموعد بـ (ساعات)"
+              : "يُرسَل بعد اكتمال الزيارة بـ (دقائق)"}
         </label>
-        {isReminder ? (
+        {isFollowUp ? (
+          <input
+            type="number"
+            min={1}
+            value={leadDays}
+            onChange={(e) => setLeadDays(Math.max(1, Number(e.target.value)))}
+            className="w-32 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+            dir="ltr"
+          />
+        ) : isReminder ? (
           <input
             type="number"
             min={1}

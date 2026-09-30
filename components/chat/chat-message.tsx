@@ -50,12 +50,14 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] space-y-1 rounded-2xl rounded-se-sm bg-primary px-3.5 py-2 font-sans text-sm leading-relaxed text-white">
+        <div className="max-w-[80%] space-y-1 overflow-hidden rounded-2xl rounded-se-sm bg-primary px-3.5 py-2 font-sans text-sm leading-relaxed text-white">
           {message.audioUrl && (
             <audio controls src={message.audioUrl} className="h-9 w-full max-w-[220px]" />
           )}
           {message.media && <MediaAttachment media={message.media} />}
-          {message.content && <p>{message.content}</p>}
+          {message.content && (
+            <p className="break-words [overflow-wrap:anywhere]">{message.content}</p>
+          )}
         </div>
       </div>
     );
@@ -78,7 +80,7 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
       <div className="max-w-[85%] space-y-1">
         {isAdmin && <p className="text-[10px] font-medium text-primary">أحد الموظفين</p>}
         {(message.content || message.streaming) && (
-          <div className="prose prose-sm prose-neutral max-w-none rounded-2xl rounded-ss-sm bg-muted px-3.5 py-2 font-sans text-sm leading-relaxed text-foreground dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+          <div className="prose prose-sm prose-neutral max-w-none break-words rounded-2xl rounded-ss-sm bg-muted px-3.5 py-2 font-sans text-sm leading-relaxed text-foreground [overflow-wrap:anywhere] dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
             {message.streaming && !message.content && (
               <span className="inline-flex gap-1">

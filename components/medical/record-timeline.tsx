@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   Stethoscope,
   Pill,
@@ -6,8 +7,11 @@ import {
   MapPin,
   FileText,
   UserPen,
+  CalendarSearch,
+  Paperclip,
 } from "lucide-react";
 import type { TreatmentRecordView } from "@/server/services/treatments";
+import type { AttachmentView } from "@/server/services/attachments";
 import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import { formatSlotDate } from "@/lib/slot-time";
 
@@ -22,12 +26,35 @@ interface RecordTimelineProps {
   emptyMessage?: string;
   /** Rendered in each record's header — the doctor's edit button, for instance. */
   recordAction?: (record: TreatmentRecordView) => React.ReactNode;
+  /**
+   * When set, each record whose visit came from an appointment links to that
+   * appointment's full page under this base path (e.g. "/doctor/appointments").
+   * Omit on the appointment page itself (linking back to the same visit is
+   * pointless). This is what lets a reader jump from a history entry to "which
+   * appointment was this, on what date".
+   */
+  appointmentBasePath?: string;
+  /** Replaces the static "عُدّل N مرات" badge — e.g. a clickable badge that opens
+   *  the edit-history modal (admin). Only called when revisionCount > 0. */
+  renderRevisionBadge?: (record: TreatmentRecordView) => React.ReactNode;
+  /** Files attached to each visit, keyed by appointmentId — shown under the
+   *  record whose visit they belong to. Read-only here (download/open); managing
+   *  them lives on the appointment page. Ignored when `renderAttachments` is set. */
+  attachmentsByAppointment?: Record<string, AttachmentView[]>;
+  /** Renders the attachments area for a record — use to swap the read-only list
+   *  for a manageable one (upload/delete/rename) inline, e.g. on the admin user
+   *  profile. When provided, it fully replaces the built-in read-only block. */
+  renderAttachments?: (record: TreatmentRecordView) => React.ReactNode;
 }
 
 export default function RecordTimeline({
   records,
   emptyMessage = "لا يوجد سجل علاجي بعد",
   recordAction,
+  appointmentBasePath,
+  renderRevisionBadge,
+  attachmentsByAppointment,
+  renderAttachments,
 }: RecordTimelineProps) {
   if (records.length === 0) {
     return (
@@ -75,13 +102,26 @@ export default function RecordTimeline({
                       أدخله {record.enteredByName}
                     </span>
                   )}
-                  {record.revisionCount > 0 && (
-                    <span
-                      className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700"
-                      title={`عُدّل ${record.revisionCount} مرة`}
+                  {record.revisionCount > 0 &&
+                    (renderRevisionBadge ? (
+                      renderRevisionBadge(record)
+                    ) : (
+                      <span
+                        className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700"
+                        title={`عُدّل ${record.revisionCount} مرة`}
+                      >
+                        عُدّل {record.revisionCount === 1 ? "مرة" : `${record.revisionCount} مرات`}
+                      </span>
+                    ))}
+                  {appointmentBasePath && record.appointmentId && (
+                    <Link
+                      href={`${appointmentBasePath}/${record.appointmentId}`}
+                      className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary transition-colors hover:bg-primary/20"
+                      title="فتح صفحة الموعد المرتبط بهذا السجل"
                     >
-                      عُدّل {record.revisionCount === 1 ? "مرة" : `${record.revisionCount} مرات`}
-                    </span>
+                      <CalendarSearch className="h-3.5 w-3.5" />
+                      الموعد المرتبط
+                    </Link>
                   )}
                 </div>
               </div>
@@ -157,6 +197,51 @@ export default function RecordTimeline({
                   موعد المتابعة المقترح: {formatSlotDate(record.followUpDate)}
                 </p>
               )}
+
+              {renderAttachments && renderAttachments(record)}
+
+              {!renderAttachments &&
+                (() => {
+                  const files = record.appointmentId
+                    ? (attachmentsByAppointment?.[record.appointmentId] ?? [])
+                    : [];
+                  if (files.length === 0) return null;
+                  return (
+                    <section>
+                      <SectionLabel icon={Paperclip} text="المرفقات" />
+                      <ul className="flex flex-wrap gap-2">
+                        {files.map((a) => {
+                          const href = `/api/attachments/${a.id}`;
+                          return (
+                            <li key={a.id}>
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={a.fileName}
+                                className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-sans text-xs text-foreground transition-colors hover:bg-muted"
+                              >
+                                {a.kind === "image" ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={href}
+                                    alt={a.fileName}
+                                    className="h-6 w-6 flex-shrink-0 rounded object-cover"
+                                  />
+                                ) : (
+                                  <FileText
+                                    className={`h-4 w-4 flex-shrink-0 ${a.kind === "pdf" ? "text-red-500" : "text-muted-foreground"}`}
+                                  />
+                                )}
+                                <span className="truncate">{a.fileName}</span>
+                              </a>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
+                  );
+                })()}
             </div>
           </article>
         </li>

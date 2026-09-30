@@ -37,6 +37,7 @@ import type { AgentStreamEvent } from "@/agent";
 import type { ToolCallRecord } from "@/agent/types";
 import {
   getOrCreateWebConversation,
+  getOrCreateGuestWebConversation,
   resolveActiveSession,
   getSessionMessages,
   persistUserMessage,
@@ -229,7 +230,7 @@ export async function* streamWebAgent(
   const sessionId = await resolveActiveSession(conversationId, membership.clinicId);
   await persistUserMessage(conversationId, sessionId, membership.clinicId, userText, userId);
 
-  yield* streamWebReply(membership, conversationId, sessionId, userId);
+  yield* streamWebReply(memberWebContext(membership, userId, conversationId, sessionId));
 }
 
 /** The web membership shape both web entrypoints resolve. */
@@ -238,6 +239,33 @@ interface WebMembership {
   clinicId: string;
   clinic: { slug: string };
   user: { fullName: string };
+}
+
+/** The clinic a guest (no account) web turn runs against — resolved by the API
+ *  route from the request host, since a guest has no membership to resolve it. */
+export interface GuestClinic {
+  id: string;
+  slug: string;
+}
+
+/**
+ * Web channel, anonymous guest (no account). Resolves/creates the guest's
+ * unclaimed WEB conversation from the browser-held `conversationId`, emits an
+ * `init` event carrying that id (so the browser can persist it and later reload
+ * history / receive admin replies), then streams the reply with a role-null
+ * context — info tools only, GUEST_WEB_GUIDE prompt.
+ */
+export async function* streamGuestWebAgent(
+  clinic: GuestClinic,
+  conversationId: string | null,
+  userText: string
+): AsyncGenerator<AgentStreamEvent> {
+  const convId = await getOrCreateGuestWebConversation(conversationId, clinic.id);
+  const sessionId = await resolveActiveSession(convId, clinic.id);
+  await persistUserMessage(convId, sessionId, clinic.id, userText, null);
+
+  yield { type: "init", conversationId: convId };
+  yield* streamWebReply(guestWebContext(clinic, convId, sessionId));
 }
 
 async function resolveWebMembership(userId: string): Promise<WebMembership> {
@@ -264,30 +292,14 @@ interface WebReplyOutcome {
   toolCalls: ToolCallRecord[];
 }
 
-/**
- * Shared web reply tail: gates, streams the agent, persists + charges the reply.
- * The user message has already been persisted into `sessionId`. Used by both the
- * text and voice web entrypoints. Returns the persisted reply (for TTS) or null.
- */
-async function* streamWebReply(
+/** Builds the web AgentContext for an identified clinic member. */
+function memberWebContext(
   membership: WebMembership,
+  userId: string,
   conversationId: string,
-  sessionId: string,
-  userId: string
-): AsyncGenerator<AgentStreamEvent, WebReplyOutcome | null> {
-  if (!(await isSessionAiEnabled(sessionId))) {
-    yield { type: "handoff" };
-    return null;
-  }
-
-  if (await clinicGateBlocks(membership.clinicId, conversationId, sessionId)) {
-    yield { type: "handoff" };
-    return null;
-  }
-
-  const prior = await getSessionMessages(sessionId);
-
-  const ctx: AgentContext = {
+  sessionId: string
+): AgentContext {
+  return {
     actorId: userId,
     role: membership.role,
     clinicId: membership.clinicId,
@@ -298,6 +310,53 @@ async function* streamWebReply(
     sessionId,
     actorName: membership.user.fullName,
   };
+}
+
+/** Builds the web AgentContext for an anonymous guest (no account, role null).
+ *  With no role, `getToolsForRole` hands the agent only info tools, and the
+ *  prompt uses GUEST_WEB_GUIDE — so booking is structurally impossible and the
+ *  guest is told to sign in / register first. */
+function guestWebContext(
+  clinic: GuestClinic,
+  conversationId: string,
+  sessionId: string
+): AgentContext {
+  return {
+    actorId: null,
+    role: null,
+    clinicId: clinic.id,
+    clinicSlug: clinic.slug,
+    contactPhone: null,
+    channel: Channel.WEB,
+    conversationId,
+    sessionId,
+    actorName: "",
+  };
+}
+
+/**
+ * Shared web reply tail: gates, streams the agent, persists + charges the reply.
+ * The user message has already been persisted into `ctx.sessionId`, and the
+ * caller has built the AgentContext (identified member or anonymous guest). Used
+ * by every web entrypoint (text/voice, member/guest). Returns the persisted
+ * reply (for TTS) or null when the agent didn't answer (handoff / gate).
+ */
+async function* streamWebReply(
+  ctx: AgentContext
+): AsyncGenerator<AgentStreamEvent, WebReplyOutcome | null> {
+  const { clinicId, conversationId, sessionId } = ctx;
+
+  if (!(await isSessionAiEnabled(sessionId))) {
+    yield { type: "handoff" };
+    return null;
+  }
+
+  if (await clinicGateBlocks(clinicId, conversationId, sessionId)) {
+    yield { type: "handoff" };
+    return null;
+  }
+
+  const prior = await getSessionMessages(sessionId);
 
   let finalText = "";
   let toolCalls: ToolCallRecord[] = [];
@@ -313,15 +372,9 @@ async function* streamWebReply(
   }
 
   const replyText = finalText || FALLBACK_REPLY;
-  const agentMsg = await persistAgentMessage(
-    conversationId,
-    sessionId,
-    membership.clinicId,
-    replyText,
-    {
-      toolCalls,
-    }
-  );
+  const agentMsg = await persistAgentMessage(conversationId, sessionId, clinicId, replyText, {
+    toolCalls,
+  });
 
   // Unconditional: the unit is owed because the agent answered, not because the
   // provider sent token metadata back. `runAgentStream` always ends with a
@@ -330,7 +383,7 @@ async function* streamWebReply(
   // usage we still bill the clinic its one unit and let the USD side compute to
   // zero, rather than handing out a free reply.
   await chargeReply({
-    clinicId: membership.clinicId,
+    clinicId,
     sessionId,
     messageId: agentMsg.id,
     usage: usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0, model: DEFAULT_MODEL },
@@ -356,13 +409,49 @@ export async function* streamWebVoiceAgent(
   const conversationId = await getOrCreateWebConversation(userId, membership.clinicId);
   const sessionId = await resolveActiveSession(conversationId, membership.clinicId);
 
+  yield* runWebVoiceTurn(memberWebContext(membership, userId, conversationId, sessionId), audio);
+}
+
+/**
+ * Web channel, anonymous guest voice note. Same modality as `streamWebVoiceAgent`
+ * but for a visitor with no account: resolves the guest conversation from the
+ * browser-held id, emits `init`, then runs the shared voice turn with a role-null
+ * context (info tools only, GUEST_WEB_GUIDE prompt).
+ */
+export async function* streamGuestWebVoiceAgent(
+  clinic: GuestClinic,
+  conversationId: string | null,
+  audio: { bytes: Buffer; mimeType: string }
+): AsyncGenerator<AgentStreamEvent> {
+  const convId = await getOrCreateGuestWebConversation(conversationId, clinic.id);
+  const sessionId = await resolveActiveSession(convId, clinic.id);
+
+  yield { type: "init", conversationId: convId };
+  yield* runWebVoiceTurn(guestWebContext(clinic, convId, sessionId), audio);
+}
+
+/**
+ * Shared voice turn for the web channel (member or guest): stores the recorded
+ * audio, transcribes it, persists the user message (transcript + voice metadata),
+ * charges transcription as its own ledger line, then streams the agent reply
+ * exactly like a text turn. Emits a `transcript` event so the widget can show
+ * what was understood. When the clinic has `voiceReplyEnabled`, the final reply
+ * is also synthesized (TTS) and an `audio` event is emitted so the widget can
+ * play it. The user message's `senderId` is `ctx.actorId` — null for a guest.
+ */
+async function* runWebVoiceTurn(
+  ctx: AgentContext,
+  audio: { bytes: Buffer; mimeType: string }
+): AsyncGenerator<AgentStreamEvent> {
+  const { clinicId, conversationId, sessionId, actorId } = ctx;
+
   let transcript = "";
   let durationSec: number | null = null;
   let sttModel = "";
   let voiceMeta: VoiceMessageMetadata | null = null;
   try {
     const stored = await uploadPatientMedia({
-      clinicId: membership.clinicId,
+      clinicId,
       conversationId,
       bytes: audio.bytes,
       contentType: audio.mimeType,
@@ -387,15 +476,15 @@ export async function* streamWebVoiceAgent(
   const userMsg = await persistUserMessage(
     conversationId,
     sessionId,
-    membership.clinicId,
+    clinicId,
     content,
-    userId,
+    actorId,
     voiceMeta ? { voice: voiceMeta } : null
   );
 
   if (sttModel) {
     await chargeTranscriptionSafe({
-      clinicId: membership.clinicId,
+      clinicId,
       sessionId,
       messageId: userMsg.id,
       model: sttModel,
@@ -410,11 +499,11 @@ export async function* streamWebVoiceAgent(
     return;
   }
 
-  const outcome = yield* streamWebReply(membership, conversationId, sessionId, userId);
+  const outcome = yield* streamWebReply(ctx);
 
   // Voice-out: the patient spoke, so speak back — but only if the clinic opted in.
   if (!outcome) return;
-  const status = await getClinicAiStatus(membership.clinicId);
+  const status = await getClinicAiStatus(clinicId);
   if (!status.voiceReplyEnabled) return;
 
   const tts = await synthesizeSpeech(outcome.replyText);
@@ -422,7 +511,7 @@ export async function* streamWebVoiceAgent(
 
   try {
     const stored = await uploadPatientMedia({
-      clinicId: membership.clinicId,
+      clinicId,
       conversationId,
       bytes: tts.bytes,
       contentType: tts.mimeType,
@@ -447,7 +536,7 @@ export async function* streamWebVoiceAgent(
       },
     });
     await chargeTtsSafe({
-      clinicId: membership.clinicId,
+      clinicId,
       sessionId,
       messageId: outcome.agentMessageId,
       model: tts.model,

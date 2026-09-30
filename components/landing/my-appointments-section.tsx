@@ -5,16 +5,17 @@ import {
   Clock,
   Hash,
   MapPin,
-  ArrowLeft,
   FileText,
   Stethoscope,
+  ChevronLeft,
 } from "lucide-react";
 import type { PatientAppointment } from "@/server/services/appointments";
 import type { TreatmentRecordView } from "@/server/services/treatments";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import { CancelAppointmentButton } from "@/components/dashboard/cancel-appointment-button";
-import RecordTimeline from "@/components/medical/record-timeline";
 import { PatientHistoryPanels } from "@/components/landing/patient-history-panels";
+import { RecordsPanel } from "@/components/landing/records-panel";
+import { ShowMore } from "@/components/landing/show-more";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
 // The signed-in patient's area on the clinic's own home page, right under the
@@ -88,13 +89,6 @@ export function MyAppointmentsSection({
               <CalendarPlus className="h-4 w-4" />
               احجز موعداً جديداً
             </a>
-            <Link
-              href="/dashboard/appointments"
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 font-sans text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary"
-            >
-              كل مواعيدي
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
           </div>
         </div>
 
@@ -114,7 +108,7 @@ export function MyAppointmentsSection({
           recordCount={records.length}
           totalCount={stats.total}
           pastVisits={<PastVisitsList visits={pastVisits} records={records} />}
-          records={<RecordTimeline records={records} emptyMessage="لا يوجد سجل علاجي بعد" />}
+          records={<RecordsPanel records={records} initial={PAST_VISITS_LIMIT} />}
         />
       </div>
     </section>
@@ -142,62 +136,63 @@ function PastVisitsList({
     );
   }
 
-  return (
-    <div>
-      <ul className="divide-y divide-border">
-        {visits.map((appt) => {
-          const date = visitDate(appt);
-          return (
-            <li key={appt.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
-              <div className="flex h-11 w-11 flex-shrink-0 flex-col items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-700">
-                {date ? (
-                  <>
-                    <span className="font-heading text-base font-bold leading-none">
-                      {formatSlotDate(date, { day: "numeric" })}
-                    </span>
-                    <span className="font-sans text-[10px] font-medium">
-                      {formatSlotDate(date, { month: "short" })}
-                    </span>
-                  </>
-                ) : (
-                  <CalendarDays className="h-5 w-5" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-sans font-medium text-foreground">
-                  د. {appt.doctor.profile.fullName}
-                </p>
-                <p className="font-sans text-xs text-muted-foreground">
-                  {[
-                    appt.doctor.specialty,
-                    appt.branch?.name,
-                    date && formatSlotDate(date, { year: "numeric" }),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              </div>
-              {documented.has(appt.id) && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 font-sans text-xs font-medium text-primary">
-                  <FileText className="h-3 w-3" />
-                  له سجل علاجي
-                </span>
-              )}
-              <AppointmentStatusBadge status={appt.status} />
-            </li>
-          );
-        })}
-      </ul>
-      {visits.length >= PAST_VISITS_LIMIT && (
+  const items = visits.map((appt) => {
+    const date = visitDate(appt);
+    return (
+      <li key={appt.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+        <div className="flex h-11 w-11 flex-shrink-0 flex-col items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-700">
+          {date ? (
+            <>
+              <span className="font-heading text-base font-bold leading-none">
+                {formatSlotDate(date, { day: "numeric" })}
+              </span>
+              <span className="font-sans text-[10px] font-medium">
+                {formatSlotDate(date, { month: "short" })}
+              </span>
+            </>
+          ) : (
+            <CalendarDays className="h-5 w-5" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-sans font-medium text-foreground">
+            د. {appt.doctor.profile.fullName}
+          </p>
+          <p className="font-sans text-xs text-muted-foreground">
+            {[
+              appt.doctor.specialty,
+              appt.branch?.name,
+              date && formatSlotDate(date, { year: "numeric" }),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        </div>
+        {documented.has(appt.id) && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 font-sans text-xs font-medium text-primary">
+            <FileText className="h-3 w-3" />
+            له سجل علاجي
+          </span>
+        )}
+        <AppointmentStatusBadge status={appt.status} />
         <Link
-          href="/dashboard/appointments?status=COMPLETED"
-          className="mt-3 inline-flex items-center gap-1 font-sans text-sm font-medium text-primary hover:underline"
+          href={`/appointments/${appt.id}`}
+          className="inline-flex items-center gap-1 font-sans text-xs font-medium text-primary transition-colors hover:text-primary/80"
         >
-          عرض كل الزيارات
-          <ArrowLeft className="h-4 w-4" />
+          التفاصيل
+          <ChevronLeft className="h-3.5 w-3.5" />
         </Link>
-      )}
-    </div>
+      </li>
+    );
+  });
+
+  return (
+    <ShowMore
+      as="ul"
+      className="divide-y divide-border"
+      items={items}
+      initial={PAST_VISITS_LIMIT}
+    />
   );
 }
 
@@ -304,8 +299,15 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
           )}
         </div>
 
-        <div className="mt-auto pt-1">
+        <div className="mt-auto flex items-center justify-between gap-2 pt-1">
           <CancelAppointmentButton appointmentId={appt.id} status={appt.status} />
+          <Link
+            href={`/appointments/${appt.id}`}
+            className="inline-flex items-center gap-1 font-sans text-xs font-medium text-primary transition-colors hover:text-primary/80"
+          >
+            التفاصيل
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </div>
     </article>

@@ -14,6 +14,7 @@ import {
   StickyNote,
 } from "lucide-react";
 import { toast } from "sonner";
+import Link from "next/link";
 import { AppointmentStatus } from "@prisma/client";
 import { updateAppointmentStatusAction } from "@/server/actions/admin";
 import type { AdminAppointment } from "@/server/services/appointments";
@@ -340,6 +341,13 @@ export default function AppointmentBoard({
             <p className="border-t border-border pt-2 text-xs text-muted-foreground">
               تم الحجز في {formatSlotDate(detailsAppt.createdAt)}
             </p>
+
+            <Link
+              href={`/admin/appointments/${detailsAppt.id}`}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
+            >
+              فتح صفحة الموعد الكاملة
+            </Link>
           </div>
         )}
       </Modal>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CalendarCheck, ChevronDown, FileText, LayoutDashboard } from "lucide-react";
+import { ArrowLeft, CalendarCheck, CalendarPlus, ChevronDown, FileText } from "lucide-react";
 
 // Expandable "past visits" / "treatment record" panels on the clinic home page.
 // The panel bodies are rendered on the server and handed in as nodes; this
@@ -50,12 +50,12 @@ export function PatientHistoryPanels({
           hint={recordCount === 0 ? "التشخيص والروشتات" : `${recordCount} زيارة مسجّلة`}
         />
         <Link
-          href="/dashboard"
+          href="#book"
           className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 text-start transition-colors hover:border-primary/40 hover:bg-primary/5"
         >
-          <IconTile icon={LayoutDashboard} active={false} />
+          <IconTile icon={CalendarPlus} active={false} />
           <div className="min-w-0">
-            <p className="font-sans text-sm font-medium text-foreground">لوحة التحكم</p>
+            <p className="font-sans text-sm font-medium text-foreground">احجز موعداً جديداً</p>
             <p className="font-sans text-xs text-muted-foreground">{totalCount} موعد إجمالاً</p>
           </div>
           <ArrowLeft className="ms-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />

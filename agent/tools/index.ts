@@ -26,12 +26,16 @@ export function getToolsForRole(ctx: AgentContext): DynamicStructuredTool[] {
   // on WhatsApp — a web user is already logged in.
   const claim = ctx.channel === Channel.WHATSAPP ? [claimWebLoginTool(ctx)] : [];
 
-  // Unknown WhatsApp contact / anonymous web guest → info + human handoff, plus
-  // the ability to register as a patient in this clinic so they can then book.
-  // `register_in_clinic` covers both Case 2 (has an account, not a member here)
-  // and Case 1 (brand-new number → provisions an anonymous account from the phone).
+  // Unknown WhatsApp contact / anonymous web guest → info + human handoff.
+  //
+  // `register_in_clinic` provisions an account from the contact's phone, so it
+  // only works on WhatsApp (where the phone is known). A web guest has no phone
+  // and is instead told — by GUEST_WEB_GUIDE — to create an account / sign in
+  // from the website, so the tool is withheld there to keep the model from
+  // attempting a registration it cannot complete.
   if (ctx.role === null) {
-    return [...base, registerInClinicTool(ctx), ...claim];
+    const register = ctx.channel === Channel.WHATSAPP ? [registerInClinicTool(ctx)] : [];
+    return [...base, ...register, ...claim];
   }
 
   switch (ctx.role) {

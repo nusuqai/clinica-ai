@@ -246,6 +246,104 @@ export async function getAppointmentDetails(appointmentId: string) {
   return { ...row, ...queueView(row) };
 }
 
+// The full-page view of one appointment: scheduling state, the people involved,
+// status timestamps, and the patient's feedback. The clinical record and the
+// visit attachments are fetched separately (their own services) so the page can
+// reuse those typed views. Clinic-scoped — a row from another clinic is null.
+export interface AppointmentDetailView {
+  id: string;
+  clinicId: string;
+  status: AppointmentStatus;
+  createdAt: Date;
+  patient: { id: string; fullName: string; phone: string | null };
+  doctor: {
+    fullName: string;
+    specialty: string;
+    title: string | null;
+    examinationFee: number | null;
+    consultationFee: number | null;
+  };
+  branch: { name: string; address: string | null } | null;
+  slot: { date: Date; startTime: Date; endTime: Date } | null;
+  patientNotes: string | null;
+  doctorNotes: string | null;
+  cancellationReason: string | null;
+  cancelledAt: Date | null;
+  confirmedAt: Date | null;
+  completedAt: Date | null;
+  reminderSentAt: Date | null;
+  // Queue / arrival view fields.
+  orderNumber: number | null;
+  bookingDate: Date | null;
+  isOrderBased: boolean;
+  arrivalBased: boolean;
+  arrived: boolean;
+  currentOrder: number | null;
+  estimatedWaitMin: number | null;
+  expectedTime: string | null;
+  feedback: { rating: number | null; comment: string | null; createdAt: Date } | null;
+}
+
+export async function getAppointmentForDetail(
+  appointmentId: string,
+  clinicId: string
+): Promise<AppointmentDetailView | null> {
+  const row = await prisma.appointment.findFirst({
+    where: { id: appointmentId, clinicId },
+    include: {
+      slot: { select: { date: true, startTime: true, endTime: true } },
+      branch: { select: { name: true, address: true } },
+      patient: { select: { id: true, fullName: true, phone: true } },
+      doctor: {
+        select: {
+          fullName: true,
+          title: true,
+          specialty: { select: { name: true } },
+          examinationFee: true,
+          consultationFee: true,
+        },
+      },
+      feedback: { select: { rating: true, comment: true, createdAt: true } },
+      ...queueInfoInclude,
+    },
+  });
+  if (!row) return null;
+  const q = queueView(row);
+  return {
+    id: row.id,
+    clinicId: row.clinicId,
+    status: row.status,
+    createdAt: row.createdAt,
+    patient: row.patient,
+    doctor: {
+      fullName: row.doctor.fullName,
+      specialty: row.doctor.specialty?.name ?? "",
+      title: row.doctor.title,
+      examinationFee: row.doctor.examinationFee != null ? Number(row.doctor.examinationFee) : null,
+      consultationFee:
+        row.doctor.consultationFee != null ? Number(row.doctor.consultationFee) : null,
+    },
+    branch: row.branch,
+    slot: row.slot,
+    patientNotes: row.patientNotes,
+    doctorNotes: row.doctorNotes,
+    cancellationReason: row.cancellationReason,
+    cancelledAt: row.cancelledAt,
+    confirmedAt: row.confirmedAt,
+    completedAt: row.completedAt,
+    reminderSentAt: row.reminderSentAt,
+    orderNumber: q.orderNumber,
+    bookingDate: q.bookingDate,
+    isOrderBased: q.isOrderBased,
+    arrivalBased: q.arrivalBased,
+    arrived: q.arrived,
+    currentOrder: q.currentOrder,
+    estimatedWaitMin: q.estimatedWaitMin,
+    expectedTime: q.expectedTime,
+    feedback: row.feedback,
+  };
+}
+
 // ─── Doctor Queries ───────────────────────────────────────────────────────────
 
 export interface DoctorAppointmentView {

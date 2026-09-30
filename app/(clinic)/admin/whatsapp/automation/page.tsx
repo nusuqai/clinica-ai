@@ -9,7 +9,7 @@ export default async function WhatsAppAutomationPage() {
 
   return (
     <div>
-      <PageHeader title="التذكيرات والتقييم" />
+      <PageHeader title="التذكيرات والمتابعة والتقييم" />
       <AppointmentAutomation configured={!!config} />
     </div>
   );

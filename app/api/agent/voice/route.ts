@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { streamWebVoiceAgent } from "@/server/services/agentRunner";
+import { getHostClinic } from "@/lib/auth";
+import { streamWebVoiceAgent, streamGuestWebVoiceAgent } from "@/server/services/agentRunner";
+import type { AgentStreamEvent } from "@/agent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +20,12 @@ export async function POST(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) {
+
+  // Same guest model as /api/agent/chat: a signed-in member speaks to their
+  // clinic's agent; an anonymous visitor on a clinic host speaks as a guest
+  // (clinic resolved from the host). The root domain has no clinic to speak to.
+  const clinic = user ? null : await getHostClinic();
+  if (!user && !clinic) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -39,6 +46,15 @@ export async function POST(request: NextRequest) {
 
   const bytes = Buffer.from(await file.arrayBuffer());
   const mimeType = file.type || "audio/webm";
+  const conversationId = (form.get("conversationId") as string | null) ?? null;
+
+  const run = (): AsyncGenerator<AgentStreamEvent> =>
+    user
+      ? streamWebVoiceAgent(user.id, { bytes, mimeType })
+      : streamGuestWebVoiceAgent({ id: clinic!.id, slug: clinic!.slug }, conversationId, {
+          bytes,
+          mimeType,
+        });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -46,7 +62,7 @@ export async function POST(request: NextRequest) {
       const send = (data: unknown) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       try {
-        for await (const ev of streamWebVoiceAgent(user.id, { bytes, mimeType })) {
+        for await (const ev of run()) {
           send(ev);
         }
       } catch (e) {

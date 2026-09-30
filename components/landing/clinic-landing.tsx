@@ -6,11 +6,8 @@ import * as AppointmentService from "@/server/services/appointments";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { HeroSection } from "@/components/landing/hero-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
-import {
-  MyAppointmentsSection,
-  PAST_VISITS_LIMIT,
-  describeWhen,
-} from "@/components/landing/my-appointments-section";
+import { MyAppointmentsSection, describeWhen } from "@/components/landing/my-appointments-section";
+import ChatBubble from "@/components/chat/chat-bubble";
 import * as TreatmentService from "@/server/services/treatments";
 import { DoctorsClient } from "@/components/landing/doctors-client";
 import { FeaturesSection } from "@/components/landing/features-section";
@@ -61,7 +58,6 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
         ? AppointmentService.getPatientAppointments(ctx.user.id, {
             clinicId: clinic.id,
             status: AppointmentStatus.COMPLETED,
-            limit: PAST_VISITS_LIMIT,
           })
         : Promise.resolve([]),
       isPatient && ctx
@@ -110,8 +106,10 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
         registerHref={registerHref}
       />
 
-      {/* Quick jump to whichever dashboard the viewer has in this clinic */}
-      {accessRole && (
+      {/* Quick jump to the staff dashboard for a doctor/admin viewing the landing.
+          Patients have no dashboard — this page IS their home — so it's not shown
+          to them. */}
+      {accessRole && accessRole !== Role.PATIENT && (
         <div className="fixed left-1/2 top-20 z-40 -translate-x-1/2">
           <Link
             href={dashboardHref}
@@ -168,6 +166,13 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
         loginHref={loginHref}
         registerHref={registerHref}
       />
+
+      {/* AI assistant — on the clinic's public home page for everyone. A signed-in
+          member chats with their clinic's agent; an anonymous visitor chats as a
+          guest (info only, told to sign in / register before booking). Hidden for
+          a platform admin browsing a clinic they aren't a member of — they have
+          no membership to scope the chat and manage conversations from the inbox. */}
+      {!ctx?.viaPlatformAdmin && <ChatBubble guest={!isAuthenticated} />}
     </div>
   );
 }

@@ -129,10 +129,13 @@ enum SocialPlatform {
 
 // Which appointment automation a ClinicAppointmentTemplate binding drives.
 // CONFIRM_REMINDER = the "please confirm" message sent ~24h before the visit;
-// FEEDBACK_REQUEST = the post-visit message asking the patient for feedback.
+// FEEDBACK_REQUEST = the post-visit message asking the patient for feedback;
+// FOLLOWUP_REMINDER = the "time to book your follow-up" message sent ahead of a
+// TreatmentRecord's followUpDate, inviting the patient to book a new visit.
 enum AppointmentTemplatePurpose {
   CONFIRM_REMINDER
   FEEDBACK_REQUEST
+  FOLLOWUP_REMINDER
 }
 
 // ─── Tenancy ────────────────────────────────────────────────────────────────
@@ -140,47 +143,48 @@ enum AppointmentTemplatePurpose {
 // A tenant. Each clinic is isolated: its own members, doctors, appointments,
 // conversations and branding. Reached at /clinic/{slug}.
 model Clinic {
-  id                   String                      @id @default(uuid()) @db.Uuid
-  slug                 String                      @unique
-  name                 String
-  description          String?
-  logoUrl              String?
-  primaryColor         String?
-  accentColor          String?
-  isActive             Boolean                     @default(true)
-  createdAt            DateTime                    @default(now())
-  updatedAt            DateTime                    @updatedAt
-  timezone             String                      @default("Africa/Cairo")
-  messages             Message[]
-  escalations          Escalation[]
-  members              ClinicMember[]
-  branches             Branch[]
-  phones               ClinicPhone[]
-  socials              ClinicSocial[]
-  specialties          Specialty[]
-  doctors              Doctor[]
-  appointments         Appointment[]
-  conversations        Conversation[]
-  requestsFulfilled    ClinicRequest[]             @relation("RequestCreatedClinic")
-  whatsappConfig       WhatsappConfig?
-  aiCredit             ClinicAiCredit?
-  aiUsage              AiUsageLog[]
-  aiLedger             AiCreditLedger[]
-  aiUnitLedger         AiUnitLedger[]
-  branchHours          BranchHours[]
-  doctorBranch         DoctorBranch[]
-  availabilityRule     AvailabilityRule[]
-  slot                 Slot[]
-  chatSession          ChatSession[]
-  branchPhone          BranchPhone[]
-  dayQueues            DoctorDayQueue[]
-  appointmentTemplates ClinicAppointmentTemplate[]
-  appointmentFeedback  AppointmentFeedback[]
-  knowledgeDocs        KnowledgeDoc[]
-  treatmentRecords     TreatmentRecord[]
-  treatmentProcedures  TreatmentProcedure[]
-  prescriptions        Prescription[]
-  treatmentRevisions   TreatmentRecordRevision[]
+  id                     String                      @id @default(uuid()) @db.Uuid
+  slug                   String                      @unique
+  name                   String
+  description            String?
+  logoUrl                String?
+  primaryColor           String?
+  accentColor            String?
+  isActive               Boolean                     @default(true)
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  timezone               String                      @default("Africa/Cairo")
+  messages               Message[]
+  escalations            Escalation[]
+  members                ClinicMember[]
+  branches               Branch[]
+  phones                 ClinicPhone[]
+  socials                ClinicSocial[]
+  specialties            Specialty[]
+  doctors                Doctor[]
+  appointments           Appointment[]
+  conversations          Conversation[]
+  requestsFulfilled      ClinicRequest[]             @relation("RequestCreatedClinic")
+  whatsappConfig         WhatsappConfig?
+  aiCredit               ClinicAiCredit?
+  aiUsage                AiUsageLog[]
+  aiLedger               AiCreditLedger[]
+  aiUnitLedger           AiUnitLedger[]
+  branchHours            BranchHours[]
+  doctorBranch           DoctorBranch[]
+  availabilityRule       AvailabilityRule[]
+  slot                   Slot[]
+  chatSession            ChatSession[]
+  branchPhone            BranchPhone[]
+  dayQueues              DoctorDayQueue[]
+  appointmentTemplates   ClinicAppointmentTemplate[]
+  appointmentFeedback    AppointmentFeedback[]
+  knowledgeDocs          KnowledgeDoc[]
+  treatmentRecords       TreatmentRecord[]
+  treatmentProcedures    TreatmentProcedure[]
+  prescriptions          Prescription[]
+  treatmentRevisions     TreatmentRecordRevision[]
+  appointmentAttachments AppointmentAttachment[]
 
   @@map("clinics")
 }
@@ -412,6 +416,8 @@ model Profile {
   treatmentRecords    TreatmentRecord[]         @relation("PatientTreatmentRecords")
   authoredRecords     TreatmentRecord[]         @relation("AuthoredTreatmentRecords")
   treatmentEdits      TreatmentRecordRevision[] @relation("TreatmentRecordEdits")
+  // Visit files this profile uploaded as staff.
+  uploadedAttachments AppointmentAttachment[]   @relation("UploadedAttachments")
 
   @@map("profiles")
 }
@@ -645,17 +651,19 @@ model Appointment {
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
-  clinic          Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  branch          Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  patient         Profile              @relation(fields: [patientId], references: [id])
-  doctor          Doctor               @relation("DoctorAppointments", fields: [doctorId], references: [id])
-  referredBy      Doctor?              @relation("ReferredAppointments", fields: [referredByDoctorId], references: [id])
-  slot            Slot?                @relation(fields: [slotId], references: [id])
-  rule            AvailabilityRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
-  queue           DoctorDayQueue?      @relation(fields: [queueId], references: [id], onDelete: SetNull)
+  clinic          Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  branch          Branch?                 @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  patient         Profile                 @relation(fields: [patientId], references: [id])
+  doctor          Doctor                  @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  referredBy      Doctor?                 @relation("ReferredAppointments", fields: [referredByDoctorId], references: [id])
+  slot            Slot?                   @relation(fields: [slotId], references: [id])
+  rule            AvailabilityRule?       @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  queue           DoctorDayQueue?         @relation(fields: [queueId], references: [id], onDelete: SetNull)
   feedback        AppointmentFeedback?
   // The clinical record for this visit, if the doctor wrote one.
   treatmentRecord TreatmentRecord?
+  // Files (lab results, x-rays, documents) attached to this visit by staff.
+  attachments     AppointmentAttachment[]
 
   @@index([clinicId])
   @@index([branchId])
@@ -671,6 +679,36 @@ model Appointment {
   @@index([status, feedbackRequestedAt])
   @@index([status, completedAt])
   @@map("appointments")
+}
+
+// A file attached to a visit — lab result, x-ray, scanned document. Uploaded by
+// clinic staff (doctor/admin) from the appointment page. The bytes live in the
+// private `patient-media` bucket (see lib/supabase/storage.ts); this row holds
+// only a pointer (`storagePath`) plus metadata, read back via short-lived signed
+// URLs. Cascades with its appointment so deleting a visit drops its files' rows.
+model AppointmentAttachment {
+  id            String   @id @default(uuid()) @db.Uuid
+  clinicId      String   @db.Uuid
+  appointmentId String   @db.Uuid
+  // The Profile (staff member) that uploaded it. Restrict: keep the record's
+  // provenance even if the uploader's profile is later removed elsewhere.
+  uploadedById  String   @db.Uuid
+  // Object path within the private bucket: `<clinicId>/appointments/<appointmentId>/<uuid>.<ext>`.
+  storagePath   String
+  fileName      String // original filename, for display + download
+  contentType   String // base mime type
+  size          Int // byte length
+  // Coarse category for the UI: "image" | "pdf" | "document".
+  kind          String
+  createdAt     DateTime @default(now())
+
+  clinic      Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  uploadedBy  Profile     @relation("UploadedAttachments", fields: [uploadedById], references: [id])
+
+  @@index([clinicId, appointmentId])
+  @@index([appointmentId])
+  @@map("appointment_attachments")
 }
 
 model Conversation {
@@ -755,25 +793,25 @@ model Escalation {
 }
 
 model Message {
-  id             String     @id @default(uuid()) @db.Uuid
-  conversationId String     @db.Uuid
-  clinicId       String     @db.Uuid
-  sessionId      String?    @db.Uuid
-  senderType     SenderType
-  senderId       String?    @db.Uuid // null when senderType = AGENT
-  content        String
-  metadata       Json? // { toolCalls, voice, media, structured, reaction } — see agent/types.ts
+  id                String     @id @default(uuid()) @db.Uuid
+  conversationId    String     @db.Uuid
+  clinicId          String     @db.Uuid
+  sessionId         String?    @db.Uuid
+  senderType        SenderType
+  senderId          String?    @db.Uuid // null when senderType = AGENT
+  content           String
+  metadata          Json? // { toolCalls, voice, media, structured, reaction } — see agent/types.ts
   // The WhatsApp Cloud API message id (wamid) for messages that came in on / went
   // out over WhatsApp. Lets an inbound reaction (which references the reacted
   // message by wamid) be attached to the right message. Null for web messages.
-  whatsappMessageId String? @db.Text
-  isRead         Boolean    @default(false)
-  createdAt      DateTime   @default(now())
+  whatsappMessageId String?    @db.Text
+  isRead            Boolean    @default(false)
+  createdAt         DateTime   @default(now())
 
   clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session      ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  sender       Profile?      @relation("SenderProfile", fields: [senderId], references: [id], onDelete: SetNull)
+  sender       Profile?     @relation("SenderProfile", fields: [senderId], references: [id], onDelete: SetNull)
   aiUsage      AiUsageLog[]
   escalations  Escalation[]
 
@@ -806,40 +844,40 @@ model Message {
 // can cost far under one cent, so 8 fractional digits keep sums of many tiny
 // charges exact. Never touched by JS floats.
 model ClinicAiCredit {
-  id                  String    @id @default(uuid()) @db.Uuid
-  clinicId            String    @unique @db.Uuid
+  id                   String    @id @default(uuid()) @db.Uuid
+  clinicId             String    @unique @db.Uuid
   // Per-clinic global AI auto-reply switch. Distinct from ChatSession.aiEnabled
   // (a per-session pause) — this turns the agent off across the whole clinic.
-  aiEnabled           Boolean   @default(true)
+  aiEnabled            Boolean   @default(true)
   // Per-clinic voice-reply (TTS) switch. When true AND the patient's turn was a
   // voice message, the agent answers with synthesized speech; text-in always
   // yields text-out. Default off so no clinic pays for TTS unexpectedly.
-  voiceReplyEnabled   Boolean   @default(false)
+  voiceReplyEnabled    Boolean   @default(false)
   // Per-clinic image-analysis switch. When true AND the patient sent an image,
   // the agent reads it (a one-time vision call describes it, EXTRACTION-billed)
   // and answers from that description. When off, the image is still archived but
   // never read — the agent only answers any caption text and a human is
   // escalated. Default off so no clinic pays for vision unexpectedly.
-  imageAnalysisEnabled Boolean  @default(false)
+  imageAnalysisEnabled Boolean   @default(false)
   // The clinic-facing meter: remaining agent replies. Decremented by exactly 1
   // inside the same transaction that logs a REPLY usage row, so a redelivered
   // webhook that fails the (messageId, kind) unique rolls the unit back too.
   // Starts at 0 — a clinic replies only once the platform grants it units.
-  unitBalance         Int       @default(0)
+  unitBalance          Int       @default(0)
   // Soft warning for the clinic admin's dashboard; does not block replies.
-  lowUnitsThreshold   Int       @default(50)
+  lowUnitsThreshold    Int       @default(50)
   // Dedupe stamps for the platform-admin low-credit alert emails. Set when the
   // alert is sent, cleared by a top-up that lifts the balance back above the
   // threshold — so each crossing mails once, not once per reply below it.
   // The two events are distinct: "running low, top them up" vs "units gone, the
   // agent has stopped answering this clinic's customers".
-  lowUnitsNotifiedAt  DateTime?
-  unitsOutNotifiedAt  DateTime?
-  balance             Decimal   @default(0) @db.Decimal(18, 8)
-  markup              Decimal   @default(1.5) @db.Decimal(6, 4)
-  lowBalanceThreshold Decimal   @default(5) @db.Decimal(18, 8)
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  lowUnitsNotifiedAt   DateTime?
+  unitsOutNotifiedAt   DateTime?
+  balance              Decimal   @default(0) @db.Decimal(18, 8)
+  markup               Decimal   @default(1.5) @db.Decimal(6, 4)
+  lowBalanceThreshold  Decimal   @default(5) @db.Decimal(18, 8)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
@@ -1005,22 +1043,27 @@ model ClinicAppointmentTemplate {
 // required relation), so a doctor with history cannot be deleted out from under
 // their records.
 model TreatmentRecord {
-  id             String    @id @default(uuid()) @db.Uuid
-  clinicId       String    @db.Uuid
-  patientId      String    @db.Uuid
-  doctorId       String    @db.Uuid
-  branchId       String?   @db.Uuid
-  appointmentId  String?   @unique @db.Uuid
+  id                     String    @id @default(uuid()) @db.Uuid
+  clinicId               String    @db.Uuid
+  patientId              String    @db.Uuid
+  doctorId               String    @db.Uuid
+  branchId               String?   @db.Uuid
+  appointmentId          String?   @unique @db.Uuid
   // The day of the visit this documents. Defaults to the appointment's date at
   // creation time, but stays editable — paper notes get back-dated.
-  visitDate      DateTime  @db.Date
-  chiefComplaint String? // شكوى المريض — what they came in for, in their words
-  diagnosis      String? // التشخيص — free text; no ICD coding in v1
-  clinicalNotes  String? // ملاحظات الطبيب — examination findings, plan
-  followUpDate   DateTime? @db.Date // موعد المتابعة المقترح
-  createdById    String    @db.Uuid // the Profile that wrote it (the doctor's account)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  visitDate              DateTime  @db.Date
+  chiefComplaint         String? // شكوى المريض — what they came in for, in their words
+  diagnosis              String? // التشخيص — free text; no ICD coding in v1
+  clinicalNotes          String? // ملاحظات الطبيب — examination findings, plan
+  followUpDate           DateTime? @db.Date // موعد المتابعة المقترح
+  // Dedupe flag for the follow-up reminder automation: stamped once the "time to
+  // book your follow-up" WhatsApp message has gone out, so the sweep never sends
+  // it twice. Cleared implicitly by editing followUpDate to a new day (the sweep
+  // keys on this being null). Mirrors Appointment.reminderSentAt/feedbackRequestedAt.
+  followUpReminderSentAt DateTime?
+  createdById            String    @db.Uuid // the Profile that wrote it (the doctor's account)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   clinic        Clinic                    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   patient       Profile                   @relation("PatientTreatmentRecords", fields: [patientId], references: [id], onDelete: Cascade)
@@ -1037,6 +1080,9 @@ model TreatmentRecord {
   @@index([clinicId, patientId, visitDate])
   @@index([clinicId, doctorId])
   @@index([branchId])
+  // The follow-up reminder sweep: records with an unsent follow-up whose date is
+  // near. Not-yet-sent rows sort first, then by the date being matched.
+  @@index([followUpReminderSentAt, followUpDate])
   @@map("treatment_records")
 }
 

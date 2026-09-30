@@ -81,6 +81,40 @@ export function buildTokenContext(appt: TokenSourceAppointment): Record<Appointm
   };
 }
 
+/** The record shape the follow-up token resolver needs (loaded with relations). */
+export interface TokenSourceRecord {
+  followUpDate: Date | null;
+  patient: { fullName: string };
+  doctor: { fullName: string; title: string | null; specialty: { name: string } | null };
+  branch: { name: string; address: string | null } | null;
+  clinic: { name: string };
+}
+
+/**
+ * Resolves every token for a FOLLOWUP_REMINDER, whose subject is a treatment
+ * record rather than an appointment. The patient/doctor/clinic/branch tokens come
+ * straight from the record; `appointment_date` becomes the suggested follow-up
+ * date (so a template can say "متابعتك في {{appointment_date}}"), and the
+ * time/order tokens are empty (a follow-up has no booked slot yet — that is
+ * exactly what the message asks the patient to do).
+ */
+export function buildFollowUpTokenContext(
+  record: TokenSourceRecord
+): Record<AppointmentToken, string> {
+  return {
+    patient_name: record.patient.fullName,
+    doctor_name: record.doctor.fullName,
+    doctor_title: record.doctor.title ? (TITLE_LABELS[record.doctor.title] ?? "") : "",
+    specialty: record.doctor.specialty?.name ?? "",
+    clinic_name: record.clinic.name,
+    branch_name: record.branch?.name ?? "",
+    branch_address: record.branch?.address ?? "",
+    appointment_date: record.followUpDate ? formatSlotDate(record.followUpDate) : "",
+    appointment_time: "",
+    order_number: "",
+  };
+}
+
 /**
  * Maps a binding's `variableMap` onto a resolved context, producing the ordered
  * `variables` array for sendTemplateMessage. Unknown/blank tokens resolve to ""
