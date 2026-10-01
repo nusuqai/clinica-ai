@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { X, Clock, CheckCircle, AlertCircle, LogIn, ChevronDown, Users } from "lucide-react";
+import {
+  X,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  LogIn,
+  ChevronDown,
+  Users,
+  User,
+  UserPlus,
+} from "lucide-react";
+import type { ConnectionRelation } from "@prisma/client";
 import Link from "next/link";
 import {
   bookAppointmentAction,
@@ -11,6 +22,7 @@ import {
   getOrderBookingInfoAction,
 } from "@/server/actions/patient";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { CONNECTION_RELATION_LABELS } from "@/lib/labels";
 
 interface Doctor {
   id: string;
@@ -51,10 +63,19 @@ type Selection =
   | { mode: "SLOT_BASED"; date: string; slot: Slot }
   | { mode: "ORDER_BASED"; date: string; info: OrderInfo };
 
+/** A relative the patient may book for (an active connection). */
+export interface BookableRelative {
+  id: string;
+  fullName: string;
+  relation: ConnectionRelation;
+}
+
 interface Props {
   doctor: Doctor;
   isAuthenticated: boolean;
   isPatient: boolean;
+  /** Relatives the patient may book for; the patient picks who the booking is for. */
+  relatives?: BookableRelative[];
   onClose: () => void;
   /** Where the "view my appointments" success link points. */
   appointmentsHref?: string;
@@ -77,6 +98,7 @@ export function BookAppointmentModal({
   doctor,
   isAuthenticated,
   isPatient,
+  relatives = [],
   onClose,
   appointmentsHref = "/",
   loginHref = "/login",
@@ -97,6 +119,9 @@ export function BookAppointmentModal({
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [notes, setNotes] = useState("");
+  // Who the booking is for: null = the patient themselves, else a relative's id.
+  const [bookFor, setBookFor] = useState<string | null>(null);
+  const bookForName = relatives.find((r) => r.id === bookFor)?.fullName ?? null;
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState(false);
   const [bookedOrder, setBookedOrder] = useState<number | null>(null);
@@ -187,11 +212,16 @@ export function BookAppointmentModal({
     setBookingError("");
     startTransition(async () => {
       if (selection.mode === "SLOT_BASED") {
-        const res = await bookAppointmentAction(selection.slot.id, notes || undefined);
+        const res = await bookAppointmentAction(selection.slot.id, notes || undefined, bookFor);
         if (res.ok) setSuccess(true);
         else setBookingError(res.error ?? "حدث خطأ غير متوقع");
       } else {
-        const res = await bookOrderAppointmentAction(doctor.id, selection.date, notes || undefined);
+        const res = await bookOrderAppointmentAction(
+          doctor.id,
+          selection.date,
+          notes || undefined,
+          bookFor
+        );
         if (res.ok) {
           setBookedArrival(res.mode === "arrival");
           setBookedOrder(res.orderNumber ?? null);
@@ -414,10 +444,18 @@ export function BookAppointmentModal({
           {/* Step 2 — Notes + confirm */}
           {!needsAuth && step === 2 && !success && selection && (
             <div className="flex flex-col gap-5">
+              <BookForPicker relatives={relatives} value={bookFor} onChange={setBookFor} />
+
               {/* Summary */}
               <div className="rounded-xl bg-muted px-4 py-3">
                 <p className="font-sans text-xs font-medium text-text/50">تفاصيل الموعد</p>
                 <div className="mt-2 flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-sans text-sm text-text/70">المريض</span>
+                    <span className="font-sans text-sm font-medium text-text">
+                      {bookForName ?? "أنا"}
+                    </span>
+                  </div>
                   <div className="flex items-center justify-between">
                     <span className="font-sans text-sm text-text/70">التاريخ</span>
                     <span className="font-sans text-sm font-medium text-text">
@@ -541,7 +579,8 @@ export function BookAppointmentModal({
                   </p>
                 ) : (
                   <p className="mt-1 font-sans text-sm text-text/50">
-                    موعدك مع {doctor.name} في انتظار التأكيد من العيادة
+                    {bookForName ? `موعد ${bookForName}` : "موعدك"} مع {doctor.name} في انتظار
+                    التأكيد من العيادة
                   </p>
                 )}
               </div>
@@ -562,6 +601,64 @@ export function BookAppointmentModal({
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** "Who is this booking for?" — the patient, or one of their connections. */
+function BookForPicker({
+  relatives,
+  value,
+  onChange,
+}: {
+  relatives: BookableRelative[];
+  value: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const options = [
+    { id: null, label: "لي أنا", hint: null as string | null },
+    ...relatives.map((r) => ({
+      id: r.id as string | null,
+      label: r.fullName,
+      hint: CONNECTION_RELATION_LABELS[r.relation],
+    })),
+  ];
+
+  return (
+    <div>
+      <p className="mb-2 font-sans text-sm font-medium text-text">الحجز لـ</p>
+      <div className="flex flex-wrap gap-2">
+        {options.map((o) => {
+          const selected = value === o.id;
+          return (
+            <button
+              key={o.id ?? "self"}
+              type="button"
+              onClick={() => onChange(o.id)}
+              className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 font-sans text-sm font-medium transition-all ${
+                selected
+                  ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
+                  : "border-border bg-background text-text hover:border-accent/50"
+              }`}
+            >
+              {o.id === null ? <User className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+              {o.label}
+              {o.hint && (
+                <span className={`text-xs ${selected ? "text-white/80" : "text-text/50"}`}>
+                  ({o.hint})
+                </span>
+              )}
+            </button>
+          );
+        })}
+        <Link
+          href="/profile"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-border px-3.5 py-2 font-sans text-sm text-text/60 transition-colors hover:border-accent/50 hover:text-accent"
+        >
+          <UserPlus className="h-4 w-4" />
+          إضافة شخص
+        </Link>
       </div>
     </div>
   );

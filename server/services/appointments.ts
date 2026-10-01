@@ -231,6 +231,7 @@ export async function getAppointmentDetails(appointmentId: string) {
     include: {
       slot: { select: { date: true, startTime: true, endTime: true } },
       branch: { select: { name: true, address: true } },
+      patient: { select: { fullName: true } },
       doctor: {
         select: {
           fullName: true,

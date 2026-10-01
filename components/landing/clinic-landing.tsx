@@ -6,9 +6,14 @@ import * as AppointmentService from "@/server/services/appointments";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { HeroSection } from "@/components/landing/hero-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
-import { MyAppointmentsSection, describeWhen } from "@/components/landing/my-appointments-section";
+import {
+  MyAppointmentsSection,
+  describeWhen,
+  visitTime,
+} from "@/components/landing/my-appointments-section";
 import ChatBubble from "@/components/chat/chat-bubble";
 import * as TreatmentService from "@/server/services/treatments";
+import * as ConnectionService from "@/server/services/connections";
 import { DoctorsClient } from "@/components/landing/doctors-client";
 import { FeaturesSection } from "@/components/landing/features-section";
 import { SpecialtiesSection } from "@/components/landing/specialties-section";
@@ -36,7 +41,7 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
   const dashboardHref = ctx ? roleHome(ctx.role) : loginHref;
 
   // ── Data (scoped to THIS clinic) ────────────────────────────────────────────
-  const [doctors, allAppointments, myUpcoming, myStats, myPastVisits, myRecords] =
+  const [doctors, allAppointments, myUpcoming, myStats, myPastVisits, myRecords, myRelatives] =
     await Promise.all([
       DoctorService.listActiveDoctors(clinic.id),
       AppointmentService.listAppointments(clinic.id, {
@@ -63,7 +68,37 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
       isPatient && ctx
         ? TreatmentService.listPatientRecords({ clinicId: clinic.id, patientId: ctx.user.id })
         : Promise.resolve([]),
+      // Relatives the patient may book for — offered in the booking modal.
+      isPatient && ctx
+        ? ConnectionService.listBookableDependents(clinic.id, ctx.user.id)
+        : Promise.resolve([]),
     ]);
+  // Upcoming bookings for the patient AND the relatives they book for, merged
+  // into one list by visit time; each card says whose appointment it is.
+  const relativesUpcoming = await Promise.all(
+    myRelatives.map(async (r) =>
+      (
+        await AppointmentService.getPatientAppointments(r.id, {
+          clinicId: clinic.id,
+          upcoming: true,
+          limit: 6,
+        })
+      ).map((appt) => ({
+        appt,
+        forPatient: { name: r.fullName, relation: r.relation },
+        canOpenDetails: r.canViewRecords,
+      }))
+    )
+  );
+  const upcomingForAll = [
+    ...(myUpcoming ?? []).map((appt) => ({
+      appt,
+      forPatient: null,
+      canOpenDetails: true,
+    })),
+    ...relativesUpcoming.flat(),
+  ].sort((a, b) => visitTime(a.appt) - visitTime(b.appt));
+
   const nextAppointment = myUpcoming?.[0]
     ? { doctorName: myUpcoming[0].doctor.profile.fullName, when: describeWhen(myUpcoming[0]) }
     : null;
@@ -132,7 +167,7 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
         {myUpcoming && myStats && (
           <MyAppointmentsSection
             clinicName={clinic.name}
-            appointments={myUpcoming}
+            appointments={upcomingForAll}
             pastVisits={myPastVisits}
             records={myRecords}
             stats={myStats}
@@ -147,7 +182,12 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
               doctors={serialisedDoctors}
               isAuthenticated={isAuthenticated}
               isPatient={isPatient}
-              appointmentsHref={isPatient ? `${dashboardHref}/appointments` : undefined}
+              relatives={myRelatives.map((r) => ({
+                id: r.id,
+                fullName: r.fullName,
+                relation: r.relation,
+              }))}
+              appointmentsHref={isPatient ? "/#my-appointments" : undefined}
               loginHref={loginHref}
               registerHref={registerHref}
             />

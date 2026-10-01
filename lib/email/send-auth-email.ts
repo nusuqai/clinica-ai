@@ -156,14 +156,19 @@ async function mintSignupOtp(args: {
   password: string;
   name: string;
   phone: string | null;
+  claimPhone?: string | null;
 }): Promise<string> {
   const admin = createAdminClient();
+  // claim_phone marks a signup that, once verified, takes over the unclaimed
+  // account already holding that number (see verifyClinicSignup).
+  const data: Record<string, string | null> = { full_name: args.name, phone: args.phone };
+  if (args.claimPhone) data.claim_phone = args.claimPhone;
   const gen = () =>
     admin.auth.admin.generateLink({
       type: "signup",
       email: args.email,
       password: args.password,
-      options: { data: { full_name: args.name, phone: args.phone } },
+      options: { data },
     });
 
   const first = await gen();
@@ -194,6 +199,7 @@ export async function sendClinicSignupOtp(args: {
   password: string;
   name: string;
   phone: string | null;
+  claimPhone?: string | null;
   clinicName: string;
 }): Promise<SendEmailResult> {
   const email_otp = await mintSignupOtp(args);

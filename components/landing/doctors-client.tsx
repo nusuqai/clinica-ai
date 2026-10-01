@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Phone, DollarSign, Calendar } from "lucide-react";
-import { BookAppointmentModal } from "./book-appointment-modal";
+import { BookAppointmentModal, type BookableRelative } from "./book-appointment-modal";
 
 interface Doctor {
   id: string;
@@ -20,6 +20,8 @@ interface Props {
   doctors: Doctor[];
   isAuthenticated: boolean;
   isPatient: boolean;
+  /** Relatives the patient may book for, offered in the booking modal. */
+  relatives?: BookableRelative[];
   /** Patient's appointments URL, threaded to the booking modal's success link. */
   appointmentsHref?: string;
   /** Auth links for the booking modal's "sign in to continue" state. */
@@ -63,6 +65,7 @@ export function DoctorsClient({
   doctors,
   isAuthenticated,
   isPatient,
+  relatives = [],
   appointmentsHref,
   loginHref,
   registerHref,
@@ -190,6 +193,7 @@ export function DoctorsClient({
           doctor={bookTarget}
           isAuthenticated={isAuthenticated}
           isPatient={isPatient}
+          relatives={relatives}
           appointmentsHref={appointmentsHref}
           loginHref={loginHref}
           registerHref={registerHref}

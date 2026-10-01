@@ -1,10 +1,11 @@
 import "server-only";
 import { z } from "zod";
-import { AppointmentStatus } from "@prisma/client";
+import { AppointmentStatus, ConnectionRelation } from "@prisma/client";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
+import * as ConnectionService from "@/server/services/connections";
 import type { AgentContext } from "@/agent/types";
 import { jsonTool, dateStr, timeStr, money } from "./shared";
 
@@ -20,6 +21,7 @@ async function appointmentCard(appointmentId: string) {
   return {
     appointmentId: a.id,
     status: a.status,
+    patientName: a.patient.fullName,
     doctorName: a.doctor.fullName,
     specialty: a.doctor.specialty?.name ?? null,
     branch: a.branch?.name ?? null,
@@ -40,23 +42,116 @@ async function appointmentCard(appointmentId: string) {
   };
 }
 
+const forPatientIdField = z
+  .string()
+  .nullable()
+  .describe(
+    "معرّف الشخص الآخر الذي يُحجز له (من list_my_connections أو add_connection). اتركه null — وهو الافتراضي — إذا كان الحجز للمستخدم نفسه.",
+  );
+
 export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
   const patientId = ctx.actorId!;
+
+  /** The patient a booking is for: the user, or a relative they may book for. */
+  async function resolveBookingPatient(forPatientId: string | null) {
+    if (!forPatientId || forPatientId === patientId) return patientId;
+    return (await ConnectionService.canBookFor(ctx.clinicId, patientId, forPatientId))
+      ? forPatientId
+      : null;
+  }
+
+  /** The user plus every relative they book for — whose appointments they manage. */
+  async function managedPatientIds() {
+    const dependents = await ConnectionService.listBookableDependents(ctx.clinicId, patientId);
+    return [patientId, ...dependents.map((d) => d.id)];
+  }
+
+  const NOT_A_CONNECTION = {
+    error: "هذا الشخص ليس من الأشخاص الذين تحجز لهم — أضفه أولاً بـ add_connection",
+  };
 
   return [
     jsonTool(
       {
+        name: "list_my_connections",
+        description:
+          "اعرض الأشخاص الذين يحجز لهم المستخدم (اسم، صلته به، رقم الهاتف إن وُجد، والمعرّف). استخدمها عندما يقول إن الحجز لشخص آخر لمعرفة إن كان مضافاً من قبل.",
+        schema: z.object({}),
+      },
+      async () => ({
+        connections: (
+          await ConnectionService.listBookableDependents(ctx.clinicId, patientId)
+        ).map((d) => ({
+          id: d.id,
+          fullName: d.fullName,
+          relation: d.relation,
+          phone: d.phone,
+        })),
+      }),
+    ),
+    jsonTool(
+      {
+        name: "add_connection",
+        description:
+          "أضف شخصاً آخر يحجز له المستخدم (ينشئ له حساباً في العيادة ويضيفه إلى الأشخاص الذين يحجز لهم المستخدم). استخدمها فقط إن لم يكن الشخص ضمن list_my_connections. relation هي صلة الشخص بالمستخدم: PARENT (والده/والدته)، CHILD (ابنه/ابنته)، SPOUSE (زوج/زوجة)، SIBLING (أخ/أخت)، RELATIVE (قريب)، OTHER (أي صلة أخرى كصديق أو زميل). رقم واتساب الشخص اختياري — إن أُعطي يستطيع مراسلة العيادة وتصله التذكيرات مباشرة.",
+        schema: z.object({
+          fullName: z.string().describe("الاسم الكامل للشخص"),
+          relation: z.nativeEnum(ConnectionRelation),
+          phone: z
+            .string()
+            .nullable()
+            .describe("رقم واتساب الشخص بالصيغة الدولية (اختياري)"),
+        }),
+      },
+      async ({ fullName, relation, phone }) => {
+        const res = await ConnectionService.addDependent({
+          clinicId: ctx.clinicId,
+          guardianId: patientId,
+          fullName,
+          relation,
+          phone,
+        });
+        if (!res.ok) return { error: res.error };
+        return { connectionAdded: true, id: res.data.dependentId, fullName, relation, phone };
+      },
+    ),
+    jsonTool(
+      {
+        name: "set_connection_phone",
+        description:
+          "أضف أو غيّر رقم واتساب أحد الأشخاص الذين يحجز لهم المستخدم (احصل على معرّفه من list_my_connections).",
+        schema: z.object({
+          connectionId: z.string().describe("معرّف الشخص"),
+          phone: z.string().describe("رقم واتساب الشخص بالصيغة الدولية"),
+        }),
+      },
+      async ({ connectionId, phone }) => {
+        const res = await ConnectionService.setDependentPhone({
+          clinicId: ctx.clinicId,
+          guardianId: patientId,
+          dependentId: connectionId,
+          phone,
+        });
+        if (!res.ok) return { error: res.error };
+        return { updated: true, phone: res.data.phone };
+      },
+    ),
+    jsonTool(
+      {
         name: "book_appointment",
         description:
-          "احجز موعداً للمريض الحالي في فترة زمنية (slot) محددة. احصل على معرّف الفترة من get_doctor_availability أولاً.",
+          "احجز موعداً في فترة زمنية (slot) محددة للمستخدم نفسه (الافتراضي) أو لشخص آخر يحجز له (forPatientId). احصل على معرّف الفترة من get_doctor_availability أولاً.",
         schema: z.object({
           slotId: z.string(),
+          forPatientId: forPatientIdField,
           notes: z.string().nullable().describe("ملاحظات المريض (اختياري)"),
         }),
       },
-      async ({ slotId, notes }) => {
+      async ({ slotId, forPatientId, notes }) => {
+        const bookFor = await resolveBookingPatient(forPatientId);
+        if (!bookFor) return NOT_A_CONNECTION;
         const res = await AppointmentService.createAppointment(
-          patientId,
+          bookFor,
           slotId,
           notes ?? undefined,
         );
@@ -69,18 +164,21 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "book_order_appointment",
         description:
-          "احجز دوراً للمريض الحالي لدى طبيب يعمل بنظام الدور أو بأسبقية الحضور في تاريخ محدّد (YYYY-MM-DD). لا يوجد وقت ثابت. استخدم get_doctor_availability أولاً وتأكّد أن اليوم من نوع طابور. إن كان mode=order يحصل المريض على رقم دور فوراً. وإن كان mode=arrival (أسبقية الحضور) فهو يحجز مكاناً فقط ولا يحصل على رقم الآن؛ يُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور — أخبره بذلك.",
+          "احجز دوراً للمستخدم نفسه (الافتراضي) أو لشخص آخر يحجز له (forPatientId) لدى طبيب يعمل بنظام الدور أو بأسبقية الحضور في تاريخ محدّد (YYYY-MM-DD). لا يوجد وقت ثابت. استخدم get_doctor_availability أولاً وتأكّد أن اليوم من نوع طابور. إن كان mode=order يحصل المريض على رقم دور فوراً. وإن كان mode=arrival (أسبقية الحضور) فهو يحجز مكاناً فقط ولا يحصل على رقم الآن؛ يُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور — أخبره بذلك.",
         schema: z.object({
           doctorId: z.string(),
           date: z
             .string()
             .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+          forPatientId: forPatientIdField,
           notes: z.string().nullable().describe("ملاحظات المريض (اختياري)"),
         }),
       },
-      async ({ doctorId, date, notes }) => {
+      async ({ doctorId, date, forPatientId, notes }) => {
+        const bookFor = await resolveBookingPatient(forPatientId);
+        if (!bookFor) return NOT_A_CONNECTION;
         const res = await QueueService.bookOrderAppointment(
-          patientId,
+          bookFor,
           doctorId,
           new Date(date),
           { notes: notes ?? undefined },
@@ -92,7 +190,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
     jsonTool(
       {
         name: "cancel_appointment",
-        description: "ألغِ موعداً قائماً للمريض الحالي.",
+        description: "ألغِ موعداً قائماً للمستخدم أو لأحد الأشخاص الذين يحجز لهم.",
         schema: z.object({
           appointmentId: z.string(),
           reason: z.string().nullable(),
@@ -103,7 +201,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           where: { id: appointmentId },
           select: { patientId: true, status: true },
         });
-        if (!appt || appt.patientId !== patientId)
+        if (!appt || !(await managedPatientIds()).includes(appt.patientId))
           return { error: "الموعد غير موجود أو لا يخصك" };
         const uncancellable: AppointmentStatus[] = [
           AppointmentStatus.CANCELLED,
@@ -125,7 +223,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "reschedule_appointment",
         description:
-          "أعد جدولة موعد المريض: يلغي الموعد الحالي ويحجز فترة جديدة.",
+          "أعد جدولة موعد المستخدم أو أحد الأشخاص الذين يحجز لهم: يلغي الموعد الحالي ويحجز فترة جديدة لنفس الشخص.",
         schema: z.object({ appointmentId: z.string(), newSlotId: z.string() }),
       },
       async ({ appointmentId, newSlotId }) => {
@@ -133,13 +231,13 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           where: { id: appointmentId },
           select: { patientId: true, status: true },
         });
-        if (!appt || appt.patientId !== patientId)
+        if (!appt || !(await managedPatientIds()).includes(appt.patientId))
           return { error: "الموعد غير موجود أو لا يخصك" };
         // Book the new slot first (so a failure leaves the old one intact),
         // excluding the appointment being rescheduled from the one-active-booking
         // guard, then cancel the old one.
         const created = await AppointmentService.createAppointment(
-          patientId,
+          appt.patientId,
           newSlotId,
           undefined,
           { excludeAppointmentId: appointmentId },
@@ -163,21 +261,34 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "list_my_appointments",
         description:
-          "اعرض مواعيد المريض الحالي (القادمة أو كلها). استخدمها أيضاً عندما يسأل المريض «ما هو دوري؟» أو «كم رقمي؟». لكل موعد: bookingType (slot موعد بوقت ثابت، order نظام الدور، arrival أسبقية الحضور)، وorderNumber، وarrived. في أسبقية الحضور (arrival): إن كان arrived=false فلا رقم بعد — أخبر المريض أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور؛ وإن كان arrived=true فاذكر رقمه (orderNumber)، ومع تفعيل التتبّع اذكر الدور الجاري الآن (currentOrder) ومدة الانتظار التقديرية (estimatedWaitMin).",
+          "اعرض مواعيد المستخدم ومواعيد الأشخاص الذين يحجز لهم (القادمة أو كلها)، ولكل موعد اسم المريض (patientName). استخدمها أيضاً عندما يسأل المريض «ما هو دوري؟» أو «كم رقمي؟». لكل موعد: bookingType (slot موعد بوقت ثابت، order نظام الدور، arrival أسبقية الحضور)، وorderNumber، وarrived. في أسبقية الحضور (arrival): إن كان arrived=false فلا رقم بعد — أخبر المريض أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور؛ وإن كان arrived=true فاذكر رقمه (orderNumber)، ومع تفعيل التتبّع اذكر الدور الجاري الآن (currentOrder) ومدة الانتظار التقديرية (estimatedWaitMin).",
         schema: z.object({ upcoming: z.boolean().nullable() }),
       },
       async ({ upcoming }) => {
-        const appts = await AppointmentService.getPatientAppointments(
+        const dependents = await ConnectionService.listBookableDependents(
+          ctx.clinicId,
           patientId,
-          {
-            clinicId: ctx.clinicId,
-            upcoming: upcoming ?? false,
-          },
+        );
+        const people = [
+          { id: patientId, fullName: ctx.actorName, forSelf: true },
+          ...dependents.map((d) => ({ id: d.id, fullName: d.fullName, forSelf: false })),
+        ];
+        const perPatient = await Promise.all(
+          people.map(async (person) =>
+            (
+              await AppointmentService.getPatientAppointments(person.id, {
+                clinicId: ctx.clinicId,
+                upcoming: upcoming ?? false,
+              })
+            ).map((a) => ({ ...a, person })),
+          ),
         );
         return {
-          appointments: appts.map((a) => ({
+          appointments: perPatient.flat().map((a) => ({
             id: a.id,
             status: a.status,
+            patientName: a.person.fullName,
+            forSelf: a.person.forSelf,
             doctorName: a.doctor.profile.fullName,
             specialty: a.doctor.specialty,
             branch: a.branch?.name ?? null,
@@ -230,6 +341,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ appointmentId }) => {
+        const patientId = { in: await managedPatientIds() };
         // With an id: it must be the patient's own PENDING appointment. Without
         // one (a bare "نعم"/button reply carries no id): resolve the patient's
         // pending appointment, preferring the one a reminder was sent for.
@@ -267,6 +379,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ appointmentId, rating, comment }) => {
+        const patientIds = await managedPatientIds();
         if (rating === null && (comment === null || comment.trim() === ""))
           return { error: "لا يوجد تقييم لتسجيله (أضف تقييماً رقمياً أو تعليقاً)" };
 
@@ -277,21 +390,21 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           ? await prisma.appointment.findFirst({
               where: {
                 id: appointmentId,
-                patientId,
+                patientId: { in: patientIds },
                 status: AppointmentStatus.COMPLETED,
                 feedback: null,
               },
-              select: { id: true, clinicId: true },
+              select: { id: true, clinicId: true, patientId: true },
             })
           : await prisma.appointment.findFirst({
               where: {
-                patientId,
+                patientId: { in: patientIds },
                 status: AppointmentStatus.COMPLETED,
                 feedbackRequestedAt: { not: null },
                 feedback: null,
               },
               orderBy: { feedbackRequestedAt: "desc" },
-              select: { id: true, clinicId: true },
+              select: { id: true, clinicId: true, patientId: true },
             });
         if (!appt) return { error: "لا يوجد موعد مكتمل بانتظار التقييم" };
 
@@ -299,7 +412,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           data: {
             appointmentId: appt.id,
             clinicId: appt.clinicId,
-            patientId,
+            patientId: appt.patientId,
             rating: rating ?? null,
             comment: comment?.trim() || null,
           },

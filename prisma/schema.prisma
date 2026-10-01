@@ -185,6 +185,7 @@ model Clinic {
   prescriptions          Prescription[]
   treatmentRevisions     TreatmentRecordRevision[]
   appointmentAttachments AppointmentAttachment[]
+  patientConnections     PatientConnection[]
 
   @@map("clinics")
 }
@@ -365,6 +366,48 @@ model ClinicMember {
   @@map("clinic_members")
 }
 
+// What the dependent is TO the guardian (a son booking for his mother → PARENT).
+enum ConnectionRelation {
+  PARENT
+  CHILD
+  SPOUSE
+  SIBLING
+  RELATIVE
+  OTHER
+}
+
+// A guardian → dependent link: an account holder (guardian) who may book for, and
+// receive messages about, another patient Profile (dependent) in one clinic.
+// Dependents with no phone of their own are synthetic-email Profiles with
+// phone = null, so their automation messages route to an active guardian's
+// WhatsApp thread instead. Directional and per clinic: a link made in one clinic
+// grants nothing in another. Revoked via revokedAt rather than deleted, so
+// who-acted-for-whom stays auditable; re-granting clears revokedAt on the same row.
+model PatientConnection {
+  id             String             @id @default(uuid()) @db.Uuid
+  clinicId       String             @db.Uuid
+  guardianId     String             @db.Uuid
+  dependentId    String             @db.Uuid
+  relation       ConnectionRelation
+  canBook        Boolean            @default(true)
+  // Treatment records, prescriptions and doctorNotes. Off by default: booking
+  // for someone is not the same as reading their medical history.
+  canViewRecords Boolean            @default(false)
+  revokedAt      DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  clinic    Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  guardian  Profile @relation("GuardianConnections", fields: [guardianId], references: [id], onDelete: Cascade)
+  dependent Profile @relation("DependentConnections", fields: [dependentId], references: [id], onDelete: Cascade)
+
+  // Leading clinicId also serves "this guardian's dependents in this clinic".
+  @@unique([clinicId, guardianId, dependentId])
+  @@index([guardianId])
+  @@index([dependentId])
+  @@map("patient_connections")
+}
+
 // A request (from the public landing page) to create a new clinic. The platform
 // admin team reviews and approves/rejects it; on approval a Clinic is created and
 // the requester is set up as that clinic's ADMIN.
@@ -418,6 +461,9 @@ model Profile {
   treatmentEdits      TreatmentRecordRevision[] @relation("TreatmentRecordEdits")
   // Visit files this profile uploaded as staff.
   uploadedAttachments AppointmentAttachment[]   @relation("UploadedAttachments")
+  // Patients this profile books for (as guardian), and those who book for it.
+  dependents          PatientConnection[]       @relation("GuardianConnections")
+  guardians           PatientConnection[]       @relation("DependentConnections")
 
   @@map("profiles")
 }

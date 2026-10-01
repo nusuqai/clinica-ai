@@ -1,6 +1,12 @@
 // Arabic display labels for the Prisma enums, keyed by the enum members so every
 // member must be covered and callers never hardcode the raw strings.
-import { AppointmentStatus, Role, ClinicRequestStatus, ProcedureKind } from "@prisma/client";
+import {
+  AppointmentStatus,
+  Role,
+  ClinicRequestStatus,
+  ProcedureKind,
+  ConnectionRelation,
+} from "@prisma/client";
 
 export const APPOINTMENT_STATUS_LABELS: Record<AppointmentStatus, string> = {
   [AppointmentStatus.PENDING]: "قيد الانتظار",
@@ -29,4 +35,13 @@ export const CLINIC_REQUEST_STATUS_LABELS: Record<ClinicRequestStatus, string> =
   [ClinicRequestStatus.PENDING]: "قيد الانتظار",
   [ClinicRequestStatus.APPROVED]: "مقبول",
   [ClinicRequestStatus.REJECTED]: "مرفوض",
+};
+
+export const CONNECTION_RELATION_LABELS: Record<ConnectionRelation, string> = {
+  [ConnectionRelation.PARENT]: "والد / والدة",
+  [ConnectionRelation.CHILD]: "ابن / ابنة",
+  [ConnectionRelation.SPOUSE]: "زوج / زوجة",
+  [ConnectionRelation.SIBLING]: "أخ / أخت",
+  [ConnectionRelation.RELATIVE]: "قريب",
+  [ConnectionRelation.OTHER]: "آخر (صديق، زميل…)",
 };

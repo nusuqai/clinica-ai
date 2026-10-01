@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Stethoscope, Menu, X, UserRound } from "lucide-react";
+import { Stethoscope, Menu, X, UserRound, LogOut } from "lucide-react";
+import { signOut } from "@/server/actions/auth";
 
 /** Round avatar (the patient's initials) that opens their profile page. */
 function ProfileAvatar({ name }: { name: string | null }) {
@@ -111,8 +112,19 @@ export function LandingNav({
         <div className="hidden items-center gap-3 md:flex">
           {isAuthenticated && isPatient ? (
             // A patient's home is this landing page, so there's no separate
-            // dashboard to link to — just their profile.
-            <ProfileAvatar name={userName} />
+            // dashboard to link to — just their profile, and a way out.
+            <>
+              <ProfileAvatar name={userName} />
+              <form action={signOut}>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 px-3 py-2 text-sm font-medium text-white transition-colors hover:border-red-400 hover:bg-red-500/20"
+                >
+                  <LogOut className="h-4 w-4" />
+                  تسجيل الخروج
+                </button>
+              </form>
+            </>
           ) : isAuthenticated ? (
             <Link
               href={dashboardHref}
@@ -184,6 +196,17 @@ export function LandingNav({
                 <UserRound className="h-4 w-4" />
                 الملف الشخصي
               </Link>
+            ) : null}
+            {isAuthenticated && isPatient ? (
+              <form action={signOut}>
+                <button
+                  type="submit"
+                  className="flex items-center gap-2 font-sans text-sm text-red-300 hover:text-red-200"
+                >
+                  <LogOut className="h-4 w-4" />
+                  تسجيل الخروج
+                </button>
+              </form>
             ) : !isAuthenticated ? (
               <div className="flex flex-col gap-2">
                 <Link

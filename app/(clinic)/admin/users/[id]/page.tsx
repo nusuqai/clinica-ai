@@ -14,6 +14,8 @@ import { requireClinicMember } from "@/lib/auth";
 import { getClinicUser } from "@/server/services/users";
 import { listPatientRecords, listRecordableVisits } from "@/server/services/treatments";
 import { listAttachmentsForAppointments } from "@/server/services/attachments";
+import { listPatientConnections } from "@/server/services/connections";
+import ConnectionList from "@/components/patients/connection-list";
 import RecordTimeline from "@/components/medical/record-timeline";
 import RecordRevisions from "@/components/medical/record-revisions";
 import AppointmentAttachments from "@/components/appointments/appointment-attachments";
@@ -42,12 +44,13 @@ export default async function UserDetailPage({ params }: PageProps) {
   // Completed visits without a record feed the admin's "add record" form —
   // admins may only document a visit that actually happened.
   const isPatient = user.role === Role.PATIENT;
-  const [records, recordableVisits] = isPatient
+  const [records, recordableVisits, connections] = isPatient
     ? await Promise.all([
         listPatientRecords({ clinicId: clinic.id, patientId: id }),
         listRecordableVisits(clinic.id, id),
+        listPatientConnections(clinic.id, id),
       ])
-    : [[], []];
+    : [[], [], []];
 
   // Files attached to those visits, so each record shows its own attachments
   // (lab results, x-rays, documents) inline alongside the clinical details.
@@ -138,6 +141,19 @@ export default async function UserDetailPage({ params }: PageProps) {
           </div>
         </div>
       </div>
+
+      {/* Connections — the relatives this patient books for. */}
+      {isPatient && (
+        <section className="mt-8">
+          <h2 className="mb-4 font-heading text-lg font-bold text-foreground">
+            الأشخاص الذين يحجز لهم
+            <span className="ms-2 font-sans text-sm font-normal text-muted-foreground">
+              ({connections.length})
+            </span>
+          </h2>
+          <ConnectionList connections={connections} profileBasePath="/admin/users" />
+        </section>
+      )}
 
       {/* Clinical history — patients only; staff have no treatment records. */}
       {isPatient && (
