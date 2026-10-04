@@ -13,6 +13,8 @@ import * as ClinicInfoService from "@/server/services/clinicInfo";
 import * as SpecialtyService from "@/server/services/specialties";
 import * as QueueService from "@/server/services/queue";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
+import { getOrCreatePatientByPhone } from "@/server/services/patients";
+import { normalizePhone, isValidPhone } from "@/lib/phone";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -262,6 +264,84 @@ export async function updateAppointmentStatusAction(
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/appointments", "page");
   return { success: true };
+}
+
+// Patient picker for the admin booking modal (name or phone, this clinic only).
+export async function searchPatientsAction(query: string) {
+  const clinicId = await requireAdmin();
+  return UserService.searchClinicPatients(clinicId, query);
+}
+
+/**
+ * Book on a patient's behalf (phone call / walk-in). The patient is either an
+ * existing member of this clinic or a new one created by phone, exactly like a
+ * WhatsApp contact. Bookings made by the clinic itself skip the approval step
+ * and land as CONFIRMED.
+ */
+export async function adminBookAppointmentAction(input: {
+  patient: { id: string } | { fullName: string; phone: string };
+  doctorId: string;
+  /** Slot-based day: the slot to book. Order/arrival day: omit and pass `date`. */
+  slotId?: string;
+  date?: string;
+  notes?: string;
+}): Promise<{
+  ok: boolean;
+  error?: string;
+  mode?: "order" | "arrival";
+  orderNumber?: number | null;
+}> {
+  const clinicId = await requireAdmin();
+
+  let patientId: string;
+  if ("id" in input.patient) {
+    if (!(await UserService.isClinicPatient(input.patient.id, clinicId)))
+      return { ok: false, error: "المريض غير موجود في هذه العيادة" };
+    patientId = input.patient.id;
+  } else {
+    const fullName = input.patient.fullName.trim();
+    const phone = normalizePhone(input.patient.phone);
+    if (!fullName) return { ok: false, error: "اسم المريض مطلوب" };
+    if (!isValidPhone(phone)) return { ok: false, error: "رقم الهاتف غير صالح" };
+    try {
+      ({ profileId: patientId } = await getOrCreatePatientByPhone({
+        clinicId,
+        phone,
+        name: fullName,
+      }));
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "تعذّر إنشاء حساب المريض" };
+    }
+  }
+
+  let appointmentId: string;
+  let mode: "order" | "arrival" | undefined;
+  let orderNumber: number | null | undefined;
+  if (input.slotId) {
+    const res = await AppointmentService.createAppointment(patientId, input.slotId, input.notes, {
+      clinicId,
+    });
+    if (!res.ok) return { ok: false, error: res.error };
+    appointmentId = res.data.id;
+  } else if (input.date) {
+    const res = await QueueService.bookOrderAppointment(
+      patientId,
+      input.doctorId,
+      new Date(input.date),
+      { notes: input.notes, clinicId }
+    );
+    if (!res.ok) return { ok: false, error: res.error };
+    appointmentId = res.data.id;
+    mode = res.data.mode === "ARRIVAL_BASED" ? "arrival" : "order";
+    orderNumber = res.data.orderNumber;
+  } else {
+    return { ok: false, error: "يرجى اختيار موعد" };
+  }
+
+  await AppointmentService.updateAppointmentStatus(appointmentId, AppointmentStatus.CONFIRMED);
+
+  revalidatePath("/admin/appointments", "page");
+  return { ok: true, mode, orderNumber };
 }
 
 // ─── Availability Rule actions ────────────────────────────────────────────────

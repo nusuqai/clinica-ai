@@ -3,6 +3,7 @@ import { listAppointments } from "@/server/services/appointments";
 import { listDoctors } from "@/server/services/doctors";
 import PageHeader from "@/components/admin/page-header";
 import AppointmentBoard from "./_components/appointment-board";
+import BookAppointmentButton from "./_components/book-appointment-button";
 
 export default async function AdminAppointmentsPage() {
   const { clinic } = await requireClinicMember(["ADMIN"]);
@@ -12,7 +13,22 @@ export default async function AdminAppointmentsPage() {
   ]);
   return (
     <div>
-      <PageHeader title="المواعيد" subtitle={`${appointments.length} موعد`} />
+      <PageHeader
+        title="المواعيد"
+        subtitle={`${appointments.length} موعد`}
+        action={
+          <BookAppointmentButton
+            doctors={doctors
+              .filter((d) => d.isActive)
+              .map((d) => ({
+                id: d.id,
+                name: d.profile.fullName,
+                specialty: d.specialty,
+                fee: d.consultationFee,
+              }))}
+          />
+        }
+      />
 
       <AppointmentBoard
         appointments={appointments}

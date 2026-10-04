@@ -102,6 +102,50 @@ export async function getClinicUser(
   };
 }
 
+export interface PatientOption {
+  id: string;
+  fullName: string;
+  phone: string | null;
+}
+
+/**
+ * The clinic's patients whose name or phone matches `query` — the patient picker
+ * in the admin booking modal. Prisma-only (no auth email lookup), capped small.
+ */
+export async function searchClinicPatients(
+  clinicId: string,
+  query: string,
+  limit = 8
+): Promise<PatientOption[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const members = await prisma.clinicMember.findMany({
+    where: {
+      clinicId,
+      role: "PATIENT",
+      user: {
+        OR: [
+          { fullName: { contains: q, mode: "insensitive" } },
+          { phone: { contains: normalizePhone(q) || q } },
+        ],
+      },
+    },
+    select: { user: { select: { id: true, fullName: true, phone: true } } },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+  return members.map((m) => m.user);
+}
+
+/** True if the user is a PATIENT member of the clinic. */
+export async function isClinicPatient(userId: string, clinicId: string): Promise<boolean> {
+  const member = await prisma.clinicMember.findUnique({
+    where: { userId_clinicId: { userId, clinicId } },
+    select: { role: true },
+  });
+  return member?.role === "PATIENT";
+}
+
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 /** Edit a member's Profile (name/phone). Scoped: the user must be a member here. */

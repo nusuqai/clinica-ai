@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import {
   Search,
@@ -56,6 +56,8 @@ export default function AppointmentBoard({
   doctors,
 }: AppointmentBoardProps) {
   const [appointments, setAppointments] = useState(initial);
+  // Adopt fresh server data (e.g. a booking made from the header) on refresh.
+  useEffect(() => setAppointments(initial), [initial]);
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [detailsAppt, setDetailsAppt] = useState<AdminAppointment | null>(null);

@@ -47,7 +47,7 @@ interface OrderInfo {
 type DayData = { kind: "slots"; slots: Slot[] } | { kind: "queue"; info: OrderInfo };
 
 /** What the patient has chosen to book, carried into the confirm step. */
-type Selection =
+export type Selection =
   | { mode: "SLOT_BASED"; date: string; slot: Slot }
   | { mode: "ORDER_BASED"; date: string; info: OrderInfo };
 
@@ -61,6 +61,20 @@ interface Props {
   /** Auth links for the "sign in to continue" state (clinic-scoped when set). */
   loginHref?: string;
   registerHref?: string;
+  /**
+   * Booking on someone else's behalf (the admin board): replaces the patient's
+   * own booking actions. When set, the auth gate is skipped.
+   */
+  onBook?: (selection: Selection, notes: string) => Promise<BookResult>;
+  /** Who is being booked for — shown in the summary when booking on their behalf. */
+  patientName?: string;
+}
+
+export interface BookResult {
+  ok: boolean;
+  error?: string;
+  mode?: "order" | "arrival";
+  orderNumber?: number | null;
 }
 
 function formatTime(iso: string) {
@@ -81,9 +95,12 @@ export function BookAppointmentModal({
   appointmentsHref = "/",
   loginHref = "/login",
   registerHref = "/register",
+  onBook,
+  patientName,
 }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
-  const needsAuth = !isAuthenticated || !isPatient;
+  const onBehalf = !!onBook;
+  const needsAuth = !onBehalf && (!isAuthenticated || !isPatient);
   const [step, setStep] = useState<1 | 2>(1);
   const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
   const [daysLoading, setDaysLoading] = useState(true);
@@ -186,7 +203,16 @@ export function BookAppointmentModal({
     if (!selection) return;
     setBookingError("");
     startTransition(async () => {
-      if (selection.mode === "SLOT_BASED") {
+      if (onBook) {
+        const res = await onBook(selection, notes);
+        if (res.ok) {
+          setBookedArrival(res.mode === "arrival");
+          setBookedOrder(res.orderNumber ?? null);
+          setSuccess(true);
+        } else {
+          setBookingError(res.error ?? "حدث خطأ غير متوقع");
+        }
+      } else if (selection.mode === "SLOT_BASED") {
         const res = await bookAppointmentAction(selection.slot.id, notes || undefined);
         if (res.ok) setSuccess(true);
         else setBookingError(res.error ?? "حدث خطأ غير متوقع");
@@ -418,6 +444,12 @@ export function BookAppointmentModal({
               <div className="rounded-xl bg-muted px-4 py-3">
                 <p className="font-sans text-xs font-medium text-text/50">تفاصيل الموعد</p>
                 <div className="mt-2 flex flex-col gap-1">
+                  {patientName && (
+                    <div className="flex items-center justify-between">
+                      <span className="font-sans text-sm text-text/70">المريض</span>
+                      <span className="font-sans text-sm font-medium text-text">{patientName}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="font-sans text-sm text-text/70">التاريخ</span>
                     <span className="font-sans text-sm font-medium text-text">
@@ -529,7 +561,21 @@ export function BookAppointmentModal({
                       ? "تم حجز دورك!"
                       : "تم الحجز بنجاح!"}
                 </p>
-                {bookedArrival ? (
+                {onBehalf ? (
+                  <p className="mt-1 font-sans text-sm text-text/60">
+                    تم تأكيد موعد {patientName} مع {doctor.name}
+                    {bookedOrder != null && (
+                      <span className="mt-0.5 block">
+                        رقم الدور: <span className="font-bold text-accent">{bookedOrder}</span>
+                      </span>
+                    )}
+                    {bookedArrival && (
+                      <span className="mt-0.5 block text-text/50">
+                        يُعطى رقم الدور عند الوصول حسب أسبقية الحضور
+                      </span>
+                    )}
+                  </p>
+                ) : bookedArrival ? (
                   <p className="mt-1 font-sans text-sm text-text/60">
                     احضر إلى العيادة وسيتم إعطاؤك رقم دورك حسب أسبقية وصولك.
                     <span className="mt-0.5 block text-text/50">في انتظار التأكيد من العيادة</span>
@@ -546,12 +592,14 @@ export function BookAppointmentModal({
                 )}
               </div>
               <div className="flex w-full flex-col gap-2">
-                <Link
-                  href={appointmentsHref}
-                  className="block w-full rounded-xl bg-primary py-3 text-center font-medium text-white hover:opacity-90"
-                >
-                  عرض مواعيدي
-                </Link>
+                {!onBehalf && (
+                  <Link
+                    href={appointmentsHref}
+                    className="block w-full rounded-xl bg-primary py-3 text-center font-medium text-white hover:opacity-90"
+                  >
+                    عرض مواعيدي
+                  </Link>
+                )}
                 <button
                   onClick={onClose}
                   className="w-full rounded-xl border border-border py-3 font-medium text-text hover:bg-muted"
