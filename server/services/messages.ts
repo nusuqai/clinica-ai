@@ -38,6 +38,9 @@ export interface MessageMedia {
   caption?: string;
   /** The agent's vision description, when it read the image. */
   analysis?: string;
+  /** OCR extraction surfaced to the call-centre team in extract-only mode (the
+   *  agent never sees this — distinct from `analysis`). */
+  extraction?: string;
   /** Intrinsic image dimensions, when known (staff-sent). */
   width?: number;
   height?: number;
@@ -208,6 +211,7 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
               filename: media.filename,
               caption: media.caption,
               analysis: media.analysis,
+              extraction: media.extraction,
               width: media.width,
               height: media.height,
             },

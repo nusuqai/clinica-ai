@@ -328,6 +328,7 @@ export default function ChatInbox({
                           filename: media.filename,
                           caption: media.caption,
                           analysis: media.analysis,
+                          extraction: media.extraction,
                         },
                       }
                     : {}),
@@ -1021,6 +1022,16 @@ export default function ChatInbox({
                               <p className="mt-1 text-[10px] italic text-muted-foreground">
                                 🔍 {msg.media.analysis}
                               </p>
+                            )}
+                            {msg.media.extraction && (
+                              <div className="mt-1 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2">
+                                <p className="mb-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-500">
+                                  📋 نص مستخرج من الصورة (للمراجعة)
+                                </p>
+                                <p className="whitespace-pre-wrap text-xs text-foreground">
+                                  {msg.media.extraction}
+                                </p>
+                              </div>
                             )}
                           </div>
                         )}

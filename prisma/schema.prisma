@@ -154,6 +154,10 @@ model Clinic {
   createdAt              DateTime                    @default(now())
   updatedAt              DateTime                    @updatedAt
   timezone               String                      @default("Africa/Cairo")
+  // Seconds of silence after a patient's last message before the agent answers
+  // the whole burst (message debounce). Per-clinic, live-editable in admin;
+  // bounded 5–120 on write. See memory message-debounce-pgcron.
+  debounceSeconds        Int                         @default(15)
   messages               Message[]
   escalations            Escalation[]
   members                ClinicMember[]
@@ -185,6 +189,7 @@ model Clinic {
   prescriptions          Prescription[]
   treatmentRevisions     TreatmentRecordRevision[]
   appointmentAttachments AppointmentAttachment[]
+  conversationProcessing ConversationProcessing[]
   patientConnections     PatientConnection[]
 
   @@map("clinics")
@@ -772,11 +777,12 @@ model Conversation {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  clinic      Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  user        Profile?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinic      Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  user        Profile?                @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages    Message[]
   sessions    ChatSession[]
   escalations Escalation[]
+  processing  ConversationProcessing?
 
   @@unique([clinicId, whatsappPhone])
   @@unique([clinicId, whatsappUserId])
@@ -797,7 +803,6 @@ model ChatSession {
   // admin can pause it, or the escalate_to_human tool turns it off when the
   // user asks for a human. Does not carry over to the next session.
   aiEnabled      Boolean  @default(true)
-
   clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   messages     Message[]
@@ -839,20 +844,31 @@ model Escalation {
 }
 
 model Message {
-  id                String     @id @default(uuid()) @db.Uuid
-  conversationId    String     @db.Uuid
-  clinicId          String     @db.Uuid
-  sessionId         String?    @db.Uuid
+  id                String          @id @default(uuid()) @db.Uuid
+  conversationId    String          @db.Uuid
+  clinicId          String          @db.Uuid
+  sessionId         String?         @db.Uuid
   senderType        SenderType
-  senderId          String?    @db.Uuid // null when senderType = AGENT
+  senderId          String?         @db.Uuid // null when senderType = AGENT
   content           String
   metadata          Json? // { toolCalls, voice, media, structured, reaction } — see agent/types.ts
   // The WhatsApp Cloud API message id (wamid) for messages that came in on / went
   // out over WhatsApp. Lets an inbound reaction (which references the reacted
   // message by wamid) be attached to the right message. Null for web messages.
-  whatsappMessageId String?    @db.Text
-  isRead            Boolean    @default(false)
-  createdAt         DateTime   @default(now())
+  whatsappMessageId String?         @db.Text
+  isRead            Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  // Debounce bookkeeping. On an inbound USER message, null until the debounce
+  // processor has consolidated it into an agent reply — the race-safe marker of
+  // "already answered" (set by explicit id, so a message that arrives mid-run is
+  // never marked and gets its own reply next tick). Null on AGENT messages.
+  processedAt       DateTime?
+  // Delivery lifecycle of an outbound AGENT reply. QUEUED = generated + persisted
+  // but not yet sent (the checkpoint that lets a send-retry re-deliver WITHOUT
+  // re-running/charging the AI); SENT once the Cloud API accepts it; FAILED after
+  // a send error. Always SENT for inbound + web messages.
+  deliveryStatus    MessageDelivery @default(SENT)
+  sendAttempts      Int             @default(0)
 
   clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -865,7 +881,60 @@ model Message {
   @@index([sessionId])
   @@index([clinicId, createdAt])
   @@index([conversationId, whatsappMessageId])
+  // Serves the processor's "unprocessed user messages in this session" read and
+  // the "is there an undelivered reply to resume" resume-check.
+  @@index([sessionId, processedAt])
+  @@index([sessionId, deliveryStatus])
   @@map("messages")
+}
+
+// Delivery lifecycle of an outbound agent reply — see Message.deliveryStatus.
+enum MessageDelivery {
+  QUEUED
+  SENT
+  FAILED
+}
+
+// Per-conversation debounce + retry controller. ONE row per conversation. This
+// is NOT ChatSession (a 30-min context window): it governs *when* to answer a
+// burst of messages and how to retry a failed reply. Driven by pg_cron (every
+// ~15s) → /api/cron/process-debounce. See memory message-debounce-pgcron.
+model ConversationProcessing {
+  conversationId      String                       @id @db.Uuid
+  clinicId            String                       @db.Uuid
+  status              ConversationProcessingStatus @default(IDLE)
+  // Raw timestamp of the most recent answerable inbound message (debugging).
+  lastInboundAt       DateTime
+  // The debounce gate: = lastInboundAt + clinic.debounceSeconds, recomputed on
+  // every inbound. The processor claims rows whose readyAt <= now(). Storing it
+  // (instead of an interval in SQL) keeps per-clinic windows out of the hot query
+  // and makes a clinic's live debounce change take effect on the next message.
+  readyAt             DateTime
+  // Reply-modality hint: was the last inbound a voice note? (→ maybe TTS reply.)
+  lastInboundWasVoice Boolean                      @default(false)
+  // When a processor run claimed this row — for stuck-run recovery.
+  claimedAt           DateTime?
+  retryCount          Int                          @default(0)
+  // Constant-backoff gate: don't retry before this. Null = eligible now.
+  nextRetryAt         DateTime?
+  lastError           String?
+  updatedAt           DateTime                     @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  // The hot discovery query: due PENDING rows, oldest-waiting first.
+  @@index([status, readyAt])
+  @@index([status, nextRetryAt])
+  @@index([clinicId])
+  @@map("conversation_processing")
+}
+
+enum ConversationProcessingStatus {
+  IDLE // nothing waiting to answer
+  PENDING // unanswered inbound message(s) in the debounce window
+  PROCESSING // claimed by a processor run
+  FAILED // retries exhausted — needs human attention
 }
 
 // ─── AI credit & cost metering ────────────────────────────────────────────────
@@ -890,40 +959,48 @@ model Message {
 // can cost far under one cent, so 8 fractional digits keep sums of many tiny
 // charges exact. Never touched by JS floats.
 model ClinicAiCredit {
-  id                   String    @id @default(uuid()) @db.Uuid
-  clinicId             String    @unique @db.Uuid
+  id                    String    @id @default(uuid()) @db.Uuid
+  clinicId              String    @unique @db.Uuid
   // Per-clinic global AI auto-reply switch. Distinct from ChatSession.aiEnabled
   // (a per-session pause) — this turns the agent off across the whole clinic.
-  aiEnabled            Boolean   @default(true)
+  aiEnabled             Boolean   @default(true)
   // Per-clinic voice-reply (TTS) switch. When true AND the patient's turn was a
   // voice message, the agent answers with synthesized speech; text-in always
   // yields text-out. Default off so no clinic pays for TTS unexpectedly.
-  voiceReplyEnabled    Boolean   @default(false)
+  voiceReplyEnabled     Boolean   @default(false)
   // Per-clinic image-analysis switch. When true AND the patient sent an image,
   // the agent reads it (a one-time vision call describes it, EXTRACTION-billed)
   // and answers from that description. When off, the image is still archived but
   // never read — the agent only answers any caption text and a human is
   // escalated. Default off so no clinic pays for vision unexpectedly.
-  imageAnalysisEnabled Boolean   @default(false)
+  imageAnalysisEnabled  Boolean   @default(false)
+  // Second image controller (issue: two image modes). Only meaningful when
+  // imageAnalysisEnabled is true. When true, the agent answers from the extracted
+  // description (extract-and-respond — the historical behaviour, hence default
+  // true). When false, the image is still OCR'd and the extraction is stored on
+  // the message for the call-centre team to read (e.g. a hard-to-read
+  // prescription), but the agent does NOT auto-reply — the thread is escalated to
+  // a human instead. Off(imageAnalysisEnabled=false) ignores this flag entirely.
+  imageAutoReplyEnabled Boolean   @default(true)
   // The clinic-facing meter: remaining agent replies. Decremented by exactly 1
   // inside the same transaction that logs a REPLY usage row, so a redelivered
   // webhook that fails the (messageId, kind) unique rolls the unit back too.
   // Starts at 0 — a clinic replies only once the platform grants it units.
-  unitBalance          Int       @default(0)
+  unitBalance           Int       @default(0)
   // Soft warning for the clinic admin's dashboard; does not block replies.
-  lowUnitsThreshold    Int       @default(50)
+  lowUnitsThreshold     Int       @default(50)
   // Dedupe stamps for the platform-admin low-credit alert emails. Set when the
   // alert is sent, cleared by a top-up that lifts the balance back above the
   // threshold — so each crossing mails once, not once per reply below it.
   // The two events are distinct: "running low, top them up" vs "units gone, the
   // agent has stopped answering this clinic's customers".
-  lowUnitsNotifiedAt   DateTime?
-  unitsOutNotifiedAt   DateTime?
-  balance              Decimal   @default(0) @db.Decimal(18, 8)
-  markup               Decimal   @default(1.5) @db.Decimal(6, 4)
-  lowBalanceThreshold  Decimal   @default(5) @db.Decimal(18, 8)
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  lowUnitsNotifiedAt    DateTime?
+  unitsOutNotifiedAt    DateTime?
+  balance               Decimal   @default(0) @db.Decimal(18, 8)
+  markup                Decimal   @default(1.5) @db.Decimal(6, 4)
+  lowBalanceThreshold   Decimal   @default(5) @db.Decimal(18, 8)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 

@@ -4,6 +4,7 @@ import { AppointmentStatus, DayOfWeek } from "@prisma/client";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as DoctorService from "@/server/services/doctors";
+import { getDoctorByProfileId } from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
 import { listDoctorBranchIds } from "@/server/services/branches";
@@ -38,8 +39,15 @@ async function setSlotBlocked(
   return { slotId, isBlocked: blocked };
 }
 
-export function doctorTools(ctx: AgentContext): DynamicStructuredTool[] {
-  const doctorId = ctx.actorId!;
+export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredTool[]> {
+  // #38 + latent-bug fix: `ctx.actorId` is the global Profile id, but every doctor
+  // query/ownership check keys on `Doctor.id` (a distinct uuid). Resolve the
+  // clinic-scoped Doctor for this profile; a Doctor belongs to exactly one clinic,
+  // so every tool below is inherently isolated to `ctx.clinicId`. No matching
+  // doctor record → no doctor tools (only the base info/handoff tools remain).
+  const doctor = await getDoctorByProfileId(ctx.actorId!, ctx.clinicId);
+  if (!doctor) return [];
+  const doctorId = doctor.id;
 
   const statusTool = (
     name: string,

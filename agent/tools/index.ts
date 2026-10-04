@@ -15,7 +15,7 @@ import { claimWebLoginTool } from "./claim";
  * Returns EXACTLY the tools the actor's role may use. Out-of-role tools are
  * never constructed, so the model cannot see or call them.
  */
-export function getToolsForRole(ctx: AgentContext): DynamicStructuredTool[] {
+export async function getToolsForRole(ctx: AgentContext): Promise<DynamicStructuredTool[]> {
   const base = [
     ...commonTools(ctx.clinicId),
     ...knowledgeTools(ctx.clinicId),
@@ -42,7 +42,7 @@ export function getToolsForRole(ctx: AgentContext): DynamicStructuredTool[] {
     case "PATIENT":
       return [...base, ...patientTools(ctx), ...claim];
     case "DOCTOR":
-      return [...base, ...doctorTools(ctx)];
+      return [...base, ...(await doctorTools(ctx))];
     case "ADMIN":
       return [...base, ...adminTools(ctx)];
     default:

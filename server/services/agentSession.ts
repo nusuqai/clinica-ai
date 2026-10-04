@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { Channel, SenderType, type Prisma } from "@prisma/client";
+import { Channel, SenderType, MessageDelivery, type Prisma } from "@prisma/client";
 import type { AgentMessageMetadata } from "@/agent/types";
 
 /**
@@ -118,7 +118,14 @@ export async function persistAgentMessage(
   sessionId: string,
   clinicId: string,
   content: string,
-  metadata: AgentMessageMetadata | null
+  metadata: AgentMessageMetadata | null,
+  /**
+   * Delivery lifecycle. Defaults to SENT (the inline web/voice-notice paths send
+   * immediately). The debounce processor passes QUEUED: it persists the reply as
+   * a checkpoint BEFORE sending, so a send failure re-delivers this same row
+   * without re-running or re-charging the agent.
+   */
+  deliveryStatus: MessageDelivery = MessageDelivery.SENT
 ): Promise<SessionMessage> {
   const m = await prisma.message.create({
     data: {
@@ -129,6 +136,7 @@ export async function persistAgentMessage(
       isRead: true,
       metadata: metadata ? (metadata as unknown as Prisma.InputJsonValue) : undefined,
       clinicId,
+      deliveryStatus,
     },
   });
   await touchConversation(conversationId);
@@ -140,6 +148,62 @@ export async function persistAgentMessage(
     createdAt: m.createdAt,
     clinicId: m.clinicId,
   };
+}
+
+/**
+ * The unprocessed inbound user messages of a conversation, oldest first — the
+ * burst the debounce processor is about to consolidate. Their shared `sessionId`
+ * is the live session to answer in (a <15s window can't cross a 30-min session).
+ */
+export async function getUnprocessedUserMessages(
+  conversationId: string
+): Promise<{ id: string; sessionId: string | null }[]> {
+  return prisma.message.findMany({
+    where: { conversationId, senderType: SenderType.USER, processedAt: null },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, sessionId: true },
+  });
+}
+
+/**
+ * An already-generated agent reply that never reached the patient (a prior send
+ * failed, or crashed between persist and send). The processor re-delivers this
+ * instead of re-running the agent — so a send retry never re-charges AI.
+ */
+export async function findUndeliveredAgentReply(conversationId: string): Promise<{
+  id: string;
+  sessionId: string | null;
+  clinicId: string;
+  content: string;
+  sendAttempts: number;
+} | null> {
+  return prisma.message.findFirst({
+    where: {
+      conversationId,
+      senderType: SenderType.AGENT,
+      deliveryStatus: { in: [MessageDelivery.QUEUED, MessageDelivery.FAILED] },
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, sessionId: true, clinicId: true, content: true, sendAttempts: true },
+  });
+}
+
+/** Marks an outbound agent reply delivered (records the wamid) or failed. */
+export async function markAgentDelivery(
+  messageId: string,
+  status: MessageDelivery,
+  opts: { whatsappMessageId?: string | null; incrementAttempts?: boolean } = {}
+): Promise<void> {
+  await prisma.message
+    .update({
+      where: { id: messageId },
+      data: {
+        deliveryStatus: status,
+        ...(opts.whatsappMessageId ? { whatsappMessageId: opts.whatsappMessageId } : {}),
+        ...(opts.incrementAttempts ? { sendAttempts: { increment: 1 } } : {}),
+      },
+    })
+    .catch((err) => console.error("[debounce] failed to update agent delivery:", err));
 }
 
 /** Records the WhatsApp wamid on an already-persisted message (agent/staff

@@ -92,6 +92,16 @@ export interface MediaAttachmentMetadata {
   analysis?: string;
   /** Model that produced `analysis` (snapshot for the record). */
   analysisModel?: string;
+  /**
+   * OCR/vision extraction produced for the call-centre team when the clinic runs
+   * images in EXTRACT-ONLY mode (imageAutoReplyEnabled = false). Deliberately a
+   * SEPARATE field from `analysis`: it is shown in the admin inbox so a human can
+   * read a hard-to-read prescription, but is NOT injected into the agent context
+   * by `toPrior`, so the agent never auto-answers an extract-only image.
+   */
+  extraction?: string;
+  /** Model that produced `extraction` (snapshot for the record). */
+  extractionModel?: string;
 }
 
 /**

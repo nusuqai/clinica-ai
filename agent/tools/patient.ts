@@ -154,6 +154,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           bookFor,
           slotId,
           notes ?? undefined,
+          { clinicId: ctx.clinicId }, // #38: slot's doctor must be in this clinic
         );
         if (!res.ok) return { error: res.error };
         // Echo the saved appointment in full so the user can verify every detail.
@@ -181,7 +182,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           bookFor,
           doctorId,
           new Date(date),
-          { notes: notes ?? undefined },
+          { notes: notes ?? undefined, clinicId: ctx.clinicId }, // #38: doctor must be in this clinic
         );
         if (!res.ok) return { error: res.error };
         return await appointmentCard(res.data.id);
@@ -197,9 +198,12 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ appointmentId, reason }) => {
-        const appt = await prisma.appointment.findUnique({
-          where: { id: appointmentId },
-          select: { patientId: true, status: true },
+        // #38: scope to this clinic — a patient enrolled in several clinics must
+        // not cancel another clinic's appointment from this clinic's chat.
+        // Owner check is separate so a relative's appointment is found too.
+        const appt = await prisma.appointment.findFirst({
+          where: { id: appointmentId, clinicId: ctx.clinicId },
+          select: { status: true, patientId: true },
         });
         if (!appt || !(await managedPatientIds()).includes(appt.patientId))
           return { error: "الموعد غير موجود أو لا يخصك" };
@@ -227,9 +231,12 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         schema: z.object({ appointmentId: z.string(), newSlotId: z.string() }),
       },
       async ({ appointmentId, newSlotId }) => {
-        const appt = await prisma.appointment.findUnique({
-          where: { id: appointmentId },
-          select: { patientId: true, status: true },
+        // #38: scope to this clinic (both the old appointment and — via
+        // createAppointment's clinicId guard — the new slot's doctor).
+        // Owner check is separate so a relative's appointment is found too.
+        const appt = await prisma.appointment.findFirst({
+          where: { id: appointmentId, clinicId: ctx.clinicId },
+          select: { status: true, patientId: true },
         });
         if (!appt || !(await managedPatientIds()).includes(appt.patientId))
           return { error: "الموعد غير موجود أو لا يخصك" };
@@ -240,7 +247,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           appt.patientId,
           newSlotId,
           undefined,
-          { excludeAppointmentId: appointmentId },
+          { excludeAppointmentId: appointmentId, clinicId: ctx.clinicId },
         );
         if (!created.ok) return { error: created.error };
         await AppointmentService.updateAppointmentStatus(
@@ -318,6 +325,8 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ fullName, phone }) => {
+        // #38: intentionally NOT clinic-scoped — a Profile is one global identity
+        // (name/phone) shared across every clinic the patient belongs to.
         await prisma.profile.update({
           where: { id: patientId },
           data: {
@@ -347,11 +356,16 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         // pending appointment, preferring the one a reminder was sent for.
         const appt = appointmentId
           ? await prisma.appointment.findFirst({
-              where: { id: appointmentId, patientId, status: AppointmentStatus.PENDING },
+              where: {
+                id: appointmentId,
+                patientId,
+                clinicId: ctx.clinicId, // #38: scope to this clinic
+                status: AppointmentStatus.PENDING,
+              },
               select: { id: true },
             })
           : await prisma.appointment.findFirst({
-              where: { patientId, status: AppointmentStatus.PENDING },
+              where: { patientId, clinicId: ctx.clinicId, status: AppointmentStatus.PENDING },
               orderBy: [{ reminderSentAt: "desc" }, { createdAt: "desc" }],
               select: { id: true },
             });
@@ -390,7 +404,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           ? await prisma.appointment.findFirst({
               where: {
                 id: appointmentId,
-                patientId: { in: patientIds },
+                patientId,
                 status: AppointmentStatus.COMPLETED,
                 feedback: null,
               },
@@ -398,7 +412,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
             })
           : await prisma.appointment.findFirst({
               where: {
-                patientId: { in: patientIds },
+                patientId,
                 status: AppointmentStatus.COMPLETED,
                 feedbackRequestedAt: { not: null },
                 feedback: null,
