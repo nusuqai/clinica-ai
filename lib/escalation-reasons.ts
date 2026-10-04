@@ -10,7 +10,10 @@ const REASON_LABELS: Record<string, string> = {
   voice_transcription_failed: "تعذّر تفريغ رسالة صوتية",
   image_needs_review: "صورة تحتاج مراجعة من الفريق",
   image_analysis_disabled: "صورة بحاجة لمراجعة الفريق (تحليل الصور متوقف)",
+  image_extracted_for_review: "صورة تم استخراج نصها لمراجعة الفريق",
   media_needs_review: "مرفق يحتاج مراجعة من الفريق",
+  reply_delivery_failed: "تعذّر إرسال رد المساعد للعميل",
+  agent_failed: "تعذّر على المساعد الرد — بحاجة لمراجعة",
 };
 
 /** Fallback shown when a reason is an unknown slug (all-lowercase, no spaces). */

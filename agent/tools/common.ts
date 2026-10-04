@@ -163,7 +163,7 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
       async ({ doctorId }) => {
         const doctor = await DoctorService.getDoctor(doctorId, clinicId);
         if (!doctor) return { error: "الطبيب غير موجود" };
-        const rules = await DoctorService.listDoctorRules(doctorId);
+        const rules = await DoctorService.listDoctorRules(doctorId, clinicId); // #38
         return {
           doctorId,
           doctorName: doctor.profile.fullName,

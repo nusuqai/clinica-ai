@@ -153,6 +153,9 @@ export interface ClinicAiStatus {
   voiceReplyEnabled: boolean;
   /** Per-clinic image-analysis (vision) switch — see schema. Default false. */
   imageAnalysisEnabled: boolean;
+  /** When analysis is on: let the agent answer the image (true) vs. only store
+   *  the extraction for the call-centre team + escalate (false). Default true. */
+  imageAutoReplyEnabled: boolean;
   /** Clinic-facing meter: replies remaining. The ONLY prepaid meter. */
   unitBalance: number;
   lowUnitsThreshold: number;
@@ -218,6 +221,7 @@ export async function getClinicAiStatus(clinicId: string): Promise<ClinicAiStatu
       aiEnabled: true,
       voiceReplyEnabled: true,
       imageAnalysisEnabled: true,
+      imageAutoReplyEnabled: true,
       unitBalance: true,
       lowUnitsThreshold: true,
       markup: true,
@@ -227,6 +231,7 @@ export async function getClinicAiStatus(clinicId: string): Promise<ClinicAiStatu
     aiEnabled: row.aiEnabled,
     voiceReplyEnabled: row.voiceReplyEnabled,
     imageAnalysisEnabled: row.imageAnalysisEnabled,
+    imageAutoReplyEnabled: row.imageAutoReplyEnabled,
     unitBalance: row.unitBalance,
     lowUnitsThreshold: row.lowUnitsThreshold,
     markup: row.markup,
@@ -751,6 +756,38 @@ export async function setClinicImageAnalysisEnabled(
     update: { imageAnalysisEnabled: enabled },
     create: { clinicId, imageAnalysisEnabled: enabled },
   });
+}
+
+/**
+ * Clinic admin: when image analysis is on, choose whether the agent answers the
+ * image (extract-and-respond) or only stores the extraction for the call-centre
+ * team and escalates (extract-only). See schema ClinicAiCredit.imageAutoReplyEnabled.
+ */
+export async function setClinicImageAutoReplyEnabled(
+  clinicId: string,
+  enabled: boolean
+): Promise<void> {
+  await prisma.clinicAiCredit.upsert({
+    where: { clinicId },
+    update: { imageAutoReplyEnabled: enabled },
+    create: { clinicId, imageAutoReplyEnabled: enabled },
+  });
+}
+
+/** Allowed range for the per-clinic message-debounce window (seconds). The floor
+ *  keeps a clinic from effectively disabling debounce (→ spam + 4× cost); the
+ *  ceiling keeps replies from feeling abandoned. Also near the pg_cron cadence. */
+export const DEBOUNCE_SECONDS_MIN = 5;
+export const DEBOUNCE_SECONDS_MAX = 120;
+
+/** Clinic admin: set how long to wait after a patient's last message before the
+ *  agent answers the burst. Clamped to [MIN, MAX]. */
+export async function setClinicDebounceSeconds(clinicId: string, seconds: number): Promise<number> {
+  const clamped = Math.round(
+    Math.min(DEBOUNCE_SECONDS_MAX, Math.max(DEBOUNCE_SECONDS_MIN, seconds))
+  );
+  await prisma.clinic.update({ where: { id: clinicId }, data: { debounceSeconds: clamped } });
+  return clamped;
 }
 
 /**

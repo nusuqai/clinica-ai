@@ -3,7 +3,9 @@
 import { Bot, Headset, FileText, ExternalLink } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ToolCallCard } from "./tool-cards";
+// ToolCallCard is temporarily unused — tool cards are hidden in the web chat
+// (issue #71). Keep this import handy for when the UI is re-enabled.
+// import { ToolCallCard } from "./tool-cards";
 import { ChatImage } from "@/components/ui/chat-image";
 import type { ChatMessage } from "./types";
 
@@ -108,9 +110,13 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
             <MediaAttachment media={message.media} />
           </div>
         )}
-        {message.toolCalls?.map((call, i) => (
+        {/* Tool-execution cards are intentionally hidden in the patient web chat
+            (issue #71). The toolCalls data is still carried on the message and
+            persisted in metadata — only the UI is suppressed for now; re-enable
+            by rendering ToolCallCard again. */}
+        {/* {message.toolCalls?.map((call, i) => (
           <ToolCallCard key={i} call={call} />
-        ))}
+        ))} */}
       </div>
     </div>
   );

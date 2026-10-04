@@ -1,17 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Bot, AlertTriangle, Mic, Image as ImageIcon } from "lucide-react";
+import { Loader2, Bot, AlertTriangle, Mic, Image as ImageIcon, Timer } from "lucide-react";
 import {
   toggleClinicAiAction,
   toggleClinicVoiceReplyAction,
   toggleClinicImageAnalysisAction,
+  toggleClinicImageAutoReplyAction,
+  setClinicDebounceSecondsAction,
 } from "@/server/actions/ai";
+
+const DEBOUNCE_MIN = 5;
+const DEBOUNCE_MAX = 120;
 
 interface Props {
   initialEnabled: boolean;
   initialVoiceReplyEnabled: boolean;
   initialImageAnalysisEnabled: boolean;
+  initialImageAutoReplyEnabled: boolean;
+  /** Seconds of silence before the agent answers a burst of messages. */
+  initialDebounceSeconds: number;
   /** Replies remaining on the clinic's meter. */
   unitBalance: number;
   lowUnits: boolean;
@@ -33,6 +41,8 @@ export default function AiSettingsForm({
   initialEnabled,
   initialVoiceReplyEnabled,
   initialImageAnalysisEnabled,
+  initialImageAutoReplyEnabled,
+  initialDebounceSeconds,
   unitBalance,
   lowUnits,
   sufficient,
@@ -46,6 +56,12 @@ export default function AiSettingsForm({
 
   const [imageEnabled, setImageEnabled] = useState(initialImageAnalysisEnabled);
   const [imageSaving, setImageSaving] = useState(false);
+
+  const [imageAutoReply, setImageAutoReply] = useState(initialImageAutoReplyEnabled);
+  const [imageAutoReplySaving, setImageAutoReplySaving] = useState(false);
+
+  const [debounce, setDebounce] = useState(String(initialDebounceSeconds));
+  const [debounceSaving, setDebounceSaving] = useState(false);
 
   const toggle = async () => {
     const next = !enabled;
@@ -99,6 +115,43 @@ export default function AiSettingsForm({
     } else {
       setImageEnabled(!next);
       setMessage({ ok: false, text: "تعذّر تحديث الإعداد." });
+    }
+  };
+
+  const toggleImageAutoReply = async () => {
+    const next = !imageAutoReply;
+    setImageAutoReplySaving(true);
+    setMessage(null);
+    setImageAutoReply(next);
+    const res = await toggleClinicImageAutoReplyAction(next);
+    setImageAutoReplySaving(false);
+    if (res.ok) {
+      setMessage({
+        ok: true,
+        text: next
+          ? "سيرد المساعد على الصور تلقائياً."
+          : "سيتم استخراج نص الصور وتحويلها للفريق دون رد آلي.",
+      });
+    } else {
+      setImageAutoReply(!next);
+      setMessage({ ok: false, text: "تعذّر تحديث الإعداد." });
+    }
+  };
+
+  const saveDebounce = async () => {
+    const n = Number(debounce);
+    setDebounceSaving(true);
+    setMessage(null);
+    const res = await setClinicDebounceSecondsAction(n);
+    setDebounceSaving(false);
+    if (res.ok) {
+      setDebounce(String(res.seconds));
+      setMessage({ ok: true, text: `تم ضبط مهلة التجميع على ${res.seconds} ثانية.` });
+    } else {
+      setMessage({
+        ok: false,
+        text: res.message ?? "تعذّر تحديث الإعداد.",
+      });
     }
   };
 
@@ -235,6 +288,72 @@ export default function AiSettingsForm({
               />
             )}
           </button>
+        </div>
+
+        {/* Sub-control: respond vs. extract-only. Only meaningful when analysis is on. */}
+        <div className="mt-4 flex items-center justify-between gap-4 border-t border-border ps-14 pt-4">
+          <div>
+            <p className="font-sans text-sm font-semibold text-foreground">الرد الآلي على الصور</p>
+            <p className="font-sans text-xs text-muted-foreground">
+              عند التفعيل، يرد المساعد على الصورة تلقائياً. عند الإيقاف، يُستخرج نص الصورة (مثل
+              الروشتات صعبة القراءة) ويُحفظ لفريق الاستقبال مع تحويل المحادثة لموظف — دون رد آلي.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={imageAutoReply}
+            onClick={toggleImageAutoReply}
+            disabled={imageAutoReplySaving || !enabled || !imageEnabled}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              imageAutoReply ? "bg-primary" : "bg-muted"
+            }`}
+          >
+            {imageAutoReplySaving ? (
+              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
+            ) : (
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  imageAutoReply ? "-translate-x-6" : "-translate-x-1"
+                }`}
+              />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Message debounce window */}
+      <div className="rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Timer className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <p className="font-sans font-semibold text-foreground">مهلة تجميع الرسائل</p>
+            <p className="font-sans text-sm text-muted-foreground">
+              مدة الانتظار بعد آخر رسالة من العميل قبل أن يرد المساعد — تتيح له إنهاء كتابة رسائله
+              المتتابعة فيرد عليها جميعاً مرة واحدة. ({DEBOUNCE_MIN}–{DEBOUNCE_MAX} ثانية)
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                type="number"
+                min={DEBOUNCE_MIN}
+                max={DEBOUNCE_MAX}
+                value={debounce}
+                onChange={(e) => setDebounce(e.target.value)}
+                disabled={debounceSaving}
+                className="w-24 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50"
+              />
+              <span className="text-sm text-muted-foreground">ثانية</span>
+              <button
+                onClick={saveDebounce}
+                disabled={debounceSaving || debounce === ""}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                {debounceSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                حفظ
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

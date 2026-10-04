@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BarChart3 } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import PageHeader from "@/components/admin/page-header";
 import AiSettingsForm from "@/components/admin/ai/ai-settings-form";
 import { getClinicAiStatus } from "@/server/services/aiCredit";
@@ -8,6 +9,10 @@ import { getClinicAiStatus } from "@/server/services/aiCredit";
 export default async function AiSettingsPage() {
   const { clinic } = await requireClinicMember(["ADMIN"]);
   const status = await getClinicAiStatus(clinic.id);
+  const settings = await prisma.clinic.findUnique({
+    where: { id: clinic.id },
+    select: { debounceSeconds: true },
+  });
 
   return (
     <div>
@@ -29,6 +34,8 @@ export default async function AiSettingsPage() {
           initialEnabled={status.aiEnabled}
           initialVoiceReplyEnabled={status.voiceReplyEnabled}
           initialImageAnalysisEnabled={status.imageAnalysisEnabled}
+          initialImageAutoReplyEnabled={status.imageAutoReplyEnabled}
+          initialDebounceSeconds={settings?.debounceSeconds ?? 15}
           unitBalance={status.unitBalance}
           lowUnits={status.lowUnits}
           sufficient={status.sufficient}
