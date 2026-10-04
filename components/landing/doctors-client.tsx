@@ -77,6 +77,25 @@ export function DoctorsClient({
     return () => clearTimeout(t);
   }, [search]);
 
+  // A specialty card elsewhere on the page links to #specialty=<id>: select that
+  // specialty and bring the booking block into view. The hash is then reset to
+  // #book so clicking the same card again still fires hashchange.
+  useEffect(() => {
+    const applyHash = () => {
+      const match = window.location.hash.match(/^#specialty=([0-9a-f-]{36})$/i);
+      if (!match) return;
+      const id = match[1];
+      if (!specialties.some((s) => s.id === id)) return;
+      setSpecialtyId(id);
+      setSearch("");
+      history.replaceState(null, "", "#book");
+      document.getElementById("book")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    applyHash(); // a shared link that already carries the hash
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, [specialties]);
+
   const filters = { query: query || undefined, specialtyId: specialtyId || undefined };
   const {
     items: doctors,
