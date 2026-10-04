@@ -16,16 +16,17 @@ import AppointmentActions from "./appointment-actions";
 type Row = DoctorAppointmentView & { hasRecord: boolean };
 
 // The doctor's appointments table: first page from the server, the rest
-// loaded as the doctor scrolls (same status filter).
+// loaded as the doctor scrolls (same filters).
 export default function AppointmentsTable({
   initial,
-  status,
+  filters,
 }: {
   initial: Paginated<Row>;
-  status: AppointmentStatus | undefined;
+  /** The filters `initial` was rendered with — later pages use the same. */
+  filters: { status?: AppointmentStatus; patientQuery?: string; date?: string };
 }) {
   const { items, hasMore, loading, error, loadMore } = useLoadMore(initial, (page) =>
-    myAppointmentsPageAction(status, page)
+    myAppointmentsPageAction(filters, page)
   );
 
   return (

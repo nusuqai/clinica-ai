@@ -1,5 +1,6 @@
 "use client";
 
+import type { AppointmentStatus } from "@prisma/client";
 import type { AdminAppointment } from "@/server/services/appointments";
 import type { Paginated } from "@/lib/pagination";
 import { appointmentsPageAction } from "@/server/actions/admin";
@@ -11,13 +12,16 @@ import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 // The doctor's appointments tab: first page from the server, the rest on scroll.
 export default function DoctorAppointmentsTab({
   doctorId,
+  filters,
   initial,
 }: {
   doctorId: string;
+  /** The filters `initial` was rendered with — later pages use the same. */
+  filters: { status?: AppointmentStatus; date?: string };
   initial: Paginated<AdminAppointment>;
 }) {
   const { items, hasMore, loading, error, loadMore } = useLoadMore(initial, (page) =>
-    appointmentsPageAction({ doctorId }, page)
+    appointmentsPageAction({ ...filters, doctorId }, page)
   );
 
   return (

@@ -49,6 +49,8 @@ interface MyAppointmentsSectionProps {
   pastVisits: Paginated<PastVisit>;
   /** First page of the treatment record, newest first; the rest load on scroll. */
   records: Paginated<TreatmentRecordView>;
+  /** Doctors the patient has seen here — options of the history filters. */
+  historyDoctors: { id: string; name: string }[];
   stats: { upcoming: number; completed: number; total: number };
 }
 
@@ -57,6 +59,7 @@ export function MyAppointmentsSection({
   appointments,
   pastVisits,
   records,
+  historyDoctors,
   stats,
 }: MyAppointmentsSectionProps) {
   return (
@@ -103,8 +106,8 @@ export function MyAppointmentsSection({
           completedCount={stats.completed}
           recordCount={records.total}
           totalCount={stats.total}
-          pastVisits={<PastVisitsList initial={pastVisits} />}
-          records={<RecordsPanel initial={records} />}
+          pastVisits={<PastVisitsList initial={pastVisits} doctors={historyDoctors} />}
+          records={<RecordsPanel initial={records} doctors={historyDoctors} />}
         />
       </div>
     </section>

@@ -12,6 +12,7 @@ import * as BranchService from "@/server/services/branches";
 import * as ClinicInfoService from "@/server/services/clinicInfo";
 import * as SpecialtyService from "@/server/services/specialties";
 import * as QueueService from "@/server/services/queue";
+import * as KnowledgeService from "@/server/services/knowledge";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import { getOrCreatePatientByPhone } from "@/server/services/patients";
 import { normalizePhone, isValidPhone } from "@/lib/phone";
@@ -279,6 +280,21 @@ export async function appointmentsPageAction(
   return AppointmentService.listAppointments(clinicId, filters, pageRequest(page));
 }
 
+/** A page of the clinic's doctors matching the filters (DB-side), by name. */
+export async function doctorsPageAction(filters: DoctorService.DoctorFilters, page: number) {
+  const clinicId = await requireAdmin();
+  return DoctorService.listDoctorsPage(clinicId, filters, pageRequest(page), { withEmail: true });
+}
+
+/** A page of the clinic's knowledge docs matching the filters (DB-side). */
+export async function knowledgePageAction(
+  filters: { query?: string; status?: string },
+  page: number
+) {
+  const clinicId = await requireAdmin();
+  return KnowledgeService.listKnowledgeDocsPage(clinicId, filters, pageRequest(page));
+}
+
 /** A board column's next cards: the rows after the first `offset` it already shows. */
 export async function appointmentsAfterAction(
   filters: AppointmentService.AppointmentFilters,
@@ -288,10 +304,11 @@ export async function appointmentsAfterAction(
   return AppointmentService.listAppointments(clinicId, filters, offsetRequest(offset));
 }
 
-/** A page of the clinic's members, optionally searched by name/phone. */
-export async function usersPageAction(query: string, page: number) {
+/** A page of the clinic's members, searched by name/phone and/or one role. */
+export async function usersPageAction(filters: { query?: string; role?: string }, page: number) {
   const clinicId = await requireAdmin();
-  return UserService.listUsers(clinicId, { query }, pageRequest(page));
+  const role = filters.role && filters.role in Role ? (filters.role as Role) : undefined;
+  return UserService.listUsers(clinicId, { query: filters.query, role }, pageRequest(page));
 }
 
 // Patient picker for the admin booking modal (name or phone, this clinic only).

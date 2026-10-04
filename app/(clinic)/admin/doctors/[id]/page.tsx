@@ -19,6 +19,9 @@ import RulesTab from "./_components/rules-tab";
 import SlotsTab from "./_components/slots-tab";
 import QueuePanel from "./_components/queue-panel";
 import DoctorAppointmentsTab from "./_components/appointments-tab";
+import { AppointmentStatus } from "@prisma/client";
+import { FilterBar } from "@/components/ui/filter-bar";
+import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
 import EditDoctorModal from "../_components/edit-doctor-modal";
 
 const TABS = [
@@ -32,12 +35,12 @@ type Tab = (typeof TABS)[number]["key"];
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; status?: string; date?: string }>;
 }
 
 export default async function DoctorDetailsPage({ params, searchParams }: PageProps) {
   const { id } = await params;
-  const { tab } = await searchParams;
+  const { tab, status, date } = await searchParams;
   const activeTab: Tab = (TABS.map((t) => t.key) as string[]).includes(tab ?? "")
     ? (tab as Tab)
     : "appointments";
@@ -202,7 +205,12 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
       </div>
 
       {/* Tab content — each fetches only what it needs */}
-      {activeTab === "appointments" && <AppointmentsContent doctorId={id} />}
+      {activeTab === "appointments" && (
+        <AppointmentsContent
+          doctorId={id}
+          filters={{ status: status as AppointmentStatus | undefined, date }}
+        />
+      )}
       {activeTab === "rules" && (
         <RulesContent doctorId={id} branches={doctorBranches} clinicId={clinic.id} />
       )}
@@ -214,9 +222,33 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
 
 // ─── Per-tab server components ────────────────────────────────────────────────
 
-async function AppointmentsContent({ doctorId }: { doctorId: string }) {
-  const initial = await appointmentsPageAction({ doctorId }, 1);
-  return <DoctorAppointmentsTab doctorId={doctorId} initial={initial} />;
+async function AppointmentsContent({
+  doctorId,
+  filters,
+}: {
+  doctorId: string;
+  filters: { status?: AppointmentStatus; date?: string };
+}) {
+  const initial = await appointmentsPageAction({ ...filters, doctorId }, 1);
+  return (
+    <>
+      <FilterBar
+        fields={[
+          {
+            type: "select",
+            param: "status",
+            allLabel: "كل الحالات",
+            options: Object.values(AppointmentStatus).map((s) => ({
+              value: s,
+              label: APPOINTMENT_STATUS_LABELS[s],
+            })),
+          },
+          { type: "date", param: "date" },
+        ]}
+      />
+      <DoctorAppointmentsTab doctorId={doctorId} filters={filters} initial={initial} />
+    </>
+  );
 }
 
 async function RulesContent({

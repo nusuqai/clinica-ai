@@ -35,15 +35,15 @@ async function requireDoctor(): Promise<{
 
 // ─── Paged lists (infinite scroll) ─────────────────────────────────────────────
 
-/** A page of my appointments, each flagged with whether a record was written. */
+/** A page of my appointments (filtered), each flagged with whether a record was written. */
 export async function myAppointmentsPageAction(
-  status: AppointmentStatus | undefined,
+  filters: { status?: AppointmentStatus; patientQuery?: string; date?: string },
   page: number
 ) {
   const { doctorId, clinicId } = await requireDoctor();
   const result = await AppointmentService.getDoctorAppointmentsPage(
     doctorId,
-    status,
+    { status: filters.status, patientQuery: filters.patientQuery, date: filters.date },
     pageRequest(page)
   );
   // One query for the whole page rather than one per row.
@@ -54,10 +54,10 @@ export async function myAppointmentsPageAction(
   return mapPage(result, (a) => ({ ...a, hasRecord: records.has(a.id) }));
 }
 
-/** A page of the patients I've seen, most recent visit first. */
-export async function myPatientsPageAction(page: number) {
+/** A page of the patients I've seen (searched by name/phone), most recent visit first. */
+export async function myPatientsPageAction(query: string, page: number) {
   const { doctorId } = await requireDoctor();
-  return DoctorService.getDoctorPatients(doctorId, pageRequest(page));
+  return DoctorService.getDoctorPatients(doctorId, pageRequest(page), query);
 }
 
 // ─── Appointment actions ──────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { advanceQueueOnComplete, estimateWaitMinutes } from "./queue";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import { isQueueMode } from "@/lib/availability/modes";
 import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
+import { personSearch } from "./_search";
 import type { Prisma } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -148,9 +149,10 @@ export async function getPatientAppointmentsPage(
   patientId: string,
   clinicId: string,
   status: AppointmentStatus,
+  filters: Pick<AppointmentFilters, "doctorId" | "date">,
   req: PageRequest
 ): Promise<Paginated<PatientAppointment>> {
-  const where = { patientId, clinicId, status };
+  const where = appointmentWhere(clinicId, { ...filters, patientId, status });
   return paginate(
     req,
     async (args) => {
@@ -224,7 +226,8 @@ export interface AppointmentFilters {
   status?: AppointmentStatus;
   doctorId?: string;
   patientId?: string;
-  /** Patient name contains (case-insensitive). */
+  branchId?: string;
+  /** Patient name, or phone digits (see personSearch). */
   patientQuery?: string;
   /** "YYYY-MM-DD": the visit day — slot date, or booking date for queue bookings. */
   date?: string;
@@ -234,21 +237,28 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // Filters arrive from the URL and from client actions: ignore malformed values
 // rather than let Prisma throw on a non-UUID or an unknown status.
+function filterWhere(f: Omit<AppointmentFilters, "doctorId">): Prisma.AppointmentWhereInput {
+  const day = f.date && /^\d{4}-\d{2}-\d{2}$/.test(f.date) ? new Date(f.date) : null;
+  const status = f.status && f.status in AppointmentStatus ? f.status : undefined;
+  const patient = personSearch(f.patientQuery);
+  return {
+    ...(status && { status }),
+    ...(f.patientId && UUID_RE.test(f.patientId) && { patientId: f.patientId }),
+    ...(f.branchId && UUID_RE.test(f.branchId) && { branchId: f.branchId }),
+    ...(patient && { patient }),
+    // The visit day: the slot's date, or the booking date for queue bookings.
+    ...(day && { OR: [{ slot: { date: day } }, { bookingDate: day }] }),
+  };
+}
+
 function appointmentWhere(
   clinicId: string,
   f: AppointmentFilters = {}
 ): Prisma.AppointmentWhereInput {
-  const day = f.date && /^\d{4}-\d{2}-\d{2}$/.test(f.date) ? new Date(f.date) : null;
-  const status = f.status && f.status in AppointmentStatus ? f.status : undefined;
   return {
     clinicId,
-    ...(status && { status }),
     ...(f.doctorId && UUID_RE.test(f.doctorId) && { doctorId: f.doctorId }),
-    ...(f.patientId && UUID_RE.test(f.patientId) && { patientId: f.patientId }),
-    ...(f.patientQuery?.trim() && {
-      patient: { fullName: { contains: f.patientQuery.trim(), mode: "insensitive" as const } },
-    }),
-    ...(day && { OR: [{ slot: { date: day } }, { bookingDate: day }] }),
+    ...filterWhere(f),
   };
 }
 
@@ -452,16 +462,14 @@ export interface DoctorAppointmentView {
 
 export async function getDoctorAppointments(
   doctorId: string,
-  options?: { status?: AppointmentStatus; upcoming?: boolean; limit?: number }
+  options?: { status?: AppointmentStatus; date?: string; upcoming?: boolean; limit?: number }
 ): Promise<DoctorAppointmentView[]> {
   const rows = await prisma.appointment.findMany({
     where: {
       doctorId,
       ...(options?.upcoming
         ? upcomingAppointmentWhere()
-        : options?.status
-          ? { status: options.status }
-          : {}),
+        : filterWhere({ status: options?.status, date: options?.date })),
     },
     include: {
       slot: { select: { date: true, startTime: true, endTime: true } },
@@ -477,13 +485,13 @@ export async function getDoctorAppointments(
   return rows.map((row) => ({ ...row, ...queueView(row) }));
 }
 
-/** One page of a doctor's appointments (optionally one status), newest first. */
+/** One page of a doctor's appointments, filtered like the admin board, newest first. */
 export async function getDoctorAppointmentsPage(
   doctorId: string,
-  status: AppointmentStatus | undefined,
+  filters: Omit<AppointmentFilters, "doctorId">,
   req: PageRequest
 ): Promise<Paginated<DoctorAppointmentView>> {
-  const where = { doctorId, ...(status ? { status } : {}) };
+  const where = { doctorId, ...filterWhere(filters) };
   return paginate(
     req,
     async (args) => {

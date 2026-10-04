@@ -1,5 +1,5 @@
 import "server-only";
-import { Prisma, type Role } from "@prisma/client";
+import { Prisma, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { findAuthUserIdByEmail, authEmailsByIds } from "@/lib/supabase/auth-users";
@@ -8,6 +8,7 @@ import { isSyntheticEmail } from "@/server/services/patients";
 import { sendEmailChange } from "@/lib/email/send-auth-email";
 import { normalizePhone, isValidPhone } from "@/lib/phone";
 import { ok, err, type Result } from "./_result";
+import { personSearch } from "./_search";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,18 +45,12 @@ export async function listUsers(
   filters: { query?: string; role?: Role },
   req: PageRequest
 ): Promise<Paginated<AdminUser>> {
-  const q = filters.query?.trim();
+  const user = personSearch(filters.query);
+  const role = filters.role && filters.role in Role ? filters.role : undefined;
   const where: Prisma.ClinicMemberWhereInput = {
     clinicId,
-    ...(filters.role && { role: filters.role }),
-    ...(q && {
-      user: {
-        OR: [
-          { fullName: { contains: q, mode: "insensitive" } },
-          { phone: { contains: normalizePhone(q) || q } },
-        ],
-      },
-    }),
+    ...(role && { role }),
+    ...(user && { user }),
   };
   const page = await paginate(
     req,

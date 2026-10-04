@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authEmailsByIds } from "@/lib/supabase/auth-users";
+import { personSearch, personSearchSql } from "./_search";
 import { ok, err, type Result } from "./_result";
 import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
@@ -13,6 +14,7 @@ import {
   type Doctor,
   type DayOfWeek,
   type DoctorTitle,
+  type Prisma,
 } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -338,6 +340,106 @@ export async function getAvailableDaysForBooking(
   return [...byDate.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, mode]) => ({ date, mode }));
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface DoctorFilters {
+  /** Name or phone (see personSearch). */
+  query?: string;
+  specialtyId?: string;
+  branchId?: string;
+  /** "active" | "inactive"; anything else = both. */
+  status?: string;
+}
+
+// The WHERE every doctor list runs in the database — before LIMIT/OFFSET and in
+// the count. Filters arrive from the URL and client actions: malformed values
+// are ignored rather than let Prisma throw.
+function doctorWhere(clinicId: string, f: DoctorFilters): Prisma.DoctorWhereInput {
+  const search = personSearch(f.query);
+  return {
+    clinicId,
+    ...(search ?? {}),
+    ...(f.specialtyId && UUID_RE.test(f.specialtyId) && { specialtyId: f.specialtyId }),
+    ...(f.branchId && UUID_RE.test(f.branchId) && { branches: { some: { branchId: f.branchId } } }),
+    ...(f.status === "active" && { isActive: true }),
+    ...(f.status === "inactive" && { isActive: false }),
+  };
+}
+
+/** One page of a clinic's doctors matching `filters`, by name. */
+export async function listDoctorsPage(
+  clinicId: string,
+  filters: DoctorFilters,
+  req: PageRequest,
+  opts?: { withEmail?: boolean }
+): Promise<Paginated<DoctorWithProfile>> {
+  const where = doctorWhere(clinicId, filters);
+  return paginate(
+    req,
+    async (args) => {
+      const doctors = await prisma.doctor.findMany({
+        where,
+        include: linkedProfileSelect,
+        orderBy: [{ fullName: "asc" }, { id: "asc" }],
+        ...args,
+      });
+      if (!opts?.withEmail) return doctors.map((d) => toView(d));
+      // Emails for this page only.
+      const emailMap = await authEmailsByIds(
+        doctors.flatMap((d) => (d.profileId ? [d.profileId] : []))
+      );
+      return doctors.map((d) => toView(d, d.profileId ? (emailMap.get(d.profileId) ?? "") : ""));
+    },
+    () => prisma.doctor.count({ where })
+  );
+}
+
+/** Doctors a patient has a completed visit or a record with here — history filter options. */
+export async function listPatientHistoryDoctors(
+  clinicId: string,
+  patientId: string
+): Promise<{ id: string; name: string }[]> {
+  const doctors = await prisma.doctor.findMany({
+    where: {
+      clinicId,
+      OR: [
+        { appointments: { some: { patientId, status: AppointmentStatus.COMPLETED } } },
+        { treatmentRecords: { some: { patientId } } },
+      ],
+    },
+    select: { id: true, fullName: true },
+    orderBy: { fullName: "asc" },
+  });
+  return doctors.map((d) => ({ id: d.id, name: d.fullName }));
+}
+
+/** Active-doctor count + per-specialty counts — the landing page's numbers. */
+export async function activeDoctorStats(
+  clinicId: string
+): Promise<{ count: number; bySpecialty: { id: string; name: string; count: number }[] }> {
+  const groups = await prisma.doctor.groupBy({
+    by: ["specialtyId"],
+    where: { clinicId, isActive: true },
+    _count: { _all: true },
+  });
+  const ids = groups.flatMap((g) => (g.specialtyId ? [g.specialtyId] : []));
+  const specialties = await prisma.specialty.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true },
+  });
+  const names = new Map(specialties.map((sp) => [sp.id, sp.name]));
+  return {
+    count: groups.reduce((sum, g) => sum + g._count._all, 0),
+    bySpecialty: groups
+      .flatMap((g) =>
+        g.specialtyId && names.has(g.specialtyId)
+          ? [{ id: g.specialtyId, name: names.get(g.specialtyId)!, count: g._count._all }]
+          : []
+      )
+      .sort((a, b) => a.name.localeCompare(b.name, "ar")),
+  };
 }
 
 export async function listDoctors(clinicId: string): Promise<DoctorWithProfile[]> {
@@ -1046,7 +1148,8 @@ export type DoctorPatient = {
  */
 export async function getDoctorPatients(
   doctorId: string,
-  req: PageRequest
+  req: PageRequest,
+  query?: string
 ): Promise<Paginated<DoctorPatient & { id: string }>> {
   return paginate(
     req,
@@ -1081,6 +1184,7 @@ export async function getDoctorPatients(
         FROM last
         JOIN agg USING ("patientId")
         JOIN profiles p ON p.id = last."patientId"
+        WHERE ${personSearchSql(query, "p")}
         ORDER BY last.d DESC NULLS LAST, last."patientId"
         LIMIT ${take} OFFSET ${skip}
       `;
@@ -1094,13 +1198,16 @@ export async function getDoctorPatients(
         totalAppointments: r.total,
       }));
     },
-    () => countDoctorPatients(doctorId)
+    () => countDoctorPatients(doctorId, query)
   );
 }
 
-/** Distinct patients a doctor has had an appointment with. */
-export function countDoctorPatients(doctorId: string): Promise<number> {
-  return prisma.profile.count({ where: { appointments: { some: { doctorId } } } });
+/** Distinct patients a doctor has had an appointment with (optionally searched). */
+export function countDoctorPatients(doctorId: string, query?: string): Promise<number> {
+  const search = personSearch(query);
+  return prisma.profile.count({
+    where: { appointments: { some: { doctorId } }, ...(search ?? {}) },
+  });
 }
 
 // ─── Slots ────────────────────────────────────────────────────────────────────

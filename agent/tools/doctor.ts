@@ -81,13 +81,23 @@ export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredT
     jsonTool(
       {
         name: "list_my_appointments",
-        description: "اعرض مواعيد الطبيب الحالي (القادمة أو كلها).",
-        schema: z.object({ upcoming: z.boolean().nullable() }),
+        description:
+          "اعرض مواعيد الطبيب الحالي (حتى ٥٠): القادمة فقط (upcoming)، أو صفِّها بالحالة أو باليوم (YYYY-MM-DD).",
+        schema: z.object({
+          upcoming: z.boolean().nullable(),
+          status: z.nativeEnum(AppointmentStatus).nullable(),
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
+            .nullable(),
+        }),
       },
-      async ({ upcoming }) => {
+      async ({ upcoming, status, date }) => {
         // Capped: a tool result goes straight into the model's context.
         const appts = await AppointmentService.getDoctorAppointments(doctorId, {
           upcoming: upcoming ?? false,
+          status: status ?? undefined,
+          date: date ?? undefined,
           limit: 50,
         });
         return {
@@ -133,15 +143,17 @@ export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredT
       {
         name: "list_my_patients",
         description:
-          "اعرض مرضى الطبيب الحالي (الأحدث زيارةً أولاً، ٣٠ في الصفحة). اطلب الصفحة التالية عبر page إذا كان hasMore=true.",
+          "اعرض مرضى الطبيب الحالي (الأحدث زيارةً أولاً، ٣٠ في الصفحة). ابحث بالاسم أو الهاتف عبر query. فضّل التصفية على التصفح: إذا كان hasMore=true فاقترح على المستخدم تضييق البحث، ولا تطلب الصفحة التالية (page) إلا إذا طلب المزيد.",
         schema: z.object({
+          query: z.string().nullable().describe("بحث بالاسم أو رقم الهاتف (اختياري)"),
           page: z.number().int().nullable().describe("رقم الصفحة، يبدأ من 1"),
         }),
       },
-      async ({ page }) => {
+      async ({ query, page }) => {
         const patients = await DoctorService.getDoctorPatients(
           doctorId,
           pageRequest(page ?? 1, 30),
+          query ?? undefined,
         );
         return {
           total: patients.total,

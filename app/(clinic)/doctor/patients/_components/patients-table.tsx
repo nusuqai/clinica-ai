@@ -13,10 +13,15 @@ import { formatSlotDate } from "@/lib/slot-time";
 // The doctor's patients: first page from the server, the rest on scroll.
 export default function PatientsTable({
   initial,
+  query,
 }: {
   initial: Paginated<DoctorPatient & { id: string }>;
+  /** The search `initial` was rendered with — later pages use the same. */
+  query: string;
 }) {
-  const { items, hasMore, loading, error, loadMore } = useLoadMore(initial, myPatientsPageAction);
+  const { items, hasMore, loading, error, loadMore } = useLoadMore(initial, (page) =>
+    myPatientsPageAction(query, page)
+  );
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card">

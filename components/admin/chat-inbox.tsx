@@ -30,6 +30,7 @@ import WhatsappTemplatePicker from "@/components/admin/whatsapp-template-picker"
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
 import { escalationReasonLabel } from "@/lib/escalation-reasons";
 import { ChatImage } from "@/components/ui/chat-image";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { createClient } from "@/lib/supabase/client";
 import {
   sendAdminReply,
@@ -164,6 +165,11 @@ export default function ChatInbox({
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeId = searchParams.get("id");
+  // List filters live in the URL (FilterBar); realtime refreshes reuse them.
+  const filterQuery = searchParams.get("q") ?? "";
+  const filterChannel = searchParams.get("channel") ?? "";
+  const filterShow = searchParams.get("show") ?? "";
+  const hasFilters = !!(filterQuery || filterChannel || filterShow);
 
   const [conversations, setConversations] = useState(initialConversations);
   const [messages, setMessages] = useState(initialMessages);
@@ -265,13 +271,17 @@ export default function ChatInbox({
   const refreshConversations = useCallback(() => {
     startListTransition(async () => {
       try {
-        const fresh = await fetchConversations(clinicId);
+        const fresh = await fetchConversations({
+          query: filterQuery,
+          channel: filterChannel,
+          show: filterShow,
+        });
         setConversations(fresh);
       } catch (err) {
         console.error("Failed to refresh conversations:", err);
       }
     });
-  }, [clinicId]);
+  }, [filterQuery, filterChannel, filterShow]);
   const handleRealtimeMessage = useCallback(
     (row: RealtimeMessageRow) => {
       // Reconcile with this admin's own optimistic bubble, whichever arrives
@@ -729,11 +739,41 @@ export default function ChatInbox({
           {listPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
         </div>
 
+        {/* Filters — applied in the database; the URL keeps them across selects. */}
+        <div className="border-b border-border px-3 py-2.5">
+          <FilterBar
+            stacked
+            fields={[
+              { type: "search", param: "q", placeholder: "بحث بالاسم أو رقم الهاتف..." },
+              {
+                type: "select",
+                param: "show",
+                allLabel: "كل المحادثات",
+                options: [
+                  { value: "unread", label: "غير المقروءة" },
+                  { value: "escalated", label: "المُصعّدة" },
+                ],
+              },
+              {
+                type: "select",
+                param: "channel",
+                allLabel: "كل القنوات",
+                options: [
+                  { value: Channel.WHATSAPP, label: "واتساب" },
+                  { value: Channel.WEB, label: "الموقع" },
+                ],
+              },
+            ]}
+          />
+        </div>
+
         <ul className="flex-1 divide-y divide-border overflow-y-auto">
           {conversations.length === 0 && (
             <li className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
               <Inbox className="h-8 w-8 opacity-40" />
-              <p className="font-sans text-xs">لا توجد محادثات بعد</p>
+              <p className="font-sans text-xs">
+                {hasFilters ? "لا توجد محادثات مطابقة" : "لا توجد محادثات بعد"}
+              </p>
             </li>
           )}
           {conversations.map((conv) => (

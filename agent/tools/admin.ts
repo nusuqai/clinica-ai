@@ -172,16 +172,17 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "list_users",
         description:
-          "اعرض المستخدمين مع أدوارهم وبريدهم (٣٠ في الصفحة). ابحث بالاسم أو الهاتف عبر query، واطلب الصفحة التالية عبر page إذا كان hasMore=true.",
+          "اعرض المستخدمين مع أدوارهم وبريدهم (٣٠ في الصفحة). ابحث بالاسم أو الهاتف عبر query، أو صفِّ بالدور عبر role. فضّل التصفية على التصفح: إذا كان hasMore=true فاقترح على المستخدم تضييق البحث، ولا تطلب الصفحة التالية (page) إلا إذا طلب المزيد.",
         schema: z.object({
           query: z.string().nullable().describe("بحث بالاسم أو رقم الهاتف (اختياري)"),
+          role: z.enum(["PATIENT", "DOCTOR", "ADMIN"]).nullable().describe("الدور (اختياري)"),
           page: z.number().int().nullable().describe("رقم الصفحة، يبدأ من 1"),
         }),
       },
-      async ({ query, page }) => {
+      async ({ query, role, page }) => {
         const users = await UserService.listUsers(
           ctx.clinicId,
-          { query: query ?? undefined },
+          { query: query ?? undefined, role: role ?? undefined },
           pageRequest(page ?? 1, 30),
         );
         return {
@@ -216,11 +217,15 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "list_all_appointments",
         description:
-          "اعرض المواعيد (الأحدث أولاً، ٥٠ في الصفحة) مع إمكانية التصفية بالحالة أو الطبيب أو المريض أو اليوم. اطلب الصفحة التالية عبر page إذا كان hasMore=true.",
+          "اعرض المواعيد (الأحدث أولاً، ٥٠ في الصفحة) مع إمكانية التصفية بالحالة أو الطبيب أو المريض (بالاسم أو الهاتف عبر patientQuery) أو اليوم. فضّل التصفية على التصفح: إذا كان hasMore=true فاقترح على المستخدم تضييق البحث، ولا تطلب الصفحة التالية (page) إلا إذا طلب المزيد.",
         schema: z.object({
           status: z.nativeEnum(AppointmentStatus).nullable(),
           doctorId: z.string().nullable(),
           patientId: z.string().nullable(),
+          patientQuery: z
+            .string()
+            .nullable()
+            .describe("اسم المريض أو رقم هاتفه — لا حاجة لمعرفة patientId"),
           date: z
             .string()
             .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
@@ -235,6 +240,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             status: filters.status ?? undefined,
             doctorId: filters.doctorId ?? undefined,
             patientId: filters.patientId ?? undefined,
+            patientQuery: filters.patientQuery ?? undefined,
             date: filters.date ?? undefined,
           },
           pageRequest(filters.page ?? 1, 50),

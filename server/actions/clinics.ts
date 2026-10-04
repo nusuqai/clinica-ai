@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { ClinicRequestStatus, Role } from "@prisma/client";
+import { ClinicRequestStatus, Role, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -22,13 +22,25 @@ async function requirePlatform() {
 
 // ─── Paged lists (infinite scroll) ─────────────────────────────────────────────
 
-/** A page of all clinics, newest first. */
-export async function clinicsPageAction(page: number) {
+/** A page of clinics (searched by name/slug, optionally by state), newest first. */
+export async function clinicsPageAction(
+  filters: { query?: string; active?: string },
+  page: number
+) {
   await requirePlatform();
+  const q = filters.query?.trim();
+  const where: Prisma.ClinicWhereInput = {
+    ...(q && {
+      OR: [{ name: { contains: q, mode: "insensitive" } }, { slug: { contains: q.toLowerCase() } }],
+    }),
+    ...(filters.active === "active" && { isActive: true }),
+    ...(filters.active === "inactive" && { isActive: false }),
+  };
   return paginate(
     pageRequest(page),
     (args) =>
       prisma.clinic.findMany({
+        where,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: {
           id: true,
@@ -42,22 +54,28 @@ export async function clinicsPageAction(page: number) {
         },
         ...args,
       }),
-    () => prisma.clinic.count()
+    () => prisma.clinic.count({ where })
   );
 }
 
-/** A page of clinic requests, pending first, then newest. */
-export async function requestsPageAction(page: number) {
+/** A page of clinic requests (optionally one status), pending first, then newest. */
+export async function requestsPageAction(filters: { status?: string }, page: number) {
   await requirePlatform();
+  const status =
+    filters.status && filters.status in ClinicRequestStatus
+      ? (filters.status as ClinicRequestStatus)
+      : undefined;
+  const where: Prisma.ClinicRequestWhereInput = status ? { status } : {};
   return paginate(
     pageRequest(page),
     (args) =>
       prisma.clinicRequest.findMany({
+        where,
         orderBy: [{ status: "asc" }, { createdAt: "desc" }, { id: "desc" }],
         include: { createdClinic: { select: { slug: true } } },
         ...args,
       }),
-    () => prisma.clinicRequest.count()
+    () => prisma.clinicRequest.count({ where })
   );
 }
 

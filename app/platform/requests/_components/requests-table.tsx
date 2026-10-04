@@ -12,8 +12,17 @@ import RequestActions from "./request-actions";
 type RequestRow = Awaited<ReturnType<typeof requestsPageAction>>["items"][number];
 
 // Clinic requests (pending first): first page from the server, the rest on scroll.
-export default function RequestsTable({ initial }: { initial: Paginated<RequestRow> }) {
-  const { items, hasMore, loading, error, loadMore } = useLoadMore(initial, requestsPageAction);
+export default function RequestsTable({
+  initial,
+  filters,
+}: {
+  initial: Paginated<RequestRow>;
+  /** The filters `initial` was rendered with — later pages use the same. */
+  filters: { status?: string };
+}) {
+  const { items, hasMore, loading, error, loadMore } = useLoadMore(initial, (page) =>
+    requestsPageAction(filters, page)
+  );
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card">

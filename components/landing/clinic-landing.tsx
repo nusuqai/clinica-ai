@@ -8,7 +8,12 @@ import { HeroSection } from "@/components/landing/hero-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
 import { MyAppointmentsSection, describeWhen } from "@/components/landing/my-appointments-section";
 import ChatBubble from "@/components/chat/chat-bubble";
-import { myPastVisitsPageAction, myRecordsPageAction } from "@/server/actions/patient";
+import {
+  myPastVisitsPageAction,
+  myRecordsPageAction,
+  myHistoryDoctorsAction,
+  publicDoctorsPageAction,
+} from "@/server/actions/patient";
 import { DoctorsClient } from "@/components/landing/doctors-client";
 import { FeaturesSection } from "@/components/landing/features-section";
 import { SpecialtiesSection } from "@/components/landing/specialties-section";
@@ -36,53 +41,44 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
   const dashboardHref = ctx ? roleHome(ctx.role) : loginHref;
 
   // ── Data (scoped to THIS clinic) ────────────────────────────────────────────
-  const [doctors, appointmentCount, myUpcoming, myStats, myPastVisits, myRecords] =
-    await Promise.all([
-      DoctorService.listActiveDoctors(clinic.id),
-      // Only the number is shown — count, don't load every completed visit.
-      AppointmentService.countAppointments(clinic.id, { status: AppointmentStatus.COMPLETED }),
-      // A signed-in patient of THIS clinic also sees their own bookings here —
-      // scoped to this clinic, so bookings made at another clinic never show up.
-      isPatient && ctx
-        ? AppointmentService.getPatientAppointments(ctx.user.id, {
-            clinicId: clinic.id,
-            upcoming: true,
-            limit: 6,
-          })
-        : Promise.resolve(null),
-      isPatient && ctx
-        ? AppointmentService.getPatientStats(ctx.user.id, clinic.id)
-        : Promise.resolve(null),
-      // First pages of the history panels; the rest load on scroll.
-      isPatient && ctx ? myPastVisitsPageAction(1) : Promise.resolve(null),
-      isPatient && ctx ? myRecordsPageAction(1) : Promise.resolve(null),
-    ]);
+  const [
+    doctorStats,
+    firstDoctors,
+    appointmentCount,
+    myUpcoming,
+    myStats,
+    myPastVisits,
+    myRecords,
+    myHistoryDoctors,
+  ] = await Promise.all([
+    // Counts for the stats + specialty sections; the doctor cards are paged.
+    DoctorService.activeDoctorStats(clinic.id),
+    publicDoctorsPageAction({}, 1),
+    // Only the number is shown — count, don't load every completed visit.
+    AppointmentService.countAppointments(clinic.id, { status: AppointmentStatus.COMPLETED }),
+    // A signed-in patient of THIS clinic also sees their own bookings here —
+    // scoped to this clinic, so bookings made at another clinic never show up.
+    isPatient && ctx
+      ? AppointmentService.getPatientAppointments(ctx.user.id, {
+          clinicId: clinic.id,
+          upcoming: true,
+          limit: 6,
+        })
+      : Promise.resolve(null),
+    isPatient && ctx
+      ? AppointmentService.getPatientStats(ctx.user.id, clinic.id)
+      : Promise.resolve(null),
+    // First pages of the history panels (unfiltered); the rest load on scroll.
+    isPatient && ctx ? myPastVisitsPageAction({}, 1) : Promise.resolve(null),
+    isPatient && ctx ? myRecordsPageAction({}, 1) : Promise.resolve(null),
+    isPatient && ctx ? myHistoryDoctorsAction() : Promise.resolve([]),
+  ]);
   const nextAppointment = myUpcoming?.[0]
     ? { doctorName: myUpcoming[0].doctor.profile.fullName, when: describeWhen(myUpcoming[0]) }
     : null;
 
-  const doctorCount = doctors.length;
-
-  const specialtyCounts = new Map<string, number>();
-  for (const d of doctors) {
-    specialtyCounts.set(d.specialty, (specialtyCounts.get(d.specialty) ?? 0) + 1);
-  }
-  const specialties = Array.from(specialtyCounts, ([name, count]) => ({
-    name,
-    count,
-  }));
-
-  const serialisedDoctors = doctors.map((d) => ({
-    id: d.id,
-    specialty: d.specialty,
-    consultationFee: d.consultationFee ? Number(d.consultationFee) : null,
-    isActive: d.isActive,
-    profile: {
-      fullName: d.profile.fullName,
-      phone: d.profile.phone,
-    },
-    _count: { appointments: d._count.appointments },
-  }));
+  const doctorCount = doctorStats.count;
+  const specialties = doctorStats.bySpecialty;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -127,6 +123,7 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
             appointments={myUpcoming}
             pastVisits={myPastVisits}
             records={myRecords}
+            historyDoctors={myHistoryDoctors}
             stats={myStats}
           />
         )}
@@ -136,7 +133,8 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
         <section className="bg-background px-6 py-20">
           <div className="mx-auto max-w-7xl">
             <DoctorsClient
-              doctors={serialisedDoctors}
+              initial={firstDoctors}
+              specialties={specialties}
               isAuthenticated={isAuthenticated}
               isPatient={isPatient}
               appointmentsHref={isPatient ? `${dashboardHref}/appointments` : undefined}

@@ -1,9 +1,16 @@
 import { clinicsPageAction } from "@/server/actions/clinics";
 import { CreateClinicForm } from "./_components/clinic-forms";
 import ClinicList from "./_components/clinic-list";
+import { FilterBar } from "@/components/ui/filter-bar";
 
-export default async function PlatformClinicsPage() {
-  const clinics = await clinicsPageAction(1);
+interface PageProps {
+  searchParams: Promise<{ q?: string; active?: string }>;
+}
+
+export default async function PlatformClinicsPage({ searchParams }: PageProps) {
+  const { q, active } = await searchParams;
+  const filters = { query: q, active };
+  const clinics = await clinicsPageAction(filters, 1);
 
   return (
     <div>
@@ -14,7 +21,21 @@ export default async function PlatformClinicsPage() {
         <CreateClinicForm />
       </div>
 
-      <ClinicList initial={clinics} />
+      <FilterBar
+        fields={[
+          { type: "search", param: "q", placeholder: "بحث باسم العيادة أو النطاق..." },
+          {
+            type: "select",
+            param: "active",
+            allLabel: "كل العيادات",
+            options: [
+              { value: "active", label: "مفعّلة" },
+              { value: "inactive", label: "معطّلة" },
+            ],
+          },
+        ]}
+      />
+      <ClinicList initial={clinics} filters={filters} />
     </div>
   );
 }

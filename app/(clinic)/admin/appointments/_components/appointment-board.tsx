@@ -10,24 +10,13 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import {
-  Search,
-  X,
-  Calendar,
-  Clock,
-  Stethoscope,
-  MapPin,
-  Phone,
-  User,
-  StickyNote,
-} from "lucide-react";
+import { Calendar, Clock, Stethoscope, MapPin, Phone, User, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { AppointmentStatus } from "@prisma/client";
 import { appointmentsAfterAction, updateAppointmentStatusAction } from "@/server/actions/admin";
 import type { AdminAppointment } from "@/server/services/appointments";
 import { upsertById, type Paginated } from "@/lib/pagination";
-import { useQueryParam } from "@/hooks/use-query-param";
 import { canTransition } from "@/lib/appointment-transitions";
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
@@ -35,12 +24,6 @@ import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import Modal from "@/components/admin/modal";
 import BoardColumn from "./board-column";
 import { AppointmentCardOverlay } from "./appointment-card";
-
-interface DoctorOption {
-  id: string;
-  fullName: string;
-  specialty: string;
-}
 
 const STATUS_ORDER: AppointmentStatus[] = [
   AppointmentStatus.PENDING,
@@ -58,6 +41,7 @@ function byStatus<T>(fn: (status: AppointmentStatus) => T): ByStatus<T> {
 
 export interface BoardFilters {
   doctorId?: string;
+  branchId?: string;
   patientQuery?: string;
   date?: string;
 }
@@ -67,13 +51,11 @@ interface AppointmentBoardProps {
   columns: ByStatus<Paginated<AdminAppointment>>;
   /** The filters those pages were rendered with (they live in the URL). */
   filters: BoardFilters;
-  doctors: DoctorOption[];
 }
 
 export default function AppointmentBoard({
   columns: initialColumns,
   filters,
-  doctors,
 }: AppointmentBoardProps) {
   // Every loaded card, across columns; a card's column is its status.
   const [appointments, setAppointments] = useState(() =>
@@ -96,20 +78,7 @@ export default function AppointmentBoard({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
-  // Filters live in the URL so the server renders the matching first pages.
-  const [doctorFilter, setDoctorFilter] = useQueryParam("doctor");
-  const [patientQuery, setPatientQuery] = useQueryParam("q", 300);
-  const [dateFilter, setDateFilter] = useQueryParam("date");
-
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-
-  const hasActiveFilters = doctorFilter !== "" || patientQuery.trim() !== "" || dateFilter !== "";
-
-  function clearFilters() {
-    setDoctorFilter("");
-    setPatientQuery("");
-    setDateFilter("");
-  }
 
   const columns = useMemo(() => {
     const grouped = byStatus<AdminAppointment[]>(() => []);
@@ -223,50 +192,6 @@ export default function AppointmentBoard({
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={patientQuery}
-            onChange={(e) => setPatientQuery(e.target.value)}
-            placeholder="بحث باسم المريض..."
-            className="w-56 rounded-xl border border-border bg-background py-2 pl-3 pr-9 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
-
-        <select
-          value={doctorFilter}
-          onChange={(e) => setDoctorFilter(e.target.value)}
-          className="rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-        >
-          <option value="">كل الأطباء</option>
-          {doctors.map((doc) => (
-            <option key={doc.id} value={doc.id}>
-              {doc.fullName} · {doc.specialty}
-            </option>
-          ))}
-        </select>
-
-        <input
-          type="date"
-          value={dateFilter}
-          onChange={(e) => setDateFilter(e.target.value)}
-          className="rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="inline-flex items-center gap-1 px-3 py-2 font-sans text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-            مسح الفلاتر
-          </button>
-        )}
-      </div>
-
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}

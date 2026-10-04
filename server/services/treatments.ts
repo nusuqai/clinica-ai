@@ -157,12 +157,45 @@ export async function listPatientRecords(args: {
   return rows.map(toView);
 }
 
-/** One page of a patient's timeline in a clinic, newest visit first. */
+export interface RecordFilters {
+  /** Text in the complaint, diagnosis, notes, or a prescribed drug's name. */
+  query?: string;
+  doctorId?: string;
+  /** "YYYY-MM-DD": only the record of that visit day. */
+  date?: string;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Run in the database; malformed values (from a client action) are ignored.
+function recordFilterWhere(f: RecordFilters): Prisma.TreatmentRecordWhereInput {
+  const q = f.query?.trim();
+  const day = f.date && /^\d{4}-\d{2}-\d{2}$/.test(f.date) ? new Date(f.date) : null;
+  return {
+    ...(f.doctorId && UUID_RE.test(f.doctorId) && { doctorId: f.doctorId }),
+    ...(day && { visitDate: day }),
+    ...(q && {
+      OR: [
+        { chiefComplaint: { contains: q, mode: "insensitive" } },
+        { diagnosis: { contains: q, mode: "insensitive" } },
+        { clinicalNotes: { contains: q, mode: "insensitive" } },
+        { prescriptions: { some: { drugName: { contains: q, mode: "insensitive" } } } },
+      ],
+    }),
+  };
+}
+
+/** One page of a patient's timeline in a clinic matching `filters`, newest visit first. */
 export async function listPatientRecordsPage(
   args: { clinicId: string; patientId: string },
+  filters: RecordFilters,
   req: PageRequest
 ): Promise<Paginated<TreatmentRecordView>> {
-  const where = { clinicId: args.clinicId, patientId: args.patientId };
+  const where: Prisma.TreatmentRecordWhereInput = {
+    clinicId: args.clinicId,
+    patientId: args.patientId,
+    ...recordFilterWhere(filters),
+  };
   return paginate(
     req,
     async (page) => {

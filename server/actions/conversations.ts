@@ -2,13 +2,20 @@
 import { requireClinicMember } from "@/lib/auth";
 import { getConversations, getConversationDetail, getMessages } from "@/server/services/messages";
 import type {
+  ConversationFilters,
   ConversationSummary,
   ConversationDetail,
   MessageItem,
 } from "@/server/services/messages";
 
-export async function fetchConversations(clinicId: string): Promise<ConversationSummary[]> {
-  return getConversations(clinicId);
+/** The inbox list for the admin's own clinic, with the current filters. */
+export async function fetchConversations(
+  filters: ConversationFilters
+): Promise<ConversationSummary[]> {
+  // Clinic from the session — never from the caller (this used to trust a
+  // client-supplied clinicId with no auth check).
+  const { clinic } = await requireClinicMember(["ADMIN"]);
+  return getConversations(clinic.id, filters);
 }
 
 export async function fetchConversationDetail(

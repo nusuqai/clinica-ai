@@ -5,9 +5,10 @@ import type { AppointmentStatus } from "@prisma/client";
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
 import { myAppointmentsPageAction } from "@/server/actions/doctor";
 import AppointmentsTable from "./_components/appointments-table";
+import { FilterBar } from "@/components/ui/filter-bar";
 
 interface PageProps {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; date?: string }>;
 }
 
 export default async function DoctorAppointmentsPage({ searchParams }: PageProps) {
@@ -15,12 +16,23 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
   if (!doctor) redirect(`/`);
 
-  const { status } = await searchParams;
+  const { status, q, date } = await searchParams;
   const filterStatus = Object.keys(APPOINTMENT_STATUS_LABELS).includes(status ?? "")
     ? (status as AppointmentStatus)
     : undefined;
 
-  const appointments = await myAppointmentsPageAction(filterStatus, 1);
+  const filters = { status: filterStatus, patientQuery: q, date };
+  const appointments = await myAppointmentsPageAction(filters, 1);
+
+  // Status pills are links; keep the search + date when switching status.
+  const pillHref = (s?: string) => {
+    const params = new URLSearchParams();
+    if (s) params.set("status", s);
+    if (q) params.set("q", q);
+    if (date) params.set("date", date);
+    const qs = params.toString();
+    return qs ? `/doctor/appointments?${qs}` : "/doctor/appointments";
+  };
 
   return (
     <div>
@@ -33,9 +45,9 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
       </div>
 
       {/* Status filter pills */}
-      <div className="mb-6 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap gap-2">
         <a
-          href={`/doctor/appointments`}
+          href={pillHref()}
           className={[
             "rounded-full px-3 py-1.5 font-sans text-sm font-medium transition-colors",
             !filterStatus
@@ -49,7 +61,7 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
           ([val, label]) => (
             <a
               key={val}
-              href={`/doctor/appointments?status=${val}`}
+              href={pillHref(val)}
               className={[
                 "rounded-full px-3 py-1.5 font-sans text-sm font-medium transition-colors",
                 filterStatus === val
@@ -63,7 +75,14 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
         )}
       </div>
 
-      <AppointmentsTable initial={appointments} status={filterStatus} />
+      <FilterBar
+        fields={[
+          { type: "search", param: "q", placeholder: "بحث باسم المريض أو رقم الهاتف..." },
+          { type: "date", param: "date" },
+        ]}
+      />
+
+      <AppointmentsTable initial={appointments} filters={filters} />
     </div>
   );
 }
