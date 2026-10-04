@@ -10,7 +10,9 @@ import {
   type Selection,
 } from "@/components/landing/book-appointment-modal";
 import { adminBookAppointmentAction, searchPatientsAction } from "@/server/actions/admin";
-import type { PatientOption } from "@/server/services/users";
+import type { AdminUser } from "@/server/services/users";
+
+type PatientOption = Pick<AdminUser, "id" | "fullName" | "phone">;
 import { PHONE_EXAMPLE } from "@/lib/phone";
 
 export interface BookableDoctor {

@@ -5,6 +5,8 @@ import { ClinicRequestStatus, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { findAuthUserIdByEmail } from "@/lib/supabase/auth-users";
+import { paginate, pageRequest } from "@/lib/pagination";
 import { ensureClinicAiCredit } from "@/server/services/aiCredit";
 import { registerClinicDomain } from "@/lib/vercel/domains";
 import { sendClinicApprovedInvite, sendClinicCreatedInvite } from "@/lib/email/send-auth-email";
@@ -16,6 +18,47 @@ async function requirePlatform() {
   const u = await getCurrentUser();
   if (!u || !u.profile.isPlatformAdmin) throw new Error("غير مصرح");
   return u;
+}
+
+// ─── Paged lists (infinite scroll) ─────────────────────────────────────────────
+
+/** A page of all clinics, newest first. */
+export async function clinicsPageAction(page: number) {
+  await requirePlatform();
+  return paginate(
+    pageRequest(page),
+    (args) =>
+      prisma.clinic.findMany({
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logoUrl: true,
+          primaryColor: true,
+          accentColor: true,
+          isActive: true,
+          _count: { select: { members: true, doctors: true } },
+        },
+        ...args,
+      }),
+    () => prisma.clinic.count()
+  );
+}
+
+/** A page of clinic requests, pending first, then newest. */
+export async function requestsPageAction(page: number) {
+  await requirePlatform();
+  return paginate(
+    pageRequest(page),
+    (args) =>
+      prisma.clinicRequest.findMany({
+        orderBy: [{ status: "asc" }, { createdAt: "desc" }, { id: "desc" }],
+        include: { createdClinic: { select: { slug: true } } },
+        ...args,
+      }),
+    () => prisma.clinicRequest.count()
+  );
 }
 
 /**
@@ -156,9 +199,8 @@ async function getOrCreateAuthUser(
   if (!error && data.user) return data.user.id;
 
   // Email already registered — reuse that account.
-  const { data: list } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  const found = list?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
-  if (found) return found.id;
+  const found = await findAuthUserIdByEmail(email);
+  if (found) return found;
 
   throw new Error(error?.message ?? "تعذّر إنشاء حساب المستخدم");
 }

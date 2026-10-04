@@ -11,6 +11,8 @@ import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import { listDoctorBranchIds } from "@/server/services/branches";
 import { resolveSpecialtyId } from "@/server/services/specialties";
+import { mapRecordsByAppointment } from "@/server/services/treatments";
+import { pageRequest, mapPage } from "@/lib/pagination";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +31,33 @@ async function requireDoctor(): Promise<{
   if (!doctor) throw new Error("غير مصرح");
 
   return { userId: ctx.user.id, doctorId: doctor.id, clinicId: ctx.clinic.id };
+}
+
+// ─── Paged lists (infinite scroll) ─────────────────────────────────────────────
+
+/** A page of my appointments, each flagged with whether a record was written. */
+export async function myAppointmentsPageAction(
+  status: AppointmentStatus | undefined,
+  page: number
+) {
+  const { doctorId, clinicId } = await requireDoctor();
+  const result = await AppointmentService.getDoctorAppointmentsPage(
+    doctorId,
+    status,
+    pageRequest(page)
+  );
+  // One query for the whole page rather than one per row.
+  const records = await mapRecordsByAppointment(
+    result.items.map((a) => a.id),
+    clinicId
+  );
+  return mapPage(result, (a) => ({ ...a, hasRecord: records.has(a.id) }));
+}
+
+/** A page of the patients I've seen, most recent visit first. */
+export async function myPatientsPageAction(page: number) {
+  const { doctorId } = await requireDoctor();
+  return DoctorService.getDoctorPatients(doctorId, pageRequest(page));
 }
 
 // ─── Appointment actions ──────────────────────────────────────────────────────

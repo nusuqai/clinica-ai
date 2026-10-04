@@ -9,6 +9,8 @@ import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
+import * as TreatmentService from "@/server/services/treatments";
+import { pageRequest, mapPage } from "@/lib/pagination";
 
 // ─── Profile mutations ────────────────────────────────────────────────────────
 
@@ -77,6 +79,36 @@ export async function cancelAppointmentAction(
   revalidatePath("/dashboard", "page");
   revalidatePath("/dashboard/appointments", "page");
   return { ok: true };
+}
+
+// ─── My history (infinite scroll on the clinic home page) ────────────────────
+
+async function requirePatient() {
+  const ctx = await getClinicContext();
+  if (!ctx || ctx.role !== Role.PATIENT) throw new Error("غير مصرح");
+  return { patientId: ctx.user.id, clinicId: ctx.clinic.id };
+}
+
+/** A page of my completed visits here, each flagged if the doctor wrote a record. */
+export async function myPastVisitsPageAction(page: number) {
+  const { patientId, clinicId } = await requirePatient();
+  const result = await AppointmentService.getPatientAppointmentsPage(
+    patientId,
+    clinicId,
+    AppointmentStatus.COMPLETED,
+    pageRequest(page, 10)
+  );
+  const records = await TreatmentService.mapRecordsByAppointment(
+    result.items.map((a) => a.id),
+    clinicId
+  );
+  return mapPage(result, (a) => ({ ...a, hasRecord: records.has(a.id) }));
+}
+
+/** A page of my treatment record here, newest visit first. */
+export async function myRecordsPageAction(page: number) {
+  const { patientId, clinicId } = await requirePatient();
+  return TreatmentService.listPatientRecordsPage({ clinicId, patientId }, pageRequest(page, 10));
 }
 
 // ─── Public queries (no auth required) ───────────────────────────────────────

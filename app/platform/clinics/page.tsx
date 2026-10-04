@@ -1,20 +1,9 @@
-import { prisma } from "@/lib/prisma";
-import { CreateClinicForm, ClinicCard } from "./_components/clinic-forms";
+import { clinicsPageAction } from "@/server/actions/clinics";
+import { CreateClinicForm } from "./_components/clinic-forms";
+import ClinicList from "./_components/clinic-list";
 
 export default async function PlatformClinicsPage() {
-  const clinics = await prisma.clinic.findMany({
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      logoUrl: true,
-      primaryColor: true,
-      accentColor: true,
-      isActive: true,
-      _count: { select: { members: true, doctors: true } },
-    },
-  });
+  const clinics = await clinicsPageAction(1);
 
   return (
     <div>
@@ -25,11 +14,7 @@ export default async function PlatformClinicsPage() {
         <CreateClinicForm />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {clinics.map((c) => (
-          <ClinicCard key={c.id} clinic={c} />
-        ))}
-      </div>
+      <ClinicList initial={clinics} />
     </div>
   );
 }

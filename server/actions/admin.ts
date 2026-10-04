@@ -15,6 +15,7 @@ import * as QueueService from "@/server/services/queue";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import { getOrCreatePatientByPhone } from "@/server/services/patients";
 import { normalizePhone, isValidPhone } from "@/lib/phone";
+import { pageRequest, offsetRequest } from "@/lib/pagination";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -262,14 +263,47 @@ export async function updateAppointmentStatusAction(
     cancellationReason
   );
   if (!result.ok) return { error: result.error };
-  revalidatePath("/admin/appointments", "page");
+  // No revalidatePath: the board already moved the card optimistically, and a
+  // re-render would reset its scrolled-in pages back to the first ones.
   return { success: true };
+}
+
+// ─── Paged lists (infinite scroll) ─────────────────────────────────────────────
+
+/** A page of the clinic's appointments — the board columns and the doctor tab. */
+export async function appointmentsPageAction(
+  filters: AppointmentService.AppointmentFilters,
+  page: number
+) {
+  const clinicId = await requireAdmin();
+  return AppointmentService.listAppointments(clinicId, filters, pageRequest(page));
+}
+
+/** A board column's next cards: the rows after the first `offset` it already shows. */
+export async function appointmentsAfterAction(
+  filters: AppointmentService.AppointmentFilters,
+  offset: number
+) {
+  const clinicId = await requireAdmin();
+  return AppointmentService.listAppointments(clinicId, filters, offsetRequest(offset));
+}
+
+/** A page of the clinic's members, optionally searched by name/phone. */
+export async function usersPageAction(query: string, page: number) {
+  const clinicId = await requireAdmin();
+  return UserService.listUsers(clinicId, { query }, pageRequest(page));
 }
 
 // Patient picker for the admin booking modal (name or phone, this clinic only).
 export async function searchPatientsAction(query: string) {
   const clinicId = await requireAdmin();
-  return UserService.searchClinicPatients(clinicId, query);
+  if (!query.trim()) return [];
+  const page = await UserService.listUsers(
+    clinicId,
+    { query, role: Role.PATIENT },
+    pageRequest(1, 8)
+  );
+  return page.items;
 }
 
 /**

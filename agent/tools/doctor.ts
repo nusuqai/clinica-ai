@@ -10,6 +10,7 @@ import * as QueueService from "@/server/services/queue";
 import { listDoctorBranchIds } from "@/server/services/branches";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import type { AgentContext } from "@/agent/types";
+import { pageRequest } from "@/lib/pagination";
 import { jsonTool, dateStr, timeStr } from "./shared";
 
 async function assertOwnedAppointment(doctorId: string, appointmentId: string) {
@@ -84,8 +85,10 @@ export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredT
         schema: z.object({ upcoming: z.boolean().nullable() }),
       },
       async ({ upcoming }) => {
+        // Capped: a tool result goes straight into the model's context.
         const appts = await AppointmentService.getDoctorAppointments(doctorId, {
           upcoming: upcoming ?? false,
+          limit: 50,
         });
         return {
           appointments: appts.map((a) => ({
@@ -129,13 +132,22 @@ export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredT
     jsonTool(
       {
         name: "list_my_patients",
-        description: "اعرض قائمة مرضى الطبيب الحالي.",
-        schema: z.object({}),
+        description:
+          "اعرض مرضى الطبيب الحالي (الأحدث زيارةً أولاً، ٣٠ في الصفحة). اطلب الصفحة التالية عبر page إذا كان hasMore=true.",
+        schema: z.object({
+          page: z.number().int().nullable().describe("رقم الصفحة، يبدأ من 1"),
+        }),
       },
-      async () => {
-        const patients = await DoctorService.getDoctorPatients(doctorId);
+      async ({ page }) => {
+        const patients = await DoctorService.getDoctorPatients(
+          doctorId,
+          pageRequest(page ?? 1, 30),
+        );
         return {
-          patients: patients.map((p) => ({
+          total: patients.total,
+          page: patients.page,
+          hasMore: patients.hasMore,
+          patients: patients.items.map((p) => ({
             name: p.fullName,
             phone: p.phone,
             totalAppointments: p.totalAppointments,

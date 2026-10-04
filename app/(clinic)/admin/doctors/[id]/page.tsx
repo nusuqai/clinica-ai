@@ -13,14 +13,13 @@ import { requireClinicMember } from "@/lib/auth";
 import { getDoctor, listDoctorRules, getDoctorScheduleDays } from "@/server/services/doctors";
 import { listBranches } from "@/server/services/branches";
 import { listSpecialtyOptions } from "@/server/services/specialties";
-import { listAppointments } from "@/server/services/appointments";
+import { appointmentsPageAction } from "@/server/actions/admin";
 import type { DoctorBranchOption } from "./_components/rules-tab";
-import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import RulesTab from "./_components/rules-tab";
 import SlotsTab from "./_components/slots-tab";
 import QueuePanel from "./_components/queue-panel";
+import DoctorAppointmentsTab from "./_components/appointments-tab";
 import EditDoctorModal from "../_components/edit-doctor-modal";
-import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
 const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
@@ -216,71 +215,8 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
 // ─── Per-tab server components ────────────────────────────────────────────────
 
 async function AppointmentsContent({ doctorId }: { doctorId: string }) {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
-  const appointments = await listAppointments(clinic.id, { doctorId });
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
-      <div className="border-b border-border px-6 py-4">
-        <p className="font-sans text-sm text-muted-foreground">{appointments.length} موعد</p>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full font-sans text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40">
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">المريض</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">التاريخ</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">الوقت</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">الحالة</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">ملاحظات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {appointments.length === 0 && (
-              <tr>
-                <td colSpan={5} className="py-12 text-center text-muted-foreground">
-                  لا توجد مواعيد لهذا الطبيب
-                </td>
-              </tr>
-            )}
-            {appointments.map((appt) => {
-              return (
-                <tr key={appt.id} className="transition-colors hover:bg-muted/30">
-                  <td className="px-4 py-3 font-medium text-foreground">{appt.patient.fullName}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {appt.slot
-                      ? formatSlotDate(appt.slot.date)
-                      : appt.bookingDate
-                        ? formatSlotDate(appt.bookingDate)
-                        : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">
-                    {appt.slot ? (
-                      <>
-                        {formatSlotTime(appt.slot.startTime)}
-                        {" – "}
-                        {formatSlotTime(appt.slot.endTime)}
-                      </>
-                    ) : appt.orderNumber != null ? (
-                      <span dir="rtl">دور رقم {appt.orderNumber}</span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <AppointmentStatusBadge status={appt.status} />
-                  </td>
-                  <td className="max-w-[200px] truncate px-4 py-3 text-muted-foreground">
-                    {appt.patientNotes ?? "—"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+  const initial = await appointmentsPageAction({ doctorId }, 1);
+  return <DoctorAppointmentsTab doctorId={doctorId} initial={initial} />;
 }
 
 async function RulesContent({

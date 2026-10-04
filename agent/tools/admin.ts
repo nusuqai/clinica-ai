@@ -13,6 +13,7 @@ import * as SpecialtyService from "@/server/services/specialties";
 import { getDashboardStats } from "@/server/services/reports";
 import type { AgentContext } from "@/agent/types";
 import { modeTag } from "@/lib/availability/modes";
+import { pageRequest } from "@/lib/pagination";
 import { jsonTool, dateStr, timeStr } from "./shared";
 
 export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
@@ -170,13 +171,24 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
     jsonTool(
       {
         name: "list_users",
-        description: "اعرض كل المستخدمين مع أدوارهم وبريدهم.",
-        schema: z.object({}),
+        description:
+          "اعرض المستخدمين مع أدوارهم وبريدهم (٣٠ في الصفحة). ابحث بالاسم أو الهاتف عبر query، واطلب الصفحة التالية عبر page إذا كان hasMore=true.",
+        schema: z.object({
+          query: z.string().nullable().describe("بحث بالاسم أو رقم الهاتف (اختياري)"),
+          page: z.number().int().nullable().describe("رقم الصفحة، يبدأ من 1"),
+        }),
       },
-      async () => {
-        const users = await UserService.listUsers(ctx.clinicId);
+      async ({ query, page }) => {
+        const users = await UserService.listUsers(
+          ctx.clinicId,
+          { query: query ?? undefined },
+          pageRequest(page ?? 1, 30),
+        );
         return {
-          users: users.map((u) => ({
+          total: users.total,
+          page: users.page,
+          hasMore: users.hasMore,
+          users: users.items.map((u) => ({
             id: u.id,
             name: u.fullName,
             email: u.email,
@@ -204,21 +216,34 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "list_all_appointments",
         description:
-          "اعرض كل المواعيد مع إمكانية التصفية بالحالة أو الطبيب أو المريض.",
+          "اعرض المواعيد (الأحدث أولاً، ٥٠ في الصفحة) مع إمكانية التصفية بالحالة أو الطبيب أو المريض أو اليوم. اطلب الصفحة التالية عبر page إذا كان hasMore=true.",
         schema: z.object({
           status: z.nativeEnum(AppointmentStatus).nullable(),
           doctorId: z.string().nullable(),
           patientId: z.string().nullable(),
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
+            .nullable(),
+          page: z.number().int().nullable().describe("رقم الصفحة، يبدأ من 1"),
         }),
       },
       async (filters) => {
-        const appts = await AppointmentService.listAppointments(ctx.clinicId, {
-          status: filters.status ?? undefined,
-          doctorId: filters.doctorId ?? undefined,
-          patientId: filters.patientId ?? undefined,
-        });
+        const appts = await AppointmentService.listAppointments(
+          ctx.clinicId,
+          {
+            status: filters.status ?? undefined,
+            doctorId: filters.doctorId ?? undefined,
+            patientId: filters.patientId ?? undefined,
+            date: filters.date ?? undefined,
+          },
+          pageRequest(filters.page ?? 1, 50),
+        );
         return {
-          appointments: appts.slice(0, 50).map((a) => ({
+          total: appts.total,
+          page: appts.page,
+          hasMore: appts.hasMore,
+          appointments: appts.items.map((a) => ({
             id: a.id,
             status: a.status,
             patientName: a.patient.fullName,

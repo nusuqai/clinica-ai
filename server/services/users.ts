@@ -2,7 +2,8 @@ import "server-only";
 import { Prisma, type Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { findAuthUserIdByEmail } from "@/lib/supabase/auth-users";
+import { findAuthUserIdByEmail, authEmailsByIds } from "@/lib/supabase/auth-users";
+import { paginate, mapPage, type PageRequest, type Paginated } from "@/lib/pagination";
 import { isSyntheticEmail } from "@/server/services/patients";
 import { sendEmailChange } from "@/lib/email/send-auth-email";
 import { normalizePhone, isValidPhone } from "@/lib/phone";
@@ -34,34 +35,52 @@ export interface ClinicUserDetail {
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
 /**
- * Lists the members of a clinic with their per-clinic role, merged with email
- * from auth.users via the service-role client.
+ * One page of a clinic's members with their per-clinic role, newest first.
+ * `query` matches name or phone. Emails come from auth.users for just this page
+ * (blank while the account is an unclaimed WhatsApp placeholder).
  */
-export async function listUsers(clinicId: string): Promise<AdminUser[]> {
-  const [members, { data: authList }] = await Promise.all([
-    prisma.clinicMember.findMany({
-      where: { clinicId },
-      select: {
-        role: true,
-        createdAt: true,
-        user: { select: { id: true, fullName: true, phone: true } },
+export async function listUsers(
+  clinicId: string,
+  filters: { query?: string; role?: Role },
+  req: PageRequest
+): Promise<Paginated<AdminUser>> {
+  const q = filters.query?.trim();
+  const where: Prisma.ClinicMemberWhereInput = {
+    clinicId,
+    ...(filters.role && { role: filters.role }),
+    ...(q && {
+      user: {
+        OR: [
+          { fullName: { contains: q, mode: "insensitive" } },
+          { phone: { contains: normalizePhone(q) || q } },
+        ],
       },
-      orderBy: { createdAt: "desc" },
     }),
-    createAdminClient().auth.admin.listUsers({ perPage: 1000 }),
-  ]);
-
-  const emailMap = new Map<string, string>(
-    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""])
+  };
+  const page = await paginate(
+    req,
+    (args) =>
+      prisma.clinicMember.findMany({
+        where,
+        select: {
+          role: true,
+          createdAt: true,
+          user: { select: { id: true, fullName: true, phone: true } },
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        ...args,
+      }),
+    () => prisma.clinicMember.count({ where })
   );
-
-  return members.map((m) => ({
+  const emailMap = await authEmailsByIds(page.items.map((m) => m.user.id));
+  return mapPage(page, (m) => ({
     id: m.user.id,
     fullName: m.user.fullName,
     phone: m.user.phone,
     role: m.role,
     createdAt: m.createdAt,
-    email: emailMap.get(m.user.id) ?? "",
+    // Unclaimed WhatsApp accounts carry a placeholder login — not an email to show.
+    email: isSyntheticEmail(emailMap.get(m.user.id)) ? "" : (emailMap.get(m.user.id) ?? ""),
   }));
 }
 
@@ -100,41 +119,6 @@ export async function getClinicUser(
     appointmentCount,
     claimed: !isSyntheticEmail(email),
   };
-}
-
-export interface PatientOption {
-  id: string;
-  fullName: string;
-  phone: string | null;
-}
-
-/**
- * The clinic's patients whose name or phone matches `query` — the patient picker
- * in the admin booking modal. Prisma-only (no auth email lookup), capped small.
- */
-export async function searchClinicPatients(
-  clinicId: string,
-  query: string,
-  limit = 8
-): Promise<PatientOption[]> {
-  const q = query.trim();
-  if (!q) return [];
-  const members = await prisma.clinicMember.findMany({
-    where: {
-      clinicId,
-      role: "PATIENT",
-      user: {
-        OR: [
-          { fullName: { contains: q, mode: "insensitive" } },
-          { phone: { contains: normalizePhone(q) || q } },
-        ],
-      },
-    },
-    select: { user: { select: { id: true, fullName: true, phone: true } } },
-    orderBy: { createdAt: "desc" },
-    take: limit,
-  });
-  return members.map((m) => m.user);
 }
 
 /** True if the user is a PATIENT member of the clinic. */

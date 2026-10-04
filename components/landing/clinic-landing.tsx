@@ -8,7 +8,7 @@ import { HeroSection } from "@/components/landing/hero-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
 import { MyAppointmentsSection, describeWhen } from "@/components/landing/my-appointments-section";
 import ChatBubble from "@/components/chat/chat-bubble";
-import * as TreatmentService from "@/server/services/treatments";
+import { myPastVisitsPageAction, myRecordsPageAction } from "@/server/actions/patient";
 import { DoctorsClient } from "@/components/landing/doctors-client";
 import { FeaturesSection } from "@/components/landing/features-section";
 import { SpecialtiesSection } from "@/components/landing/specialties-section";
@@ -36,12 +36,11 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
   const dashboardHref = ctx ? roleHome(ctx.role) : loginHref;
 
   // ── Data (scoped to THIS clinic) ────────────────────────────────────────────
-  const [doctors, allAppointments, myUpcoming, myStats, myPastVisits, myRecords] =
+  const [doctors, appointmentCount, myUpcoming, myStats, myPastVisits, myRecords] =
     await Promise.all([
       DoctorService.listActiveDoctors(clinic.id),
-      AppointmentService.listAppointments(clinic.id, {
-        status: AppointmentStatus.COMPLETED,
-      }),
+      // Only the number is shown — count, don't load every completed visit.
+      AppointmentService.countAppointments(clinic.id, { status: AppointmentStatus.COMPLETED }),
       // A signed-in patient of THIS clinic also sees their own bookings here —
       // scoped to this clinic, so bookings made at another clinic never show up.
       isPatient && ctx
@@ -54,22 +53,15 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
       isPatient && ctx
         ? AppointmentService.getPatientStats(ctx.user.id, clinic.id)
         : Promise.resolve(null),
-      isPatient && ctx
-        ? AppointmentService.getPatientAppointments(ctx.user.id, {
-            clinicId: clinic.id,
-            status: AppointmentStatus.COMPLETED,
-          })
-        : Promise.resolve([]),
-      isPatient && ctx
-        ? TreatmentService.listPatientRecords({ clinicId: clinic.id, patientId: ctx.user.id })
-        : Promise.resolve([]),
+      // First pages of the history panels; the rest load on scroll.
+      isPatient && ctx ? myPastVisitsPageAction(1) : Promise.resolve(null),
+      isPatient && ctx ? myRecordsPageAction(1) : Promise.resolve(null),
     ]);
   const nextAppointment = myUpcoming?.[0]
     ? { doctorName: myUpcoming[0].doctor.profile.fullName, when: describeWhen(myUpcoming[0]) }
     : null;
 
   const doctorCount = doctors.length;
-  const appointmentCount = allAppointments.length;
 
   const specialtyCounts = new Map<string, number>();
   for (const d of doctors) {
@@ -129,7 +121,7 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
           nextAppointment={nextAppointment}
         />
 
-        {myUpcoming && myStats && (
+        {myUpcoming && myStats && myPastVisits && myRecords && (
           <MyAppointmentsSection
             clinicName={clinic.name}
             appointments={myUpcoming}

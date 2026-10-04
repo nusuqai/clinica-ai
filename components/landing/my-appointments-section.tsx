@@ -5,7 +5,6 @@ import {
   Clock,
   Hash,
   MapPin,
-  FileText,
   Stethoscope,
   ChevronLeft,
 } from "lucide-react";
@@ -15,7 +14,8 @@ import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import { CancelAppointmentButton } from "@/components/dashboard/cancel-appointment-button";
 import { PatientHistoryPanels } from "@/components/landing/patient-history-panels";
 import { RecordsPanel } from "@/components/landing/records-panel";
-import { ShowMore } from "@/components/landing/show-more";
+import { PastVisitsList, visitDate, type PastVisit } from "@/components/landing/past-visits-list";
+import type { Paginated } from "@/lib/pagination";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 
 // The signed-in patient's area on the clinic's own home page, right under the
@@ -23,11 +23,6 @@ import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 // as panels that expand in place — so a patient who opens demo.clinica… sees
 // their history without going into the dashboard. Everything passed in is
 // already scoped to this clinic.
-
-/** The visit's day: the slot's date, or the booking date for queue bookings. */
-function visitDate(appt: PatientAppointment): Date | null {
-  return appt.slot?.date ?? appt.bookingDate;
-}
 
 /**
  * One-line "when" for an appointment — e.g. "الأحد 12 أكتوبر · 10:00 ص" or
@@ -50,9 +45,10 @@ interface MyAppointmentsSectionProps {
   clinicName: string;
   /** Upcoming bookings, nearest first. */
   appointments: PatientAppointment[];
-  /** Completed visits, newest first (capped at PAST_VISITS_LIMIT). */
-  pastVisits: PatientAppointment[];
-  records: TreatmentRecordView[];
+  /** First page of completed visits, newest first; the rest load on scroll. */
+  pastVisits: Paginated<PastVisit>;
+  /** First page of the treatment record, newest first; the rest load on scroll. */
+  records: Paginated<TreatmentRecordView>;
   stats: { upcoming: number; completed: number; total: number };
 }
 
@@ -105,99 +101,15 @@ export function MyAppointmentsSection({
         {/* Past visits + treatment record, expanding inline on this page */}
         <PatientHistoryPanels
           completedCount={stats.completed}
-          recordCount={records.length}
+          recordCount={records.total}
           totalCount={stats.total}
-          pastVisits={<PastVisitsList visits={pastVisits} records={records} />}
-          records={<RecordsPanel records={records} initial={PAST_VISITS_LIMIT} />}
+          pastVisits={<PastVisitsList initial={pastVisits} />}
+          records={<RecordsPanel initial={records} />}
         />
       </div>
     </section>
   );
 }
-
-// ─── Past visits ──────────────────────────────────────────────────────────────
-
-function PastVisitsList({
-  visits,
-  records,
-}: {
-  visits: PatientAppointment[];
-  records: TreatmentRecordView[];
-}) {
-  // Which visits the doctor documented — shown as a badge on the visit.
-  const documented = new Set(records.flatMap((r) => (r.appointmentId ? [r.appointmentId] : [])));
-
-  if (visits.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-10 text-center">
-        <CalendarDays className="h-10 w-10 text-muted-foreground/30" />
-        <p className="font-sans text-sm text-muted-foreground">لا توجد زيارات مكتملة بعد</p>
-      </div>
-    );
-  }
-
-  const items = visits.map((appt) => {
-    const date = visitDate(appt);
-    return (
-      <li key={appt.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
-        <div className="flex h-11 w-11 flex-shrink-0 flex-col items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-700">
-          {date ? (
-            <>
-              <span className="font-heading text-base font-bold leading-none">
-                {formatSlotDate(date, { day: "numeric" })}
-              </span>
-              <span className="font-sans text-[10px] font-medium">
-                {formatSlotDate(date, { month: "short" })}
-              </span>
-            </>
-          ) : (
-            <CalendarDays className="h-5 w-5" />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-sans font-medium text-foreground">
-            د. {appt.doctor.profile.fullName}
-          </p>
-          <p className="font-sans text-xs text-muted-foreground">
-            {[
-              appt.doctor.specialty,
-              appt.branch?.name,
-              date && formatSlotDate(date, { year: "numeric" }),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-        </div>
-        {documented.has(appt.id) && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 font-sans text-xs font-medium text-primary">
-            <FileText className="h-3 w-3" />
-            له سجل علاجي
-          </span>
-        )}
-        <AppointmentStatusBadge status={appt.status} />
-        <Link
-          href={`/appointments/${appt.id}`}
-          className="inline-flex items-center gap-1 font-sans text-xs font-medium text-primary transition-colors hover:text-primary/80"
-        >
-          التفاصيل
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </Link>
-      </li>
-    );
-  });
-
-  return (
-    <ShowMore
-      as="ul"
-      className="divide-y divide-border"
-      items={items}
-      initial={PAST_VISITS_LIMIT}
-    />
-  );
-}
-
-/** How many past visits the home page lists before linking to the full list. */
-export const PAST_VISITS_LIMIT = 10;
 
 // ─── Pieces ───────────────────────────────────────────────────────────────────
 

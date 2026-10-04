@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
 import { AppointmentStatus, ProcedureKind, type Prisma } from "@prisma/client";
 import { updateAppointmentStatus } from "./appointments";
+import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 
 // Treatment records — the clinical history of a patient, as opposed to the
 // scheduling history Appointment already holds.
@@ -154,6 +155,27 @@ export async function listPatientRecords(args: {
     orderBy: [{ visitDate: "desc" }, { createdAt: "desc" }],
   });
   return rows.map(toView);
+}
+
+/** One page of a patient's timeline in a clinic, newest visit first. */
+export async function listPatientRecordsPage(
+  args: { clinicId: string; patientId: string },
+  req: PageRequest
+): Promise<Paginated<TreatmentRecordView>> {
+  const where = { clinicId: args.clinicId, patientId: args.patientId };
+  return paginate(
+    req,
+    async (page) => {
+      const rows = await prisma.treatmentRecord.findMany({
+        where,
+        include: recordInclude,
+        orderBy: [{ visitDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+        ...page,
+      });
+      return rows.map(toView);
+    },
+    () => prisma.treatmentRecord.count({ where })
+  );
 }
 
 /** One record, or null when it doesn't belong to this clinic. */

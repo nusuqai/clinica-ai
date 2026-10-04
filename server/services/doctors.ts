@@ -1,7 +1,9 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { authEmailsByIds } from "@/lib/supabase/auth-users";
 import { ok, err, type Result } from "./_result";
+import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
 import { QUEUE_MODES, isQueueMode } from "@/lib/availability/modes";
 import {
@@ -339,19 +341,14 @@ export async function getAvailableDaysForBooking(
 }
 
 export async function listDoctors(clinicId: string): Promise<DoctorWithProfile[]> {
-  const [doctors, { data: authList }] = await Promise.all([
-    prisma.doctor.findMany({
-      where: { clinicId },
-      include: linkedProfileSelect,
-      orderBy: { fullName: "asc" },
-    }),
-    createAdminClient().auth.admin.listUsers({ perPage: 1000 }),
-  ]);
-
-  const emailMap = new Map<string, string>(
-    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""])
+  const doctors = await prisma.doctor.findMany({
+    where: { clinicId },
+    include: linkedProfileSelect,
+    orderBy: { fullName: "asc" },
+  });
+  const emailMap = await authEmailsByIds(
+    doctors.flatMap((d) => (d.profileId ? [d.profileId] : []))
   );
-
   return doctors.map((d) => toView(d, d.profileId ? (emailMap.get(d.profileId) ?? "") : ""));
 }
 
@@ -1021,11 +1018,7 @@ export async function getDoctorStats(doctorId: string) {
     }),
     prisma.appointment.count({ where: { doctorId, status: AppointmentStatus.COMPLETED } }),
     prisma.appointment.count({ where: { doctorId } }),
-    prisma.appointment.findMany({
-      where: { doctorId },
-      select: { patientId: true },
-      distinct: ["patientId"],
-    }),
+    countDoctorPatients(doctorId),
   ]);
 
   return {
@@ -1033,7 +1026,7 @@ export async function getDoctorStats(doctorId: string) {
     pendingCount,
     completedCount,
     totalCount,
-    uniquePatientsCount: uniquePatients.length,
+    uniquePatientsCount: uniquePatients,
   };
 }
 
@@ -1046,34 +1039,68 @@ export type DoctorPatient = {
   totalAppointments: number;
 };
 
-export async function getDoctorPatients(doctorId: string): Promise<DoctorPatient[]> {
-  const appointments = await prisma.appointment.findMany({
-    where: { doctorId },
-    include: {
-      patient: { select: { fullName: true, phone: true } },
-      slot: { select: { date: true } },
+/**
+ * One page of the patients a doctor has seen, most recent visit first. Grouped
+ * in SQL (one row per patient) so a doctor with years of history doesn't load
+ * every appointment to build one page.
+ */
+export async function getDoctorPatients(
+  doctorId: string,
+  req: PageRequest
+): Promise<Paginated<DoctorPatient & { id: string }>> {
+  return paginate(
+    req,
+    async ({ skip, take }) => {
+      const rows = await prisma.$queryRaw<
+        {
+          patientId: string;
+          fullName: string;
+          phone: string | null;
+          lastDate: Date | null;
+          lastStatus: AppointmentStatus;
+          total: number;
+        }[]
+      >`
+        WITH v AS (
+          SELECT a."patientId", a.status, a."createdAt",
+                 COALESCE(s.date, a."bookingDate") AS d
+          FROM appointments a
+          LEFT JOIN slots s ON s.id = a."slotId"
+          WHERE a."doctorId" = ${doctorId}::uuid
+        ),
+        agg AS (
+          SELECT "patientId", COUNT(*)::int AS total FROM v GROUP BY "patientId"
+        ),
+        last AS (
+          SELECT DISTINCT ON ("patientId") "patientId", status, d
+          FROM v
+          ORDER BY "patientId", d DESC NULLS LAST, "createdAt" DESC
+        )
+        SELECT last."patientId"::text AS "patientId", p."fullName", p.phone,
+               last.d AS "lastDate", last.status::text AS "lastStatus", agg.total
+        FROM last
+        JOIN agg USING ("patientId")
+        JOIN profiles p ON p.id = last."patientId"
+        ORDER BY last.d DESC NULLS LAST, last."patientId"
+        LIMIT ${take} OFFSET ${skip}
+      `;
+      return rows.map((r) => ({
+        id: r.patientId,
+        patientId: r.patientId,
+        fullName: r.fullName,
+        phone: r.phone,
+        lastAppointmentDate: r.lastDate,
+        lastStatus: r.lastStatus,
+        totalAppointments: r.total,
+      }));
     },
-    orderBy: [{ slot: { date: "desc" } }, { bookingDate: "desc" }],
-  });
+    () => countDoctorPatients(doctorId)
+  );
+}
 
-  const patientMap = new Map<string, DoctorPatient>();
-  for (const appt of appointments) {
-    if (!patientMap.has(appt.patientId)) {
-      patientMap.set(appt.patientId, {
-        patientId: appt.patientId,
-        fullName: appt.patient.fullName,
-        phone: appt.patient.phone,
-        // slot-based → slot date; order-based → booking date.
-        lastAppointmentDate: appt.slot?.date ?? appt.bookingDate,
-        lastStatus: appt.status,
-        totalAppointments: 1,
-      });
-    } else {
-      patientMap.get(appt.patientId)!.totalAppointments++;
-    }
-  }
-
-  return Array.from(patientMap.values());
+/** Distinct patients a doctor has had an appointment with. */
+export function countDoctorPatients(doctorId: string): Promise<number> {
+  return prisma.profile.count({ where: { appointments: { some: { doctorId } } } });
 }
 
 // ─── Slots ────────────────────────────────────────────────────────────────────
