@@ -317,8 +317,15 @@ function conversationRecipient(conv: {
  * automation message threads with their history and their reply lands in a
  * conversation the agent already has context for. Returns null if there is no
  * way to reach them on WhatsApp (no existing thread and no phone on file).
+ *
+ * A relative booked for by someone else, with no phone of their own, is reached
+ * through the thread of the person who books for them (their oldest active link).
  */
-async function getWhatsappThread(clinicId: string, patient: { id: string; phone: string | null }) {
+async function getWhatsappThread(
+  clinicId: string,
+  patient: { id: string; phone: string | null },
+  viaGuardian = true
+): Promise<{ id: string; whatsappPhone: string | null; whatsappUserId: string | null } | null> {
   const existing = await prisma.conversation.findFirst({
     where: { clinicId, userId: patient.id, channel: Channel.WHATSAPP },
     select: { id: true, whatsappPhone: true, whatsappUserId: true },
@@ -326,7 +333,15 @@ async function getWhatsappThread(clinicId: string, patient: { id: string; phone:
   if (existing) return existing;
 
   const phone = patient.phone?.replace(/\D/g, "") || null;
-  if (!phone) return null;
+  if (!phone) {
+    if (!viaGuardian) return null;
+    const link = await prisma.patientConnection.findFirst({
+      where: { clinicId, dependentId: patient.id, revokedAt: null },
+      orderBy: { createdAt: "asc" },
+      select: { guardian: { select: { id: true, phone: true } } },
+    });
+    return link ? getWhatsappThread(clinicId, link.guardian, false) : null;
+  }
 
   const byPhone = await prisma.conversation.findUnique({
     where: { clinicId_whatsappPhone: { clinicId, whatsappPhone: phone } },

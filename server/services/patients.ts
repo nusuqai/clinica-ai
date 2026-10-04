@@ -17,6 +17,11 @@ export function syntheticEmail(phone: string): string {
   return `wa-${phone}@wa.local`;
 }
 
+/** Placeholder login email for a relative booked for by someone else, with no phone of their own. */
+export function syntheticDependentEmail(): string {
+  return `dep-${globalThis.crypto.randomUUID()}@wa.local`;
+}
+
 /** True for a login email that is still an unclaimed WhatsApp placeholder. */
 export function isSyntheticEmail(email: string | null | undefined): boolean {
   return !!email && email.toLowerCase().endsWith("@wa.local");
@@ -24,7 +29,7 @@ export function isSyntheticEmail(email: string | null | undefined): boolean {
 
 // The auth DB trigger normally creates the Profile from user_metadata; this is
 // the fallback for trigger lag (mirrors ensureProfile in server/actions/auth.ts).
-async function ensureProfile(userId: string, fullName: string, phone: string) {
+async function ensureProfile(userId: string, fullName: string, phone: string | null) {
   let profile = await prisma.profile.findUnique({ where: { id: userId } });
   if (!profile) {
     await new Promise((r) => setTimeout(r, 500));
@@ -87,4 +92,34 @@ export async function getOrCreatePatientByPhone(args: {
     create: { userId, clinicId: args.clinicId, role: Role.PATIENT },
   });
   return { profileId: userId, created: true };
+}
+
+/**
+ * Create an anonymous PATIENT account with no phone — a relative someone else
+ * books for (a child, an elderly parent). Like a WhatsApp account it is backed by
+ * a real auth user with a synthetic email nobody can log in with; there is no
+ * phone to key it on, so every call creates a new Profile.
+ */
+export async function createPhonelessPatient(args: {
+  clinicId: string;
+  name: string;
+}): Promise<{ profileId: string }> {
+  const name = args.name.trim();
+  const admin = createAdminClient();
+  const { data, error } = await admin.auth.admin.createUser({
+    email: syntheticDependentEmail(),
+    password: globalThis.crypto.randomUUID(),
+    email_confirm: true,
+    user_metadata: { full_name: name },
+  });
+  const userId = data?.user?.id;
+  if (error || !userId) throw new Error(error?.message ?? "تعذّر إنشاء حساب المريض");
+
+  await ensureProfile(userId, name, null);
+  await prisma.clinicMember.upsert({
+    where: { userId_clinicId: { userId, clinicId: args.clinicId } },
+    update: {},
+    create: { userId, clinicId: args.clinicId, role: Role.PATIENT },
+  });
+  return { profileId: userId };
 }

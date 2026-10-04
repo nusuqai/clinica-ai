@@ -8,7 +8,10 @@ import {
   FileText,
   Stethoscope,
   ChevronLeft,
+  User,
+  Users,
 } from "lucide-react";
+import type { ConnectionRelation } from "@prisma/client";
 import type { PatientAppointment } from "@/server/services/appointments";
 import type { TreatmentRecordView } from "@/server/services/treatments";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
@@ -17,6 +20,7 @@ import { PatientHistoryPanels } from "@/components/landing/patient-history-panel
 import { RecordsPanel } from "@/components/landing/records-panel";
 import { ShowMore } from "@/components/landing/show-more";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { CONNECTION_RELATION_LABELS } from "@/lib/labels";
 
 // The signed-in patient's area on the clinic's own home page, right under the
 // hero: upcoming bookings as cards, plus past visits and the treatment record
@@ -27,6 +31,19 @@ import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 /** The visit's day: the slot's date, or the booking date for queue bookings. */
 function visitDate(appt: PatientAppointment): Date | null {
   return appt.slot?.date ?? appt.bookingDate;
+}
+
+/** Sort key for an appointment: its slot start, else its booking day. */
+export function visitTime(appt: PatientAppointment): number {
+  return (appt.slot?.startTime ?? appt.bookingDate ?? appt.createdAt).getTime();
+}
+
+/** An upcoming booking, tagged with whose it is (null = the patient's own). */
+export interface UpcomingAppointment {
+  appt: PatientAppointment;
+  forPatient: { name: string; relation: ConnectionRelation } | null;
+  /** False for a relative whose records the patient may not read. */
+  canOpenDetails: boolean;
 }
 
 /**
@@ -48,8 +65,8 @@ export function describeWhen(appt: PatientAppointment): string {
 
 interface MyAppointmentsSectionProps {
   clinicName: string;
-  /** Upcoming bookings, nearest first. */
-  appointments: PatientAppointment[];
+  /** Upcoming bookings — the patient's and their relatives' — nearest first. */
+  appointments: UpcomingAppointment[];
   /** Completed visits, newest first (capped at PAST_VISITS_LIMIT). */
   pastVisits: PatientAppointment[];
   records: TreatmentRecordView[];
@@ -63,6 +80,9 @@ export function MyAppointmentsSection({
   records,
   stats,
 }: MyAppointmentsSectionProps) {
+  // Only label "لي" on the patient's own cards once relatives' cards are mixed in.
+  const hasRelatives = appointments.some((a) => a.forPatient !== null);
+
   return (
     <section id="my-appointments" className="scroll-mt-20 bg-muted/40 px-6 py-16">
       <div className="mx-auto max-w-7xl">
@@ -75,9 +95,9 @@ export function MyAppointmentsSection({
             </p>
             <h2 className="font-heading text-3xl font-bold text-foreground">مواعيدي القادمة</h2>
             <p className="mt-1 font-sans text-sm text-muted-foreground">
-              {stats.upcoming === 0
+              {appointments.length === 0
                 ? "لا توجد لديك مواعيد قادمة حالياً"
-                : `لديك ${stats.upcoming} ${stats.upcoming === 1 ? "موعد قادم" : "مواعيد قادمة"}`}
+                : `لديك ${appointments.length} ${appointments.length === 1 ? "موعد قادم" : "مواعيد قادمة"}`}
             </p>
           </div>
 
@@ -96,8 +116,13 @@ export function MyAppointmentsSection({
           <EmptyState />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {appointments.map((appt, i) => (
-              <AppointmentCard key={appt.id} appt={appt} isNext={i === 0} />
+            {appointments.map((item, i) => (
+              <AppointmentCard
+                key={item.appt.id}
+                item={item}
+                isNext={i === 0}
+                showOwner={hasRelatives}
+              />
             ))}
           </div>
         )}
@@ -201,7 +226,16 @@ export const PAST_VISITS_LIMIT = 10;
 
 // ─── Pieces ───────────────────────────────────────────────────────────────────
 
-function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: boolean }) {
+function AppointmentCard({
+  item,
+  isNext,
+  showOwner,
+}: {
+  item: UpcomingAppointment;
+  isNext: boolean;
+  showOwner: boolean;
+}) {
+  const { appt, forPatient, canOpenDetails } = item;
   const date = visitDate(appt);
 
   return (
@@ -237,6 +271,23 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
 
       {/* Details */}
       <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-4">
+        {forPatient ? (
+          <p className="flex items-center gap-1.5 self-start rounded-lg bg-violet-50 px-2.5 py-1 font-sans text-xs font-medium text-violet-700">
+            <Users className="h-3.5 w-3.5" />
+            لـ {forPatient.name}
+            <span className="font-normal text-violet-500">
+              ({CONNECTION_RELATION_LABELS[forPatient.relation]})
+            </span>
+          </p>
+        ) : (
+          showOwner && (
+            <p className="flex items-center gap-1.5 self-start rounded-lg bg-primary/10 px-2.5 py-1 font-sans text-xs font-medium text-primary">
+              <User className="h-3.5 w-3.5" />
+              لي
+            </p>
+          )
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           <AppointmentStatusBadge status={appt.status} />
           {isNext && (
@@ -270,7 +321,7 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
             <>
               <p className="flex items-center gap-1.5 text-foreground">
                 <Hash className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                دورك رقم <span className="font-bold">{appt.orderNumber}</span>
+                رقم الدور <span className="font-bold">{appt.orderNumber}</span>
                 {appt.expectedTime && (
                   <span className="text-muted-foreground">· متوقع ~{appt.expectedTime}</span>
                 )}
@@ -288,7 +339,7 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
             // Arrival-priority reservation not yet checked in — no number yet.
             <p className="flex items-center gap-1.5">
               <Hash className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-              أسبقية الحضور — يُحدَّد رقم دورك عند وصولك للعيادة
+              أسبقية الحضور — يُحدَّد رقم الدور عند الوصول للعيادة
             </p>
           ) : null}
           {appt.branch && (
@@ -301,13 +352,15 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
 
         <div className="mt-auto flex items-center justify-between gap-2 pt-1">
           <CancelAppointmentButton appointmentId={appt.id} status={appt.status} />
-          <Link
-            href={`/appointments/${appt.id}`}
-            className="inline-flex items-center gap-1 font-sans text-xs font-medium text-primary transition-colors hover:text-primary/80"
-          >
-            التفاصيل
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </Link>
+          {canOpenDetails && (
+            <Link
+              href={`/appointments/${appt.id}`}
+              className="inline-flex items-center gap-1 font-sans text-xs font-medium text-primary transition-colors hover:text-primary/80"
+            >
+              التفاصيل
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Link>
+          )}
         </div>
       </div>
     </article>

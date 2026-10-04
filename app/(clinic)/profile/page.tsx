@@ -9,11 +9,15 @@ import {
   Phone,
   Stethoscope,
   UserCircle,
+  Users,
 } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { getPatientStats } from "@/server/services/appointments";
 import { countPatientRecords } from "@/server/services/treatments";
+import { listPatientConnections } from "@/server/services/connections";
 import { ProfileForm } from "@/components/dashboard/profile-form";
+import ConnectionList from "@/components/patients/connection-list";
+import AddConnectionForm from "@/components/patients/add-connection-form";
 
 // The patient's profile as a page of its own, opened from the avatar in the
 // clinic home page's nav. Deliberately outside the dashboard shell: it belongs
@@ -24,9 +28,10 @@ export default async function PatientProfilePage() {
   const ctx = await requireClinicMember(["PATIENT"]);
   const { user, clinic } = ctx;
 
-  const [stats, recordCount] = await Promise.all([
+  const [stats, recordCount, connections] = await Promise.all([
     getPatientStats(user.id, clinic.id),
     countPatientRecords(clinic.id, user.id),
+    listPatientConnections(clinic.id, user.id),
   ]);
 
   const fullName = user.profile.fullName;
@@ -153,6 +158,24 @@ export default async function PatientProfilePage() {
             <QuickLink href="/#book" icon={Stethoscope} label="احجز موعداً" hint="اختر طبيبك" />
           </aside>
         </div>
+
+        {/* Connections — relatives this patient books for */}
+        <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <div className="mb-6 flex items-center gap-2">
+            <Users className="h-5 w-5 text-primary" />
+            <h2 className="font-heading font-semibold text-foreground">الأشخاص الذين تحجز لهم</h2>
+            <span className="font-sans text-sm text-muted-foreground">({connections.length})</span>
+          </div>
+          <ConnectionList
+            connections={connections}
+            emptyMessage="لم تُضف أي شخص بعد"
+            editablePhones
+            recordsBasePath="/profile/connections"
+          />
+          <div className="mt-4">
+            <AddConnectionForm />
+          </div>
+        </section>
       </main>
     </div>
   );

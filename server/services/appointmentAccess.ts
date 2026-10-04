@@ -2,6 +2,7 @@ import "server-only";
 import { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getClinicContext } from "@/lib/auth";
+import { canViewRecordsOf } from "@/server/services/connections";
 
 // THE access rules for a single appointment's detail page, in one place so the
 // doctor, admin and patient routes cannot drift apart. Kept out of any
@@ -20,7 +21,8 @@ export type AppointmentViewAccess =
  *
  *   ADMIN   — any appointment in their clinic; may edit (file/attach).
  *   DOCTOR  — only their own appointments here; may edit.
- *   PATIENT — only their own appointments; read-only (canEdit = false).
+ *   PATIENT — their own appointments, and those of relatives whose records they
+ *             may read (PatientConnection.canViewRecords); read-only.
  */
 export async function authorizeAppointmentView(
   appointmentId: string
@@ -45,7 +47,10 @@ export async function authorizeAppointmentView(
   }
 
   if (ctx.role === Role.PATIENT) {
-    if (appt.patientId !== ctx.user.id) return { ok: false, error: "غير مصرح" };
+    const allowed =
+      appt.patientId === ctx.user.id ||
+      (await canViewRecordsOf(ctx.clinic.id, ctx.user.id, appt.patientId));
+    if (!allowed) return { ok: false, error: "غير مصرح" };
     return {
       ok: true,
       clinicId: ctx.clinic.id,

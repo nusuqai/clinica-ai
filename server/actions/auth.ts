@@ -10,6 +10,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/secret-box";
 import { sendPasswordReset, sendClinicSignupOtp } from "@/lib/email/send-auth-email";
 import { otpCooldownRemaining, recordOtpSent } from "@/server/services/otpThrottle";
+import { isSyntheticEmail } from "@/server/services/patients";
+import { normalizePhone } from "@/lib/phone";
 
 // Ensure the identity Profile row exists. It's normally created by the Supabase
 // auth DB trigger, but that can lag a beat right after sign-up, so we retry once
@@ -136,6 +138,7 @@ export async function signIn(formData: FormData) {
             password,
             name: (meta.full_name as string) ?? "",
             phone: (meta.phone as string) ?? null,
+            claimPhone: (meta.claim_phone as string) ?? null,
             clinicName: clinic.name,
           });
         } catch {
@@ -211,9 +214,34 @@ export async function startClinicSignup(formData: FormData) {
   const email = (formData.get("email") as string)?.trim();
   const password = formData.get("password") as string;
   const fullName = (formData.get("fullName") as string)?.trim();
-  const phone = (formData.get("phone") as string)?.trim() || null;
+  let phone = (formData.get("phone") as string)?.trim() || null;
   if (!email || !password || !fullName) {
     return { error: "الرجاء تعبئة جميع الحقول." };
+  }
+
+  // Is this phone already on an account? A relative booked for by someone else
+  // (or a WhatsApp-only patient) has an account with this number but only a
+  // placeholder email. Signing up with that number takes the account over once
+  // the email code is verified: same account id, so its appointments, records
+  // and connections carry over. Only the email is verified — the phone is not.
+  // A phone on an account with a real login can't be reused.
+  let claimPhone: string | null = null;
+  if (phone) {
+    const normalized = normalizePhone(phone);
+    const owner = await prisma.profile.findUnique({
+      where: { phone: normalized },
+      select: { id: true },
+    });
+    if (owner) {
+      const { data: ownerAuth } = await createAdminClient().auth.admin.getUserById(owner.id);
+      if (!isSyntheticEmail(ownerAuth?.user?.email)) {
+        return { error: "رقم الهاتف هذا مسجّل بحساب آخر. سجّل الدخول بدلاً من ذلك." };
+      }
+      // The pending user must not carry the phone itself — Profile.phone is
+      // unique — so it travels as claim_phone until verification.
+      claimPhone = normalized;
+      phone = null;
+    }
   }
 
   // Is this email already registered?
@@ -248,6 +276,7 @@ export async function startClinicSignup(formData: FormData) {
         password,
         name: fullName,
         phone,
+        claimPhone,
         clinicName: clinic.name,
       });
     } catch (e) {
@@ -283,6 +312,21 @@ export async function verifyClinicSignup(formData: FormData) {
   }
 
   const meta = data.user.user_metadata ?? {};
+
+  const claimPhone = (meta.claim_phone as string) || null;
+  if (claimPhone) {
+    const claimed = await claimAccountByPhone({
+      tempUserId: data.user.id,
+      email,
+      fullName: (meta.full_name as string) ?? "",
+      phone: claimPhone,
+      clinicId: clinic.id,
+    });
+    if ("error" in claimed) return claimed;
+    await clearSignupPassword();
+    redirect(roleHome(Role.PATIENT));
+  }
+
   await ensureProfile(
     data.user.id,
     (meta.full_name as string) ?? "",
@@ -296,6 +340,72 @@ export async function verifyClinicSignup(formData: FormData) {
 
   await clearSignupPassword();
   redirect(roleHome(Role.PATIENT));
+}
+
+/**
+ * Finish a signup that takes over the unclaimed account holding `phone`: the
+ * just-verified pending user is removed (freeing the email), and its email,
+ * password and name move onto the existing account, which is then signed in.
+ * Re-checks the target is still unclaimed — it may have changed since step 1.
+ */
+async function claimAccountByPhone(args: {
+  tempUserId: string;
+  email: string;
+  fullName: string;
+  phone: string;
+  clinicId: string;
+}): Promise<{ ok: true } | { error: string }> {
+  const admin = createAdminClient();
+  const supabase = await createClient();
+
+  const target = await prisma.profile.findUnique({
+    where: { phone: args.phone },
+    select: { id: true },
+  });
+  const { data: targetAuth } = target
+    ? await admin.auth.admin.getUserById(target.id)
+    : { data: null };
+  if (!target || target.id === args.tempUserId || !isSyntheticEmail(targetAuth?.user?.email)) {
+    await supabase.auth.signOut();
+    await admin.auth.admin.deleteUser(args.tempUserId);
+    return { error: "لم يعد بالإمكان ربط هذا الرقم بحسابك. أعد التسجيل من جديد." };
+  }
+
+  const password = await readSignupPassword();
+  if (!password) {
+    await supabase.auth.signOut();
+    await admin.auth.admin.deleteUser(args.tempUserId);
+    return { error: "انتهت صلاحية الجلسة. أعد التسجيل من جديد." };
+  }
+
+  // The email belongs to the pending user until it's deleted; the profile row
+  // made for it by the auth trigger goes with it (FK cascade).
+  await supabase.auth.signOut();
+  await admin.auth.admin.deleteUser(args.tempUserId);
+
+  const { error: updErr } = await admin.auth.admin.updateUserById(target.id, {
+    email: args.email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: args.fullName, phone: args.phone },
+  });
+  if (updErr) return { error: "تعذّر ربط الحساب. أعد التسجيل من جديد." };
+
+  if (args.fullName) {
+    await prisma.profile.update({ where: { id: target.id }, data: { fullName: args.fullName } });
+  }
+  await prisma.clinicMember.upsert({
+    where: { userId_clinicId: { userId: target.id, clinicId: args.clinicId } },
+    update: {},
+    create: { userId: target.id, clinicId: args.clinicId, role: Role.PATIENT },
+  });
+
+  const { error: signInErr } = await supabase.auth.signInWithPassword({
+    email: args.email,
+    password,
+  });
+  if (signInErr) return { error: "تم ربط الحساب. سجّل الدخول ببريدك وكلمة المرور." };
+  return { ok: true };
 }
 
 // Resend a signup verification code from the verify page (email only — the
@@ -327,6 +437,7 @@ export async function resendClinicSignupOtp(formData: FormData) {
       password,
       name: (meta.full_name as string) ?? "",
       phone: (meta.phone as string) ?? null,
+      claimPhone: (meta.claim_phone as string) ?? null,
       clinicName: clinic.name,
     });
   } catch {
