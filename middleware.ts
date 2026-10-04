@@ -44,7 +44,14 @@ const TENANT_ONLY_PREFIXES = [
 // called by Inngest (sync + function invocations) with no Supabase session; it
 // is secured instead by Inngest's request-signature verification (signing key),
 // so it must bypass the auth redirect or the sync request lands on /login.
-const PUBLIC_API_ROUTES = ["/api/meta/whatsapp/webhook", "/api/agent/chat", "/api/inngest"];
+// `/api/cron/process-debounce` is called by Supabase pg_cron (via pg_net) with no
+// Supabase session; it is secured by a CRON_SECRET bearer token in the handler.
+const PUBLIC_API_ROUTES = [
+  "/api/meta/whatsapp/webhook",
+  "/api/agent/chat",
+  "/api/inngest",
+  "/api/cron/process-debounce",
+];
 
 // API handlers scope themselves (the WhatsApp webhook identifies its clinic by
 // token) and emailed auth links must resolve on whichever host they were built

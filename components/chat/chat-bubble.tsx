@@ -190,25 +190,8 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(guest ? { message: text, conversationId } : { message: text }),
       });
-      if (!res.ok || !res.body) throw new Error("network");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-        for (const part of parts) {
-          const line = part.trim();
-          if (!line.startsWith("data:")) continue;
-          const ev = JSON.parse(line.slice(5).trim());
-          handleEvent(agentId, ev);
-        }
-      }
+      if (!res.ok) throw new Error("network");
+      applyWebReply(agentId, await res.json());
     } catch {
       patchAgent(agentId, (m) => ({
         ...m,
@@ -284,32 +267,16 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       if (guest && conversationId) fd.append("conversationId", conversationId);
 
       const res = await fetch("/api/agent/voice", { method: "POST", body: fd });
-      if (!res.ok || !res.body) throw new Error("network");
+      if (!res.ok) throw new Error("network");
+      const data = await res.json();
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-        for (const part of parts) {
-          const line = part.trim();
-          if (!line.startsWith("data:")) continue;
-          const ev = JSON.parse(line.slice(5).trim());
-          if (ev.type === "transcript") {
-            // Replace the placeholder with what the server understood.
-            setMessages((prev) =>
-              prev.map((m) => (m.id === userMsgId ? { ...m, content: String(ev.text) } : m))
-            );
-          } else {
-            handleEvent(agentId, ev);
-          }
-        }
+      // Replace the placeholder with what the server understood.
+      if (typeof data.transcript === "string") {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === userMsgId ? { ...m, content: data.transcript } : m))
+        );
       }
+      applyWebReply(agentId, data);
     } catch {
       patchAgent(agentId, (m) => ({
         ...m,
@@ -323,62 +290,37 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
     }
   }
 
-  function handleEvent(agentId: string, ev: Record<string, unknown>) {
-    switch (ev.type) {
-      case "init":
-        if (guest) rememberConversationId(String(ev.conversationId));
-        break;
-      case "token":
-        patchAgent(agentId, (m) => ({
-          ...m,
-          content: m.content + String(ev.text),
-        }));
-        break;
-      case "tool_result":
-        patchAgent(agentId, (m) => ({
-          ...m,
-          toolCalls: [
-            ...(m.toolCalls ?? []),
-            {
-              name: String(ev.name),
-              args: {},
-              result: (ev.result as Record<string, unknown>) ?? null,
-              status: ev.status === "error" ? "error" : "ok",
-            },
-          ],
-        }));
-        break;
-      case "done":
-        patchAgent(agentId, (m) => ({
-          ...m,
-          streaming: false,
-          content: String(ev.text ?? m.content),
-        }));
-        break;
-      case "audio":
-        // A spoken (TTS) reply is ready — play it back via the media endpoint.
-        patchAgent(agentId, (m) => ({
-          ...m,
-          audioUrl: `/api/agent/media/${String(ev.messageId)}`,
-          autoPlayAudio: true,
-        }));
-        break;
-      case "handoff":
-        patchAgent(agentId, (m) => ({
-          ...m,
-          streaming: false,
-          content: "تم تحويل محادثتك إلى أحد الموظفين، سيتم الرد عليك قريباً.",
-        }));
-        break;
-      case "error":
-        patchAgent(agentId, (m) => ({
-          ...m,
-          streaming: false,
-          error: true,
-          content: String(ev.message ?? "خطأ غير متوقع"),
-        }));
-        break;
+  /** Applies a synchronous web reply (text or voice) to the agent bubble. */
+  function applyWebReply(
+    agentId: string,
+    data: {
+      conversationId?: string;
+      reply?: string | null;
+      toolCalls?: ClientToolCall[];
+      handoff?: boolean;
+      audioMessageId?: string | null;
     }
+  ) {
+    if (guest && data.conversationId) rememberConversationId(data.conversationId);
+
+    if (data.handoff) {
+      patchAgent(agentId, (m) => ({
+        ...m,
+        streaming: false,
+        content: "تم تحويل محادثتك إلى أحد الموظفين، سيتم الرد عليك قريباً.",
+      }));
+      return;
+    }
+
+    patchAgent(agentId, (m) => ({
+      ...m,
+      streaming: false,
+      content: data.reply ?? m.content,
+      toolCalls: data.toolCalls ?? m.toolCalls,
+      ...(data.audioMessageId
+        ? { audioUrl: `/api/agent/media/${data.audioMessageId}`, autoPlayAudio: true }
+        : {}),
+    }));
   }
 
   return (

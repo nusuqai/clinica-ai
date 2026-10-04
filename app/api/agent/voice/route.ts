@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getHostClinic } from "@/lib/auth";
-import { streamWebVoiceAgent, streamGuestWebVoiceAgent } from "@/server/services/agentRunner";
-import type { AgentStreamEvent } from "@/agent";
+import { webVoiceReply, guestWebVoiceReply } from "@/server/services/channels/web";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,9 +10,9 @@ export const dynamic = "force-dynamic";
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 
 /**
- * Web chat voice turn (issue #49): accepts a recorded audio blob (multipart
- * form field `audio`), transcribes it, and streams the agent reply as SSE —
- * same event protocol as `/api/agent/chat`, plus a `transcript` event.
+ * Web chat voice turn (issue #49): accepts a recorded audio blob (multipart form
+ * field `audio`), transcribes it, runs the common agent brain, and returns the
+ * reply as JSON (no SSE) — `{ transcript, reply, audioMessageId, handoff, … }`.
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -48,36 +47,16 @@ export async function POST(request: NextRequest) {
   const mimeType = file.type || "audio/webm";
   const conversationId = (form.get("conversationId") as string | null) ?? null;
 
-  const run = (): AsyncGenerator<AgentStreamEvent> =>
-    user
-      ? streamWebVoiceAgent(user.id, { bytes, mimeType })
-      : streamGuestWebVoiceAgent({ id: clinic!.id, slug: clinic!.slug }, conversationId, {
+  try {
+    const result = user
+      ? await webVoiceReply(user.id, { bytes, mimeType })
+      : await guestWebVoiceReply({ id: clinic!.id, slug: clinic!.slug }, conversationId, {
           bytes,
           mimeType,
         });
-
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (data: unknown) =>
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-      try {
-        for await (const ev of run()) {
-          send(ev);
-        }
-      } catch (e) {
-        send({ type: "error", message: e instanceof Error ? e.message : "خطأ غير متوقع" });
-      } finally {
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
-  });
+    return NextResponse.json(result);
+  } catch (e) {
+    console.error("[web-voice] reply failed:", e);
+    return NextResponse.json({ error: "خطأ غير متوقع" }, { status: 500 });
+  }
 }
