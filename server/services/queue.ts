@@ -110,7 +110,7 @@ export async function bookOrderAppointment(
   patientId: string,
   doctorId: string,
   date: Date,
-  opts?: { branchId?: string | null; notes?: string }
+  opts?: { branchId?: string | null; notes?: string; clinicId?: string }
 ): Promise<Result<OrderBookingResult>> {
   try {
     const day = toDateOnly(date);
@@ -121,6 +121,9 @@ export async function bookOrderAppointment(
       select: { clinicId: true },
     });
     if (!doctor) return err("الطبيب غير موجود");
+    // Multi-tenant guard (#38): the doctor must belong to the caller's clinic, so
+    // a patient in Clinic A can't book a queue place with a Clinic B doctor by id.
+    if (opts?.clinicId && doctor.clinicId !== opts.clinicId) return err("الطبيب غير موجود");
 
     // Block a second open booking with the same doctor: the patient must finish
     // (or cancel) an existing PENDING/CONFIRMED appointment first.

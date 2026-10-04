@@ -163,7 +163,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         schema: z.object({ doctorId: z.string(), isActive: z.boolean() }),
       },
       async ({ doctorId, isActive }) => {
-        const res = await DoctorService.setDoctorActive(doctorId, isActive);
+        const res = await DoctorService.setDoctorActive(doctorId, isActive, ctx.clinicId);
         return res.ok ? { doctorId, isActive } : { error: res.error };
       },
     ),
@@ -250,7 +250,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         schema: z.object({ doctorId: z.string() }),
       },
       async ({ doctorId }) => {
-        const rules = await DoctorService.listDoctorRules(doctorId);
+        const rules = await DoctorService.listDoctorRules(doctorId, ctx.clinicId);
         return {
           rules: rules.map((r) => ({
             id: r.id,
@@ -348,7 +348,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         schema: z.object({ ruleId: z.string() }),
       },
       async ({ ruleId }) => {
-        const res = await DoctorService.deleteRule(ruleId);
+        const res = await DoctorService.deleteRule(ruleId, ctx.clinicId);
         return res.ok ? { deleted: true, ruleId } : { error: res.error };
       },
     ),
@@ -359,7 +359,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         schema: z.object({ ruleId: z.string(), isActive: z.boolean() }),
       },
       async ({ ruleId, isActive }) => {
-        const res = await DoctorService.toggleRuleActive(ruleId, isActive);
+        const res = await DoctorService.toggleRuleActive(ruleId, isActive, ctx.clinicId);
         return res.ok ? { ruleId, isActive } : { error: res.error };
       },
     ),
@@ -376,6 +376,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         const res = await DoctorService.generateSlotsForRule(
           ruleId,
           daysAhead ?? undefined,
+          ctx.clinicId,
         );
         if (!res.ok) return { error: res.error };
         return { ruleId, generated: res.data.count };
@@ -402,6 +403,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         const slots = await DoctorService.listDoctorSlots(doctorId, {
           from: from ? new Date(from) : undefined,
           to: to ? new Date(to) : undefined,
+          clinicId: ctx.clinicId, // #38: scope to this clinic
         });
         return {
           slots: slots.map((s) => ({
@@ -422,7 +424,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         schema: z.object({ slotId: z.string() }),
       },
       async ({ slotId }) => {
-        const res = await DoctorService.toggleSlotBlocked(slotId);
+        const res = await DoctorService.toggleSlotBlocked(slotId, ctx.clinicId);
         return res.ok ? { slotId, toggled: true } : { error: res.error };
       },
     ),
@@ -512,7 +514,10 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         const conv = await prisma.conversation.findUnique({
           where: { id: conversationId },
         });
-        if (!conv) return { error: "المحادثة غير موجودة" };
+        // #38: the conversation must belong to the admin's clinic — don't let a
+        // foreign conversation id reach another clinic's contact.
+        if (!conv || conv.clinicId !== ctx.clinicId)
+          return { error: "المحادثة غير موجودة" };
         await prisma.message.create({
           data: {
             conversationId,

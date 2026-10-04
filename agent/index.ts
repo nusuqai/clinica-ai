@@ -52,7 +52,7 @@ export const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
 async function buildAgent(ctx: AgentContext) {
   return createReactAgent({
     llm: createModel(),
-    tools: getToolsForRole(ctx),
+    tools: await getToolsForRole(ctx),
     prompt: await buildSystemPrompt(ctx),
   });
 }

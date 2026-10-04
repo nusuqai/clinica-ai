@@ -399,7 +399,7 @@ export async function createAppointment(
   patientId: string,
   slotId: string,
   patientNotes?: string,
-  opts?: { excludeAppointmentId?: string }
+  opts?: { excludeAppointmentId?: string; clinicId?: string }
 ): Promise<Result<{ id: string }>> {
   try {
     const slot = await prisma.slot.findUnique({
@@ -407,6 +407,10 @@ export async function createAppointment(
       include: { appointment: true, doctor: { select: { clinicId: true } } },
     });
     if (!slot) return err("الموعد غير موجود");
+    // Multi-tenant guard (#38): when a clinic is given, the slot's doctor must
+    // belong to it, so a patient chatting in Clinic A can't book a slot in
+    // Clinic B by passing its id. Same "not found" message — don't reveal it exists.
+    if (opts?.clinicId && slot.doctor.clinicId !== opts.clinicId) return err("الموعد غير موجود");
     if (slot.isBlocked) return err("هذا الموعد غير متاح");
     if (slot.referralOnly)
       return err("هذا الموعد مخصّص للتحويلات من الأطباء ولا يمكن حجزه مباشرةً");

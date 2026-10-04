@@ -556,6 +556,13 @@ export async function linkDoctorAccount(
 
 export async function updateDoctor(input: UpdateDoctorInput): Promise<Result<void>> {
   try {
+    // #38: the target doctor must belong to the caller's clinic — guards the admin
+    // agent tool from editing another clinic's doctor by passing a foreign id.
+    const owned = await prisma.doctor.findFirst({
+      where: { id: input.doctorId, clinicId: input.clinicId },
+      select: { id: true },
+    });
+    if (!owned) return err("الطبيب غير موجود");
     await prisma.$transaction(async (tx) => {
       await tx.doctor.update({
         where: { id: input.doctorId },
@@ -614,9 +621,18 @@ export async function updateDoctor(input: UpdateDoctorInput): Promise<Result<voi
   }
 }
 
-export async function setDoctorActive(doctorId: string, isActive: boolean): Promise<Result<void>> {
+export async function setDoctorActive(
+  doctorId: string,
+  isActive: boolean,
+  clinicId?: string
+): Promise<Result<void>> {
   try {
-    await prisma.doctor.update({ where: { id: doctorId }, data: { isActive } });
+    // #38: when a clinic is given, only flip a doctor that belongs to it.
+    const res = await prisma.doctor.updateMany({
+      where: { id: doctorId, ...(clinicId ? { clinicId } : {}) },
+      data: { isActive },
+    });
+    if (res.count === 0) return err("الطبيب غير موجود");
     return ok(undefined);
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل تحديث حالة الطبيب");
@@ -644,9 +660,9 @@ export async function deleteDoctor(doctorId: string): Promise<Result<void>> {
 
 // ─── Availability Rules ───────────────────────────────────────────────────────
 
-export async function listDoctorRules(doctorId: string) {
+export async function listDoctorRules(doctorId: string, clinicId?: string) {
   return prisma.availabilityRule.findMany({
-    where: { doctorId },
+    where: { doctorId, ...(clinicId ? { clinicId } : {}) }, // #38: optional clinic scope
     include: { branch: { select: { id: true, name: true } } },
     orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
   });
@@ -695,6 +711,13 @@ export async function validateRuleAgainstBranch(
 
 export async function createRule(input: CreateRuleInput): Promise<Result<{ id: string }>> {
   try {
+    // #38: the doctor must belong to the clinic the rule is being created for.
+    const doctorInClinic = await prisma.doctor.findFirst({
+      where: { id: input.doctorId, clinicId: input.clinicId },
+      select: { id: true },
+    });
+    if (!doctorInClinic) return err("الطبيب غير موجود");
+
     const validationError = await validateRuleAgainstBranch(
       input.doctorId,
       input.branchId,
@@ -733,8 +756,16 @@ export async function createRule(input: CreateRuleInput): Promise<Result<{ id: s
   }
 }
 
-export async function deleteRule(ruleId: string): Promise<Result<void>> {
+export async function deleteRule(ruleId: string, clinicId?: string): Promise<Result<void>> {
   try {
+    // #38: when a clinic is given, refuse to delete a rule outside it.
+    if (clinicId) {
+      const rule = await prisma.availabilityRule.findFirst({
+        where: { id: ruleId, clinicId },
+        select: { id: true },
+      });
+      if (!rule) return err("القاعدة غير موجودة");
+    }
     await prisma.slot.deleteMany({
       where: { ruleId, date: { gte: new Date() }, appointment: null },
     });
@@ -745,12 +776,18 @@ export async function deleteRule(ruleId: string): Promise<Result<void>> {
   }
 }
 
-export async function toggleRuleActive(ruleId: string, isActive: boolean): Promise<Result<void>> {
+export async function toggleRuleActive(
+  ruleId: string,
+  isActive: boolean,
+  clinicId?: string
+): Promise<Result<void>> {
   try {
-    await prisma.availabilityRule.update({
-      where: { id: ruleId },
+    // #38: scope the update to the clinic when one is given.
+    const res = await prisma.availabilityRule.updateMany({
+      where: { id: ruleId, ...(clinicId ? { clinicId } : {}) },
       data: { isActive },
     });
+    if (res.count === 0) return err("القاعدة غير موجودة");
     return ok(undefined);
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل تحديث حالة القاعدة");
@@ -771,13 +808,16 @@ const DAY_MAP: Record<DayOfWeek, number> = {
 
 export async function generateSlotsForRule(
   ruleId: string,
-  daysAhead = 30
+  daysAhead = 30,
+  clinicId?: string
 ): Promise<Result<{ count: number }>> {
   try {
     const rule = await prisma.availabilityRule.findUnique({
       where: { id: ruleId },
     });
     if (!rule) return err("القاعدة غير موجودة");
+    // #38: when a clinic is given, the rule must belong to it.
+    if (clinicId && rule.clinicId !== clinicId) return err("القاعدة غير موجودة");
 
     // Queue rules (order / arrival) have no fixed slots — the day is implicitly
     // available and order numbers are handed out lazily (at booking for order,
@@ -859,7 +899,7 @@ export async function generateSlotsForRule(
 
 export async function listDoctorSlots(
   doctorId: string,
-  options?: { from?: Date; to?: Date }
+  options?: { from?: Date; to?: Date; clinicId?: string }
 ): Promise<DoctorSlot[]> {
   const from =
     options?.from ??
@@ -877,7 +917,11 @@ export async function listDoctorSlots(
     })();
 
   return prisma.slot.findMany({
-    where: { doctorId, date: { gte: from, lte: to } },
+    where: {
+      doctorId,
+      ...(options?.clinicId ? { clinicId: options.clinicId } : {}), // #38: optional clinic scope
+      date: { gte: from, lte: to },
+    },
     include: {
       appointment: {
         select: {
@@ -1034,13 +1078,15 @@ export async function getDoctorPatients(doctorId: string): Promise<DoctorPatient
 
 // ─── Slots ────────────────────────────────────────────────────────────────────
 
-export async function toggleSlotBlocked(slotId: string): Promise<Result<void>> {
+export async function toggleSlotBlocked(slotId: string, clinicId?: string): Promise<Result<void>> {
   try {
     const slot = await prisma.slot.findUnique({
       where: { id: slotId },
       include: { appointment: { select: { id: true } } },
     });
     if (!slot) return err("الموعد غير موجود");
+    // #38: when a clinic is given, the slot must belong to it.
+    if (clinicId && slot.clinicId !== clinicId) return err("الموعد غير موجود");
     if (slot.appointment) return err("لا يمكن تعطيل موعد محجوز");
     await prisma.slot.update({
       where: { id: slotId },
