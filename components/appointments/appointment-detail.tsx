@@ -27,6 +27,7 @@ import type { TreatmentRecordView } from "@/server/services/treatments";
 import type { AttachmentView } from "@/server/services/attachments";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 // The full page for one appointment — shared by the doctor, admin and patient
 // routes. They differ only in `canEdit` (staff may write the clinical record +
@@ -151,13 +152,16 @@ export default function AppointmentDetail({
               المريض
             </h2>
             {isStaff && patientHistoryHref && (
-              <Link
-                href={patientHistoryHref}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+              <Button
+                asChild
+                variant="outline"
+                className="h-auto gap-1.5 rounded-xl bg-transparent px-3 py-1.5 text-xs text-muted-foreground hover:border-foreground/30 hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
               >
-                <History className="h-3.5 w-3.5" />
-                السجل الكامل للمريض
-              </Link>
+                <Link href={patientHistoryHref}>
+                  <History className="h-3.5 w-3.5" />
+                  السجل الكامل للمريض
+                </Link>
+              </Button>
             )}
           </header>
           <div className="divide-y divide-border">

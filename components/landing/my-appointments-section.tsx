@@ -19,6 +19,7 @@ import { ShowMore } from "@/components/landing/show-more";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 // The signed-in patient's area on the clinic's own home page, right under the
 // hero: upcoming bookings as cards, plus past visits and the treatment record
@@ -84,13 +85,15 @@ export function MyAppointmentsSection({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <a
-              href="#book"
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-sans text-sm font-medium text-white shadow-sm transition-opacity hover:opacity-90"
+            <Button
+              asChild
+              className="h-auto gap-2 rounded-xl px-4 py-2.5 text-sm shadow-sm transition-opacity hover:opacity-90"
             >
-              <CalendarPlus className="h-4 w-4" />
-              احجز موعداً جديداً
-            </a>
+              <a href="#book">
+                <CalendarPlus className="h-4 w-4" />
+                احجز موعداً جديداً
+              </a>
+            </Button>
           </div>
         </div>
 
@@ -325,13 +328,15 @@ function EmptyState() {
       <p className="max-w-sm font-sans text-sm text-muted-foreground">
         اختر طبيبك من القائمة بالأسفل واحجز الوقت المناسب لك في ثوانٍ.
       </p>
-      <a
-        href="#book"
-        className="mt-1 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-sans text-sm font-medium text-white transition-opacity hover:opacity-90"
+      <Button
+        asChild
+        className="mt-1 h-auto gap-2 rounded-xl px-5 py-2.5 text-sm transition-opacity hover:opacity-90"
       >
-        <CalendarPlus className="h-4 w-4" />
-        احجز موعدك الآن
-      </a>
+        <a href="#book">
+          <CalendarPlus className="h-4 w-4" />
+          احجز موعدك الآن
+        </a>
+      </Button>
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 interface PageProps {
   searchParams: Promise<{ status?: string }>;
@@ -58,31 +59,23 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
 
       {/* Status filter pills */}
       <div className="mb-6 flex flex-wrap gap-2">
-        <a
-          href={`/doctor/appointments`}
-          className={[
-            "rounded-full px-3 py-1.5 font-sans text-sm font-medium transition-colors",
-            !filterStatus
-              ? "bg-primary text-white"
-              : "bg-muted text-muted-foreground hover:bg-muted/70",
-          ].join(" ")}
+        <Button
+          asChild
+          variant={!filterStatus ? "default" : "secondary"}
+          className="h-auto rounded-full px-3 py-1.5"
         >
-          الكل
-        </a>
+          <a href={`/doctor/appointments`}>الكل</a>
+        </Button>
         {(Object.entries(APPOINTMENT_STATUS_LABELS) as [AppointmentStatus, string][]).map(
           ([val, label]) => (
-            <a
+            <Button
+              asChild
               key={val}
-              href={`/doctor/appointments?status=${val}`}
-              className={[
-                "rounded-full px-3 py-1.5 font-sans text-sm font-medium transition-colors",
-                filterStatus === val
-                  ? "bg-primary text-white"
-                  : "bg-muted text-muted-foreground hover:bg-muted/70",
-              ].join(" ")}
+              variant={filterStatus === val ? "default" : "secondary"}
+              className="h-auto rounded-full px-3 py-1.5"
             >
-              {label}
-            </a>
+              <a href={`/doctor/appointments?status=${val}`}>{label}</a>
+            </Button>
           )
         )}
       </div>
@@ -198,13 +191,16 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
                           defaultVisitDate={appt.slot?.date ?? appt.bookingDate}
                           hasRecord={recordsByAppointment.has(appt.id)}
                         />
-                        <Link
-                          href={`/doctor/appointments/${appt.id}`}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                        <Button
+                          asChild
+                          variant="outline"
+                          className="h-auto gap-1 rounded-lg bg-transparent px-2.5 py-1.5 text-xs text-muted-foreground hover:border-foreground/30 hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
                         >
-                          <ArrowLeft className="h-3.5 w-3.5" />
-                          التفاصيل
-                        </Link>
+                          <Link href={`/doctor/appointments/${appt.id}`}>
+                            <ArrowLeft className="h-3.5 w-3.5" />
+                            التفاصيل
+                          </Link>
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>

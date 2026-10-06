@@ -15,6 +15,7 @@ import { getPatientStats } from "@/server/services/appointments";
 import { countPatientRecords } from "@/server/services/treatments";
 import { ProfileForm } from "@/components/dashboard/profile-form";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 // The patient's profile as a page of its own, opened from the avatar in the
 // clinic home page's nav. Deliberately outside the dashboard shell: it belongs
@@ -59,13 +60,16 @@ export default async function PatientProfilePage() {
             )}
             <span className="font-heading text-xl font-bold text-white">{clinic.name}</span>
           </Link>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 px-3 py-1.5 font-sans text-sm font-medium text-white transition-colors hover:border-accent hover:text-accent"
+          <Button
+            asChild
+            variant="outline"
+            className="h-auto gap-1.5 rounded-lg border-white/30 bg-transparent px-3 py-1.5 text-sm text-white hover:border-accent hover:bg-transparent hover:text-accent"
           >
-            <ArrowRight className="h-4 w-4" />
-            الرئيسية
-          </Link>
+            <Link href="/">
+              <ArrowRight className="h-4 w-4" />
+              الرئيسية
+            </Link>
+          </Button>
         </div>
       </header>
 

@@ -17,6 +17,7 @@ import { formatSlotDate } from "@/lib/slot-time";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 // One patient's clinical history, newest visit first. Rendered identically for
 // the doctor, the admin and the patient — the three pages differ in what they
@@ -227,27 +228,32 @@ export default function RecordTimeline({
                             const href = `/api/attachments/${a.id}`;
                             return (
                               <li key={a.id}>
-                                <a
-                                  href={href}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  title={a.fileName}
-                                  className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-sans text-xs text-foreground transition-colors hover:bg-muted"
+                                <Button
+                                  asChild
+                                  variant="outline"
+                                  className="h-auto max-w-[220px] gap-1.5 rounded-lg bg-muted/40 px-2.5 py-1.5 text-xs font-normal hover:bg-muted [&_svg]:size-6"
                                 >
-                                  {a.kind === "image" ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={href}
-                                      alt={a.fileName}
-                                      className="h-6 w-6 flex-shrink-0 rounded object-cover"
-                                    />
-                                  ) : (
-                                    <FileText
-                                      className={`h-4 w-4 flex-shrink-0 ${a.kind === "pdf" ? "text-red-500" : "text-muted-foreground"}`}
-                                    />
-                                  )}
-                                  <span className="truncate">{a.fileName}</span>
-                                </a>
+                                  <a
+                                    href={href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title={a.fileName}
+                                  >
+                                    {a.kind === "image" ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={href}
+                                        alt={a.fileName}
+                                        className="h-6 w-6 flex-shrink-0 rounded object-cover"
+                                      />
+                                    ) : (
+                                      <FileText
+                                        className={`h-4 w-4 flex-shrink-0 ${a.kind === "pdf" ? "text-red-500" : "text-muted-foreground"}`}
+                                      />
+                                    )}
+                                    <span className="truncate">{a.fileName}</span>
+                                  </a>
+                                </Button>
                               </li>
                             );
                           })}

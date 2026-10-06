@@ -826,17 +826,23 @@ export default function ChatInbox({
               </div>
               <div className="ms-auto flex items-center gap-2">
                 {selectedConversation.userId ? (
-                  <a
-                    href={`/admin/users/${selectedConversation.userId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 font-sans text-xs text-primary transition-colors hover:bg-primary/20"
-                    title="فتح ملف العميل في تبويب جديد"
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="h-auto gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-normal text-primary hover:bg-primary/20 hover:text-primary [&_svg]:size-3.5"
                   >
-                    <UserRound className="h-3.5 w-3.5" />
-                    ملف العميل
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
+                    <a
+                      href={`/admin/users/${selectedConversation.userId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+
+                      title="فتح ملف العميل في تبويب جديد"
+                    >
+                      <UserRound className="h-3.5 w-3.5" />
+                      ملف العميل
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </Button>
                 ) : (
                   <Badge
                     className="cursor-not-allowed gap-1.5 bg-muted py-1 font-normal text-muted-foreground/60"
@@ -1010,18 +1016,19 @@ export default function ChatInbox({
                                 />
                               ) : (
                                 // document (or archived audio) — a download link.
-                                <a
-                                  href={mediaUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/50 px-3 py-2 text-xs text-foreground hover:bg-muted"
+                                <Button
+                                  asChild
+                                  variant="outline"
+                                  className="h-auto gap-2 rounded-lg bg-background/50 px-3 py-2 text-xs font-normal hover:bg-muted"
                                 >
-                                  <FileText className="h-4 w-4 flex-shrink-0" />
-                                  <span className="max-w-[180px] truncate">
-                                    {msg.media.filename ?? "ملف مرفق"}
-                                  </span>
-                                  <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
-                                </a>
+                                  <a href={mediaUrl} target="_blank" rel="noopener noreferrer">
+                                    <FileText className="h-4 w-4 flex-shrink-0" />
+                                    <span className="max-w-[180px] truncate">
+                                      {msg.media.filename ?? "ملف مرفق"}
+                                    </span>
+                                    <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
+                                  </a>
+                                </Button>
                               );
                             })()}
                             {msg.media.analysis && (

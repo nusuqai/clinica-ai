@@ -8,6 +8,7 @@ import { getAppointmentForDetail } from "@/server/services/appointments";
 import { getRecordForAppointment } from "@/server/services/treatments";
 import { listAppointmentAttachments } from "@/server/services/attachments";
 import AppointmentDetail from "@/components/appointments/appointment-detail";
+import { Button } from "@/components/ui/button";
 
 // The patient's own read-only view of one of their appointments. Patients have
 // no dashboard shell (their home is the clinic landing page), so this page
@@ -51,13 +52,16 @@ export default async function PatientAppointmentDetailPage({ params }: PageProps
             )}
             <span className="font-heading text-xl font-bold text-white">{clinic.name}</span>
           </Link>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 px-3 py-1.5 font-sans text-sm font-medium text-white transition-colors hover:border-accent hover:text-accent"
+          <Button
+            asChild
+            variant="outline"
+            className="h-auto gap-1.5 rounded-lg border-white/30 bg-transparent px-3 py-1.5 text-sm text-white hover:border-accent hover:bg-transparent hover:text-accent"
           >
-            <ArrowRight className="h-4 w-4" />
-            الرئيسية
-          </Link>
+            <Link href="/">
+              <ArrowRight className="h-4 w-4" />
+              الرئيسية
+            </Link>
+          </Button>
         </div>
       </header>
 

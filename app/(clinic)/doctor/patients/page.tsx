@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export default async function DoctorPatientsPage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
@@ -108,13 +109,16 @@ export default async function DoctorPatientsPage() {
                         </span>
                       </TableCell>
                       <TableCell className="px-4 py-3">
-                        <Link
-                          href={`/doctor/patients/${patient.patientId}`}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                        <Button
+                          asChild
+                          variant="outline"
+                          className="h-auto gap-1.5 rounded-lg bg-transparent px-2.5 py-1.5 text-xs text-muted-foreground hover:border-foreground/30 hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
                         >
-                          <FileText className="h-3.5 w-3.5" />
-                          عرض السجل
-                        </Link>
+                          <Link href={`/doctor/patients/${patient.patientId}`}>
+                            <FileText className="h-3.5 w-3.5" />
+                            عرض السجل
+                          </Link>
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );

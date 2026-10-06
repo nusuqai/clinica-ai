@@ -54,20 +54,22 @@ export function MarketingNav({ isAuthenticated, continueHref }: Props) {
 
         <div className="hidden items-center gap-3 md:flex">
           {isAuthenticated ? (
-            <Link
-              href={continueHref}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            <Button
+              asChild
+              variant="accent"
+              className="h-auto rounded-lg px-4 py-2 text-sm transition-opacity hover:opacity-90"
             >
-              الانتقال إلى عيادتي
-            </Link>
+              <Link href={continueHref}>الانتقال إلى عيادتي</Link>
+            </Button>
           ) : (
             <>
-              <a
-                href="#request"
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              <Button
+                asChild
+                variant="accent"
+                className="h-auto rounded-lg px-4 py-2 text-sm transition-opacity hover:opacity-90"
               >
-                أنشئ عيادتك
-              </a>
+                <a href="#request">أنشئ عيادتك</a>
+              </Button>
             </>
           )}
         </div>
@@ -97,27 +99,35 @@ export function MarketingNav({ isAuthenticated, continueHref }: Props) {
               </a>
             ))}
             {isAuthenticated ? (
-              <Link
-                href={continueHref}
-                className="rounded-lg bg-accent px-4 py-2 text-center text-sm font-medium text-white"
+              <Button
+                asChild
+                variant="accent"
+                className="h-auto rounded-lg px-4 py-2 text-center text-sm"
               >
-                الانتقال إلى عيادتي
-              </Link>
+                <Link href={continueHref}>الانتقال إلى عيادتي</Link>
+              </Button>
             ) : (
               <div className="flex flex-col gap-2">
-                <Link
-                  href="/login"
-                  className="rounded-lg border border-white/30 px-4 py-2 text-center text-sm font-medium text-white"
+                <Button
+                  asChild
+                  variant="outline"
+                  className="h-auto rounded-lg border-white/30 bg-transparent px-4 py-2 text-center text-sm text-white hover:bg-transparent"
                 >
-                  تسجيل الدخول
-                </Link>
-                <a
-                  href="#request"
-                  className="rounded-lg bg-accent px-4 py-2 text-center text-sm font-medium text-white"
-                  onClick={() => setMenuOpen(false)}
+                  <Link href="/login">تسجيل الدخول</Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="accent"
+                  className="h-auto rounded-lg px-4 py-2 text-center text-sm"
                 >
-                  أنشئ عيادتك
-                </a>
+                  <a
+                    href="#request"
+
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    أنشئ عيادتك
+                  </a>
+                </Button>
               </div>
             )}
           </div>

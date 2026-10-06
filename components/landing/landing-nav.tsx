@@ -115,26 +115,29 @@ export function LandingNav({
             // dashboard to link to — just their profile.
             <ProfileAvatar name={userName} />
           ) : isAuthenticated ? (
-            <Link
-              href={dashboardHref}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            <Button
+              asChild
+              variant="accent"
+              className="h-auto rounded-lg px-4 py-2 text-sm transition-opacity hover:opacity-90"
             >
-              لوحة التحكم
-            </Link>
+              <Link href={dashboardHref}>لوحة التحكم</Link>
+            </Button>
           ) : (
             <>
-              <Link
-                href={loginHref}
-                className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition-colors hover:border-accent hover:text-accent"
+              <Button
+                asChild
+                variant="outline"
+                className="h-auto rounded-lg border-white/30 bg-transparent px-4 py-2 text-sm text-white hover:border-accent hover:bg-transparent hover:text-accent"
               >
-                تسجيل الدخول
-              </Link>
-              <Link
-                href={registerHref}
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                <Link href={loginHref}>تسجيل الدخول</Link>
+              </Button>
+              <Button
+                asChild
+                variant="accent"
+                className="h-auto rounded-lg px-4 py-2 text-sm transition-opacity hover:opacity-90"
               >
-                إنشاء حساب
-              </Link>
+                <Link href={registerHref}>إنشاء حساب</Link>
+              </Button>
             </>
           )}
         </div>
@@ -189,18 +192,20 @@ export function LandingNav({
               </Link>
             ) : !isAuthenticated ? (
               <div className="flex flex-col gap-2">
-                <Link
-                  href={loginHref}
-                  className="rounded-lg border border-white/30 px-4 py-2 text-center text-sm font-medium text-white"
+                <Button
+                  asChild
+                  variant="outline"
+                  className="h-auto rounded-lg border-white/30 bg-transparent px-4 py-2 text-center text-sm text-white hover:bg-transparent"
                 >
-                  تسجيل الدخول
-                </Link>
-                <Link
-                  href={registerHref}
-                  className="rounded-lg bg-accent px-4 py-2 text-center text-sm font-medium text-white"
+                  <Link href={loginHref}>تسجيل الدخول</Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="accent"
+                  className="h-auto rounded-lg px-4 py-2 text-center text-sm"
                 >
-                  إنشاء حساب
-                </Link>
+                  <Link href={registerHref}>إنشاء حساب</Link>
+                </Button>
               </div>
             ) : null}
           </div>

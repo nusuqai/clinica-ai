@@ -336,12 +336,9 @@ export default function AppointmentBoard({
               تم الحجز في {formatSlotDate(detailsAppt.createdAt)}
             </p>
 
-            <Link
-              href={`/admin/appointments/${detailsAppt.id}`}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
-            >
-              فتح صفحة الموعد الكاملة
-            </Link>
+            <Button asChild className="flex h-auto w-full gap-1.5 rounded-xl px-4 py-2.5 text-sm">
+              <Link href={`/admin/appointments/${detailsAppt.id}`}>فتح صفحة الموعد الكاملة</Link>
+            </Button>
           </div>
         )}
       </Modal>

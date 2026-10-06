@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export default async function AdminUsersPage() {
   const { clinic } = await requireClinicMember(["ADMIN"]);
@@ -79,13 +80,16 @@ export default async function AdminUsersPage() {
                     {new Date(user.createdAt).toLocaleDateString("ar-EG")}
                   </TableCell>
                   <TableCell className="px-4 py-3 text-end">
-                    <Link
-                      href={`/admin/users/${user.id}`}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 font-sans text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                    <Button
+                      asChild
+                      variant="outline"
+                      className="h-auto gap-1.5 rounded-lg bg-transparent px-3 py-1.5 text-xs hover:bg-muted [&_svg]:size-3.5"
                     >
-                      <Eye className="h-3.5 w-3.5" />
-                      عرض التفاصيل
-                    </Link>
+                      <Link href={`/admin/users/${user.id}`}>
+                        <Eye className="h-3.5 w-3.5" />
+                        عرض التفاصيل
+                      </Link>
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
