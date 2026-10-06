@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Hint } from "@/components/ui/tooltip";
 
 export default async function AdminDoctorsPage() {
   const { clinic } = await requireClinicMember(["ADMIN"]);
@@ -93,13 +94,15 @@ export default async function AdminDoctorsPage() {
                   </TableCell>
                   <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <Link
-                        href={`/admin/doctors/${doctor.id}`}
-                        title="عرض التفاصيل"
-                        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </Link>
+                      <Hint label="عرض التفاصيل">
+                        <Link
+                          aria-label="عرض التفاصيل"
+                          href={`/admin/doctors/${doctor.id}`}
+                          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Link>
+                      </Hint>
                       <EditDoctorModal
                         doctor={doctor}
                         branches={branches}

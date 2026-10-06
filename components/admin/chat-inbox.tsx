@@ -65,6 +65,7 @@ import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { Hint } from "@/components/ui/tooltip";
 
 interface ChatInboxProps {
   conversations: ConversationSummary[];
@@ -832,31 +833,30 @@ export default function ChatInbox({
               </div>
               <div className="ms-auto flex items-center gap-2">
                 {selectedConversation.userId ? (
-                  <Button
-                    asChild
-                    variant="ghost"
-                    className="h-auto gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-normal text-primary hover:bg-primary/20 hover:text-primary [&_svg]:size-3.5"
-                  >
-                    <a
-                      href={`/admin/users/${selectedConversation.userId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-
-                      title="فتح ملف العميل في تبويب جديد"
+                  <Hint label="فتح ملف العميل في تبويب جديد">
+                    <Button
+                      asChild
+                      variant="ghost"
+                      className="h-auto gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-normal text-primary hover:bg-primary/20 hover:text-primary [&_svg]:size-3.5"
                     >
+                      <a
+                        href={`/admin/users/${selectedConversation.userId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <UserRound className="h-3.5 w-3.5" />
+                        ملف العميل
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </Button>
+                  </Hint>
+                ) : (
+                  <Hint label="لا يوجد حساب مرتبط بعد — سيظهر الملف بعد تسجيل العميل">
+                    <Badge className="cursor-not-allowed gap-1.5 bg-muted py-1 font-normal text-muted-foreground/60">
                       <UserRound className="h-3.5 w-3.5" />
                       ملف العميل
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  </Button>
-                ) : (
-                  <Badge
-                    className="cursor-not-allowed gap-1.5 bg-muted py-1 font-normal text-muted-foreground/60"
-                    title="لا يوجد حساب مرتبط بعد — سيظهر الملف بعد تسجيل العميل"
-                  >
-                    <UserRound className="h-3.5 w-3.5" />
-                    ملف العميل
-                  </Badge>
+                    </Badge>
+                  </Hint>
                 )}
                 {selectedConversation.escalations.length > 0 &&
                   (() => {
@@ -866,18 +866,19 @@ export default function ChatInbox({
                     const isUnresolved = unresolved.length > 0;
                     const shown = isUnresolved ? unresolved : selectedConversation.escalations;
                     return (
-                      <span
-                        className={[
-                          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[10px]",
-                          isUnresolved ? "bg-red-100 text-red-700" : "text-muted-foreground",
-                        ].join(" ")}
-                        title={shown.map((e) => escalationReasonLabel(e.reason)).join(" · ")}
-                      >
-                        {isUnresolved && <AlertTriangle className="h-3 w-3" />}
-                        {isUnresolved
-                          ? `${unresolved.length} طلب تصعيد بانتظار الرد`
-                          : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد)`}
-                      </span>
+                      <Hint label={shown.map((e) => escalationReasonLabel(e.reason)).join(" · ")}>
+                        <span
+                          className={[
+                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[10px]",
+                            isUnresolved ? "bg-red-100 text-red-700" : "text-muted-foreground",
+                          ].join(" ")}
+                        >
+                          {isUnresolved && <AlertTriangle className="h-3 w-3" />}
+                          {isUnresolved
+                            ? `${unresolved.length} طلب تصعيد بانتظار الرد`
+                            : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد)`}
+                        </span>
+                      </Hint>
                     );
                   })()}
                 {selectedConversation.activeSessionId && (

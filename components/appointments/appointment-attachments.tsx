@@ -15,6 +15,7 @@ import {
 import type { AttachmentView } from "@/server/services/attachments";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
+import { Hint } from "@/components/ui/tooltip";
 
 // The visit's files (lab results, x-rays, documents). Staff (doctor/admin) can
 // upload and delete; a patient sees a read-only list. Bytes go DIRECTLY to the
@@ -244,22 +245,24 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
                     key={a.id}
                     className="flex items-center gap-3 rounded-xl border border-border bg-background p-3"
                   >
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted"
-                      title="فتح المرفق"
-                    >
-                      {a.kind === "image" ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={href} alt={a.fileName} className="h-full w-full object-cover" />
-                      ) : a.kind === "pdf" ? (
-                        <FileText className="h-6 w-6 text-red-500" />
-                      ) : (
-                        <FileText className="h-6 w-6 text-muted-foreground" />
-                      )}
-                    </a>
+                    <Hint label="فتح المرفق">
+                      <a
+                        aria-label="فتح المرفق"
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted"
+                      >
+                        {a.kind === "image" ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={href} alt={a.fileName} className="h-full w-full object-cover" />
+                        ) : a.kind === "pdf" ? (
+                          <FileText className="h-6 w-6 text-red-500" />
+                        ) : (
+                          <FileText className="h-6 w-6 text-muted-foreground" />
+                        )}
+                      </a>
+                    </Hint>
                     <div className="min-w-0 flex-1">
                       {renamingId === a.id ? (
                         <Input
@@ -276,15 +279,16 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
                           className="h-8 rounded-lg px-2 py-1"
                         />
                       ) : (
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block truncate font-sans text-sm font-medium text-foreground hover:underline"
-                          title={a.fileName}
-                        >
-                          {a.fileName}
-                        </a>
+                        <Hint label={a.fileName}>
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block truncate font-sans text-sm font-medium text-foreground hover:underline"
+                          >
+                            {a.fileName}
+                          </a>
+                        </Hint>
                       )}
                       <p className="mt-0.5 font-sans text-xs text-muted-foreground">
                         {formatSize(a.size)} · {a.uploadedByName}
@@ -314,11 +318,13 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
                       </>
                     ) : (
                       <>
-                        <Button asChild variant="ghost" size="icon" title="تنزيل">
-                          <a href={href} target="_blank" rel="noopener noreferrer">
-                            <Download />
-                          </a>
-                        </Button>
+                        <Hint label="تنزيل">
+                          <Button aria-label="تنزيل" asChild variant="ghost" size="icon">
+                            <a href={href} target="_blank" rel="noopener noreferrer">
+                              <Download />
+                            </a>
+                          </Button>
+                        </Hint>
                         {canManage && (
                           <>
                             <Button

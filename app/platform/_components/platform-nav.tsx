@@ -25,6 +25,7 @@ import {
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu";
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Hint } from "@/components/ui/tooltip";
 
 interface NavLink {
   href: string;
@@ -87,13 +88,11 @@ export default function PlatformNav({ email, pendingRequests }: Props) {
 
         {/* User + logout (desktop) */}
         <div className="hidden items-center gap-3 md:flex">
-          <span
-            className="max-w-[180px] truncate text-xs text-muted-foreground"
-            dir="ltr"
-            title={email}
-          >
-            {email}
-          </span>
+          <Hint label={email}>
+            <span className="max-w-[180px] truncate text-xs text-muted-foreground" dir="ltr">
+              {email}
+            </span>
+          </Hint>
           <form action={signOut}>
             <Button
               type="submit"

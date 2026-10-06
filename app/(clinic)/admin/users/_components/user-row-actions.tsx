@@ -7,6 +7,7 @@ import { updateUserRoleAction, deleteUserAction } from "@/server/actions/admin";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Hint } from "@/components/ui/tooltip";
 
 const roles: { value: Role; label: string }[] = [
   { value: Role.PATIENT, label: "مريض" },
@@ -61,15 +62,17 @@ export default function UserRowActions({ userId, currentRole, isSelf }: UserRowA
         className="w-28"
         controlClassName="h-8 rounded-lg"
       />
-      <Button
-        variant="ghost-destructive"
-        size="icon"
-        onClick={handleDelete}
-        disabled={isSelf || isPending}
-        title="حذف المستخدم"
-      >
-        <Trash2 />
-      </Button>
+      <Hint label="حذف المستخدم">
+        <Button
+          aria-label="حذف المستخدم"
+          variant="ghost-destructive"
+          size="icon"
+          onClick={handleDelete}
+          disabled={isSelf || isPending}
+        >
+          <Trash2 />
+        </Button>
+      </Hint>
       {error && <p className="font-sans text-xs text-red-500">{error}</p>}
     </div>
   );

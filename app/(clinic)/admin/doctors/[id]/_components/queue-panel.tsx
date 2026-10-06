@@ -29,6 +29,7 @@ import type { AppointmentStatus, AvailabilityMode } from "@prisma/client";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Hint } from "@/components/ui/tooltip";
 
 interface QueuePatient {
   id: string;
@@ -243,21 +244,24 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
               )}
             </div>
             <div className="ms-auto flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleTracking}
-                disabled={isPending}
-                title={
+              <Hint
+                label={
                   queue.trackCurrentOrder
                     ? "إخفاء الدور الحالي عن المرضى"
                     : "إظهار الدور الحالي للمرضى"
                 }
-                className="h-9 text-muted-foreground hover:border-primary/50 hover:bg-transparent hover:text-primary [&_svg]:size-3.5"
               >
-                {queue.trackCurrentOrder ? <Eye /> : <EyeOff />}
-                {queue.trackCurrentOrder ? "التتبّع مفعّل" : "التتبّع متوقف"}
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleTracking}
+                  disabled={isPending}
+                  className="h-9 text-muted-foreground hover:border-primary/50 hover:bg-transparent hover:text-primary [&_svg]:size-3.5"
+                >
+                  {queue.trackCurrentOrder ? <Eye /> : <EyeOff />}
+                  {queue.trackCurrentOrder ? "التتبّع مفعّل" : "التتبّع متوقف"}
+                </Button>
+              </Hint>
               {queueFinished ? (
                 <Alert
                   variant="success"

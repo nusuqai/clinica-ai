@@ -6,6 +6,7 @@ import { setDoctorActiveAction, deleteDoctorAction } from "@/server/actions/admi
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Hint } from "@/components/ui/tooltip";
 
 interface DoctorRowActionsProps {
   doctorId: string;
@@ -50,15 +51,17 @@ export default function DoctorRowActions({ doctorId, isActive }: DoctorRowAction
         title={active ? "إلغاء تفعيل" : "تفعيل"}
         className="data-[state=checked]:bg-emerald-500"
       />
-      <Button
-        variant="ghost-destructive"
-        size="icon"
-        onClick={handleDelete}
-        disabled={isPending}
-        title="حذف الطبيب"
-      >
-        <Trash2 />
-      </Button>
+      <Hint label="حذف الطبيب">
+        <Button
+          aria-label="حذف الطبيب"
+          variant="ghost-destructive"
+          size="icon"
+          onClick={handleDelete}
+          disabled={isPending}
+        >
+          <Trash2 />
+        </Button>
+      </Hint>
       {error && <p className="font-sans text-xs text-red-500">{error}</p>}
     </div>
   );

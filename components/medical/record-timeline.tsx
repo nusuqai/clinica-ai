@@ -18,6 +18,7 @@ import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/tooltip";
 
 // One patient's clinical history, newest visit first. Rendered identically for
 // the doctor, the admin and the patient — the three pages differ in what they
@@ -102,34 +103,33 @@ export default function RecordTimeline({
                       </span>
                     )}
                     {record.enteredByName && (
-                      <span className="flex items-center gap-1" title="أُدخل نيابةً عن الطبيب">
-                        <UserPen className="h-3.5 w-3.5 flex-shrink-0" />
-                        أدخله {record.enteredByName}
-                      </span>
+                      <Hint label="أُدخل نيابةً عن الطبيب">
+                        <span className="flex items-center gap-1">
+                          <UserPen className="h-3.5 w-3.5 flex-shrink-0" />
+                          أدخله {record.enteredByName}
+                        </span>
+                      </Hint>
                     )}
                     {record.revisionCount > 0 &&
                       (renderRevisionBadge ? (
                         renderRevisionBadge(record)
                       ) : (
-                        <Badge
-                          variant="warning"
-                          className="px-2 text-[length:inherit]"
-                          title={`عُدّل ${record.revisionCount} مرة`}
-                        >
-                          عُدّل{" "}
-                          {record.revisionCount === 1 ? "مرة" : `${record.revisionCount} مرات`}
-                        </Badge>
+                        <Hint label={`عُدّل ${record.revisionCount} مرة`}>
+                          <Badge variant="warning" className="px-2 text-[length:inherit]">
+                            عُدّل{" "}
+                            {record.revisionCount === 1 ? "مرة" : `${record.revisionCount} مرات`}
+                          </Badge>
+                        </Hint>
                       ))}
                     {appointmentBasePath && record.appointmentId && (
-                      <Badge asChild className="px-2 text-[length:inherit] hover:bg-primary/20">
-                        <Link
-                          href={`${appointmentBasePath}/${record.appointmentId}`}
-                          title="فتح صفحة الموعد المرتبط بهذا السجل"
-                        >
-                          <CalendarSearch className="h-3.5 w-3.5" />
-                          الموعد المرتبط
-                        </Link>
-                      </Badge>
+                      <Hint label="فتح صفحة الموعد المرتبط بهذا السجل">
+                        <Badge asChild className="px-2 text-[length:inherit] hover:bg-primary/20">
+                          <Link href={`${appointmentBasePath}/${record.appointmentId}`}>
+                            <CalendarSearch className="h-3.5 w-3.5" />
+                            الموعد المرتبط
+                          </Link>
+                        </Badge>
+                      </Hint>
                     )}
                   </div>
                 </div>
@@ -233,26 +233,23 @@ export default function RecordTimeline({
                                   variant="outline"
                                   className="h-auto max-w-[220px] gap-1.5 rounded-lg bg-muted/40 px-2.5 py-1.5 text-xs font-normal hover:bg-muted [&_svg]:size-6"
                                 >
-                                  <a
-                                    href={href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title={a.fileName}
-                                  >
-                                    {a.kind === "image" ? (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img
-                                        src={href}
-                                        alt={a.fileName}
-                                        className="h-6 w-6 flex-shrink-0 rounded object-cover"
-                                      />
-                                    ) : (
-                                      <FileText
-                                        className={`h-4 w-4 flex-shrink-0 ${a.kind === "pdf" ? "text-red-500" : "text-muted-foreground"}`}
-                                      />
-                                    )}
-                                    <span className="truncate">{a.fileName}</span>
-                                  </a>
+                                  <Hint label={a.fileName}>
+                                    <a href={href} target="_blank" rel="noopener noreferrer">
+                                      {a.kind === "image" ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={href}
+                                          alt={a.fileName}
+                                          className="h-6 w-6 flex-shrink-0 rounded object-cover"
+                                        />
+                                      ) : (
+                                        <FileText
+                                          className={`h-4 w-4 flex-shrink-0 ${a.kind === "pdf" ? "text-red-500" : "text-muted-foreground"}`}
+                                        />
+                                      )}
+                                      <span className="truncate">{a.fileName}</span>
+                                    </a>
+                                  </Hint>
                                 </Button>
                               </li>
                             );

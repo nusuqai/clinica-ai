@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
+import { Hint } from "@/components/ui/tooltip";
 
 // The clinical record form body — dates, narrative fields, procedure and
 // prescription lines. Shared by the doctor's modal (per appointment) and the
@@ -300,15 +301,17 @@ function RowSection({
 
 function RemoveButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button
-      type="button"
-      variant="ghost-destructive"
-      size="icon"
-      onClick={onClick}
-      title="حذف"
-      className="h-10 shrink-0 border border-border hover:border-red-200"
-    >
-      <Trash2 />
-    </Button>
+    <Hint label="حذف">
+      <Button
+        aria-label="حذف"
+        type="button"
+        variant="ghost-destructive"
+        size="icon"
+        onClick={onClick}
+        className="h-10 shrink-0 border border-border hover:border-red-200"
+      >
+        <Trash2 />
+      </Button>
+    </Hint>
   );
 }

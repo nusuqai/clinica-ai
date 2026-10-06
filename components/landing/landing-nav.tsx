@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Stethoscope, Menu, UserRound } from "lucide-react";
+import { Menu, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ import {
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu";
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Hint } from "@/components/ui/tooltip";
+import { ClinicLogo } from "@/components/general/clinic-logo";
 
 /** Nav link styling on the dark (navy / transparent-over-hero) bar. */
 export const DARK_NAV_LINK = cn(
@@ -31,18 +33,15 @@ function ProfileAvatar({ name }: { name: string | null }) {
       .map((w) => w[0])
       .join("") || null;
   return (
-    <Link
-      href="/profile"
-      title="الملف الشخصي"
-      aria-label="الملف الشخصي"
-      className="group rounded-full"
-    >
-      <Avatar className="h-9 w-9 border-2 border-white/30 transition-colors group-hover:border-accent">
-        <AvatarFallback className="bg-white/10 font-heading text-sm font-bold text-white transition-colors group-hover:bg-accent">
-          {initials ?? <UserRound className="h-4 w-4" />}
-        </AvatarFallback>
-      </Avatar>
-    </Link>
+    <Hint label="الملف الشخصي" side="bottom" className="bg-white text-primary shadow-md">
+      <Link href="/profile" aria-label="الملف الشخصي" className="group rounded-full">
+        <Avatar className="h-9 w-9 border-2 border-white/30 transition-colors group-hover:border-accent">
+          <AvatarFallback className="bg-white/10 font-heading text-sm font-bold text-white transition-colors group-hover:bg-accent">
+            {initials ?? <UserRound className="h-4 w-4" />}
+          </AvatarFallback>
+        </Avatar>
+      </Link>
+    </Hint>
   );
 }
 
@@ -98,14 +97,7 @@ export function LandingNav({
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         {/* Logo */}
         <Link href={homeHref} className="flex items-center gap-2">
-          {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoUrl} alt={brandName} className="h-9 w-9 rounded-xl object-cover" />
-          ) : (
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent">
-              <Stethoscope className="h-5 w-5 text-white" />
-            </div>
-          )}
+          <ClinicLogo src={logoUrl} name={brandName} />
           <span className="font-heading text-xl font-bold text-white">{brandName}</span>
         </Link>
 

@@ -3,6 +3,7 @@ import { Tajawal, Cairo, Amiri } from "next/font/google";
 import "./globals.css";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 // Brand fonts (preserved from the original app's Google Fonts link).
 const tajawal = Tajawal({
@@ -39,7 +40,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         suppressHydrationWarning
         className="flex min-h-screen max-w-[100vw] flex-col overflow-x-hidden font-sans text-text antialiased selection:bg-accent/30 selection:text-primary"
       >
-        <ConfirmProvider>{children}</ConfirmProvider>
+        <TooltipProvider delayDuration={200}>
+          <ConfirmProvider>{children}</ConfirmProvider>
+        </TooltipProvider>
         <Toaster position="top-center" dir="rtl" richColors closeButton />
         <div className="noise-overlay" />
       </body>

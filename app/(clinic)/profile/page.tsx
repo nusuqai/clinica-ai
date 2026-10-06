@@ -17,6 +17,7 @@ import { ProfileForm } from "@/components/dashboard/profile-form";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ClinicLogo } from "@/components/general/clinic-logo";
 
 // The patient's profile as a page of its own, opened from the avatar in the
 // clinic home page's nav. Deliberately outside the dashboard shell: it belongs
@@ -47,18 +48,7 @@ export default async function PatientProfilePage() {
       <header className="bg-primary px-6 pb-24 pt-6">
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            {clinic.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={clinic.logoUrl}
-                alt={clinic.name}
-                className="h-9 w-9 rounded-xl object-cover"
-              />
-            ) : (
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent">
-                <Stethoscope className="h-5 w-5 text-white" />
-              </div>
-            )}
+            <ClinicLogo src={clinic.logoUrl} name={clinic.name} />
             <span className="font-heading text-xl font-bold text-white">{clinic.name}</span>
           </Link>
           <Button

@@ -3,15 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import {
-  LucideIcon,
-  ChevronRight,
-  ChevronDown,
-  LogOut,
-  Stethoscope,
-  Bell,
-  Coins,
-} from "lucide-react";
+import { LucideIcon, ChevronRight, ChevronDown, LogOut, Bell, Coins } from "lucide-react";
 import { signOut } from "@/server/actions/auth";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +26,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useEscalationAlerts } from "./escalation-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ClinicLogo } from "@/components/general/clinic-logo";
 
 export interface NavItem {
   href: string;
@@ -135,18 +128,12 @@ export default function AppSidebar({
         className="h-16 flex-row items-center gap-3 border-b border-white/10 px-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
         title={collapsed ? clinicName : undefined}
       >
-        {clinicLogoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={clinicLogoUrl}
-            alt={clinicName}
-            className="h-9 w-9 shrink-0 rounded-xl object-cover"
-          />
-        ) : (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/20">
-            <Stethoscope className="h-5 w-5 text-accent" />
-          </div>
-        )}
+        <ClinicLogo
+          src={clinicLogoUrl}
+          name={clinicName}
+          className="shrink-0"
+          fallbackClassName="bg-accent/20 text-accent"
+        />
         <span
           className={cn(
             "truncate font-heading text-lg font-bold tracking-wide text-white",
@@ -166,7 +153,7 @@ export default function AppSidebar({
         {/* AI unit meter — admin only. Rendered here rather than in a page so the
             clinic always knows what it has left, from wherever it is working.
             Reflects the count at page load; the usage report is the live view. */}
-        {aiUnits && <AiUnitsPill units={aiUnits} collapsed={collapsed} onNavigate={onNavigate} />}
+        {aiUnits && <AiUnitsPill units={aiUnits} onNavigate={onNavigate} />}
 
         {/* Nav items */}
         <SidebarGroup className="px-2 py-2 group-data-[collapsible=icon]:items-center">
@@ -259,17 +246,9 @@ export default function AppSidebar({
 /**
  * The clinic's remaining AI replies, always in view. Links to the usage report
  * so "I'm running low" leads straight to "here's where they went". On the
- * collapsed rail it shrinks to the bare icon, with the count in the tooltip.
+ * collapsed rail it shrinks to the bare icon; the tooltip carries the full count.
  */
-function AiUnitsPill({
-  units,
-  collapsed,
-  onNavigate,
-}: {
-  units: AiUnitsBadge;
-  collapsed: boolean;
-  onNavigate: () => void;
-}) {
+function AiUnitsPill({ units, onNavigate }: { units: AiUnitsBadge; onNavigate: () => void }) {
   const tone = !units.sufficient
     ? "border-red-400/40 bg-red-500/15 text-red-300 hover:text-red-300"
     : units.low
@@ -286,14 +265,15 @@ function AiUnitsPill({
         <SidebarMenuItem>
           <SidebarMenuButton
             asChild
-            tooltip={title}
+            // Shown expanded too (not just icon-collapsed): the label alone doesn't say what the units are for.
+            tooltip={{ children: title, hidden: false }}
             className={cn(
               "h-auto gap-2 rounded-xl border px-2.5 py-2 font-sans hover:bg-white/10",
               "group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5",
               tone
             )}
           >
-            <Link href="/admin/ai/usage" title={collapsed ? undefined : title} onClick={onNavigate}>
+            <Link href="/admin/ai/usage" onClick={onNavigate}>
               <Coins className="size-4 shrink-0" />
               <span className="flex min-w-0 flex-1 items-baseline justify-between gap-2">
                 <span className="truncate text-xs opacity-80">وحدات المساعد</span>
