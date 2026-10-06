@@ -25,6 +25,7 @@ import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import type { AppointmentDetailView } from "@/server/services/appointments";
 import type { TreatmentRecordView } from "@/server/services/treatments";
 import type { AttachmentView } from "@/server/services/attachments";
+import { Card } from "@/components/ui/card";
 
 // The full page for one appointment — shared by the doctor, admin and patient
 // routes. They differ only in `canEdit` (staff may write the clinical record +
@@ -191,7 +192,7 @@ export default function AppointmentDetail({
             renderRevisionBadge={canEdit ? (r) => <RecordRevisions record={r} /> : undefined}
           />
         ) : (
-          <div className="rounded-2xl border border-border bg-card py-10 text-center">
+          <Card className="py-10 text-center">
             <FileText className="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" />
             <p className="font-sans font-medium text-muted-foreground">
               لا يوجد سجل علاجي لهذه الزيارة بعد
@@ -201,7 +202,7 @@ export default function AppointmentDetail({
                 يمكن إضافة سجل للمواعيد المكتملة فقط
               </p>
             )}
-          </div>
+          </Card>
         )}
       </section>
 

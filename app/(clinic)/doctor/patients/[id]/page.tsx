@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { authorizePatientHistory } from "@/server/services/treatmentAccess";
 import { listPatientRecords } from "@/server/services/treatments";
 import RecordTimeline from "@/components/medical/record-timeline";
+import { Card } from "@/components/ui/card";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -36,7 +37,7 @@ export default async function DoctorPatientHistoryPage({ params }: PageProps) {
         العودة إلى المرضى
       </Link>
 
-      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-card p-5">
+      <Card className="mb-6 flex flex-wrap items-center gap-4 p-5">
         <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-accent/10">
           <span className="font-sans text-lg font-bold text-accent">
             {patient.fullName.charAt(0)}
@@ -54,7 +55,7 @@ export default async function DoctorPatientHistoryPage({ params }: PageProps) {
             <span>{records.length} زيارة مسجّلة</span>
           </div>
         </div>
-      </div>
+      </Card>
 
       <h2 className="mb-4 font-heading text-lg font-bold text-foreground">السجل العلاجي</h2>
       <RecordTimeline

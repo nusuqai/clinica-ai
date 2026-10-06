@@ -9,6 +9,7 @@ import { fillTemplate } from "@/lib/meta/template-render";
 import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 interface TemplatePickerProps {
   conversationId: string;
@@ -93,20 +94,18 @@ export default function WhatsappTemplatePicker({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        aria-describedby={undefined}
+        className="flex max-h-[85vh] w-[calc(100%-2rem)] max-w-lg flex-col gap-0 overflow-hidden rounded-2xl border-border bg-card p-0 shadow-xl"
         dir="rtl"
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h3 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
+          <DialogTitle className="flex items-center gap-2 font-heading text-sm font-semibold leading-normal tracking-normal text-foreground">
             <FileText className="h-4 w-4 text-accent" />
             إرسال قالب معتمد
-          </h3>
+          </DialogTitle>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -208,7 +207,7 @@ export default function WhatsappTemplatePicker({
             </Button>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

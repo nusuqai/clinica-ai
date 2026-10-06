@@ -11,6 +11,15 @@ import AppointmentActions from "./_components/appointment-actions";
 import type { AppointmentStatus } from "@prisma/client";
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 
 interface PageProps {
   searchParams: Promise<{ status?: string }>;
@@ -79,35 +88,43 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full font-sans text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/40">
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">المريض</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">التاريخ</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">الوقت</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">الحالة</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">
+          <Table className="w-full font-sans text-sm">
+            <TableHeader>
+              <TableRow className="border-b border-border bg-muted/40">
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  المريض
+                </TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  التاريخ
+                </TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  الوقت
+                </TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  الحالة
+                </TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
                   ملاحظات المريض
-                </th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">
+                </TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
                   الإجراءات
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-border">
               {appointments.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-16 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={6} className="py-16 text-center text-muted-foreground">
                     لا توجد مواعيد
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
               {appointments.map((appt) => {
                 return (
-                  <tr key={appt.id} className="align-top transition-colors hover:bg-muted/30">
-                    <td className="px-4 py-3">
+                  <TableRow key={appt.id} className="align-top transition-colors hover:bg-muted/30">
+                    <TableCell className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
                           <span className="text-xs font-bold text-primary">
@@ -123,15 +140,15 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
                           )}
                         </div>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-muted-foreground">
                       {appt.slot
                         ? formatSlotDate(appt.slot.date)
                         : appt.bookingDate
                           ? formatSlotDate(appt.bookingDate)
                           : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground" dir="ltr">
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-muted-foreground" dir="ltr">
                       {appt.slot ? (
                         <>
                           {formatSlotTime(appt.slot.startTime)}
@@ -143,8 +160,8 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
                       ) : (
                         "—"
                       )}
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
                       <AppointmentStatusBadge status={appt.status} />
                       {appt.cancellationReason && (
                         <p
@@ -154,8 +171,8 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
                           {appt.cancellationReason}
                         </p>
                       )}
-                    </td>
-                    <td className="max-w-[160px] px-4 py-3 text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="max-w-[160px] px-4 py-3 text-muted-foreground">
                       <p className="truncate text-xs" title={appt.patientNotes ?? ""}>
                         {appt.patientNotes || "—"}
                       </p>
@@ -167,8 +184,8 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
                           ✍ {appt.doctorNotes}
                         </p>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
                       <div className="space-y-1.5">
                         <AppointmentActions
                           appointmentId={appt.id}
@@ -189,14 +206,14 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
                           التفاصيل
                         </Link>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

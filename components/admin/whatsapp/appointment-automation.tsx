@@ -17,6 +17,7 @@ import WhatsappPreview from "./whatsapp-preview";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
 
 const TOKEN_OPTIONS = APPOINTMENT_TOKENS.map((t) => ({
   value: t,
@@ -77,12 +78,12 @@ export default function AppointmentAutomation({ configured }: { configured: bool
 
   if (!configured) {
     return (
-      <div className="rounded-2xl border border-border bg-card p-5">
+      <Card className="p-5">
         <p className="text-xs text-muted-foreground">
           لم يُفعّل اتصال واتساب لهذه العيادة بعد. تواصل مع إدارة المنصّة لتفعيله، ثم يمكنك ربط
           قوالب التذكير والتقييم من هنا.
         </p>
-      </div>
+      </Card>
     );
   }
 
@@ -203,7 +204,7 @@ function BindingCard({
   );
 
   return (
-    <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
+    <Card className="space-y-4 p-5">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           {meta.icon}
@@ -341,6 +342,6 @@ function BindingCard({
           </Button>
         )}
       </div>
-    </div>
+    </Card>
   );
 }

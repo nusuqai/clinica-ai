@@ -8,6 +8,15 @@ import PageHeader from "@/components/admin/page-header";
 import AddDoctorModal from "./_components/add-doctor-modal";
 import EditDoctorModal from "./_components/edit-doctor-modal";
 import DoctorRowActions from "./_components/doctor-row-actions";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 
 export default async function AdminDoctorsPage() {
   const { clinic } = await requireClinicMember(["ADMIN"]);
@@ -35,34 +44,48 @@ export default async function AdminDoctorsPage() {
         action={<AddDoctorModal branches={branches} specialties={specialties} />}
       />
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full font-sans text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/40">
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">الاسم</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">التخصص</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">المواعيد</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">الحالة</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">إجراءات</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
+          <Table className="w-full font-sans text-sm">
+            <TableHeader>
+              <TableRow className="border-b border-border bg-muted/40">
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  الاسم
+                </TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  التخصص
+                </TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  المواعيد
+                </TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  الحالة
+                </TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  إجراءات
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-border">
               {doctors.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
                     لا يوجد أطباء. أضف طبيباً جديداً لتبدأ.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
               {doctors.map((doctor) => (
-                <tr key={doctor.id} className="transition-colors hover:bg-muted/30">
-                  <td className="px-4 py-3 font-medium text-foreground">
+                <TableRow key={doctor.id} className="transition-colors hover:bg-muted/30">
+                  <TableCell className="px-4 py-3 font-medium text-foreground">
                     {doctor.profile.fullName}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{doctor.specialty}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{doctor._count.appointments}</td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">
+                    {doctor.specialty}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">
+                    {doctor._count.appointments}
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <span
                       className={[
                         "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
@@ -73,8 +96,8 @@ export default async function AdminDoctorsPage() {
                     >
                       {doctor.isActive ? "نشط" : "غير نشط"}
                     </span>
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <Link
                         href={`/admin/doctors/${doctor.id}`}
@@ -90,13 +113,13 @@ export default async function AdminDoctorsPage() {
                       />
                       <DoctorRowActions doctorId={doctor.id} isActive={doctor.isActive} />
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

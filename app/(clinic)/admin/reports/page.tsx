@@ -17,6 +17,7 @@ import { requireClinicMember } from "@/lib/auth";
 import StatCard from "@/components/admin/stat-card";
 import BarList from "@/components/admin/bar-list";
 import PageHeader from "@/components/admin/page-header";
+import { Card } from "@/components/ui/card";
 
 const units = (n: number) => n.toLocaleString("ar-EG");
 const decimal = (n: number) =>
@@ -69,7 +70,7 @@ export default async function AdminReportsPage() {
 
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Appointment status breakdown */}
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <Card className="p-6">
           <h2 className="mb-6 font-heading font-semibold text-foreground">توزيع حالات المواعيد</h2>
 
           {/* Mini stat row */}
@@ -120,10 +121,10 @@ export default async function AdminReportsPage() {
             &nbsp;|&nbsp; نسبة الإكمال:{" "}
             {Math.round((stats.completedAppointments / totalAppts) * 100)}%
           </p>
-        </div>
+        </Card>
 
         {/* User breakdown */}
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <Card className="p-6">
           <h2 className="mb-6 font-heading font-semibold text-foreground">توزيع المستخدمين</h2>
 
           <div className="mb-6 flex items-center justify-center gap-8">
@@ -136,13 +137,13 @@ export default async function AdminReportsPage() {
           </div>
 
           <BarList items={userBreakdown} max={stats.totalUsers || 1} color="bg-accent" />
-        </div>
+        </Card>
       </div>
 
       {/* AI assistant — the unit meter, summarized. The full breakdown (daily,
           per channel, runway) lives on /admin/ai/usage; this is the at-a-glance
           version so the clinic's overall report includes its AI spend. */}
-      <div className="mb-6 rounded-2xl border border-border bg-card p-6">
+      <Card className="mb-6 p-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <h2 className="flex items-center gap-2 font-heading font-semibold text-foreground">
             <Bot className="h-5 w-5 text-primary" />
@@ -200,11 +201,11 @@ export default async function AdminReportsPage() {
             .
           </p>
         )}
-      </div>
+      </Card>
 
       {/* Doctor load */}
       {doctorLoad.length > 0 && (
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <Card className="p-6">
           <h2 className="mb-6 font-heading font-semibold text-foreground">
             أعباء الأطباء (المواعيد)
           </h2>
@@ -216,7 +217,7 @@ export default async function AdminReportsPage() {
             }))}
             color="bg-primary"
           />
-        </div>
+        </Card>
       )}
     </div>
   );

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import type { DoctorSlot } from "@/server/services/doctors";
 import type { AppointmentStatus } from "@prisma/client";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Card } from "@/components/ui/card";
 
 type FilterStatus = "all" | "available" | "blocked" | "booked";
 
@@ -105,11 +106,11 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
       </div>
 
       {slots.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="font-sans text-muted-foreground">
             لا توجد مواعيد متاحة. أضف قواعد توفر وقم بتوليد المواعيد أولاً.
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="space-y-2">
           {dateKeys.map((dateKey) => {
@@ -125,10 +126,7 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
             for (const s of daySlots) dayCounts[slotStatus(s) as Exclude<FilterStatus, "all">]++;
 
             return (
-              <div
-                key={dateKey}
-                className="overflow-hidden rounded-2xl border border-border bg-card"
-              >
+              <Card key={dateKey} className="overflow-hidden">
                 <Button
                   variant="ghost"
                   onClick={() => toggleCollapse(dateKey)}
@@ -228,7 +226,7 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                     })}
                   </div>
                 )}
-              </div>
+              </Card>
             );
           })}
         </div>

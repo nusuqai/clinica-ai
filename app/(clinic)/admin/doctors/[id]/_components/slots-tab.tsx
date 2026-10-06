@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import type { ScheduleDaySummary } from "@/server/services/doctors";
 import type { AppointmentStatus } from "@prisma/client";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Card } from "@/components/ui/card";
 
 interface DaySlot {
   id: string;
@@ -124,11 +125,11 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
 
   if (days.length === 0) {
     return (
-      <div className="rounded-2xl border border-border bg-card py-16 text-center">
+      <Card className="py-16 text-center">
         <p className="font-sans text-muted-foreground">
           لا توجد أيام متاحة. أضف قواعد توفر (مواعيد ثابتة أو نظام الدور) أولاً.
         </p>
-      </div>
+      </Card>
     );
   }
 
@@ -146,7 +147,7 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
         const counts = daySlots[date] ? slotCountsFrom(daySlots[date]) : day.slotCounts;
 
         return (
-          <div key={date} className="overflow-hidden rounded-2xl border border-border bg-card">
+          <Card key={date} className="overflow-hidden">
             {/* Collapsible header */}
             <Button
               variant="ghost"
@@ -230,7 +231,7 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
                 )}
               </div>
             )}
-          </div>
+          </Card>
         );
       })}
     </div>

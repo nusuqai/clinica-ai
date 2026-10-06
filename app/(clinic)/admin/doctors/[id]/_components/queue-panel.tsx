@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import type { AppointmentStatus, AvailabilityMode } from "@prisma/client";
+import { Card } from "@/components/ui/card";
 
 interface QueuePatient {
   id: string;
@@ -206,15 +207,15 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
       {loading ? (
         <p className="font-sans text-sm text-muted-foreground">جارٍ التحميل...</p>
       ) : !queue ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="font-sans text-muted-foreground">
             لا يوجد طابور دور لهذا اليوم. يظهر الطابور بعد أول حجز في قاعدة توفر بنظام الدور.
           </p>
-        </div>
+        </Card>
       ) : (
         <>
           {/* Summary + controls */}
-          <div className="flex flex-wrap items-center gap-5 rounded-2xl border border-border bg-card p-5">
+          <Card className="flex flex-wrap items-center gap-5 p-5">
             <div>
               <p className="font-sans text-xs text-muted-foreground">يُخدم الآن</p>
               <p className="font-heading text-3xl font-bold tabular-nums text-primary">
@@ -291,13 +292,13 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                 </>
               )}
             </div>
-          </div>
+          </Card>
 
           {/* Arrival-priority: reserved patients not yet checked in. Reception
               clicks "وصل" as each arrives; that hands out their queue number by
               arrival order and moves them into the ordered list below. */}
           {isArrival && reservedPatients.length > 0 && (
-            <div className="overflow-hidden rounded-2xl border border-dashed border-border bg-card">
+            <Card className="overflow-hidden border-dashed">
               <div className="bg-muted/30 px-5 py-2.5 font-sans text-xs font-medium text-muted-foreground">
                 بانتظار الوصول ({reservedPatients.length}) — سجّل وصول المريض ليأخذ رقم دوره حسب
                 أسبقية الحضور
@@ -332,7 +333,7 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                   </div>
                 ))}
               </div>
-            </div>
+            </Card>
           )}
 
           {/* Ordered patient list */}
@@ -343,7 +344,7 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                 : "لا يوجد مرضى في الطابور."}
             </p>
           ) : (
-            <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+            <Card className="divide-y divide-border overflow-hidden">
               {orderedPatients.map((p) => {
                 const isCurrent = currentPatient?.id === p.id;
                 const isDone =
@@ -418,7 +419,7 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                   </div>
                 );
               })}
-            </div>
+            </Card>
           )}
         </>
       )}

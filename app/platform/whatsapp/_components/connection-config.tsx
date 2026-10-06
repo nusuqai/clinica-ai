@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
 
 /** Compact muted label used across the WhatsApp console forms. */
 const smallLabel = "text-xs font-normal text-muted-foreground";
@@ -76,7 +77,7 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
         <KeyRound className="h-4 w-4 text-accent" />
         بيانات الاتصال (Meta Cloud API)
       </h2>
-      <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
+      <Card className="space-y-4 p-5">
         <FormField
           label="Phone Number ID"
           labelClassName={smallLabel}
@@ -134,7 +135,7 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
             <CopyRow label="Verify Token" value={tokens.verifyToken} />
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

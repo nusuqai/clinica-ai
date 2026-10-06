@@ -18,6 +18,7 @@ import { DayOfWeek, AvailabilityMode, type AvailabilityRule } from "@prisma/clie
 import { formatSlotDate } from "@/lib/slot-time";
 import { queueCapacityHint } from "@/lib/availability/queue-capacity";
 import { isQueueMode, MODE_BADGE_AR } from "@/lib/availability/modes";
+import { Card } from "@/components/ui/card";
 
 export interface DoctorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -182,17 +183,17 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
       )}
 
       {rules.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="font-sans text-muted-foreground">
             لا توجد قواعد توفر. أضف قاعدة لتبدأ في استقبال المواعيد.
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="space-y-3">
           {rules.map((rule) => (
-            <div
+            <Card
               key={rule.id}
-              className="flex flex-col gap-3 rounded-2xl border border-border bg-card px-5 py-4 sm:flex-row sm:items-center"
+              className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center"
             >
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -270,7 +271,7 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                   <Trash2 />
                 </Button>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

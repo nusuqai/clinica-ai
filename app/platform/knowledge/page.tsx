@@ -1,6 +1,7 @@
 import { requirePlatformAdmin } from "@/lib/auth";
 import { getPlatformKnowledgeOverview } from "@/server/services/knowledgeOverview";
 import ClinicKnowledge from "./_components/clinic-knowledge";
+import { Card } from "@/components/ui/card";
 
 // The knowledge base every clinic's assistant reads from. Authored here rather
 // than by clinic admins: `slug` and `summary` are retrieval tuning (the summary
@@ -26,18 +27,18 @@ export default async function PlatformKnowledgePage() {
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-2xl border border-border bg-card p-5">
+          <Card key={s.label} className="p-5">
             <p className="font-heading text-2xl font-bold text-foreground" dir="ltr">
               {s.value}
             </p>
             <p className="mt-1 font-sans text-sm text-muted-foreground">{s.label}</p>
-          </div>
+          </Card>
         ))}
       </div>
 
       <div className="space-y-4">
         {overview.clinics.map((c) => (
-          <div key={c.clinicId} className="rounded-2xl border border-border bg-card p-5">
+          <Card key={c.clinicId} className="p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-heading font-semibold text-foreground">{c.name}</p>
@@ -58,7 +59,7 @@ export default async function PlatformKnowledgePage() {
               </span>
             </div>
             <ClinicKnowledge clinicId={c.clinicId} docs={c.docs} />
-          </div>
+          </Card>
         ))}
         {overview.clinics.length === 0 && (
           <p className="font-sans text-sm text-muted-foreground">لا توجد عيادات.</p>

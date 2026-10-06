@@ -1,4 +1,5 @@
 import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
 
 export default function Loading() {
   return (
@@ -6,7 +7,7 @@ export default function Loading() {
       <Skeleton className="mb-6 h-4 w-32" />
 
       {/* Doctor header card */}
-      <div className="mb-6 rounded-2xl border border-border bg-card p-6">
+      <Card className="mb-6 p-6">
         <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
           <Skeleton className="h-16 w-16 flex-shrink-0 rounded-2xl" />
           <div className="flex-1 space-y-2">
@@ -15,7 +16,7 @@ export default function Loading() {
             <Skeleton className="h-3.5 w-64" />
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Tab nav */}
       <div className="mb-6 flex w-fit gap-1 rounded-xl border border-border bg-muted/40 p-1">

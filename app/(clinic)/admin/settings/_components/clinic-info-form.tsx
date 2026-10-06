@@ -8,6 +8,7 @@ import { PhoneType, SocialPlatform } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
 
 export interface ClinicPhoneView {
   type: PhoneType;
@@ -95,7 +96,7 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
         </div>
       )}
 
-      <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
+      <Card className="space-y-4 p-5">
         <FormField label="اسم العيادة" value={name} onValueChange={setName} />
         <FormField
           type="textarea"
@@ -104,10 +105,10 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
           onValueChange={setDescription}
           rows={4}
         />
-      </div>
+      </Card>
 
       {/* Phones */}
-      <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
+      <Card className="space-y-3 p-5">
         <div className="flex items-center justify-between">
           <Label className={sectionLabel}>أرقام الهواتف العامة</Label>
           <Button
@@ -170,10 +171,10 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
             </Button>
           </div>
         ))}
-      </div>
+      </Card>
 
       {/* Socials */}
-      <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
+      <Card className="space-y-3 p-5">
         <div className="flex items-center justify-between">
           <Label className={sectionLabel}>حسابات التواصل الاجتماعي</Label>
           <Button
@@ -223,7 +224,7 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
             </Button>
           </div>
         ))}
-      </div>
+      </Card>
 
       <Button type="submit" loading={isPending} className="px-6">
         {isPending ? "جارٍ الحفظ..." : "حفظ التغييرات"}

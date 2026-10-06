@@ -6,6 +6,7 @@ import { getDoctorStats, getDoctorByProfileId } from "@/server/services/doctors"
 import { getDoctorAppointments } from "@/server/services/appointments";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Card } from "@/components/ui/card";
 
 export default async function DoctorDashboardPage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
@@ -53,7 +54,7 @@ export default async function DoctorDashboardPage() {
       </div>
 
       {/* Upcoming appointments */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <Card className="overflow-hidden">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
             <h2 className="font-heading font-semibold text-foreground">المواعيد القادمة</h2>
@@ -120,7 +121,7 @@ export default async function DoctorDashboardPage() {
             })}
           </ul>
         )}
-      </div>
+      </Card>
 
       {/* Quick links */}
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -154,7 +155,7 @@ function StatCard({
   };
 
   return (
-    <div className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5">
+    <Card className="flex items-center gap-4 p-5">
       <div
         className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl ${colorMap[color]}`}
       >
@@ -164,7 +165,7 @@ function StatCard({
         <p className="font-heading text-2xl font-bold text-foreground">{value}</p>
         <p className="font-sans text-sm text-muted-foreground">{label}</p>
       </div>
-    </div>
+    </Card>
   );
 }
 

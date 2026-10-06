@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Switch } from "@/components/ui/switch";
+import { Card } from "@/components/ui/card";
 
 const DEBOUNCE_MIN = 5;
 const DEBOUNCE_MAX = 120;
@@ -180,7 +181,7 @@ export default function AiSettingsForm({
       )}
 
       {/* Global toggle */}
-      <div className="rounded-2xl border border-border bg-card p-5">
+      <Card className="p-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -205,10 +206,10 @@ export default function AiSettingsForm({
             {message.text}
           </p>
         )}
-      </div>
+      </Card>
 
       {/* Voice reply toggle */}
-      <div className="rounded-2xl border border-border bg-card p-5">
+      <Card className="p-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -229,10 +230,10 @@ export default function AiSettingsForm({
             className="shrink-0"
           />
         </div>
-      </div>
+      </Card>
 
       {/* Image analysis toggle */}
-      <div className="rounded-2xl border border-border bg-card p-5">
+      <Card className="p-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -270,10 +271,10 @@ export default function AiSettingsForm({
             className="shrink-0"
           />
         </div>
-      </div>
+      </Card>
 
       {/* Message debounce window */}
-      <div className="rounded-2xl border border-border bg-card p-5">
+      <Card className="p-5">
         <div className="flex items-start gap-3">
           <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <Timer className="h-5 w-5" />
@@ -306,10 +307,10 @@ export default function AiSettingsForm({
             </div>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Unit meter (read-only) */}
-      <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
+      <Card className="space-y-3 p-5">
         <p className="font-sans text-sm font-semibold text-foreground">رصيد الوحدات</p>
         <div className="flex items-end justify-between">
           <div>
@@ -330,7 +331,7 @@ export default function AiSettingsForm({
         <p className="border-t border-border pt-3 font-sans text-xs text-muted-foreground">
           تتم إضافة الوحدات من قِبل المنصة. للاستفسار أو إضافة وحدات، تواصل مع فريق المنصة.
         </p>
-      </div>
+      </Card>
     </div>
   );
 }

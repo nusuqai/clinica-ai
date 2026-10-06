@@ -7,6 +7,7 @@ import { clinicHost, clinicOrigin } from "@/lib/clinic-url";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { Card } from "@/components/ui/card";
 
 export function CreateClinicForm() {
   const router = useRouter();
@@ -88,7 +89,7 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
     });
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card className="p-5">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <p className="font-heading font-semibold text-foreground">{clinic.name}</p>
@@ -158,6 +159,6 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
           {error && <span className="text-xs text-red-600">{error}</span>}
         </div>
       </form>
-    </div>
+    </Card>
   );
 }

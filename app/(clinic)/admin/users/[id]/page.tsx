@@ -19,6 +19,7 @@ import RecordRevisions from "@/components/medical/record-revisions";
 import AppointmentAttachments from "@/components/appointments/appointment-attachments";
 import AdminRecordModal from "@/components/medical/admin-record-modal";
 import EditPatientModal from "./_components/edit-patient-modal";
+import { Card } from "@/components/ui/card";
 
 const ROLE_LABEL: Record<Role, string> = {
   [Role.PATIENT]: "مريض",
@@ -70,7 +71,7 @@ export default async function UserDetailPage({ params }: PageProps) {
         العودة إلى المستخدمين
       </Link>
 
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <Card className="p-6">
         <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
           <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10">
             <span className="font-sans text-xl font-bold text-primary">{initials}</span>
@@ -137,7 +138,7 @@ export default async function UserDetailPage({ params }: PageProps) {
             />
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Clinical history — patients only; staff have no treatment records. */}
       {isPatient && (

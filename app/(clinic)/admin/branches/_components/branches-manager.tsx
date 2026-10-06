@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -247,13 +248,13 @@ export default function BranchesManager({
       </div>
 
       {branches.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="font-sans text-muted-foreground">لا توجد فروع بعد. أضف فرعاً لتبدأ.</p>
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {branches.map((b) => (
-            <div key={b.id} className="rounded-2xl border border-border bg-card p-5">
+            <Card key={b.id} className="p-5">
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -350,7 +351,7 @@ export default function BranchesManager({
                   {b.hours.filter((h) => !h.isClosed).length} يوم عمل مُعرّف
                 </p>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

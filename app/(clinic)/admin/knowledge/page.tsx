@@ -2,6 +2,7 @@ import { BookOpen, Eye, EyeOff } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { listKnowledgeDocsForAdmin } from "@/server/services/knowledge";
 import PageHeader from "@/components/admin/page-header";
+import { Card } from "@/components/ui/card";
 
 /**
  * Read-only knowledge base for a clinic admin. Authoring lives in the platform
@@ -26,13 +27,13 @@ export default async function AdminKnowledgePage() {
 
       <div className="max-w-3xl space-y-3">
         {docs.length === 0 ? (
-          <div className="rounded-2xl border border-border bg-card py-16 text-center">
+          <Card className="py-16 text-center">
             <BookOpen className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
             <p className="font-sans text-muted-foreground">لا توجد مستندات بعد لهذه العيادة.</p>
-          </div>
+          </Card>
         ) : (
           docs.map((d) => (
-            <div key={d.id} className="rounded-2xl border border-border bg-card px-5 py-4">
+            <Card key={d.id} className="px-5 py-4">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-heading font-bold text-foreground">{d.title}</h3>
                 {d.isActive ? (
@@ -56,7 +57,7 @@ export default async function AdminKnowledgePage() {
                   day: "numeric",
                 })}
               </p>
-            </div>
+            </Card>
           ))
         )}
 

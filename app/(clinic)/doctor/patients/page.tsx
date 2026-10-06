@@ -5,6 +5,15 @@ import { requireClinicMember } from "@/lib/auth";
 import { getDoctorPatients, getDoctorByProfileId } from "@/server/services/doctors";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import { formatSlotDate } from "@/lib/slot-time";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 
 export default async function DoctorPatientsPage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
@@ -22,42 +31,47 @@ export default async function DoctorPatientsPage() {
       </div>
 
       {patients.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-20 text-center">
+        <Card className="py-20 text-center">
           <Users className="mx-auto mb-4 h-12 w-12 text-muted-foreground/30" />
           <p className="font-sans font-medium text-muted-foreground">لا توجد مرضى بعد</p>
           <p className="mt-1 font-sans text-sm text-muted-foreground">
             ستظهر قائمة المرضى بعد أول موعد مكتمل
           </p>
-        </div>
+        </Card>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full font-sans text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground">المريض</th>
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground">
+            <Table className="w-full font-sans text-sm">
+              <TableHeader>
+                <TableRow className="border-b border-border bg-muted/40">
+                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                    المريض
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
                     رقم الهاتف
-                  </th>
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
                     آخر موعد
-                  </th>
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
                     حالة آخر موعد
-                  </th>
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
                     إجمالي المواعيد
-                  </th>
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground">
+                  </TableHead>
+                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
                     السجل العلاجي
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-border">
                 {patients.map((patient) => {
                   return (
-                    <tr key={patient.patientId} className="transition-colors hover:bg-muted/30">
-                      <td className="px-4 py-3">
+                    <TableRow
+                      key={patient.patientId}
+                      className="transition-colors hover:bg-muted/30"
+                    >
+                      <TableCell className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent/10">
                             <span className="text-sm font-bold text-accent">
@@ -66,8 +80,8 @@ export default async function DoctorPatientsPage() {
                           </div>
                           <p className="font-medium text-foreground">{patient.fullName}</p>
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-muted-foreground">
                         {patient.phone ? (
                           <span className="flex items-center gap-1.5" dir="ltr">
                             <Phone className="h-3.5 w-3.5 flex-shrink-0" />
@@ -76,24 +90,24 @@ export default async function DoctorPatientsPage() {
                         ) : (
                           <span className="text-muted-foreground/50">—</span>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-muted-foreground">
                         <span className="flex items-center gap-1.5">
                           <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
                           {patient.lastAppointmentDate
                             ? formatSlotDate(patient.lastAppointmentDate)
                             : "—"}
                         </span>
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <AppointmentStatusBadge status={patient.lastStatus} />
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-muted font-sans text-xs font-semibold text-muted-foreground">
                           {patient.totalAppointments}
                         </span>
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <Link
                           href={`/doctor/patients/${patient.patientId}`}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
@@ -101,14 +115,14 @@ export default async function DoctorPatientsPage() {
                           <FileText className="h-3.5 w-3.5" />
                           عرض السجل
                         </Link>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );

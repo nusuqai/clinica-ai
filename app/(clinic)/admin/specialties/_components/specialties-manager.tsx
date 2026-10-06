@@ -11,6 +11,7 @@ import {
   renameSpecialtyAction,
   deleteSpecialtyAction,
 } from "@/server/actions/admin";
+import { Card } from "@/components/ui/card";
 
 export interface SpecialtyView {
   id: string;
@@ -70,13 +71,13 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
       </form>
 
       {specialties.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="font-sans text-muted-foreground">
             لا توجد تخصصات بعد. أضف تخصصاً ليظهر في نموذج إضافة الأطباء.
           </p>
-        </div>
+        </Card>
       ) : (
-        <div className="divide-y divide-border rounded-2xl border border-border bg-card">
+        <Card className="divide-y divide-border">
           {specialties.map((s) => (
             <div key={s.id} className="flex items-center gap-3 px-5 py-3">
               {editingId === s.id ? (
@@ -152,7 +153,7 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
               )}
             </div>
           ))}
-        </div>
+        </Card>
       )}
     </div>
   );

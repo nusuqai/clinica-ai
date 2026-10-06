@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { Card } from "@/components/ui/card";
 
 export interface KnowledgeDocView {
   id: string;
@@ -123,17 +124,17 @@ export default function KnowledgeManager({
       </div>
 
       {docs.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <FileText className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
           <p className="font-sans text-muted-foreground">
             لا توجد مستندات بعد. أضف مستنداً (مثل سياسات التعامل مع الشركات أو قائمة الفحوصات)
             ليستعين به المساعد الذكي.
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="space-y-3">
           {docs.map((d) => (
-            <div key={d.id} className="rounded-2xl border border-border bg-card px-5 py-4">
+            <Card key={d.id} className="px-5 py-4">
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -201,7 +202,7 @@ export default function KnowledgeManager({
                   </Button>
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

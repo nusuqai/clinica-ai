@@ -23,6 +23,7 @@ import { languageLabel } from "@/components/admin/whatsapp/languages";
 import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { Card } from "@/components/ui/card";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
@@ -145,7 +146,7 @@ export default function TemplatesList({
           </Button>
         )}
       </div>
-      <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
+      <Card className="space-y-4 p-5">
         {disabled ? (
           <p className="text-xs text-muted-foreground">أدخل بيانات الاتصال لعرض القوالب.</p>
         ) : loading ? (
@@ -228,7 +229,7 @@ export default function TemplatesList({
             )}
           </>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

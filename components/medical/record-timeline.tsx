@@ -14,6 +14,7 @@ import type { TreatmentRecordView } from "@/server/services/treatments";
 import type { AttachmentView } from "@/server/services/attachments";
 import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import { formatSlotDate } from "@/lib/slot-time";
+import { Card } from "@/components/ui/card";
 
 // One patient's clinical history, newest visit first. Rendered identically for
 // the doctor, the admin and the patient — the three pages differ in what they
@@ -58,13 +59,13 @@ export default function RecordTimeline({
 }: RecordTimelineProps) {
   if (records.length === 0) {
     return (
-      <div className="rounded-2xl border border-border bg-card py-16 text-center">
+      <Card className="py-16 text-center">
         <FileText className="mx-auto mb-4 h-12 w-12 text-muted-foreground/30" />
         <p className="font-sans font-medium text-muted-foreground">{emptyMessage}</p>
         <p className="mt-1 font-sans text-sm text-muted-foreground">
           يظهر هنا ما تم تشخيصه وإجراؤه في كل زيارة
         </p>
-      </div>
+      </Card>
     );
   }
 

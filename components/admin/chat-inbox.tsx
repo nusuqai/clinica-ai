@@ -61,6 +61,7 @@ import {
   fetchMessages,
 } from "@/server/actions/conversations";
 import type { AgentMessageMetadata } from "@/agent/types";
+import { Card } from "@/components/ui/card";
 
 interface ChatInboxProps {
   conversations: ConversationSummary[];
@@ -724,7 +725,7 @@ export default function ChatInbox({
   }, [activeId]);
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-border bg-card">
+    <Card className="flex h-[calc(100vh-7rem)] overflow-hidden">
       {/* ── Left pane: conversations list ── */}
       <aside className="flex w-72 flex-shrink-0 flex-col border-e border-border">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -1226,6 +1227,6 @@ export default function ChatInbox({
           onSent={handleTemplateSent}
         />
       )}
-    </div>
+    </Card>
   );
 }

@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 // under components/admin/whatsapp rather than moving here.
 import { LANGUAGES } from "@/components/admin/whatsapp/languages";
 import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
+import { Card } from "@/components/ui/card";
 
 const CATEGORIES: { value: TemplateCategory; label: string }[] = [
   { value: "UTILITY", label: "خدمية (Utility)" },
@@ -106,7 +107,7 @@ export default function CreateTemplate({
         <Plus className="h-4 w-4 text-accent" />
         إنشاء قالب جديد
       </h2>
-      <div className="grid grid-cols-1 gap-5 rounded-2xl border border-border bg-card p-5 md:grid-cols-2">
+      <Card className="grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
         {/* Form column */}
         <div className="space-y-4">
           {disabled && (
@@ -280,7 +281,7 @@ export default function CreateTemplate({
             className="md:sticky md:top-4"
           />
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CalendarCheck, CalendarPlus, ChevronDown, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 // Expandable "past visits" / "treatment record" panels on the clinic home page.
 // The panel bodies are rendered on the server and handed in as nodes; this
@@ -65,13 +66,9 @@ export function PatientHistoryPanels({
 
       {/* The open panel, directly under the toggles */}
       {open && (
-        <div
-          id={`panel-${open}`}
-          role="region"
-          className="mt-4 rounded-2xl border border-border bg-card p-4 sm:p-6"
-        >
+        <Card id={`panel-${open}`} role="region" className="mt-4 p-4 sm:p-6">
           {open === "visits" ? pastVisits : records}
-        </div>
+        </Card>
       )}
     </div>
   );

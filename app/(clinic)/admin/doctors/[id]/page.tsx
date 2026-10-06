@@ -21,6 +21,15 @@ import SlotsTab from "./_components/slots-tab";
 import QueuePanel from "./_components/queue-panel";
 import EditDoctorModal from "../_components/edit-doctor-modal";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 
 const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
@@ -88,7 +97,7 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
       </Link>
 
       {/* Doctor header card */}
-      <div className="mb-6 rounded-2xl border border-border bg-card p-6">
+      <Card className="mb-6 p-6">
         <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
           <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10">
             <span className="font-sans text-xl font-bold text-primary">{initials}</span>
@@ -181,7 +190,7 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
             <EditDoctorModal doctor={doctor} branches={branchOptions} specialties={specialties} />
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Tab nav */}
       <div className="mb-6 flex w-fit gap-1 rounded-xl border border-border bg-muted/40 p-1">
@@ -220,41 +229,53 @@ async function AppointmentsContent({ doctorId }: { doctorId: string }) {
   const appointments = await listAppointments(clinic.id, { doctorId });
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+    <Card className="overflow-hidden">
       <div className="border-b border-border px-6 py-4">
         <p className="font-sans text-sm text-muted-foreground">{appointments.length} موعد</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full font-sans text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40">
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">المريض</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">التاريخ</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">الوقت</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">الحالة</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">ملاحظات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
+        <Table className="w-full font-sans text-sm">
+          <TableHeader>
+            <TableRow className="border-b border-border bg-muted/40">
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                المريض
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                التاريخ
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                الوقت
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                الحالة
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                ملاحظات
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="divide-y divide-border">
             {appointments.length === 0 && (
-              <tr>
-                <td colSpan={5} className="py-12 text-center text-muted-foreground">
+              <TableRow>
+                <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
                   لا توجد مواعيد لهذا الطبيب
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
             {appointments.map((appt) => {
               return (
-                <tr key={appt.id} className="transition-colors hover:bg-muted/30">
-                  <td className="px-4 py-3 font-medium text-foreground">{appt.patient.fullName}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                <TableRow key={appt.id} className="transition-colors hover:bg-muted/30">
+                  <TableCell className="px-4 py-3 font-medium text-foreground">
+                    {appt.patient.fullName}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">
                     {appt.slot
                       ? formatSlotDate(appt.slot.date)
                       : appt.bookingDate
                         ? formatSlotDate(appt.bookingDate)
                         : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground" dir="ltr">
                     {appt.slot ? (
                       <>
                         {formatSlotTime(appt.slot.startTime)}
@@ -266,20 +287,20 @@ async function AppointmentsContent({ doctorId }: { doctorId: string }) {
                     ) : (
                       "—"
                     )}
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <AppointmentStatusBadge status={appt.status} />
-                  </td>
-                  <td className="max-w-[200px] truncate px-4 py-3 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="max-w-[200px] truncate px-4 py-3 text-muted-foreground">
                     {appt.patientNotes ?? "—"}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-    </div>
+    </Card>
   );
 }
 
