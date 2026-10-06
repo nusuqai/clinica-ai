@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { X, Clock, CheckCircle, AlertCircle, LogIn, ChevronDown, Users } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { FormField } from "@/components/ui/form-field";
 import {
   bookAppointmentAction,
   bookOrderAppointmentAction,
@@ -82,7 +85,6 @@ export function BookAppointmentModal({
   loginHref = "/login",
   registerHref = "/register",
 }: Props) {
-  const overlayRef = useRef<HTMLDivElement>(null);
   const needsAuth = !isAuthenticated || !isPatient;
   const [step, setStep] = useState<1 | 2>(1);
   const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
@@ -127,27 +129,6 @@ export function BookAppointmentModal({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doctor.id, needsAuth]);
-
-  // Lock background scroll while modal is open
-  useEffect(() => {
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = original;
-    };
-  }, []);
-
-  function handleOverlayClick(e: React.MouseEvent) {
-    if (e.target === overlayRef.current) onClose();
-  }
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
 
   async function toggleDay(date: string, mode: Mode) {
     // Collapse if already open.
@@ -210,12 +191,11 @@ export function BookAppointmentModal({
     .join("");
 
   return (
-    <div
-      ref={overlayRef}
-      onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-    >
-      <div className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[90vh] w-[calc(100%-2rem)] max-w-lg flex-col gap-0 overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-2xl"
+      >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
@@ -223,17 +203,23 @@ export function BookAppointmentModal({
               {initials}
             </div>
             <div>
-              <p className="font-sans text-sm font-semibold text-text">{doctor.name}</p>
-              <p className="font-sans text-xs text-text/50">{doctor.specialty}</p>
+              <DialogTitle className="font-sans text-sm font-semibold leading-normal tracking-normal text-text">
+                {doctor.name}
+              </DialogTitle>
+              <DialogDescription className="font-sans text-xs text-text/50">
+                {doctor.specialty}
+              </DialogDescription>
             </div>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
             aria-label="إغلاق"
-            className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg p-2 text-text/40 transition-colors hover:bg-muted hover:text-text"
+            className="h-10 w-10 text-text/40 hover:text-text [&_svg]:size-5"
           >
-            <X className="h-5 w-5" />
-          </button>
+            <X />
+          </Button>
         </div>
 
         {/* Body */}
@@ -298,9 +284,10 @@ export function BookAppointmentModal({
                     return (
                       <div key={date} className="overflow-hidden rounded-xl border border-border">
                         {/* Day header */}
-                        <button
+                        <Button
+                          variant="ghost"
                           onClick={() => toggleDay(date, mode)}
-                          className="flex w-full items-center justify-between gap-2 px-4 py-3 text-start transition-colors hover:bg-muted/60"
+                          className="h-auto w-full justify-between whitespace-normal rounded-none px-4 py-3 text-start font-normal text-text hover:bg-muted/60 hover:text-text [&_svg]:size-auto"
                         >
                           <span className="flex items-center gap-2">
                             <span className="font-sans text-sm font-medium text-text">
@@ -322,7 +309,7 @@ export function BookAppointmentModal({
                               isOpen ? "rotate-180" : ""
                             }`}
                           />
-                        </button>
+                        </Button>
 
                         {/* Day body — lazy content */}
                         {isOpen && (
@@ -353,8 +340,9 @@ export function BookAppointmentModal({
                                       selection?.mode === "SLOT_BASED" &&
                                       selection.slot.id === slot.id;
                                     return (
-                                      <button
+                                      <Button
                                         key={slot.id}
+                                        variant="outline"
                                         onClick={() =>
                                           setSelection({
                                             mode: "SLOT_BASED",
@@ -362,14 +350,14 @@ export function BookAppointmentModal({
                                             slot,
                                           })
                                         }
-                                        className={`rounded-lg border px-3 py-2 text-center font-sans text-sm font-medium transition-all ${
+                                        className={`h-auto rounded-lg px-3 py-2 transition-all ${
                                           isSel
-                                            ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-                                            : "border-border bg-background text-text hover:border-accent/50"
+                                            ? "border-accent bg-accent text-white shadow-md shadow-accent/20 hover:bg-accent"
+                                            : "bg-background text-text hover:border-accent/50 hover:bg-background"
                                         }`}
                                       >
                                         {formatTime(slot.startTime)}
-                                      </button>
+                                      </Button>
                                     );
                                   })}
                                 </div>
@@ -401,12 +389,9 @@ export function BookAppointmentModal({
               )}
 
               {selection && (
-                <button
-                  onClick={() => setStep(2)}
-                  className="mt-1 w-full rounded-xl bg-primary py-3 font-medium text-white transition-opacity hover:opacity-90"
-                >
+                <Button onClick={() => setStep(2)} className="mt-1 h-12 w-full text-base">
                   التالي — إضافة ملاحظات
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -468,18 +453,20 @@ export function BookAppointmentModal({
                 </div>
               </div>
 
-              <div>
-                <label className="mb-1.5 block font-sans text-sm font-medium text-text">
-                  ملاحظات للطبيب <span className="font-normal text-text/40">(اختياري)</span>
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                  placeholder="اكتب أي أعراض أو معلومات تريد إبلاغ الطبيب بها..."
-                  className="w-full resize-none rounded-xl border border-border bg-background px-4 py-3 font-sans text-sm text-text placeholder:text-text/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-                />
-              </div>
+              <FormField
+                type="textarea"
+                label={
+                  <>
+                    ملاحظات للطبيب <span className="font-normal text-text/40">(اختياري)</span>
+                  </>
+                }
+                labelClassName="text-text"
+                value={notes}
+                onValueChange={setNotes}
+                rows={3}
+                placeholder="اكتب أي أعراض أو معلومات تريد إبلاغ الطبيب بها..."
+                controlClassName="px-4 py-3 text-text placeholder:text-text/30 focus-visible:border-accent focus-visible:ring-accent/20"
+              />
 
               {bookingError && (
                 <div className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -489,19 +476,21 @@ export function BookAppointmentModal({
               )}
 
               <div className="flex gap-3">
-                <button
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setStep(1);
                     setBookingError("");
                   }}
-                  className="flex-1 rounded-xl border border-border py-3 font-medium text-text transition-colors hover:bg-muted"
+                  className="h-12 flex-1 text-base text-text"
                 >
                   رجوع
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="accent"
                   onClick={handleBook}
-                  disabled={isPending}
-                  className="flex-1 rounded-xl bg-accent py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  loading={isPending}
+                  className="h-12 flex-1 text-base"
                 >
                   {isPending
                     ? "جارٍ الحجز..."
@@ -510,7 +499,7 @@ export function BookAppointmentModal({
                         ? "تأكيد الحجز"
                         : "تأكيد حجز الدور"
                       : "تأكيد الحجز"}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -552,18 +541,19 @@ export function BookAppointmentModal({
                 >
                   عرض مواعيدي
                 </Link>
-                <button
+                <Button
+                  variant="outline"
                   onClick={onClose}
-                  className="w-full rounded-xl border border-border py-3 font-medium text-text hover:bg-muted"
+                  className="h-12 w-full text-base text-text"
                 >
                   إغلاق
-                </button>
+                </Button>
               </div>
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -599,16 +589,17 @@ function QueueBox({
             {info.remaining != null && <span>المتبقّي اليوم: {info.remaining} مكان</span>}
           </div>
         </div>
-        <button
+        <Button
+          variant="outline"
           onClick={onSelect}
-          className={`w-full rounded-lg border px-3 py-2.5 text-center font-sans text-sm font-medium transition-all ${
+          className={`h-auto w-full rounded-lg px-3 py-2.5 transition-all ${
             selected
-              ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-              : "border-accent/40 bg-background text-accent hover:bg-accent/5"
+              ? "border-accent bg-accent text-white shadow-md shadow-accent/20 hover:bg-accent hover:text-white"
+              : "border-accent/40 bg-background text-accent hover:bg-accent/5 hover:text-accent"
           }`}
         >
           {selected ? "✓ تم اختيار الحجز" : "احجز مكاني"}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -633,16 +624,17 @@ function QueueBox({
           {info.remaining != null && <span>المتبقّي اليوم: {info.remaining} حجز</span>}
         </div>
       </div>
-      <button
+      <Button
+        variant="outline"
         onClick={onSelect}
-        className={`w-full rounded-lg border px-3 py-2.5 text-center font-sans text-sm font-medium transition-all ${
+        className={`h-auto w-full rounded-lg px-3 py-2.5 transition-all ${
           selected
-            ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-            : "border-accent/40 bg-background text-accent hover:bg-accent/5"
+            ? "border-accent bg-accent text-white shadow-md shadow-accent/20 hover:bg-accent hover:text-white"
+            : "border-accent/40 bg-background text-accent hover:bg-accent/5 hover:text-accent"
         }`}
       >
         {selected ? "✓ تم اختيار الدور" : "احجز دوري"}
-      </button>
+      </Button>
     </div>
   );
 }

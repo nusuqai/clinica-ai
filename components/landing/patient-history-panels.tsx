@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CalendarCheck, CalendarPlus, ChevronDown, FileText } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 // Expandable "past visits" / "treatment record" panels on the clinic home page.
 // The panel bodies are rendered on the server and handed in as nodes; this
@@ -92,13 +93,14 @@ function PanelToggle({
   hint: string;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       onClick={() => onToggle(id)}
       aria-expanded={open}
       aria-controls={`panel-${id}`}
       className={[
-        "group flex items-center gap-3 rounded-2xl border p-4 text-start transition-colors",
+        "group h-auto justify-start gap-3 whitespace-normal rounded-2xl p-4 text-start font-normal [&_svg]:size-auto",
         open
           ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
           : "border-border bg-card hover:border-primary/40 hover:bg-primary/5",
@@ -115,7 +117,7 @@ function PanelToggle({
           open ? "rotate-180 text-primary" : "text-muted-foreground group-hover:text-primary",
         ].join(" ")}
       />
-    </button>
+    </Button>
   );
 }
 

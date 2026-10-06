@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Stethoscope, Menu, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   isAuthenticated: boolean;
@@ -71,13 +72,15 @@ export function MarketingNav({ isAuthenticated, continueHref }: Props) {
           )}
         </div>
 
-        <button
-          className="text-white md:hidden"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-white hover:bg-white/10 hover:text-white md:hidden [&_svg]:size-6"
           onClick={() => setMenuOpen((v) => !v)}
           aria-label="القائمة"
         >
-          {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </button>
+          {menuOpen ? <X /> : <Menu />}
+        </Button>
       </nav>
 
       {menuOpen && (

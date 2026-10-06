@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Phone, DollarSign, Calendar } from "lucide-react";
 import { BookAppointmentModal } from "./book-appointment-modal";
+import { Button } from "@/components/ui/button";
 
 interface Doctor {
   id: string;
@@ -91,17 +92,18 @@ export function DoctorsClient({
         {/* Specialty filter pills */}
         <div className="mb-8 flex flex-wrap justify-center gap-2">
           {specialties.map((spec) => (
-            <button
+            <Button
               key={spec}
+              variant="outline"
               onClick={() => setFilter(spec)}
-              className={`inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 font-sans text-sm font-medium transition-all ${
+              className={`rounded-full px-4 transition-all ${
                 filter === spec
-                  ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-                  : "border-border bg-white text-text/70 hover:border-accent/40 hover:text-accent"
+                  ? "border-accent bg-accent text-white shadow-md shadow-accent/20 hover:bg-accent"
+                  : "bg-white text-text/70 hover:border-accent/40 hover:bg-white hover:text-accent"
               }`}
             >
               {spec}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -165,7 +167,7 @@ export function DoctorsClient({
                 </div>
 
                 {/* Book button */}
-                <button
+                <Button
                   onClick={() =>
                     setBookTarget({
                       id: doctor.id,
@@ -174,10 +176,10 @@ export function DoctorsClient({
                       fee: doctor.consultationFee,
                     })
                   }
-                  className="mt-5 w-full rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-all group-hover:bg-accent"
+                  className="mt-5 w-full transition-all group-hover:bg-accent"
                 >
                   احجز موعد
-                </button>
+                </Button>
               </div>
             );
           })}

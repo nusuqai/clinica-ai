@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Stethoscope, Menu, X, UserRound } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 /** Round avatar (the patient's initials) that opens their profile page. */
 function ProfileAvatar({ name }: { name: string | null }) {
@@ -139,13 +140,15 @@ export function LandingNav({
         </div>
 
         {/* Mobile menu button */}
-        <button
-          className="text-white md:hidden"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-white hover:bg-white/10 hover:text-white md:hidden [&_svg]:size-6"
           onClick={() => setMenuOpen((v) => !v)}
           aria-label="القائمة"
         >
-          {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </button>
+          {menuOpen ? <X /> : <Menu />}
+        </Button>
       </nav>
 
       {/* Mobile menu */}

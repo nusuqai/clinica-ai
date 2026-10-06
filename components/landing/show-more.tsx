@@ -2,6 +2,7 @@
 
 import { createElement, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 // A list that shows the first `initial` items and reveals the rest in place on
 // demand — so the patient sees their full history on the landing page without a
@@ -29,14 +30,15 @@ export function ShowMore({
     <div>
       {createElement(as, { className }, visible)}
       {remaining > 0 && !expanded && (
-        <button
+        <Button
           type="button"
+          variant="link"
           onClick={() => setExpanded(true)}
-          className="mt-3 inline-flex items-center gap-1 font-sans text-sm font-medium text-primary hover:underline"
+          className="mt-3 h-auto gap-1 px-0"
         >
           {moreLabel} ({remaining})
-          <ChevronDown className="h-4 w-4" />
-        </button>
+          <ChevronDown />
+        </Button>
       )}
     </div>
   );

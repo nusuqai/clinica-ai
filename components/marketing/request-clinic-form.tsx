@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle, Loader2 } from "lucide-react";
+import { CheckCircle } from "lucide-react";
 import { submitClinicRequest } from "@/server/actions/clinics";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 
-const inputCls =
-  "w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-sans text-sm text-white placeholder:text-white/40 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all";
+/** Translucent control on the dark marketing section. */
+const darkControl =
+  "h-12 rounded-xl border-white/15 bg-white/5 px-4 text-white placeholder:text-white/40 focus-visible:border-accent focus-visible:ring-accent/30";
 
 export function RequestClinicForm() {
   const [pending, start] = useTransition();
@@ -42,48 +45,50 @@ export function RequestClinicForm() {
       onSubmit={handleSubmit}
       className="grid grid-cols-1 gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 sm:grid-cols-2"
     >
-      <input name="requesterName" placeholder="اسمك" required className={inputCls} />
-      <input
-        name="requesterEmail"
+      <FormField name="requesterName" placeholder="اسمك" required controlClassName={darkControl} />
+      <FormField
         type="email"
+        name="requesterEmail"
         placeholder="بريدك الإلكتروني"
         required
-        className={inputCls}
-        dir="ltr"
+        controlClassName={darkControl}
       />
-      <input
+      <FormField
         name="requestedClinicName"
         placeholder="اسم العيادة"
         required
-        className={`${inputCls} sm:col-span-2`}
+        className="sm:col-span-2"
+        controlClassName={darkControl}
       />
-      <input
+      <FormField
+        type="tel"
         name="requesterPhone"
         placeholder="رقم الهاتف (اختياري)"
-        className={inputCls}
-        dir="ltr"
+        controlClassName={darkControl}
       />
-      <input
+      <FormField
         name="requestedSlug"
         placeholder="المعرّف المفضّل (اختياري)"
-        className={inputCls}
         dir="ltr"
+        controlClassName={darkControl}
       />
-      <textarea
+      <FormField
+        type="textarea"
         name="note"
         rows={3}
         placeholder="أخبرنا المزيد عن عيادتك (اختياري)"
-        className={`${inputCls} resize-none sm:col-span-2`}
+        className="sm:col-span-2"
+        controlClassName={`${darkControl} h-auto py-3`}
       />
       <div className="flex flex-col items-center gap-3 sm:col-span-2">
-        <button
+        <Button
           type="submit"
-          disabled={pending}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-7 py-3.5 font-medium text-white shadow-lg shadow-accent/25 transition-all hover:-translate-y-0.5 disabled:opacity-60 sm:w-auto"
+          variant="accent"
+          loading={pending}
+          className="h-auto w-full px-7 py-3.5 text-base shadow-lg shadow-accent/25 transition-all hover:-translate-y-0.5 hover:bg-accent sm:w-auto"
         >
-          {pending && <Loader2 className="h-4 w-4 animate-spin" />}
           {pending ? "جارٍ الإرسال..." : "اطلب إنشاء عيادتك"}
-        </button>
+        </Button>
         {error && <span className="text-sm text-red-300">{error}</span>}
       </div>
     </form>
