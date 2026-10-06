@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { updateMyProfileAction } from "@/server/actions/doctor";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import SpecialtySelect, {
   type SpecialtyOption,
 } from "@/app/(clinic)/admin/doctors/_components/specialty-select";
@@ -57,70 +59,51 @@ export default function ProfileForm({
       )}
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <label className="font-sans text-sm font-medium text-foreground">الاسم الكامل *</label>
-          <input
-            name="fullName"
-            type="text"
-            required
-            defaultValue={fullName}
-            placeholder="د. محمد أحمد"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+        <FormField
+          name="fullName"
+          label="الاسم الكامل *"
+          required
+          defaultValue={fullName}
+          placeholder="د. محمد أحمد"
+        />
 
-        <div className="space-y-1.5">
-          <label className="font-sans text-sm font-medium text-foreground">رقم الهاتف</label>
-          <input
-            name="phone"
-            type="tel"
-            defaultValue={phone ?? ""}
-            placeholder="+966 5XXXXXXXX"
-            dir="ltr"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+        <FormField
+          type="tel"
+          name="phone"
+          label="رقم الهاتف"
+          defaultValue={phone ?? ""}
+          placeholder="+966 5XXXXXXXX"
+        />
 
         <div>
           <SpecialtySelect specialties={specialties} defaultSpecialtyId={specialtyId} />
         </div>
 
-        <div className="space-y-1.5">
-          <label className="font-sans text-sm font-medium text-foreground">
-            رسوم الاستشارة (ر.س)
-          </label>
-          <input
-            name="consultationFee"
-            type="number"
-            min="0"
-            step="0.01"
-            defaultValue={consultationFee ?? ""}
-            placeholder="150"
-            dir="ltr"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+        <FormField
+          type="number"
+          name="consultationFee"
+          label="رسوم الاستشارة (ر.س)"
+          min="0"
+          step="0.01"
+          defaultValue={consultationFee ?? ""}
+          placeholder="150"
+        />
 
-        <div className="space-y-1.5 sm:col-span-2">
-          <label className="font-sans text-sm font-medium text-foreground">نبذة عنك</label>
-          <textarea
-            name="bio"
-            rows={4}
-            defaultValue={bio ?? ""}
-            placeholder="اكتب نبذة مختصرة عن خبرتك وتخصصك..."
-            className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+        <FormField
+          type="textarea"
+          name="bio"
+          label="نبذة عنك"
+          rows={4}
+          defaultValue={bio ?? ""}
+          placeholder="اكتب نبذة مختصرة عن خبرتك وتخصصك..."
+          className="sm:col-span-2"
+        />
       </div>
 
       <div className="flex items-center gap-4 pt-2">
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded-xl bg-primary px-6 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-        >
+        <Button type="submit" loading={isPending} className="px-6">
           {isPending ? "جارٍ الحفظ..." : "حفظ التغييرات"}
-        </button>
+        </Button>
       </div>
     </form>
   );

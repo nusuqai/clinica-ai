@@ -6,6 +6,10 @@ import { DayOfWeek, AvailabilityMode } from "@prisma/client";
 import { createRuleAction, deleteRuleAction, getDoctorRulesAction } from "@/server/actions/admin";
 import { queueCapacityHint } from "@/lib/availability/queue-capacity";
 import { isQueueMode, MODE_BADGE_AR } from "@/lib/availability/modes";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
 
 export interface EditorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -58,6 +62,17 @@ const DAYS_ORDER: DayOfWeek[] = [
 ];
 
 const SLOT_DURATIONS = [15, 20, 30, 45, 60];
+
+const DAY_OPTIONS = DAYS_ORDER.map((day) => ({ value: day, label: DAY_LABELS[day] }));
+const DURATION_OPTIONS = SLOT_DURATIONS.map((d) => ({ value: String(d), label: `${d} دقيقة` }));
+const MODE_OPTIONS = [
+  { value: AvailabilityMode.SLOT_BASED, label: "مواعيد بأوقات ثابتة" },
+  { value: AvailabilityMode.ORDER_BASED, label: "نظام الدور (طابور)" },
+  { value: AvailabilityMode.ARRIVAL_BASED, label: "أسبقية الحضور" },
+];
+
+/** Compact label for the new-rule row. */
+const smallLabel = "text-xs text-muted-foreground";
 
 /** The branch's opening window for a weekday, as a helper hint + validity flag. */
 function branchWindow(
@@ -229,9 +244,9 @@ export default function AvailabilityRulesEditor(props: Props) {
   return (
     <div className="space-y-3 border-t border-border pt-4">
       <div className="flex items-center justify-between">
-        <label className="font-sans text-sm font-medium text-foreground">
+        <Label className="font-sans text-sm font-medium text-foreground">
           قواعد التوفر (المواعيد الأسبوعية)
-        </label>
+        </Label>
         <span className="font-sans text-xs text-muted-foreground">{rows.length} قاعدة</span>
       </div>
 
@@ -290,33 +305,27 @@ export default function AvailabilityRulesEditor(props: Props) {
                     <span className="font-sans text-sm text-muted-foreground" dir="ltr">
                       {rule.startTime} – {rule.endTime}
                     </span>
-                    <span className="rounded-full bg-primary/10 px-2 py-0.5 font-sans text-xs text-primary">
-                      {branchName(rule.branchId)}
-                    </span>
+                    <Badge>{branchName(rule.branchId)}</Badge>
                     {isQueueMode(rule.mode) ? (
-                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-sans text-xs font-medium text-indigo-700">
+                      <Badge variant="indigo">
                         {MODE_BADGE_AR[rule.mode]}
                         {rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : ""}
-                      </span>
+                      </Badge>
                     ) : (
-                      <span className="rounded-full bg-muted px-2 py-0.5 font-sans text-xs text-muted-foreground">
-                        {rule.slotDurationMin} دقيقة / موعد
-                      </span>
+                      <Badge variant="muted">{rule.slotDurationMin} دقيقة / موعد</Badge>
                     )}
-                    {rule.referralOnly && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-sans text-xs font-medium text-amber-700">
-                        تحويلات فقط
-                      </span>
-                    )}
-                    <button
+                    {rule.referralOnly && <Badge variant="warning">تحويلات فقط</Badge>}
+                    <Button
                       type="button"
+                      variant="ghost-destructive"
+                      size="icon"
                       onClick={() => removeRow(idx)}
                       disabled={isPending}
                       title="حذف القاعدة"
-                      className="ms-auto rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
+                      className="ms-auto"
                     >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                      <Trash2 />
+                    </Button>
                   </div>
                   {rule.note && (
                     <p className="mt-1 font-sans text-xs text-muted-foreground">{rule.note}</p>
@@ -329,121 +338,79 @@ export default function AvailabilityRulesEditor(props: Props) {
           {/* New rule row */}
           <div className="space-y-3 rounded-xl border border-dashed border-border bg-card p-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1 sm:col-span-2">
-                <label className="font-sans text-xs font-medium text-muted-foreground">الفرع</label>
-                <select
-                  value={nBranch}
-                  onChange={(e) => setNBranch(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <FormField
+                type="select"
+                label="الفرع"
+                labelClassName={smallLabel}
+                value={nBranch}
+                onValueChange={setNBranch}
+                options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                className="sm:col-span-2"
+              />
 
-              <div className="space-y-1 sm:col-span-2">
-                <label className="font-sans text-xs font-medium text-muted-foreground">
-                  يوم الأسبوع
-                </label>
-                <select
-                  value={nDay}
-                  onChange={(e) => setNDay(e.target.value as DayOfWeek)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  {DAYS_ORDER.map((day) => (
-                    <option key={day} value={day}>
-                      {DAY_LABELS[day]}
-                    </option>
-                  ))}
-                </select>
-                {dayHint && (
-                  <p
-                    className={[
-                      "mt-1 font-sans text-xs",
-                      dayHint.ok ? "text-muted-foreground" : "text-red-600",
-                    ].join(" ")}
-                  >
-                    {dayHint.text}
-                  </p>
-                )}
-              </div>
+              <FormField
+                type="select"
+                label="يوم الأسبوع"
+                labelClassName={smallLabel}
+                value={nDay}
+                onValueChange={(v) => setNDay(v as DayOfWeek)}
+                options={DAY_OPTIONS}
+                className="sm:col-span-2"
+                hint={
+                  dayHint && (
+                    <span className={dayHint.ok ? undefined : "text-red-600"}>{dayHint.text}</span>
+                  )
+                }
+              />
 
-              <div className="space-y-1">
-                <label className="font-sans text-xs font-medium text-muted-foreground">
-                  وقت البداية
-                </label>
-                <input
-                  type="time"
-                  value={nStart}
-                  onChange={(e) => setNStart(e.target.value)}
-                  dir="ltr"
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-              </div>
+              <FormField
+                type="time"
+                label="وقت البداية"
+                labelClassName={smallLabel}
+                value={nStart}
+                onValueChange={setNStart}
+              />
 
-              <div className="space-y-1">
-                <label className="font-sans text-xs font-medium text-muted-foreground">
-                  وقت النهاية
-                </label>
-                <input
-                  type="time"
-                  value={nEnd}
-                  onChange={(e) => setNEnd(e.target.value)}
-                  dir="ltr"
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-              </div>
+              <FormField
+                type="time"
+                label="وقت النهاية"
+                labelClassName={smallLabel}
+                value={nEnd}
+                onValueChange={setNEnd}
+              />
 
-              <div className="space-y-1 sm:col-span-2">
-                <label className="font-sans text-xs font-medium text-muted-foreground">
-                  نظام الجدولة
-                </label>
-                <select
-                  value={nMode}
-                  onChange={(e) => setNMode(e.target.value as AvailabilityMode)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value={AvailabilityMode.SLOT_BASED}>مواعيد بأوقات ثابتة</option>
-                  <option value={AvailabilityMode.ORDER_BASED}>نظام الدور (طابور)</option>
-                  <option value={AvailabilityMode.ARRIVAL_BASED}>أسبقية الحضور</option>
-                </select>
-                {nMode === AvailabilityMode.ARRIVAL_BASED && (
-                  <p className="mt-1 font-sans text-xs text-muted-foreground">
-                    يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور
-                    (يسجّل الاستقبال وصوله).
-                  </p>
-                )}
-              </div>
+              <FormField
+                type="select"
+                label="نظام الجدولة"
+                labelClassName={smallLabel}
+                value={nMode}
+                onValueChange={(v) => setNMode(v as AvailabilityMode)}
+                options={MODE_OPTIONS}
+                className="sm:col-span-2"
+                hint={
+                  nMode === AvailabilityMode.ARRIVAL_BASED &&
+                  "يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور (يسجّل الاستقبال وصوله)."
+                }
+              />
 
               {isQueue ? (
                 <>
-                  <div className="space-y-1">
-                    <label className="font-sans text-xs font-medium text-muted-foreground">
-                      دقائق الكشف التقديرية
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={nEstDur}
-                      onChange={(e) => setNEstDur(Number(e.target.value))}
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-sans text-xs font-medium text-muted-foreground">
-                      الحد الأقصى للحجوزات
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={nCap}
-                      onChange={(e) => setNCap(Number(e.target.value))}
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
+                  <FormField
+                    type="number"
+                    label="دقائق الكشف التقديرية"
+                    labelClassName={smallLabel}
+                    min={1}
+                    value={nEstDur}
+                    onValueChange={(v) => setNEstDur(Number(v))}
+                  />
+                  <FormField
+                    type="number"
+                    label="الحد الأقصى للحجوزات"
+                    labelClassName={smallLabel}
+                    min={1}
+                    value={nCap}
+                    onValueChange={(v) => setNCap(Number(v))}
+                  />
                   {(() => {
                     const hint = queueCapacityHint(nStart, nEnd, nEstDur, nCap);
                     if (!hint) return null;
@@ -461,62 +428,41 @@ export default function AvailabilityRulesEditor(props: Props) {
                   })()}
                 </>
               ) : (
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="font-sans text-xs font-medium text-muted-foreground">
-                    مدة الموعد
-                  </label>
-                  <select
-                    value={nDur}
-                    onChange={(e) => setNDur(Number(e.target.value))}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    {SLOT_DURATIONS.map((d) => (
-                      <option key={d} value={d}>
-                        {d} دقيقة
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <FormField
+                  type="select"
+                  label="مدة الموعد"
+                  labelClassName={smallLabel}
+                  value={String(nDur)}
+                  onValueChange={(v) => setNDur(Number(v))}
+                  options={DURATION_OPTIONS}
+                  className="sm:col-span-2"
+                />
               )}
 
-              <label className="flex cursor-pointer items-start gap-2 sm:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={nReferralOnly}
-                  onChange={(e) => setNReferralOnly(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
-                />
-                <span className="font-sans text-xs text-foreground">
-                  تحويلات فقط
-                  <span className="block text-muted-foreground">
-                    لا يحجزها المرضى مباشرةً؛ تُحجز عبر تحويل من طبيب بعد الكشف.
-                  </span>
-                </span>
-              </label>
+              <FormField
+                type="checkbox"
+                label="تحويلات فقط"
+                labelClassName="cursor-pointer text-xs font-normal"
+                hint="لا يحجزها المرضى مباشرةً؛ تُحجز عبر تحويل من طبيب بعد الكشف."
+                checked={nReferralOnly}
+                onCheckedChange={setNReferralOnly}
+                className="sm:col-span-2"
+              />
 
-              <div className="space-y-1 sm:col-span-2">
-                <label className="font-sans text-xs font-medium text-muted-foreground">
-                  ملاحظة (اختياري)
-                </label>
-                <input
-                  type="text"
-                  value={nNote}
-                  onChange={(e) => setNNote(e.target.value)}
-                  placeholder="مثال: تحويلات حالات القلب فقط"
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-              </div>
+              <FormField
+                label="ملاحظة (اختياري)"
+                labelClassName={smallLabel}
+                value={nNote}
+                onValueChange={setNNote}
+                placeholder="مثال: تحويلات حالات القلب فقط"
+                className="sm:col-span-2"
+              />
             </div>
 
-            <button
-              type="button"
-              onClick={addRow}
-              disabled={!canAdd}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4" />
+            <Button type="button" onClick={addRow} disabled={!canAdd}>
+              <Plus />
               {props.mode === "live" && isPending ? "جارٍ الإضافة..." : "إضافة قاعدة"}
-            </button>
+            </Button>
           </div>
 
           {props.mode === "draft" && rows.length > 0 && (

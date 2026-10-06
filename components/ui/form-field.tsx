@@ -415,8 +415,9 @@ function SelectControl({
           ))}
         </SelectContent>
       </Select>
-      {name && (
-        // Visually hidden but focusable-by-validation, so `required` blocks submit like a native select.
+      {(name || required) && (
+        // Visually hidden but focusable-by-validation, so `required` blocks submit like a
+        // native select. Rendered for `required` alone too, when the caller submits elsewhere.
         <input
           tabIndex={-1}
           aria-hidden
@@ -507,7 +508,7 @@ function DateControl({
           }}
         />
       </PopoverContent>
-      {name && (
+      {(name || required) && (
         <input
           tabIndex={-1}
           aria-hidden

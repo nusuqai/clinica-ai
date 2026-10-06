@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { CheckCircle, AlertCircle, Save } from "lucide-react";
 import { updateProfileAction } from "@/server/actions/patient";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 
 interface Props {
   email: string;
@@ -35,50 +37,42 @@ export function ProfileForm({ email, defaultFullName, defaultPhone }: Props) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {/* Email (read-only) */}
-      <div>
-        <label className="mb-1.5 block font-sans text-sm font-medium text-foreground">
-          البريد الإلكتروني
-        </label>
-        <input
-          type="email"
-          value={email}
-          readOnly
-          className="w-full cursor-not-allowed rounded-xl border border-border bg-muted px-4 py-3 font-sans text-sm text-muted-foreground"
-        />
-        <p className="mt-1 font-sans text-xs text-muted-foreground">
-          لا يمكن تغيير البريد الإلكتروني
-        </p>
-      </div>
+      <FormField
+        type="email"
+        label="البريد الإلكتروني"
+        value={email}
+        readOnly
+        hint="لا يمكن تغيير البريد الإلكتروني"
+        controlClassName="h-12 cursor-not-allowed bg-muted px-4 text-muted-foreground"
+      />
 
       {/* Full name */}
-      <div>
-        <label className="mb-1.5 block font-sans text-sm font-medium text-foreground">
-          الاسم الكامل <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="text"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          required
-          placeholder="أدخل اسمك الكامل"
-          className="w-full rounded-xl border border-border bg-background px-4 py-3 font-sans text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-        />
-      </div>
+      <FormField
+        label={
+          <>
+            الاسم الكامل <span className="text-red-500">*</span>
+          </>
+        }
+        value={fullName}
+        onValueChange={setFullName}
+        required
+        placeholder="أدخل اسمك الكامل"
+        controlClassName="h-12 px-4"
+      />
 
       {/* Phone */}
-      <div>
-        <label className="mb-1.5 block font-sans text-sm font-medium text-foreground">
-          رقم الهاتف <span className="font-normal text-muted-foreground">(اختياري)</span>
-        </label>
-        <input
-          type="tel"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="01xxxxxxxxx"
-          dir="ltr"
-          className="w-full rounded-xl border border-border bg-background px-4 py-3 font-sans text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-        />
-      </div>
+      <FormField
+        type="tel"
+        label={
+          <>
+            رقم الهاتف <span className="font-normal text-muted-foreground">(اختياري)</span>
+          </>
+        }
+        value={phone}
+        onValueChange={setPhone}
+        placeholder="01xxxxxxxxx"
+        controlClassName="h-12 px-4"
+      />
 
       {/* Feedback */}
       {success && (
@@ -94,14 +88,10 @@ export function ProfileForm({ email, defaultFullName, defaultPhone }: Props) {
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={isPending}
-        className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-primary px-6 py-3 font-sans text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-      >
-        <Save className="h-4 w-4" />
+      <Button type="submit" disabled={isPending} className="h-11 self-start px-6">
+        <Save />
         {isPending ? "جارٍ الحفظ..." : "حفظ التغييرات"}
-      </button>
+      </Button>
     </form>
   );
 }

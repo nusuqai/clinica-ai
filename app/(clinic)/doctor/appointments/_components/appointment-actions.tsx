@@ -8,6 +8,8 @@ import {
   updateDoctorNotesAction,
 } from "@/server/actions/doctor";
 import Modal from "@/components/admin/modal";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import { AppointmentStatus } from "@prisma/client";
 
 interface AppointmentActionsProps {
@@ -65,13 +67,15 @@ export default function AppointmentActions({
 
   if (!canConfirm && !canComplete && !canCancel) {
     return (
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => setNotesOpen(true)}
-        className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
       >
-        <ClipboardList className="h-3.5 w-3.5" />
+        <ClipboardList />
         ملاحظات
-      </button>
+      </Button>
     );
   }
 
@@ -79,55 +83,65 @@ export default function AppointmentActions({
     <>
       <div className="flex flex-wrap items-center gap-1.5">
         {canConfirm && (
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => handleStatus(AppointmentStatus.CONFIRMED)}
             disabled={isPending}
             title="تأكيد الموعد"
-            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 font-sans text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
+            className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 [&_svg]:size-3.5"
           >
-            <Check className="h-3.5 w-3.5" />
+            <Check />
             تأكيد
-          </button>
+          </Button>
         )}
         {canComplete && (
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => handleStatus(AppointmentStatus.COMPLETED)}
             disabled={isPending}
             title="تحديد كمكتمل"
-            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 font-sans text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+            className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 [&_svg]:size-3.5"
           >
-            <CheckCircle className="h-3.5 w-3.5" />
+            <CheckCircle />
             مكتمل
-          </button>
+          </Button>
         )}
         {canNoShow && (
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => handleStatus(AppointmentStatus.NO_SHOW)}
             disabled={isPending}
             title="لم يحضر"
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 font-sans text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-50"
+            className="border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 [&_svg]:size-3.5"
           >
             لم يحضر
-          </button>
+          </Button>
         )}
         {canCancel && (
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setCancelOpen(true)}
             disabled={isPending}
             title="إلغاء الموعد"
-            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 font-sans text-xs font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
+            className="border-red-200 bg-red-50 text-red-600 hover:bg-red-100 [&_svg]:size-3.5"
           >
-            <XCircle className="h-3.5 w-3.5" />
+            <XCircle />
             إلغاء
-          </button>
+          </Button>
         )}
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setNotesOpen(true)}
-          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
         >
-          <ClipboardList className="h-3.5 w-3.5" />
+          <ClipboardList />
           ملاحظات
-        </button>
+        </Button>
       </div>
 
       {error && <p className="mt-1 font-sans text-xs text-red-600">{error}</p>}
@@ -143,33 +157,26 @@ export default function AppointmentActions({
           <p className="font-sans text-sm text-muted-foreground">
             هل أنت متأكد من إلغاء هذا الموعد؟ يمكنك إضافة سبب للإلغاء.
           </p>
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">
-              سبب الإلغاء (اختياري)
-            </label>
-            <textarea
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.target.value)}
-              rows={3}
-              placeholder="أدخل سبب الإلغاء..."
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
+          <FormField
+            type="textarea"
+            label="سبب الإلغاء (اختياري)"
+            value={cancelReason}
+            onValueChange={setCancelReason}
+            rows={3}
+            placeholder="أدخل سبب الإلغاء..."
+          />
           <div className="flex gap-3">
-            <button
+            <Button
+              variant="destructive"
               onClick={() => handleStatus(AppointmentStatus.CANCELLED, cancelReason || undefined)}
-              disabled={isPending}
-              className="flex-1 rounded-xl bg-red-500 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-60"
+              loading={isPending}
+              className="flex-1"
             >
               {isPending ? "جارٍ الإلغاء..." : "تأكيد الإلغاء"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCancelOpen(false)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setCancelOpen(false)}>
               تراجع
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
@@ -182,32 +189,22 @@ export default function AppointmentActions({
         width="max-w-md"
       >
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">ملاحظات الطبيب</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={5}
-              placeholder="أضف ملاحظاتك الطبية هنا..."
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
+          <FormField
+            type="textarea"
+            label="ملاحظات الطبيب"
+            value={notes}
+            onValueChange={setNotes}
+            rows={5}
+            placeholder="أضف ملاحظاتك الطبية هنا..."
+          />
           {error && <p className="font-sans text-sm text-red-600">{error}</p>}
           <div className="flex gap-3">
-            <button
-              onClick={handleSaveNotes}
-              disabled={isPending}
-              className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-            >
+            <Button onClick={handleSaveNotes} loading={isPending} className="flex-1">
               {isPending ? "جارٍ الحفظ..." : "حفظ الملاحظات"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setNotesOpen(false)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setNotesOpen(false)}>
               إلغاء
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>

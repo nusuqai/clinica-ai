@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Pencil, Loader2 } from "lucide-react";
+import { Pencil } from "lucide-react";
 import Modal from "@/components/admin/modal";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import { updatePatientProfileAction, changePatientEmailAction } from "@/server/actions/admin";
 
 interface Props {
@@ -48,23 +50,18 @@ export default function EditPatientModal({ userId, fullName, phone, email, claim
     });
   }
 
-  const field =
-    "block w-full px-4 py-2.5 font-sans text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-card transition-all";
-  const label = "block text-sm font-medium text-muted-foreground font-sans mb-1.5";
-
   return (
     <>
-      <button
+      <Button
         onClick={() => {
           setError(null);
           setInfo(null);
           setOpen(true);
         }}
-        className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
       >
-        <Pencil className="h-4 w-4" />
+        <Pencil />
         تعديل
-      </button>
+      </Button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="تعديل بيانات المريض">
         {error && (
@@ -80,60 +77,42 @@ export default function EditPatientModal({ userId, fullName, phone, email, claim
 
         {/* Profile (name + phone) */}
         <form onSubmit={handleProfile} className="space-y-4">
-          <div>
-            <label className={label}>الاسم الكامل</label>
-            <input name="fullName" defaultValue={fullName} required className={field} />
-          </div>
-          <div>
-            <label className={label}>رقم الهاتف</label>
-            <input
-              name="phone"
-              defaultValue={phone ?? ""}
-              dir="ltr"
-              inputMode="numeric"
-              placeholder="201014443991"
-              className={`${field} text-start`}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={savingProfile}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-sans text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-          >
-            {savingProfile && <Loader2 className="h-4 w-4 animate-spin" />}
+          <FormField name="fullName" label="الاسم الكامل" defaultValue={fullName} required />
+          <FormField
+            type="tel"
+            name="phone"
+            label="رقم الهاتف"
+            defaultValue={phone ?? ""}
+            inputMode="numeric"
+            placeholder="201014443991"
+            controlClassName="text-start"
+          />
+          <Button type="submit" loading={savingProfile} className="font-semibold">
             حفظ البيانات
-          </button>
+          </Button>
         </form>
 
         <hr className="my-6 border-border" />
 
         {/* Email change (with verification) */}
         <form onSubmit={handleEmail} className="space-y-4">
-          <div>
-            <label className={label}>البريد الإلكتروني</label>
-            <input
-              name="email"
-              type="email"
-              defaultValue={claimed ? email : ""}
-              dir="ltr"
-              required
-              placeholder="name@example.com"
-              className={`${field} text-start`}
-            />
-            <p className="mt-1.5 font-sans text-xs text-muted-foreground">
-              {claimed
+          <FormField
+            type="email"
+            name="email"
+            label="البريد الإلكتروني"
+            defaultValue={claimed ? email : ""}
+            required
+            placeholder="name@example.com"
+            controlClassName="text-start"
+            hint={
+              claimed
                 ? "سيُرسل رابط تأكيد إلى البريد الجديد، ولن يتغيّر قبل الضغط عليه."
-                : "هذا الحساب لم يُفعّل بريدَه بعد (مُسجّل عبر واتساب). أدخل بريداً لإرسال رابط التأكيد."}
-            </p>
-          </div>
-          <button
-            type="submit"
-            disabled={savingEmail}
-            className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 font-sans text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-60"
-          >
-            {savingEmail && <Loader2 className="h-4 w-4 animate-spin" />}
+                : "هذا الحساب لم يُفعّل بريدَه بعد (مُسجّل عبر واتساب). أدخل بريداً لإرسال رابط التأكيد."
+            }
+          />
+          <Button type="submit" variant="outline" loading={savingEmail} className="font-semibold">
             تغيير البريد (بتأكيد)
-          </button>
+          </Button>
         </form>
       </Modal>
     </>

@@ -22,6 +22,9 @@ import {
 } from "@/server/actions/admin";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import Modal from "@/components/admin/modal";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
 import type { AppointmentStatus, AvailabilityMode } from "@prisma/client";
 
 interface QueuePatient {
@@ -181,21 +184,17 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="font-sans text-sm font-medium text-foreground">اليوم</label>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          dir="ltr"
-          className="rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-        <button
+        <Label className="font-sans text-sm font-medium text-foreground">اليوم</Label>
+        <FormField type="date" value={date} onValueChange={setDate} className="w-52" />
+        <Button
+          variant="outline"
+          size="sm"
           onClick={load}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+          className="h-10 text-muted-foreground hover:border-primary/50 hover:bg-transparent hover:text-primary [&_svg]:size-3.5"
         >
-          <RefreshCw className="h-3.5 w-3.5" />
+          <RefreshCw />
           تحديث
-        </button>
+        </Button>
       </div>
 
       {error && (
@@ -245,7 +244,9 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
               )}
             </div>
             <div className="ms-auto flex items-center gap-2">
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={toggleTracking}
                 disabled={isPending}
                 title={
@@ -253,15 +254,11 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                     ? "إخفاء الدور الحالي عن المرضى"
                     : "إظهار الدور الحالي للمرضى"
                 }
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50"
+                className="h-9 text-muted-foreground hover:border-primary/50 hover:bg-transparent hover:text-primary [&_svg]:size-3.5"
               >
-                {queue.trackCurrentOrder ? (
-                  <Eye className="h-3.5 w-3.5" />
-                ) : (
-                  <EyeOff className="h-3.5 w-3.5" />
-                )}
+                {queue.trackCurrentOrder ? <Eye /> : <EyeOff />}
                 {queue.trackCurrentOrder ? "التتبّع مفعّل" : "التتبّع متوقف"}
-              </button>
+              </Button>
               {queueFinished ? (
                 <div className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 font-sans text-sm font-medium text-emerald-700">
                   <CheckCircle2 className="h-4 w-4" />
@@ -270,29 +267,26 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
               ) : (
                 <>
                   {currentPatient && (
-                    <button
+                    <Button
+                      variant="outline"
                       onClick={() => skip(currentPatient.id)}
                       disabled={isPending}
                       title="تخطّي المريض الحالي مؤقتاً (غير حاضر)"
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 px-3 py-2 font-sans text-sm font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50"
+                      className="border-amber-300 px-3 text-amber-700 hover:bg-amber-50"
                     >
-                      <SkipForward className="h-4 w-4" />
+                      <SkipForward />
                       تخطّي
-                    </button>
+                    </Button>
                   )}
                   {(currentPatient || hasNext) && (
-                    <button
-                      onClick={handleNextClick}
-                      disabled={isPending}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
+                    <Button onClick={handleNextClick} disabled={isPending}>
+                      <ChevronLeft />
                       {currentPatient
                         ? "إنهاء واستدعاء التالي"
                         : queue.currentOrder === 0
                           ? "بدء الكشف"
                           : "المريض التالي"}
-                    </button>
+                    </Button>
                   )}
                 </>
               )}
@@ -326,15 +320,15 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                         )}
                       </div>
                     </div>
-                    <button
+                    <Button
                       onClick={() => markArrived(p.id)}
                       disabled={isPending}
                       title="تسجيل وصول المريض وإعطاؤه رقم الدور"
-                      className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                      className="shrink-0 px-3"
                     >
-                      <UserCheck className="h-4 w-4" />
+                      <UserCheck />
                       وصل
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -408,15 +402,17 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                           controls above and act on the current patient. Not shown
                           for a recalled patient who is already being served. */}
                       {showSkipped && (
-                        <button
+                        <Button
+                          variant="link"
+                          size="sm"
                           onClick={() => recall(p.id)}
                           disabled={isPending}
                           title="إرجاع المريض ليُخدَم الآن"
-                          className="inline-flex items-center gap-1 font-sans text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                          className="h-auto gap-1 px-0 [&_svg]:size-3.5"
                         >
-                          <Undo2 className="h-3.5 w-3.5" />
+                          <Undo2 />
                           إرجاع
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -439,20 +435,17 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
             التالي.
           </p>
           <div className="flex justify-end gap-2">
-            <button
+            <Button
+              variant="outline"
               onClick={() => setConfirmNext(false)}
               disabled={isPending}
-              className="rounded-xl border border-border px-4 py-2 font-sans text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+              className="text-muted-foreground"
             >
               إلغاء
-            </button>
-            <button
-              onClick={performNext}
-              disabled={isPending}
-              className="rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
+            </Button>
+            <Button onClick={performNext} loading={isPending}>
               {isPending ? "جارٍ..." : "تأكيد الإنهاء والانتقال"}
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>

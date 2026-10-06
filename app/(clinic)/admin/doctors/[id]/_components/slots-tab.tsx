@@ -8,6 +8,7 @@ import {
   getDayQueueAction,
 } from "@/server/actions/admin";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
+import { Button } from "@/components/ui/button";
 import type { ScheduleDaySummary } from "@/server/services/doctors";
 import type { AppointmentStatus } from "@prisma/client";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
@@ -147,9 +148,10 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
         return (
           <div key={date} className="overflow-hidden rounded-2xl border border-border bg-card">
             {/* Collapsible header */}
-            <button
+            <Button
+              variant="ghost"
               onClick={() => toggleDay(day)}
-              className="flex w-full items-center justify-between bg-muted/30 px-5 py-3 text-start transition-colors hover:bg-muted/50"
+              className="h-auto w-full justify-between whitespace-normal rounded-none bg-muted/30 px-5 py-3 text-start font-normal hover:bg-muted/50"
             >
               <div className="flex min-w-0 flex-wrap items-center gap-3">
                 <span className="font-sans text-sm font-medium text-foreground">
@@ -198,7 +200,7 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
               ) : (
                 <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
               )}
-            </button>
+            </Button>
 
             {/* Lazy body */}
             {isOpen && (
@@ -284,19 +286,20 @@ function SlotList({
             </div>
 
             {!isBooked && (
-              <button
+              <Button
+                variant={isBlocked ? "ghost" : "ghost-destructive"}
+                size="icon"
                 onClick={() => onToggleBlock(slot.id)}
                 disabled={isPending}
                 title={isBlocked ? "إتاحة الموعد" : "حظر الموعد"}
-                className={[
-                  "flex-shrink-0 rounded-lg p-1.5 transition-colors disabled:opacity-40",
+                className={
                   isBlocked
-                    ? "text-emerald-600 hover:bg-emerald-50"
-                    : "text-muted-foreground hover:bg-red-50 hover:text-red-500",
-                ].join(" ")}
+                    ? "shrink-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
+                    : "shrink-0"
+                }
               >
-                {isBlocked ? <CheckCircle className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-              </button>
+                {isBlocked ? <CheckCircle /> : <Ban />}
+              </Button>
             )}
           </div>
         );

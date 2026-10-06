@@ -3,6 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import {
   createSpecialtyAction,
   renameSpecialtyAction,
@@ -14,9 +17,6 @@ export interface SpecialtyView {
   name: string;
   doctorCount: number;
 }
-
-const inputCls =
-  "border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30";
 
 export default function SpecialtiesManager({ specialties }: { specialties: SpecialtyView[] }) {
   const router = useRouter();
@@ -57,20 +57,16 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
 
       {/* Add */}
       <form onSubmit={handleAdd} className="mb-6 flex gap-2">
-        <input
+        <FormField
           value={newName}
-          onChange={(e) => setNewName(e.target.value)}
+          onValueChange={setNewName}
           placeholder="اسم تخصص جديد (مثال: طب الأطفال)"
-          className={inputCls + " flex-1"}
+          className="flex-1"
         />
-        <button
-          type="submit"
-          disabled={isPending || !newName.trim()}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" />
+        <Button type="submit" disabled={isPending || !newName.trim()}>
+          <Plus />
           إضافة
-        </button>
+        </Button>
       </form>
 
       {specialties.length === 0 ? (
@@ -85,13 +81,15 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
             <div key={s.id} className="flex items-center gap-3 px-5 py-3">
               {editingId === s.id ? (
                 <>
-                  <input
+                  <FormField
                     value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className={inputCls + " flex-1"}
+                    onValueChange={setEditName}
+                    className="flex-1"
                     autoFocus
                   />
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() =>
                       run(
                         () => renameSpecialtyAction(s.id, editName.trim()),
@@ -100,35 +98,38 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
                     }
                     disabled={isPending || !editName.trim()}
                     title="حفظ"
-                    className="rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
+                    className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
                   >
-                    <Check className="h-4 w-4" />
-                  </button>
-                  <button
+                    <Check />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => setEditingId(null)}
                     title="إلغاء"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
                   >
-                    <X className="h-4 w-4" />
-                  </button>
+                    <X />
+                  </Button>
                 </>
               ) : (
                 <>
                   <span className="flex-1 font-sans font-medium text-foreground">{s.name}</span>
-                  <span className="rounded-full bg-muted px-2 py-0.5 font-sans text-xs text-muted-foreground">
-                    {s.doctorCount} طبيب
-                  </span>
-                  <button
+                  <Badge variant="muted">{s.doctorCount} طبيب</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => {
                       setEditingId(s.id);
                       setEditName(s.name);
                     }}
                     title="تعديل"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                    className="hover:bg-primary/10 hover:text-primary"
                   >
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                  <button
+                    <Pencil />
+                  </Button>
+                  <Button
+                    variant="ghost-destructive"
+                    size="icon"
                     onClick={() =>
                       run(() => {
                         if (
@@ -144,10 +145,9 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
                     }
                     disabled={isPending}
                     title="حذف"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                    <Trash2 />
+                  </Button>
                 </>
               )}
             </div>

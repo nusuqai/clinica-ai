@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { updateClinicInfoAction } from "@/server/actions/admin";
 import { PhoneType, SocialPlatform } from "@prisma/client";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
 
 export interface ClinicPhoneView {
   type: PhoneType;
@@ -39,9 +42,7 @@ const PLATFORMS: { value: SocialPlatform; label: string }[] = [
   { value: SocialPlatform.OTHER, label: "أخرى" },
 ];
 
-const inputCls =
-  "w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30";
-const labelCls = "text-sm font-medium text-foreground font-sans";
+const sectionLabel = "font-sans text-sm font-medium text-foreground";
 
 export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
   const router = useRouter();
@@ -95,37 +96,34 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
       )}
 
       <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
-        <div className="space-y-1.5">
-          <label className={labelCls}>اسم العيادة</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
-        </div>
-        <div className="space-y-1.5">
-          <label className={labelCls}>نبذة عن العيادة</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            className={inputCls + " resize-none"}
-          />
-        </div>
+        <FormField label="اسم العيادة" value={name} onValueChange={setName} />
+        <FormField
+          type="textarea"
+          label="نبذة عن العيادة"
+          value={description}
+          onValueChange={setDescription}
+          rows={4}
+        />
       </div>
 
       {/* Phones */}
       <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
         <div className="flex items-center justify-between">
-          <span className={labelCls}>أرقام الهواتف العامة</span>
-          <button
+          <Label className={sectionLabel}>أرقام الهواتف العامة</Label>
+          <Button
             type="button"
+            variant="link"
+            size="sm"
             onClick={() =>
               setPhones((p) => [
                 ...p,
                 { type: PhoneType.MOBILE, number: "", label: null, isPrimary: p.length === 0 },
               ])
             }
-            className="inline-flex items-center gap-1 font-sans text-sm text-primary hover:underline"
+            className="h-auto px-0 text-sm [&_svg]:size-3.5"
           >
-            <Plus className="h-3.5 w-3.5" /> إضافة رقم
-          </button>
+            <Plus /> إضافة رقم
+          </Button>
         </div>
         <p className="font-sans text-xs text-muted-foreground">
           الرقم المعلّم كـ«أساسي» هو الرقم الرئيسي للعيادة.
@@ -135,45 +133,41 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
         )}
         {phones.map((p, i) => (
           <div key={i} className="flex flex-wrap items-center gap-2">
-            <select
+            <FormField
+              type="select"
               value={p.type}
-              onChange={(e) => updatePhone(i, { type: e.target.value as PhoneType })}
-              className="rounded-xl border border-border bg-background px-2 py-2 font-sans text-sm"
-            >
-              {PHONE_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <input
+              onValueChange={(v) => updatePhone(i, { type: v as PhoneType })}
+              options={PHONE_TYPES}
+              className="w-28"
+            />
+            <FormField
+              type="tel"
               value={p.number}
-              onChange={(e) => updatePhone(i, { number: e.target.value })}
+              onValueChange={(v) => updatePhone(i, { number: v })}
               placeholder="الرقم"
-              dir="ltr"
-              className="min-w-[120px] flex-1 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
+              className="min-w-[120px] flex-1"
             />
-            <input
+            <FormField
               value={p.label ?? ""}
-              onChange={(e) => updatePhone(i, { label: e.target.value || null })}
+              onValueChange={(v) => updatePhone(i, { label: v || null })}
               placeholder="وصف"
-              className="w-28 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
+              className="w-28"
             />
-            <label className="flex items-center gap-1 font-sans text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={p.isPrimary}
-                onChange={(e) => updatePhone(i, { isPrimary: e.target.checked })}
-              />
-              أساسي
-            </label>
-            <button
+            <FormField
+              type="checkbox"
+              label="أساسي"
+              labelClassName="text-xs font-normal text-muted-foreground"
+              checked={p.isPrimary}
+              onCheckedChange={(v) => updatePhone(i, { isPrimary: v })}
+            />
+            <Button
               type="button"
+              variant="ghost-destructive"
+              size="icon"
               onClick={() => setPhones((prev) => prev.filter((_, idx) => idx !== i))}
-              className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500"
             >
-              <X className="h-4 w-4" />
-            </button>
+              <X />
+            </Button>
           </div>
         ))}
       </div>
@@ -181,68 +175,59 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
       {/* Socials */}
       <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
         <div className="flex items-center justify-between">
-          <span className={labelCls}>حسابات التواصل الاجتماعي</span>
-          <button
+          <Label className={sectionLabel}>حسابات التواصل الاجتماعي</Label>
+          <Button
             type="button"
+            variant="link"
+            size="sm"
             onClick={() =>
               setSocials((s) => [...s, { platform: SocialPlatform.FACEBOOK, url: "" }])
             }
-            className="inline-flex items-center gap-1 font-sans text-sm text-primary hover:underline"
+            className="h-auto px-0 text-sm [&_svg]:size-3.5"
           >
-            <Plus className="h-3.5 w-3.5" /> إضافة حساب
-          </button>
+            <Plus /> إضافة حساب
+          </Button>
         </div>
         {socials.length === 0 && (
           <p className="font-sans text-xs text-muted-foreground">لا توجد حسابات مضافة.</p>
         )}
         {socials.map((s, i) => (
           <div key={i} className="flex flex-wrap items-center gap-2">
-            <select
+            <FormField
+              type="select"
               value={s.platform}
-              onChange={(e) =>
+              onValueChange={(v) =>
                 setSocials((prev) =>
-                  prev.map((x, idx) =>
-                    idx === i ? { ...x, platform: e.target.value as SocialPlatform } : x
-                  )
+                  prev.map((x, idx) => (idx === i ? { ...x, platform: v as SocialPlatform } : x))
                 )
               }
-              className="rounded-xl border border-border bg-background px-2 py-2 font-sans text-sm"
-            >
-              {PLATFORMS.map((pl) => (
-                <option key={pl.value} value={pl.value}>
-                  {pl.label}
-                </option>
-              ))}
-            </select>
-            <input
+              options={PLATFORMS}
+              className="w-36"
+            />
+            <FormField
+              type="url"
               value={s.url}
-              onChange={(e) =>
-                setSocials((prev) =>
-                  prev.map((x, idx) => (idx === i ? { ...x, url: e.target.value } : x))
-                )
+              onValueChange={(v) =>
+                setSocials((prev) => prev.map((x, idx) => (idx === i ? { ...x, url: v } : x)))
               }
               placeholder="https://…"
-              dir="ltr"
-              className="min-w-[160px] flex-1 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
+              className="min-w-[160px] flex-1"
             />
-            <button
+            <Button
               type="button"
+              variant="ghost-destructive"
+              size="icon"
               onClick={() => setSocials((prev) => prev.filter((_, idx) => idx !== i))}
-              className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500"
             >
-              <X className="h-4 w-4" />
-            </button>
+              <X />
+            </Button>
           </div>
         ))}
       </div>
 
-      <button
-        type="submit"
-        disabled={isPending}
-        className="rounded-xl bg-primary px-6 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-      >
+      <Button type="submit" loading={isPending} className="px-6">
         {isPending ? "جارٍ الحفظ..." : "حفظ التغييرات"}
-      </button>
+      </Button>
     </form>
   );
 }

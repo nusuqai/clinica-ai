@@ -10,6 +10,10 @@ import {
   toggleMyRuleActiveAction,
 } from "@/server/actions/doctor";
 import Modal from "@/components/admin/modal";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Switch } from "@/components/ui/switch";
 import { DayOfWeek, AvailabilityMode, type AvailabilityRule } from "@prisma/client";
 import { formatSlotDate } from "@/lib/slot-time";
 import { queueCapacityHint } from "@/lib/availability/queue-capacity";
@@ -150,15 +154,14 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
     <div>
       <div className="mb-4 flex items-center justify-between">
         <p className="font-sans text-sm text-muted-foreground">{rules.length} قاعدة</p>
-        <button
+        <Button
           onClick={() => setAddOpen(true)}
           disabled={branches.length === 0}
           title={branches.length === 0 ? "لم يتم تعيينك لأي فرع بعد" : undefined}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
-          <Plus className="h-4 w-4" />
+          <Plus />
           إضافة قاعدة
-        </button>
+        </Button>
       </div>
 
       {branches.length === 0 && (
@@ -199,39 +202,22 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                   <span className="font-sans text-sm text-muted-foreground" dir="ltr">
                     {rule.startTime} – {rule.endTime}
                   </span>
-                  {rule.branch && (
-                    <span className="rounded-full bg-primary/10 px-2 py-0.5 font-sans text-xs text-primary">
-                      {rule.branch.name}
-                    </span>
-                  )}
+                  {rule.branch && <Badge>{rule.branch.name}</Badge>}
                   {isQueueMode(rule.mode) ? (
-                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-sans text-xs font-medium text-indigo-700">
+                    <Badge variant="indigo">
                       {MODE_BADGE_AR[rule.mode]}
                       {rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : ""}
                       {rule.estimatedDurationMin != null
                         ? ` · ~${rule.estimatedDurationMin} د/مريض`
                         : ""}
-                    </span>
+                    </Badge>
                   ) : (
-                    <span className="rounded-full bg-muted px-2 py-0.5 font-sans text-xs text-muted-foreground">
-                      {rule.slotDurationMin} دقيقة / موعد
-                    </span>
+                    <Badge variant="muted">{rule.slotDurationMin} دقيقة / موعد</Badge>
                   )}
-                  <span
-                    className={[
-                      "rounded-full px-2 py-0.5 font-sans text-xs font-medium",
-                      rule.isActive
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-gray-100 text-gray-500",
-                    ].join(" ")}
-                  >
+                  <Badge variant={rule.isActive ? "success" : "neutral"}>
                     {rule.isActive ? "نشطة" : "معطّلة"}
-                  </span>
-                  {rule.referralOnly && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 font-sans text-xs font-medium text-amber-700">
-                      تحويلات فقط
-                    </span>
-                  )}
+                  </Badge>
+                  {rule.referralOnly && <Badge variant="warning">تحويلات فقط</Badge>}
                 </div>
                 {rule.note && (
                   <p className="mb-1 font-sans text-xs text-muted-foreground">{rule.note}</p>
@@ -249,46 +235,40 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
               </div>
 
               <div className="flex flex-shrink-0 items-center gap-2">
-                <button
-                  onClick={() => handleToggleActive(rule)}
+                <Switch
+                  checked={rule.isActive}
+                  onCheckedChange={() => handleToggleActive(rule)}
                   disabled={isPending}
                   title={rule.isActive ? "تعطيل" : "تفعيل"}
-                  className={[
-                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50",
-                    rule.isActive ? "bg-emerald-500" : "bg-muted-foreground/30",
-                  ].join(" ")}
-                >
-                  <span
-                    className={[
-                      "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform",
-                      rule.isActive ? "-translate-x-4" : "-translate-x-1",
-                    ].join(" ")}
-                  />
-                </button>
+                  className="data-[state=checked]:bg-emerald-500"
+                />
 
                 {/* Queue (order-based) rules need no slot generation — the day
                     is implicitly available and order numbers are handed out on
                     booking, so the generate button is slot-based only. */}
                 {!isQueueMode(rule.mode) && (
-                  <button
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => handleGenerate(rule.id)}
                     disabled={generatingId === rule.id}
                     title="توليد مواعيد للـ 30 يوم القادمة"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50"
+                    className="text-muted-foreground hover:border-primary/50 hover:bg-transparent hover:text-primary [&_svg]:size-3.5"
                   >
-                    <Zap className="h-3.5 w-3.5" />
+                    <Zap />
                     {generatingId === rule.id ? "جارٍ التوليد..." : "توليد مواعيد"}
-                  </button>
+                  </Button>
                 )}
 
-                <button
+                <Button
+                  variant="ghost-destructive"
+                  size="icon"
                   onClick={() => handleDelete(rule.id)}
                   disabled={isPending}
                   title="حذف القاعدة"
-                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
                 >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                  <Trash2 />
+                </Button>
               </div>
             </div>
           ))}
@@ -298,119 +278,84 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="إضافة قاعدة توفر">
         <form onSubmit={handleAdd} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="font-sans text-sm font-medium text-foreground">الفرع *</label>
-              <select
-                name="branchId"
-                required
-                value={selBranch}
-                onChange={(e) => setSelBranch(e.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="font-sans text-sm font-medium text-foreground">يوم الأسبوع *</label>
-              <select
-                name="dayOfWeek"
-                required
-                value={selDay}
-                onChange={(e) => setSelDay(e.target.value as DayOfWeek)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {DAYS_ORDER.map((day) => (
-                  <option key={day} value={day}>
-                    {DAY_LABELS[day]}
-                  </option>
-                ))}
-              </select>
-              {branchWindow && (
-                <p
-                  className={[
-                    "mt-1 font-sans text-xs",
-                    branchWindow.ok ? "text-muted-foreground" : "text-red-600",
-                  ].join(" ")}
-                >
-                  {branchWindow.text}
-                </p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">وقت البداية *</label>
-              <input
-                name="startTime"
-                type="time"
-                required
-                defaultValue="09:00"
-                onChange={(e) => setSelStart(e.target.value)}
-                dir="ltr"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">وقت النهاية *</label>
-              <input
-                name="endTime"
-                type="time"
-                required
-                defaultValue="17:00"
-                onChange={(e) => setSelEnd(e.target.value)}
-                dir="ltr"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="font-sans text-sm font-medium text-foreground">نظام الجدولة</label>
-              <select
-                name="mode"
-                value={selMode}
-                onChange={(e) => setSelMode(e.target.value as AvailabilityMode)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                <option value={AvailabilityMode.SLOT_BASED}>مواعيد بأوقات ثابتة</option>
-                <option value={AvailabilityMode.ORDER_BASED}>نظام الدور (طابور)</option>
-                <option value={AvailabilityMode.ARRIVAL_BASED}>أسبقية الحضور</option>
-              </select>
-              {selMode === AvailabilityMode.ARRIVAL_BASED && (
-                <p className="mt-1 font-sans text-xs text-muted-foreground">
-                  يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور
-                  (يسجّل الاستقبال وصوله).
-                </p>
-              )}
-            </div>
+            <FormField
+              type="select"
+              name="branchId"
+              label="الفرع *"
+              required
+              value={selBranch}
+              onValueChange={setSelBranch}
+              options={branches.map((b) => ({ value: b.id, label: b.name }))}
+              className="sm:col-span-2"
+            />
+            <FormField
+              type="select"
+              name="dayOfWeek"
+              label="يوم الأسبوع *"
+              required
+              value={selDay}
+              onValueChange={(v) => setSelDay(v as DayOfWeek)}
+              options={DAYS_ORDER.map((day) => ({ value: day, label: DAY_LABELS[day] }))}
+              className="sm:col-span-2"
+              hint={
+                branchWindow && (
+                  <span className={branchWindow.ok ? undefined : "text-red-600"}>
+                    {branchWindow.text}
+                  </span>
+                )
+              }
+            />
+            <FormField
+              type="time"
+              name="startTime"
+              label="وقت البداية *"
+              required
+              defaultValue="09:00"
+              onValueChange={setSelStart}
+            />
+            <FormField
+              type="time"
+              name="endTime"
+              label="وقت النهاية *"
+              required
+              defaultValue="17:00"
+              onValueChange={setSelEnd}
+            />
+            <FormField
+              type="select"
+              name="mode"
+              label="نظام الجدولة"
+              value={selMode}
+              onValueChange={(v) => setSelMode(v as AvailabilityMode)}
+              options={[
+                { value: AvailabilityMode.SLOT_BASED, label: "مواعيد بأوقات ثابتة" },
+                { value: AvailabilityMode.ORDER_BASED, label: "نظام الدور (طابور)" },
+                { value: AvailabilityMode.ARRIVAL_BASED, label: "أسبقية الحضور" },
+              ]}
+              className="sm:col-span-2"
+              hint={
+                selMode === AvailabilityMode.ARRIVAL_BASED &&
+                "يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور (يسجّل الاستقبال وصوله)."
+              }
+            />
             {isQueue ? (
               <>
-                <div className="space-y-1.5">
-                  <label className="font-sans text-sm font-medium text-foreground">
-                    دقائق الكشف التقديرية
-                  </label>
-                  <input
-                    name="estimatedDurationMin"
-                    type="number"
-                    min={1}
-                    defaultValue={10}
-                    onChange={(e) => setSelEstDur(Number(e.target.value))}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="font-sans text-sm font-medium text-foreground">
-                    الحد الأقصى للحجوزات
-                  </label>
-                  <input
-                    name="dailyCap"
-                    type="number"
-                    min={1}
-                    defaultValue={50}
-                    onChange={(e) => setSelCap(Number(e.target.value))}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
+                <FormField
+                  type="number"
+                  name="estimatedDurationMin"
+                  label="دقائق الكشف التقديرية"
+                  min={1}
+                  defaultValue={10}
+                  onValueChange={(v) => setSelEstDur(Number(v))}
+                />
+                <FormField
+                  type="number"
+                  name="dailyCap"
+                  label="الحد الأقصى للحجوزات"
+                  min={1}
+                  defaultValue={50}
+                  onValueChange={(v) => setSelCap(Number(v))}
+                />
                 {capHint && (
                   <p
                     className={`rounded-xl px-3 py-2 font-sans text-sm sm:col-span-2 ${
@@ -424,64 +369,43 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
                 )}
               </>
             ) : (
-              <div className="space-y-1.5 sm:col-span-2">
-                <label className="font-sans text-sm font-medium text-foreground">مدة الموعد</label>
-                <select
-                  name="slotDurationMin"
-                  defaultValue="30"
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  {[15, 20, 30, 45, 60].map((d) => (
-                    <option key={d} value={d}>
-                      {d} دقيقة
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <FormField
+                type="select"
+                name="slotDurationMin"
+                label="مدة الموعد"
+                defaultValue="30"
+                options={[15, 20, 30, 45, 60].map((d) => ({
+                  value: String(d),
+                  label: `${d} دقيقة`,
+                }))}
+                className="sm:col-span-2"
+              />
             )}
-            <label className="flex cursor-pointer items-start gap-2 sm:col-span-2">
-              <input
-                type="checkbox"
-                name="referralOnly"
-                className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
-              />
-              <span className="font-sans text-sm text-foreground">
-                تحويلات فقط
-                <span className="block text-xs text-muted-foreground">
-                  لا يحجزها المرضى مباشرةً؛ تُحجز عبر تحويل من طبيب بعد الكشف.
-                </span>
-              </span>
-            </label>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="font-sans text-sm font-medium text-foreground">
-                ملاحظة (اختياري)
-              </label>
-              <input
-                name="note"
-                type="text"
-                placeholder="مثال: تحويلات حالات القلب فقط"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
+            <FormField
+              type="checkbox"
+              name="referralOnly"
+              label="تحويلات فقط"
+              labelClassName="cursor-pointer font-normal"
+              hint="لا يحجزها المرضى مباشرةً؛ تُحجز عبر تحويل من طبيب بعد الكشف."
+              className="sm:col-span-2"
+            />
+            <FormField
+              name="note"
+              label="ملاحظة (اختياري)"
+              placeholder="مثال: تحويلات حالات القلب فقط"
+              className="sm:col-span-2"
+            />
           </div>
           <p className="font-sans text-xs text-muted-foreground">
             سيتم تلقائياً توليد مواعيد الـ 30 يوم القادمة عند الحفظ.
           </p>
           <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-            >
+            <Button type="submit" loading={isPending} className="flex-1">
               {isPending ? "جارٍ الحفظ..." : "حفظ القاعدة"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setAddOpen(false)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
               إلغاء
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>

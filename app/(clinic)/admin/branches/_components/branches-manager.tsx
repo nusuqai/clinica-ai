@@ -12,6 +12,10 @@ import {
   setMainBranchAction,
 } from "@/server/actions/admin";
 import { DayOfWeek, PhoneType } from "@prisma/client";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -114,9 +118,11 @@ function formFromBranch(b?: BranchView): FormState {
   };
 }
 
-const inputCls =
-  "w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30";
-const labelCls = "text-sm font-medium text-foreground font-sans";
+const DAY_MODE_OPTIONS: { value: DayMode; label: string }[] = [
+  { value: "unset", label: "غير محدد" },
+  { value: "open", label: "مفتوح" },
+  { value: "closed", label: "مغلق (عطلة)" },
+];
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -234,13 +240,10 @@ export default function BranchesManager({
   return (
     <div>
       <div className="mb-4 flex justify-end">
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
+        <Button onClick={openCreate}>
+          <Plus />
           إضافة فرع
-        </button>
+        </Button>
       </div>
 
       {branches.length === 0 ? (
@@ -256,53 +259,53 @@ export default function BranchesManager({
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-heading font-bold text-foreground">{b.name}</h3>
                     {b.isMain && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-sans text-xs font-medium text-amber-700">
+                      <Badge variant="warning">
                         <Star className="h-3 w-3" /> رئيسي
-                      </span>
+                      </Badge>
                     )}
-                    <span
-                      className={[
-                        "rounded-full px-2 py-0.5 font-sans text-xs font-medium",
-                        b.isActive
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-gray-100 text-gray-500",
-                      ].join(" ")}
-                    >
+                    <Badge variant={b.isActive ? "success" : "neutral"}>
                       {b.isActive ? "نشط" : "معطّل"}
-                    </span>
+                    </Badge>
                   </div>
                   <p className="mt-1 font-sans text-xs text-muted-foreground">
                     {b.doctorCount} طبيب
                   </p>
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-1">
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => openEdit(b)}
                     title="تعديل"
-                    className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                    className="hover:bg-primary/10 hover:text-primary"
                   >
-                    <Pencil className="h-4 w-4" />
-                  </button>
+                    <Pencil />
+                  </Button>
                   {!b.isMain && (
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => runAction(() => setMainBranchAction(b.id))}
                       disabled={isPending}
                       title="تعيين كفرع رئيسي"
-                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-amber-50 hover:text-amber-500"
+                      className="hover:bg-amber-50 hover:text-amber-500"
                     >
-                      <Star className="h-4 w-4" />
-                    </button>
+                      <Star />
+                    </Button>
                   )}
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => runAction(() => setBranchActiveAction(b.id, !b.isActive))}
                     disabled={isPending}
                     title={b.isActive ? "تعطيل" : "تفعيل"}
-                    className="rounded-lg p-1.5 font-sans text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     {b.isActive ? "تعطيل" : "تفعيل"}
-                  </button>
+                  </Button>
                   {!b.isMain && (
-                    <button
+                    <Button
+                      variant="ghost-destructive"
+                      size="icon"
                       onClick={() =>
                         runAction(
                           () => deleteBranchAction(b.id),
@@ -311,10 +314,9 @@ export default function BranchesManager({
                       }
                       disabled={isPending}
                       title="حذف"
-                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500"
                     >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                      <Trash2 />
+                    </Button>
                   )}
                 </div>
               </div>
@@ -367,68 +369,56 @@ export default function BranchesManager({
           )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className={labelCls}>اسم الفرع *</label>
-              <input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="فرع المعادي"
-                className={inputCls}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className={labelCls}>العنوان</label>
-              <input
-                value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-                className={inputCls}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className={labelCls}>رابط خرائط جوجل</label>
-              <input
-                value={form.mapsUrl}
-                onChange={(e) => setForm({ ...form, mapsUrl: e.target.value })}
-                dir="ltr"
-                placeholder="https://maps.google.com/…"
-                className={inputCls}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className={labelCls}>أقرب معلم</label>
-              <input
-                value={form.nearestLandmark}
-                onChange={(e) => setForm({ ...form, nearestLandmark: e.target.value })}
-                className={inputCls}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className={labelCls}>كيفية الوصول</label>
-              <textarea
-                value={form.directions}
-                onChange={(e) => setForm({ ...form, directions: e.target.value })}
-                rows={2}
-                className={inputCls + " resize-none"}
-              />
-            </div>
+            <FormField
+              label="اسم الفرع *"
+              value={form.name}
+              onValueChange={(v) => setForm({ ...form, name: v })}
+              placeholder="فرع المعادي"
+              className="sm:col-span-2"
+            />
+            <FormField
+              label="العنوان"
+              value={form.address}
+              onValueChange={(v) => setForm({ ...form, address: v })}
+              className="sm:col-span-2"
+            />
+            <FormField
+              type="url"
+              label="رابط خرائط جوجل"
+              value={form.mapsUrl}
+              onValueChange={(v) => setForm({ ...form, mapsUrl: v })}
+              placeholder="https://maps.google.com/…"
+              className="sm:col-span-2"
+            />
+            <FormField
+              label="أقرب معلم"
+              value={form.nearestLandmark}
+              onValueChange={(v) => setForm({ ...form, nearestLandmark: v })}
+              className="sm:col-span-2"
+            />
+            <FormField
+              type="textarea"
+              label="كيفية الوصول"
+              value={form.directions}
+              onValueChange={(v) => setForm({ ...form, directions: v })}
+              rows={2}
+              className="sm:col-span-2"
+            />
           </div>
 
           {/* Parking */}
           <div className="space-y-3 rounded-xl border border-border p-4">
-            <label className="flex items-center gap-2 font-sans text-sm font-medium text-foreground">
-              <input
-                type="checkbox"
-                checked={form.hasParking}
-                onChange={(e) => setForm({ ...form, hasParking: e.target.checked })}
-              />
-              يوجد موقف سيارات
-            </label>
+            <FormField
+              type="checkbox"
+              label="يوجد موقف سيارات"
+              checked={form.hasParking}
+              onCheckedChange={(v) => setForm({ ...form, hasParking: v })}
+            />
             {form.hasParking && (
-              <input
+              <FormField
                 value={form.parkingInfo}
-                onChange={(e) => setForm({ ...form, parkingInfo: e.target.value })}
+                onValueChange={(v) => setForm({ ...form, parkingInfo: v })}
                 placeholder="وصف الموقف (مدفوع/مجاني، سعة، مكانه…)"
-                className={inputCls}
               />
             )}
           </div>
@@ -436,66 +426,66 @@ export default function BranchesManager({
           {/* Phones */}
           <div className="space-y-3 rounded-xl border border-border p-4">
             <div className="flex items-center justify-between">
-              <span className={labelCls}>أرقام هواتف الفرع</span>
-              <button
+              <Label className="font-sans text-sm font-medium text-foreground">
+                أرقام هواتف الفرع
+              </Label>
+              <Button
                 type="button"
+                variant="link"
+                size="sm"
                 onClick={addPhone}
-                className="inline-flex items-center gap-1 font-sans text-sm text-primary hover:underline"
+                className="h-auto px-0 text-sm [&_svg]:size-3.5"
               >
-                <Plus className="h-3.5 w-3.5" /> إضافة رقم
-              </button>
+                <Plus /> إضافة رقم
+              </Button>
             </div>
             {form.phones.length === 0 && (
               <p className="font-sans text-xs text-muted-foreground">لا توجد أرقام مضافة.</p>
             )}
             {form.phones.map((p, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2">
-                <select
+                <FormField
+                  type="select"
                   value={p.type}
-                  onChange={(e) => updatePhone(i, { type: e.target.value as PhoneType })}
-                  className="rounded-xl border border-border bg-background px-2 py-2 font-sans text-sm"
-                >
-                  {PHONE_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-                <input
+                  onValueChange={(v) => updatePhone(i, { type: v as PhoneType })}
+                  options={PHONE_TYPES}
+                  className="w-28"
+                />
+                <FormField
+                  type="tel"
                   value={p.number}
-                  onChange={(e) => updatePhone(i, { number: e.target.value })}
+                  onValueChange={(v) => updatePhone(i, { number: v })}
                   placeholder="الرقم"
-                  dir="ltr"
-                  className="min-w-[120px] flex-1 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
+                  className="min-w-[120px] flex-1"
                 />
-                <input
+                <FormField
                   value={p.label ?? ""}
-                  onChange={(e) => updatePhone(i, { label: e.target.value || null })}
+                  onValueChange={(v) => updatePhone(i, { label: v || null })}
                   placeholder="وصف (استقبال…)"
-                  className="w-28 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
+                  className="w-28"
                 />
-                <label className="flex items-center gap-1 font-sans text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={p.isPrimary}
-                    onChange={(e) => updatePhone(i, { isPrimary: e.target.checked })}
-                  />
-                  أساسي
-                </label>
-                <button
+                <FormField
+                  type="checkbox"
+                  label="أساسي"
+                  labelClassName="text-xs font-normal text-muted-foreground"
+                  checked={p.isPrimary}
+                  onCheckedChange={(v) => updatePhone(i, { isPrimary: v })}
+                />
+                <Button
                   type="button"
+                  variant="ghost-destructive"
+                  size="icon"
                   onClick={() => removePhone(i)}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500"
                 >
-                  <X className="h-4 w-4" />
-                </button>
+                  <X />
+                </Button>
               </div>
             ))}
           </div>
 
           {/* Working hours */}
           <div className="space-y-2 rounded-xl border border-border p-4">
-            <span className={labelCls}>ساعات العمل</span>
+            <Label className="font-sans text-sm font-medium text-foreground">ساعات العمل</Label>
             <p className="font-sans text-xs text-muted-foreground">
               اترك اليوم بدون تحديد إن لم ترغب في تقييده. تُستخدم هذه الساعات للتحقق من مواعيد
               الأطباء.
@@ -506,31 +496,30 @@ export default function BranchesManager({
                 return (
                   <div key={d.key} className="flex flex-wrap items-center gap-2">
                     <span className="w-16 font-sans text-sm text-foreground">{d.label}</span>
-                    <select
+                    <FormField
+                      type="select"
                       value={s.mode}
-                      onChange={(e) => setDay(d.key, { mode: e.target.value as DayMode })}
-                      className="rounded-xl border border-border bg-background px-2 py-1.5 font-sans text-sm"
-                    >
-                      <option value="unset">غير محدد</option>
-                      <option value="open">مفتوح</option>
-                      <option value="closed">مغلق (عطلة)</option>
-                    </select>
+                      onValueChange={(v) => setDay(d.key, { mode: v as DayMode })}
+                      options={DAY_MODE_OPTIONS}
+                      className="w-36"
+                      controlClassName="h-9"
+                    />
                     {s.mode === "open" && (
                       <>
-                        <input
+                        <FormField
                           type="time"
                           value={s.openTime}
-                          onChange={(e) => setDay(d.key, { openTime: e.target.value })}
-                          dir="ltr"
-                          className="rounded-xl border border-border bg-background px-2 py-1.5 font-sans text-sm"
+                          onValueChange={(v) => setDay(d.key, { openTime: v })}
+                          className="w-32"
+                          controlClassName="h-9"
                         />
                         <span className="text-sm text-muted-foreground">–</span>
-                        <input
+                        <FormField
                           type="time"
                           value={s.closeTime}
-                          onChange={(e) => setDay(d.key, { closeTime: e.target.value })}
-                          dir="ltr"
-                          className="rounded-xl border border-border bg-background px-2 py-1.5 font-sans text-sm"
+                          onValueChange={(v) => setDay(d.key, { closeTime: v })}
+                          className="w-32"
+                          controlClassName="h-9"
                         />
                       </>
                     )}
@@ -541,20 +530,12 @@ export default function BranchesManager({
           </div>
 
           <div className="flex gap-3 pt-1">
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-            >
+            <Button type="submit" loading={isPending} className="flex-1">
               {isPending ? "جارٍ الحفظ..." : editing ? "حفظ التعديلات" : "إضافة الفرع"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
               إلغاء
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>

@@ -3,9 +3,18 @@
 import { useState, useTransition, useRef } from "react";
 import { UserPlus } from "lucide-react";
 import Modal from "@/components/admin/modal";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
 import { createDoctorAction } from "@/server/actions/admin";
 import SpecialtySelect, { type SpecialtyOption } from "./specialty-select";
 import AvailabilityRulesEditor, { type EditorBranchHours } from "./availability-rules-editor";
+
+export const DOCTOR_TITLE_OPTIONS = [
+  { value: "", label: "غير محدد" },
+  { value: "SPECIALIST", label: "أخصائي" },
+  { value: "CONSULTANT", label: "استشاري" },
+];
 
 export interface BranchOption {
   id: string;
@@ -52,13 +61,10 @@ export default function AddDoctorModal({
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
-      >
-        <UserPlus className="h-4 w-4" />
+      <Button onClick={() => setOpen(true)}>
+        <UserPlus />
         إضافة طبيب
-      </button>
+      </Button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="إضافة طبيب جديد" width="max-w-2xl">
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
@@ -70,33 +76,16 @@ export default function AddDoctorModal({
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Full name */}
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">
-                الاسم الكامل *
-              </label>
-              <input
-                name="fullName"
-                required
-                placeholder="د. أحمد محمد"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
+            <FormField name="fullName" label="الاسم الكامل *" required placeholder="د. أحمد محمد" />
 
             {/* Title (rank) */}
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">
-                الدرجة (اختياري)
-              </label>
-              <select
-                name="title"
-                defaultValue=""
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                <option value="">غير محدد</option>
-                <option value="SPECIALIST">أخصائي</option>
-                <option value="CONSULTANT">استشاري</option>
-              </select>
-            </div>
+            <FormField
+              type="select"
+              name="title"
+              label="الدرجة (اختياري)"
+              defaultValue=""
+              options={DOCTOR_TITLE_OPTIONS}
+            />
 
             {/* Specialty */}
             <div>
@@ -104,68 +93,49 @@ export default function AddDoctorModal({
             </div>
 
             {/* Years of experience */}
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">
-                سنوات الخبرة (اختياري)
-              </label>
-              <input
-                name="yearsOfExperience"
-                type="number"
-                min={0}
-                dir="ltr"
-                placeholder="10"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
+            <FormField
+              type="number"
+              name="yearsOfExperience"
+              label="سنوات الخبرة (اختياري)"
+              min={0}
+              placeholder="10"
+            />
 
             {/* Examination fee */}
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">
-                سعر الكشف (اختياري)
-              </label>
-              <input
-                name="examinationFee"
-                type="number"
-                min={0}
-                step="0.01"
-                dir="ltr"
-                placeholder="200.00"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
+            <FormField
+              type="number"
+              name="examinationFee"
+              label="سعر الكشف (اختياري)"
+              min={0}
+              step="0.01"
+              placeholder="200.00"
+            />
 
             {/* Consultation (follow-up) fee */}
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">
-                سعر الاستشارة (اختياري)
-              </label>
-              <input
-                name="consultationFee"
-                type="number"
-                min={0}
-                step="0.01"
-                dir="ltr"
-                placeholder="150.00"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
+            <FormField
+              type="number"
+              name="consultationFee"
+              label="سعر الاستشارة (اختياري)"
+              min={0}
+              step="0.01"
+              placeholder="150.00"
+            />
           </div>
 
           {/* Flags */}
           <div className="flex flex-wrap gap-4">
-            <label className="flex items-center gap-2 font-sans text-sm font-medium text-foreground">
-              <input type="checkbox" name="requiresAdvanceBooking" defaultChecked />
-              يحتاج حجزاً مسبقاً
-            </label>
-            <label className="flex items-center gap-2 font-sans text-sm font-medium text-foreground">
-              <input type="checkbox" name="acceptsChildren" />
-              يكشف على الأطفال
-            </label>
+            <FormField
+              type="checkbox"
+              name="requiresAdvanceBooking"
+              label="يحتاج حجزاً مسبقاً"
+              defaultChecked
+            />
+            <FormField type="checkbox" name="acceptsChildren" label="يكشف على الأطفال" />
           </div>
 
           {/* Branches */}
           <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">فروع العمل</label>
+            <Label className="font-sans text-sm font-medium text-foreground">فروع العمل</Label>
             {branches.length === 0 ? (
               <p className="font-sans text-xs text-muted-foreground">
                 لا توجد فروع. أضف فرعاً من صفحة الفروع أولاً.
@@ -173,19 +143,17 @@ export default function AddDoctorModal({
             ) : (
               <div className="flex flex-wrap gap-3">
                 {branches.map((b) => (
-                  <label
+                  <FormField
                     key={b.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-border px-3 py-2 font-sans text-sm hover:bg-muted"
-                  >
-                    <input
-                      type="checkbox"
-                      name="branchIds"
-                      value={b.id}
-                      checked={selectedBranchIds.includes(b.id)}
-                      onChange={(e) => toggleBranch(b.id, e.target.checked)}
-                    />
-                    {b.name}
-                  </label>
+                    type="checkbox"
+                    name="branchIds"
+                    value={b.id}
+                    label={b.name}
+                    labelClassName="cursor-pointer font-normal"
+                    checked={selectedBranchIds.includes(b.id)}
+                    onCheckedChange={(c) => toggleBranch(b.id, c)}
+                    className="rounded-xl border border-border px-3 py-2 hover:bg-muted"
+                  />
                 ))}
               </div>
             )}
@@ -195,59 +163,39 @@ export default function AddDoctorModal({
           <AvailabilityRulesEditor mode="draft" branches={selectedBranches} />
 
           {/* Qualifications */}
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">
-              المؤهلات العلمية (اختياري)
-            </label>
-            <textarea
-              name="qualifications"
-              rows={2}
-              placeholder="بكالوريوس الطب والجراحة، ماجستير..."
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
+          <FormField
+            type="textarea"
+            name="qualifications"
+            label="المؤهلات العلمية (اختياري)"
+            rows={2}
+            placeholder="بكالوريوس الطب والجراحة، ماجستير..."
+          />
 
           {/* Areas of sub-specialty expertise */}
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">
-              مجالات الخبرة الدقيقة (اختياري)
-            </label>
-            <textarea
-              name="expertiseAreas"
-              rows={2}
-              placeholder="جراحة المناظير، أمراض القلب التداخلية..."
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
+          <FormField
+            type="textarea"
+            name="expertiseAreas"
+            label="مجالات الخبرة الدقيقة (اختياري)"
+            rows={2}
+            placeholder="جراحة المناظير، أمراض القلب التداخلية..."
+          />
 
           {/* Bio */}
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">
-              نبذة تعريفية (اختياري)
-            </label>
-            <textarea
-              name="bio"
-              rows={3}
-              placeholder="خبرة في..."
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
+          <FormField
+            type="textarea"
+            name="bio"
+            label="نبذة تعريفية (اختياري)"
+            rows={3}
+            placeholder="خبرة في..."
+          />
 
           <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-            >
+            <Button type="submit" loading={isPending} className="flex-1">
               {isPending ? "جارٍ الحفظ..." : "إضافة الطبيب"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               إلغاء
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>

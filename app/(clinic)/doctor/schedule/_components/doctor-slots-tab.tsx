@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Ban, CheckCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { toggleMySlotBlockedAction } from "@/server/actions/doctor";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
+import { Button } from "@/components/ui/button";
 import type { DoctorSlot } from "@/server/services/doctors";
 import type { AppointmentStatus } from "@prisma/client";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
@@ -83,15 +84,12 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
       {/* Filter bar */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {(Object.keys(FILTER_LABELS) as FilterStatus[]).map((f) => (
-          <button
+          <Button
             key={f}
+            variant={filter === f ? "default" : "secondary"}
+            size="sm"
             onClick={() => setFilter(f)}
-            className={[
-              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-xs font-medium transition-colors",
-              filter === f
-                ? "bg-primary text-white"
-                : "bg-muted/60 text-muted-foreground hover:bg-muted",
-            ].join(" ")}
+            className={filter === f ? undefined : "bg-muted/60 text-muted-foreground"}
           >
             {FILTER_LABELS[f]}
             <span
@@ -102,7 +100,7 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
             >
               {totalByStatus[f]}
             </span>
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -131,9 +129,10 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                 key={dateKey}
                 className="overflow-hidden rounded-2xl border border-border bg-card"
               >
-                <button
+                <Button
+                  variant="ghost"
                   onClick={() => toggleCollapse(dateKey)}
-                  className="flex w-full items-center justify-between bg-muted/30 px-5 py-3 text-start transition-colors hover:bg-muted/50"
+                  className="h-auto w-full justify-between whitespace-normal rounded-none bg-muted/30 px-5 py-3 text-start font-normal hover:bg-muted/50"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="font-sans text-sm font-medium text-foreground">
@@ -167,7 +166,7 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                   ) : (
                     <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                   )}
-                </button>
+                </Button>
 
                 {isOpen && (
                   <div className="divide-y divide-border">
@@ -209,23 +208,20 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                           </div>
 
                           {!isBooked && (
-                            <button
+                            <Button
+                              variant={isBlocked ? "ghost" : "ghost-destructive"}
+                              size="icon"
                               onClick={() => handleToggle(slot.id)}
                               disabled={isPending}
                               title={isBlocked ? "إتاحة الموعد" : "حظر الموعد"}
-                              className={[
-                                "flex-shrink-0 rounded-lg p-1.5 transition-colors disabled:opacity-40",
+                              className={
                                 isBlocked
-                                  ? "text-emerald-600 hover:bg-emerald-50"
-                                  : "text-muted-foreground hover:bg-red-50 hover:text-red-500",
-                              ].join(" ")}
+                                  ? "shrink-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
+                                  : "shrink-0"
+                              }
                             >
-                              {isBlocked ? (
-                                <CheckCircle className="h-4 w-4" />
-                              ) : (
-                                <Ban className="h-4 w-4" />
-                              )}
-                            </button>
+                              {isBlocked ? <CheckCircle /> : <Ban />}
+                            </Button>
                           )}
                         </div>
                       );

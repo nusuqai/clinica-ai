@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { Role } from "@prisma/client";
 import { updateUserRoleAction, deleteUserAction } from "@/server/actions/admin";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 
 const roles: { value: Role; label: string }[] = [
   { value: Role.PATIENT, label: "مريض" },
@@ -44,26 +46,24 @@ export default function UserRowActions({ userId, currentRole, isSelf }: UserRowA
 
   return (
     <div className="flex items-center gap-2">
-      <select
+      <FormField
+        type="select"
         value={role}
         disabled={isSelf || isPending}
-        onChange={(e) => handleRoleChange(e.target.value as Role)}
-        className="rounded-lg border border-border bg-background px-2 py-1 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-      >
-        {roles.map((r) => (
-          <option key={r.value} value={r.value}>
-            {r.label}
-          </option>
-        ))}
-      </select>
-      <button
+        onValueChange={(v) => handleRoleChange(v as Role)}
+        options={roles}
+        className="w-28"
+        controlClassName="h-8 rounded-lg"
+      />
+      <Button
+        variant="ghost-destructive"
+        size="icon"
         onClick={handleDelete}
         disabled={isSelf || isPending}
         title="حذف المستخدم"
-        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
       >
-        <Trash2 className="h-4 w-4" />
-      </button>
+        <Trash2 />
+      </Button>
       {error && <p className="font-sans text-xs text-red-500">{error}</p>}
     </div>
   );
