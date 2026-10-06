@@ -2,47 +2,94 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { createClinic, updateClinic } from "@/server/actions/clinics";
 import { clinicHost, clinicOrigin } from "@/lib/clinic-url";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Card } from "@/components/ui/card";
+import { toFormData } from "@/lib/form-data";
+import {
+  createClinicSchema,
+  updateClinicSchema,
+  type CreateClinicValues,
+  type UpdateClinicValues,
+} from "@/lib/validations/platform";
+
+const EMPTY_CLINIC: CreateClinicValues = {
+  name: "",
+  slug: "",
+  adminName: "",
+  adminEmail: "",
+  adminPhone: "",
+  logoUrl: "",
+  primaryColor: "",
+  accentColor: "",
+};
 
 export function CreateClinicForm() {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  const form = useForm<CreateClinicValues>({
+    resolver: zodResolver(createClinicSchema),
+    defaultValues: EMPTY_CLINIC,
+    mode: "onTouched",
+  });
+
+  const handleSubmit = form.handleSubmit((values) => {
+    start(async () => {
+      setError(null);
+      const res = await createClinic(toFormData(values));
+      if (res && "error" in res && res.error) setError(res.error);
+      else {
+        form.reset(EMPTY_CLINIC);
+        router.refresh();
+      }
+    });
+  });
+
+  const { control } = form;
   return (
-    <form
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const fd = new FormData(e.currentTarget);
-        start(async () => {
-          setError(null);
-          const res = await createClinic(fd);
-          if (res && "error" in res && res.error) setError(res.error);
-          else {
-            (e.target as HTMLFormElement).reset();
-            router.refresh();
-          }
-        });
-      }}
-    >
-      <FormField name="name" placeholder="اسم العيادة" required />
-      <FormField name="slug" placeholder="المعرّف (اختياري)" dir="ltr" />
+    <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={handleSubmit} noValidate>
+      <FormField control={control} name="name" placeholder="اسم العيادة" required />
+      <FormField control={control} name="slug" placeholder="المعرّف (اختياري)" dir="ltr" />
 
       {/* Managing admin — the account set up as this clinic's ADMIN */}
-      <FormField name="adminName" placeholder="اسم مدير العيادة" required />
-      <FormField type="email" name="adminEmail" placeholder="بريد مدير العيادة" required />
-      <FormField name="adminPhone" placeholder="هاتف المدير (اختياري)" dir="ltr" />
+      <FormField control={control} name="adminName" placeholder="اسم مدير العيادة" required />
+      <FormField
+        control={control}
+        type="email"
+        name="adminEmail"
+        placeholder="بريد مدير العيادة"
+        required
+      />
+      <FormField
+        control={control}
+        name="adminPhone"
+        placeholder="هاتف المدير (اختياري)"
+        dir="ltr"
+      />
 
-      <FormField name="logoUrl" placeholder="رابط الشعار (اختياري)" dir="ltr" />
-      <div className="flex gap-3">
-        <FormField name="primaryColor" placeholder="#0B1F3A" dir="ltr" className="flex-1" />
-        <FormField name="accentColor" placeholder="#00C2CB" dir="ltr" className="flex-1" />
+      <FormField control={control} name="logoUrl" placeholder="رابط الشعار (اختياري)" dir="ltr" />
+      <div className="flex items-start gap-3">
+        <FormField
+          control={control}
+          name="primaryColor"
+          placeholder="#0B1F3A"
+          dir="ltr"
+          className="flex-1"
+        />
+        <FormField
+          control={control}
+          name="accentColor"
+          placeholder="#00C2CB"
+          dir="ltr"
+          className="flex-1"
+        />
       </div>
       <p className="text-xs text-muted-foreground sm:col-span-2">
         سيتم إنشاء حساب لمدير العيادة (أو استخدام حسابه الحالي) وتعيينه مسؤولاً عن هذه العيادة.
@@ -75,6 +122,18 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const form = useForm<UpdateClinicValues>({
+    resolver: zodResolver(updateClinicSchema),
+    defaultValues: {
+      name: clinic.name,
+      logoUrl: clinic.logoUrl ?? "",
+      primaryColor: clinic.primaryColor ?? "",
+      accentColor: clinic.accentColor ?? "",
+    },
+    mode: "onTouched",
+  });
+  const { control } = form;
 
   const save = (fd: FormData) =>
     start(async () => {
@@ -123,29 +182,22 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
 
       <form
         className="grid grid-cols-1 gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          save(new FormData(e.currentTarget));
-        }}
+        onSubmit={form.handleSubmit((values) => save(toFormData(values)))}
+        noValidate
       >
-        <FormField name="name" defaultValue={clinic.name} placeholder="اسم العيادة" />
-        <FormField
-          name="logoUrl"
-          defaultValue={clinic.logoUrl ?? ""}
-          dir="ltr"
-          placeholder="رابط الشعار"
-        />
-        <div className="flex gap-2">
+        <FormField control={control} name="name" placeholder="اسم العيادة" />
+        <FormField control={control} name="logoUrl" dir="ltr" placeholder="رابط الشعار" />
+        <div className="flex items-start gap-2">
           <FormField
+            control={control}
             name="primaryColor"
-            defaultValue={clinic.primaryColor ?? ""}
             dir="ltr"
             placeholder="اللون الأساسي"
             className="flex-1"
           />
           <FormField
+            control={control}
             name="accentColor"
-            defaultValue={clinic.accentColor ?? ""}
             dir="ltr"
             placeholder="لون التمييز"
             className="flex-1"

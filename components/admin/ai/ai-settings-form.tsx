@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Bot, AlertTriangle, Mic, Image as ImageIcon, Timer } from "lucide-react";
 import {
   toggleClinicAiAction,
@@ -16,6 +19,14 @@ import { Card } from "@/components/ui/card";
 
 const DEBOUNCE_MIN = 5;
 const DEBOUNCE_MAX = 120;
+
+const debounceSchema = z.object({
+  seconds: z.coerce
+    .number({ message: "أدخل عدد الثواني." })
+    .int("أدخل عدداً صحيحاً.")
+    .min(DEBOUNCE_MIN, `${DEBOUNCE_MIN} ثوانٍ على الأقل.`)
+    .max(DEBOUNCE_MAX, `${DEBOUNCE_MAX} ثانية كحد أقصى.`),
+});
 
 interface Props {
   initialEnabled: boolean;
@@ -64,8 +75,15 @@ export default function AiSettingsForm({
   const [imageAutoReply, setImageAutoReply] = useState(initialImageAutoReplyEnabled);
   const [imageAutoReplySaving, setImageAutoReplySaving] = useState(false);
 
-  const [debounce, setDebounce] = useState(String(initialDebounceSeconds));
-  const [debounceSaving, setDebounceSaving] = useState(false);
+  const debounceForm = useForm<
+    z.input<typeof debounceSchema>,
+    unknown,
+    z.output<typeof debounceSchema>
+  >({
+    resolver: zodResolver(debounceSchema),
+    defaultValues: { seconds: String(initialDebounceSeconds) },
+  });
+  const debounceSaving = debounceForm.formState.isSubmitting;
 
   const toggle = async () => {
     const next = !enabled;
@@ -142,14 +160,11 @@ export default function AiSettingsForm({
     }
   };
 
-  const saveDebounce = async () => {
-    const n = Number(debounce);
-    setDebounceSaving(true);
+  const saveDebounce = debounceForm.handleSubmit(async ({ seconds }) => {
     setMessage(null);
-    const res = await setClinicDebounceSecondsAction(n);
-    setDebounceSaving(false);
+    const res = await setClinicDebounceSecondsAction(seconds);
     if (res.ok) {
-      setDebounce(String(res.seconds));
+      debounceForm.reset({ seconds: String(res.seconds) });
       setMessage({ ok: true, text: `تم ضبط مهلة التجميع على ${res.seconds} ثانية.` });
     } else {
       setMessage({
@@ -157,7 +172,7 @@ export default function AiSettingsForm({
         text: res.message ?? "تعذّر تحديث الإعداد.",
       });
     }
-  };
+  });
 
   return (
     <div className="space-y-4">
@@ -285,26 +300,21 @@ export default function AiSettingsForm({
               مدة الانتظار بعد آخر رسالة من العميل قبل أن يرد المساعد — تتيح له إنهاء كتابة رسائله
               المتتابعة فيرد عليها جميعاً مرة واحدة. ({DEBOUNCE_MIN}–{DEBOUNCE_MAX} ثانية)
             </p>
-            <div className="mt-3 flex items-center gap-2">
+            <form onSubmit={saveDebounce} noValidate className="mt-3 flex items-start gap-2">
               <FormField
+                control={debounceForm.control}
+                name="seconds"
                 type="number"
                 min={DEBOUNCE_MIN}
                 max={DEBOUNCE_MAX}
-                value={debounce}
-                onValueChange={setDebounce}
                 disabled={debounceSaving}
                 className="w-24"
               />
-              <span className="text-sm text-muted-foreground">ثانية</span>
-              <Button
-                onClick={saveDebounce}
-                loading={debounceSaving}
-                disabled={debounce === ""}
-                className="font-semibold"
-              >
+              <span className="pt-2.5 text-sm text-muted-foreground">ثانية</span>
+              <Button type="submit" loading={debounceSaving} className="font-semibold">
                 حفظ
               </Button>
-            </div>
+            </form>
           </div>
         </div>
       </Card>

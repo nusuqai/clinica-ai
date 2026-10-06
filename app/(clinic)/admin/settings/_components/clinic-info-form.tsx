@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useFieldArray, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, X } from "lucide-react";
 import { updateClinicInfoAction } from "@/server/actions/admin";
 import { PhoneType, SocialPlatform } from "@prisma/client";
@@ -10,6 +12,8 @@ import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { PhoneRows, phonesForSave } from "@/components/admin/phone-rows";
+import { clinicInfoSchema, type ClinicInfoValues } from "@/lib/validations/admin";
 
 export interface ClinicPhoneView {
   type: PhoneType;
@@ -28,12 +32,6 @@ export interface ClinicInfoView {
   socials: ClinicSocialView[];
 }
 
-const PHONE_TYPES: { value: PhoneType; label: string }[] = [
-  { value: PhoneType.LANDLINE, label: "أرضي" },
-  { value: PhoneType.MOBILE, label: "موبايل" },
-  { value: PhoneType.WHATSAPP, label: "واتساب" },
-];
-
 const PLATFORMS: { value: SocialPlatform; label: string }[] = [
   { value: SocialPlatform.FACEBOOK, label: "فيسبوك" },
   { value: SocialPlatform.INSTAGRAM, label: "إنستجرام" },
@@ -46,124 +44,72 @@ const PLATFORMS: { value: SocialPlatform; label: string }[] = [
 
 const sectionLabel = "font-sans text-sm font-medium text-foreground";
 
+function formFromInfo(info: ClinicInfoView): ClinicInfoValues {
+  return {
+    name: info.name,
+    description: info.description ?? "",
+    phones: info.phones.map((p) => ({ ...p, label: p.label ?? "" })),
+    socials: info.socials.map((s) => ({ ...s })),
+  };
+}
+
 export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
   const router = useRouter();
-  const [name, setName] = useState(info.name);
-  const [description, setDescription] = useState(info.description ?? "");
-  const [phones, setPhones] = useState<ClinicPhoneView[]>(info.phones.map((p) => ({ ...p })));
-  const [socials, setSocials] = useState<ClinicSocialView[]>(info.socials.map((s) => ({ ...s })));
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  function updatePhone(i: number, patch: Partial<ClinicPhoneView>) {
-    setPhones((prev) => {
-      const next = prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p));
-      if (patch.isPrimary) next.forEach((p, idx) => (p.isPrimary = idx === i));
-      return next;
-    });
-  }
+  const form = useForm<ClinicInfoValues>({
+    resolver: zodResolver(clinicInfoSchema),
+    defaultValues: formFromInfo(info),
+    mode: "onTouched",
+  });
+  const socials = useFieldArray({ control: form.control, name: "socials" });
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const handleSubmit = form.handleSubmit((values) => {
     setError(null);
     setSaved(false);
     startTransition(async () => {
       const res = await updateClinicInfoAction({
-        name: name.trim() || undefined,
-        description: description || null,
-        phones: phones.filter((p) => p.number.trim()),
-        socials: socials.filter((s) => s.url.trim()),
+        name: values.name,
+        description: values.description || null,
+        phones: phonesForSave(values.phones),
+        socials: values.socials.filter((s) => s.url),
       });
       if (res?.error) setError(res.error);
       else {
         setSaved(true);
+        form.reset(values);
         router.refresh();
         setTimeout(() => setSaved(false), 3000);
       }
     });
-  }
+  });
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-3xl space-y-6">
+    <form onSubmit={handleSubmit} noValidate className="max-w-3xl space-y-6">
       {error && <Alert variant="destructive">{error}</Alert>}
       {saved && <Alert variant="success">تم حفظ التغييرات</Alert>}
 
       <Card className="space-y-4 p-5">
-        <FormField label="اسم العيادة" value={name} onValueChange={setName} />
+        <FormField control={form.control} name="name" label="اسم العيادة" />
         <FormField
+          control={form.control}
+          name="description"
           type="textarea"
           label="نبذة عن العيادة"
-          value={description}
-          onValueChange={setDescription}
           rows={4}
         />
       </Card>
 
       {/* Phones */}
       <Card className="space-y-3 p-5">
-        <div className="flex items-center justify-between">
-          <Label className={sectionLabel}>أرقام الهواتف العامة</Label>
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            onClick={() =>
-              setPhones((p) => [
-                ...p,
-                { type: PhoneType.MOBILE, number: "", label: null, isPrimary: p.length === 0 },
-              ])
-            }
-            className="h-auto px-0 text-sm [&_svg]:size-3.5"
-          >
-            <Plus /> إضافة رقم
-          </Button>
-        </div>
-        <p className="font-sans text-xs text-muted-foreground">
-          الرقم المعلّم كـ«أساسي» هو الرقم الرئيسي للعيادة.
-        </p>
-        {phones.length === 0 && (
-          <p className="font-sans text-xs text-muted-foreground">لا توجد أرقام مضافة.</p>
-        )}
-        {phones.map((p, i) => (
-          <div key={i} className="flex flex-wrap items-center gap-2">
-            <FormField
-              type="select"
-              value={p.type}
-              onValueChange={(v) => updatePhone(i, { type: v as PhoneType })}
-              options={PHONE_TYPES}
-              className="w-28"
-            />
-            <FormField
-              type="tel"
-              value={p.number}
-              onValueChange={(v) => updatePhone(i, { number: v })}
-              placeholder="الرقم"
-              className="min-w-[120px] flex-1"
-            />
-            <FormField
-              value={p.label ?? ""}
-              onValueChange={(v) => updatePhone(i, { label: v || null })}
-              placeholder="وصف"
-              className="w-28"
-            />
-            <FormField
-              type="checkbox"
-              label="أساسي"
-              labelClassName="text-xs font-normal text-muted-foreground"
-              checked={p.isPrimary}
-              onCheckedChange={(v) => updatePhone(i, { isPrimary: v })}
-            />
-            <Button
-              type="button"
-              variant="ghost-destructive"
-              size="icon"
-              onClick={() => setPhones((prev) => prev.filter((_, idx) => idx !== i))}
-            >
-              <X />
-            </Button>
-          </div>
-        ))}
+        <PhoneRows
+          control={form.control}
+          setValue={form.setValue}
+          title="أرقام الهواتف العامة"
+          description="الرقم المعلّم كـ«أساسي» هو الرقم الرئيسي للعيادة."
+        />
       </Card>
 
       {/* Socials */}
@@ -174,36 +120,28 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
             type="button"
             variant="link"
             size="sm"
-            onClick={() =>
-              setSocials((s) => [...s, { platform: SocialPlatform.FACEBOOK, url: "" }])
-            }
+            onClick={() => socials.append({ platform: SocialPlatform.FACEBOOK, url: "" })}
             className="h-auto px-0 text-sm [&_svg]:size-3.5"
           >
             <Plus /> إضافة حساب
           </Button>
         </div>
-        {socials.length === 0 && (
+        {socials.fields.length === 0 && (
           <p className="font-sans text-xs text-muted-foreground">لا توجد حسابات مضافة.</p>
         )}
-        {socials.map((s, i) => (
-          <div key={i} className="flex flex-wrap items-center gap-2">
+        {socials.fields.map((field, i) => (
+          <div key={field.id} className="flex flex-wrap items-start gap-2">
             <FormField
+              control={form.control}
+              name={`socials.${i}.platform`}
               type="select"
-              value={s.platform}
-              onValueChange={(v) =>
-                setSocials((prev) =>
-                  prev.map((x, idx) => (idx === i ? { ...x, platform: v as SocialPlatform } : x))
-                )
-              }
               options={PLATFORMS}
               className="w-36"
             />
             <FormField
+              control={form.control}
+              name={`socials.${i}.url`}
               type="url"
-              value={s.url}
-              onValueChange={(v) =>
-                setSocials((prev) => prev.map((x, idx) => (idx === i ? { ...x, url: v } : x)))
-              }
               placeholder="https://…"
               className="min-w-[160px] flex-1"
             />
@@ -211,7 +149,8 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
               type="button"
               variant="ghost-destructive"
               size="icon"
-              onClick={() => setSocials((prev) => prev.filter((_, idx) => idx !== i))}
+              onClick={() => socials.remove(i)}
+              aria-label="حذف الحساب"
             >
               <X />
             </Button>

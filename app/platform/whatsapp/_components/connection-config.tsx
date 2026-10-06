@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, KeyRound, Copy, Check } from "lucide-react";
 import { saveClinicWhatsappConfigAction } from "@/server/actions/platformWhatsapp";
 import type { WhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
@@ -9,6 +11,10 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import {
+  whatsappConnectionSchema,
+  type WhatsappConnectionValues,
+} from "@/lib/validations/platform";
 
 /** Compact muted label used across the WhatsApp console forms. */
 const smallLabel = "text-xs font-normal text-muted-foreground";
@@ -28,10 +34,18 @@ interface Props {
  * Token the clinic pastes back into Meta.
  */
 export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Props) {
-  const [phoneNumberId, setPhoneNumberId] = useState(initialConfig?.phoneNumberId ?? "");
-  const [wabaId, setWabaId] = useState(initialConfig?.wabaId ?? "");
-  const [accessToken, setAccessToken] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [hasToken, setHasToken] = useState(!!initialConfig?.hasToken);
+  const form = useForm<WhatsappConnectionValues>({
+    resolver: zodResolver(whatsappConnectionSchema(hasToken)),
+    defaultValues: {
+      phoneNumberId: initialConfig?.phoneNumberId ?? "",
+      wabaId: initialConfig?.wabaId ?? "",
+      accessToken: "",
+    },
+    mode: "onTouched",
+  });
+  const { control } = form;
+  const saving = form.formState.isSubmitting;
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   // The webhook + verify tokens the clinic must paste into Meta. Known once the
   // config exists (either loaded, or returned by the first save).
@@ -47,8 +61,7 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
       : null
   );
 
-  const handleSave = async () => {
-    setSaving(true);
+  const handleSave = form.handleSubmit(async ({ phoneNumberId, wabaId, accessToken }) => {
     setMessage(null);
     const res = await saveClinicWhatsappConfigAction({
       clinicId,
@@ -56,9 +69,9 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
       wabaId,
       accessToken: accessToken || undefined,
     });
-    setSaving(false);
     if (res.ok) {
-      setAccessToken("");
+      form.reset({ phoneNumberId, wabaId, accessToken: "" });
+      if (accessToken) setHasToken(true);
       setTokens({ webhookToken: res.webhookToken, verifyToken: res.verifyToken });
       setMessage({ ok: true, text: "تم حفظ الإعدادات بنجاح." });
     } else {
@@ -67,7 +80,7 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
         text: ("message" in res && res.message) || "تعذّر حفظ الإعدادات.",
       });
     }
-  };
+  });
 
   const webhookUrl = tokens ? `${appUrl}/api/meta/whatsapp/webhook/${tokens.webhookToken}` : "";
 
@@ -78,52 +91,50 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
         بيانات الاتصال (Meta Cloud API)
       </h2>
       <Card className="space-y-4 p-5">
-        <FormField
-          label="Phone Number ID"
-          labelClassName={smallLabel}
-          value={phoneNumberId}
-          onValueChange={setPhoneNumberId}
-          placeholder="مثال: 1286383577882071"
-          dir="ltr"
-        />
-        <FormField
-          label="WhatsApp Business Account ID (WABA)"
-          labelClassName={smallLabel}
-          value={wabaId}
-          onValueChange={setWabaId}
-          placeholder="مثال: 2292332154910536"
-          dir="ltr"
-        />
-        <FormField
-          type="password"
-          label={
-            <>
-              Access Token (System User)
-              {initialConfig?.hasToken && (
-                <span className="text-green-600"> — تم حفظ رمز، اتركه فارغًا للإبقاء عليه</span>
-              )}
-            </>
-          }
-          labelClassName={smallLabel}
-          value={accessToken}
-          onValueChange={setAccessToken}
-          placeholder={initialConfig?.hasToken ? "••••••••••••" : "الصق الرمز هنا"}
-        />
+        <form onSubmit={handleSave} noValidate className="space-y-4">
+          <FormField
+            control={control}
+            name="phoneNumberId"
+            label="Phone Number ID"
+            labelClassName={smallLabel}
+            placeholder="مثال: 1286383577882071"
+            dir="ltr"
+          />
+          <FormField
+            control={control}
+            name="wabaId"
+            label="WhatsApp Business Account ID (WABA)"
+            labelClassName={smallLabel}
+            placeholder="مثال: 2292332154910536"
+            dir="ltr"
+          />
+          <FormField
+            control={control}
+            name="accessToken"
+            type="password"
+            label={
+              <>
+                Access Token (System User)
+                {hasToken && (
+                  <span className="text-green-600"> — تم حفظ رمز، اتركه فارغًا للإبقاء عليه</span>
+                )}
+              </>
+            }
+            labelClassName={smallLabel}
+            placeholder={hasToken ? "••••••••••••" : "الصق الرمز هنا"}
+          />
 
-        {message && (
-          <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
-            {message.text}
-          </p>
-        )}
+          {message && (
+            <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
+              {message.text}
+            </p>
+          )}
 
-        <Button
-          onClick={handleSave}
-          loading={saving}
-          disabled={!phoneNumberId.trim() || !wabaId.trim()}
-        >
-          {!saving && <Save />}
-          حفظ
-        </Button>
+          <Button type="submit" loading={saving}>
+            {!saving && <Save />}
+            حفظ
+          </Button>
+        </form>
 
         {tokens && (
           <div className="mt-2 space-y-3 border-t border-border pt-4">

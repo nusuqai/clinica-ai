@@ -12,6 +12,7 @@ import {
   updateRecordAction,
 } from "@/server/actions/treatments";
 import type { TreatmentRecordView } from "@/server/services/treatments";
+import { Hint } from "@/components/ui/tooltip";
 
 // The doctor's write surface for a visit's clinical record. Opened from the
 // appointment row; loads any existing record ON OPEN rather than having the
@@ -58,20 +59,21 @@ export default function RecordFormModal({
 
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setOpen(true)}
-        title={hasRecord ? "تعديل السجل العلاجي" : "إضافة سجل علاجي"}
-        className={
-          hasRecord
-            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-            : undefined
-        }
-      >
-        {hasRecord ? <Pencil /> : <FileText />}
-        {hasRecord ? "السجل العلاجي" : "سجل علاجي"}
-      </Button>
+      <Hint label={hasRecord ? "تعديل السجل العلاجي" : "إضافة سجل علاجي"}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setOpen(true)}
+          className={
+            hasRecord
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              : undefined
+          }
+        >
+          {hasRecord ? <Pencil /> : <FileText />}
+          {hasRecord ? "السجل العلاجي" : "سجل علاجي"}
+        </Button>
+      </Hint>
 
       <Modal
         open={open}

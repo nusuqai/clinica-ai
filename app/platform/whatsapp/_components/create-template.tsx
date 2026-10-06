@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useFieldArray, useForm, useWatch, type Control } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
 import { createClinicTemplateAction } from "@/server/actions/platformWhatsapp";
 import { countVariables } from "@/lib/meta/template-render";
-import type { TemplateCategory, TemplateButton, TemplateButtonType } from "@/lib/meta/whatsapp";
+import type { TemplateButton, TemplateButtonType, TemplateCategory } from "@/lib/meta/whatsapp";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
@@ -14,6 +16,7 @@ import { LANGUAGES } from "@/components/admin/whatsapp/languages";
 import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { createTemplateSchema, type CreateTemplateValues } from "@/lib/validations/platform";
 
 const CATEGORIES: { value: TemplateCategory; label: string }[] = [
   { value: "UTILITY", label: "خدمية (Utility)" },
@@ -32,6 +35,29 @@ const smallLabel = "text-xs font-normal text-muted-foreground";
 // Meta allows more, but a small cap keeps the builder and preview readable.
 const MAX_BUTTONS = 3;
 
+const EMPTY_TEMPLATE: CreateTemplateValues = {
+  name: "",
+  category: "UTILITY",
+  language: LANGUAGES[0].value,
+  headerText: "",
+  bodyText: "",
+  footerText: "",
+  examples: [],
+  buttons: [],
+};
+
+type TemplateControl = Control<CreateTemplateValues>;
+
+/** The form's buttons as Meta expects them: only the field each type uses. */
+function toTemplateButtons(buttons: CreateTemplateValues["buttons"]): TemplateButton[] {
+  return buttons.map((b) => ({
+    type: b.type,
+    text: b.text,
+    ...(b.type === "URL" && { url: b.url }),
+    ...(b.type === "PHONE_NUMBER" && { phoneNumber: b.phoneNumber }),
+  }));
+}
+
 /**
  * Create-a-template form. Submits the template to Meta for approval and shows a
  * live WhatsApp-style preview of the body as the admin types, with the example
@@ -44,63 +70,43 @@ export default function CreateTemplate({
   clinicId: string;
   disabled: boolean;
 }) {
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState<TemplateCategory>("UTILITY");
-  const [language, setLanguage] = useState<string>(LANGUAGES[0].value);
-  const [headerText, setHeaderText] = useState("");
-  const [bodyText, setBodyText] = useState("");
-  const [footerText, setFooterText] = useState("");
-  const [buttons, setButtons] = useState<TemplateButton[]>([]);
-  const [examples, setExamples] = useState<string[]>([]);
-  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const varCount = countVariables(bodyText);
-  // Keep the examples array length in sync with the variable count.
-  useEffect(() => {
-    setExamples((prev) => Array.from({ length: varCount }, (_, i) => prev[i] ?? ""));
-  }, [varCount]);
+  const form = useForm<CreateTemplateValues>({
+    resolver: zodResolver(createTemplateSchema),
+    defaultValues: EMPTY_TEMPLATE,
+    mode: "onTouched",
+  });
+  const { control } = form;
+  const buttons = useFieldArray({ control, name: "buttons" });
+  const submitting = form.formState.isSubmitting;
 
-  const addButton = () =>
-    setButtons((prev) =>
-      prev.length >= MAX_BUTTONS ? prev : [...prev, { type: "QUICK_REPLY", text: "" }]
-    );
-  const updateButton = (i: number, patch: Partial<TemplateButton>) =>
-    setButtons((prev) => prev.map((b, j) => (j === i ? { ...b, ...patch } : b)));
-  const removeButton = (i: number) => setButtons((prev) => prev.filter((_, j) => j !== i));
-
-  const handleSubmit = async () => {
-    setSubmitting(true);
+  const handleSubmit = form.handleSubmit(async (v) => {
     setMessage(null);
     const res = await createClinicTemplateAction({
       clinicId,
-      name,
-      category,
-      language,
-      headerText: headerText || undefined,
-      bodyText,
-      footerText: footerText || undefined,
-      buttons: buttons.length > 0 ? buttons : undefined,
-      bodyExamples: examples.length > 0 ? examples : undefined,
+      name: v.name,
+      category: v.category,
+      language: v.language,
+      headerText: v.headerText || undefined,
+      bodyText: v.bodyText,
+      footerText: v.footerText || undefined,
+      buttons: v.buttons.length > 0 ? toTemplateButtons(v.buttons) : undefined,
+      bodyExamples: v.examples.length > 0 ? v.examples : undefined,
     });
-    setSubmitting(false);
     if (res.ok) {
       setMessage({
         ok: true,
         text: `تم إرسال القالب إلى ميتا للمراجعة (الحالة: ${res.status}).`,
       });
-      setName("");
-      setHeaderText("");
-      setBodyText("");
-      setFooterText("");
-      setButtons([]);
+      form.reset({ ...EMPTY_TEMPLATE, category: v.category, language: v.language });
     } else {
       setMessage({
         ok: false,
         text: ("message" in res && res.message) || "تعذّر إرسال القالب.",
       });
     }
-  };
+  });
 
   return (
     <div>
@@ -110,46 +116,48 @@ export default function CreateTemplate({
       </h2>
       <Card className="grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
         {/* Form column */}
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
           {disabled && (
             <Alert variant="warning" className="block rounded-lg px-3 py-2 text-xs">
               أدخل بيانات الاتصال أولاً لتتمكن من إنشاء القوالب.
             </Alert>
           )}
           <FormField
+            control={control}
+            name="name"
             label="اسم القالب (أحرف صغيرة وأرقام وشرطة سفلية)"
             labelClassName={smallLabel}
-            value={name}
-            onValueChange={setName}
             placeholder="appointment_reminder"
             dir="ltr"
           />
           <div className="grid grid-cols-2 gap-3">
             <FormField
+              control={control}
+              name="category"
               type="select"
               label="الفئة"
               labelClassName={smallLabel}
-              value={category}
-              onValueChange={(v) => setCategory(v as TemplateCategory)}
               options={CATEGORIES}
             />
             <FormField
+              control={control}
+              name="language"
               type="select"
               label="اللغة"
               labelClassName={smallLabel}
-              value={language}
-              onValueChange={setLanguage}
               options={LANGUAGES}
             />
           </div>
           <FormField
+            control={control}
+            name="headerText"
             label="العنوان (اختياري)"
             labelClassName={smallLabel}
-            value={headerText}
-            onValueChange={setHeaderText}
             placeholder="تذكير بموعد"
           />
           <FormField
+            control={control}
+            name="bodyText"
             type="textarea"
             label={
               <>
@@ -157,33 +165,15 @@ export default function CreateTemplate({
               </>
             }
             labelClassName={smallLabel}
-            value={bodyText}
-            onValueChange={setBodyText}
             rows={3}
             placeholder={"مرحبًا {{1}}، تذكير بموعدك يوم {{2}}."}
           />
-          {examples.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                قيم توضيحية للمتغيرات (يطلبها ميتا للمراجعة، وتظهر في المعاينة)
-              </p>
-              {examples.map((ex, i) => (
-                <FormField
-                  key={i}
-                  value={ex}
-                  onValueChange={(v) =>
-                    setExamples((prev) => prev.map((x, j) => (j === i ? v : x)))
-                  }
-                  placeholder={`مثال للقيمة ${i + 1} ({{${i + 1}}})`}
-                />
-              ))}
-            </div>
-          )}
+          <ExampleFields control={control} setValue={form.setValue} getValues={form.getValues} />
           <FormField
+            control={control}
+            name="footerText"
             label="تذييل اختياري"
             labelClassName={smallLabel}
-            value={footerText}
-            onValueChange={setFooterText}
             placeholder="عيادة النور"
           />
 
@@ -195,62 +185,23 @@ export default function CreateTemplate({
                 type="button"
                 variant="link"
                 size="sm"
-                onClick={addButton}
-                disabled={buttons.length >= MAX_BUTTONS}
+                onClick={() =>
+                  buttons.append({ type: "QUICK_REPLY", text: "", url: "", phoneNumber: "" })
+                }
+                disabled={buttons.fields.length >= MAX_BUTTONS}
                 className="h-auto px-0 text-accent [&_svg]:size-3"
               >
                 <Plus />
                 إضافة زر
               </Button>
             </div>
-            {buttons.map((b, i) => (
-              <div key={i} className="space-y-2 rounded-lg border border-border p-2.5">
-                <div className="flex items-center gap-2">
-                  <FormField
-                    type="select"
-                    value={b.type}
-                    onValueChange={(v) => updateButton(i, { type: v as TemplateButtonType })}
-                    options={BUTTON_TYPES}
-                    className="w-32 shrink-0"
-                    controlClassName="h-9 text-xs"
-                  />
-                  <FormField
-                    value={b.text}
-                    onValueChange={(v) => updateButton(i, { text: v })}
-                    placeholder="نص الزر"
-                    maxLength={25}
-                    className="flex-1"
-                    controlClassName="h-9"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost-destructive"
-                    size="icon-sm"
-                    onClick={() => removeButton(i)}
-                    aria-label="حذف الزر"
-                  >
-                    <Trash2 />
-                  </Button>
-                </div>
-                {b.type === "URL" && (
-                  <FormField
-                    type="url"
-                    value={b.url ?? ""}
-                    onValueChange={(v) => updateButton(i, { url: v })}
-                    placeholder="https://example.com"
-                    controlClassName="h-9"
-                  />
-                )}
-                {b.type === "PHONE_NUMBER" && (
-                  <FormField
-                    type="tel"
-                    value={b.phoneNumber ?? ""}
-                    onValueChange={(v) => updateButton(i, { phoneNumber: v })}
-                    placeholder="+201234567890"
-                    controlClassName="h-9"
-                  />
-                )}
-              </div>
+            {buttons.fields.map((field, i) => (
+              <ButtonRow
+                key={field.id}
+                control={control}
+                index={i}
+                onRemove={() => buttons.remove(i)}
+              />
             ))}
           </div>
 
@@ -260,29 +211,137 @@ export default function CreateTemplate({
             </p>
           )}
 
-          <Button
-            onClick={handleSubmit}
-            loading={submitting}
-            disabled={disabled || !name.trim() || !bodyText.trim()}
-          >
+          <Button type="submit" loading={submitting} disabled={disabled}>
             {!submitting && <Plus />}
             إرسال للمراجعة
           </Button>
-        </div>
+        </form>
 
         {/* Live preview column */}
         <div>
           <p className="mb-2 font-sans text-xs text-muted-foreground">معاينة مباشرة</p>
-          <WhatsappPreview
-            headerText={headerText}
-            bodyText={bodyText}
-            variables={examples}
-            footerText={footerText}
-            buttons={buttons}
-            className="md:sticky md:top-4"
-          />
+          <LivePreview control={control} />
         </div>
       </Card>
     </div>
+  );
+}
+
+/** One example input per `{{n}}` in the body, kept in step with the variable count. */
+function ExampleFields({
+  control,
+  setValue,
+  getValues,
+}: {
+  control: TemplateControl;
+  setValue: ReturnType<typeof useForm<CreateTemplateValues>>["setValue"];
+  getValues: ReturnType<typeof useForm<CreateTemplateValues>>["getValues"];
+}) {
+  const varCount = countVariables(useWatch({ control, name: "bodyText" }));
+
+  useEffect(() => {
+    const prev = getValues("examples");
+    if (prev.length === varCount) return;
+    setValue(
+      "examples",
+      Array.from({ length: varCount }, (_, i) => prev[i] ?? "")
+    );
+  }, [varCount, getValues, setValue]);
+
+  if (varCount === 0) return null;
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        قيم توضيحية للمتغيرات (يطلبها ميتا للمراجعة، وتظهر في المعاينة)
+      </p>
+      {Array.from({ length: varCount }, (_, i) => (
+        <FormField
+          key={i}
+          control={control}
+          name={`examples.${i}`}
+          placeholder={`مثال للقيمة ${i + 1} ({{${i + 1}}})`}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** One template button; shows the URL / phone field its type needs. */
+function ButtonRow({
+  control,
+  index,
+  onRemove,
+}: {
+  control: TemplateControl;
+  index: number;
+  onRemove: () => void;
+}) {
+  const type = useWatch({ control, name: `buttons.${index}.type` });
+  return (
+    <div className="space-y-2 rounded-lg border border-border p-2.5">
+      <div className="flex items-start gap-2">
+        <FormField
+          control={control}
+          name={`buttons.${index}.type`}
+          type="select"
+          options={BUTTON_TYPES}
+          className="w-32 shrink-0"
+          controlClassName="h-9 text-xs"
+        />
+        <FormField
+          control={control}
+          name={`buttons.${index}.text`}
+          placeholder="نص الزر"
+          maxLength={25}
+          className="flex-1"
+          controlClassName="h-9"
+        />
+        <Button
+          type="button"
+          variant="ghost-destructive"
+          size="icon-sm"
+          onClick={onRemove}
+          aria-label="حذف الزر"
+        >
+          <Trash2 />
+        </Button>
+      </div>
+      {type === "URL" && (
+        <FormField
+          control={control}
+          name={`buttons.${index}.url`}
+          type="url"
+          placeholder="https://example.com"
+          controlClassName="h-9"
+        />
+      )}
+      {type === "PHONE_NUMBER" && (
+        <FormField
+          control={control}
+          name={`buttons.${index}.phoneNumber`}
+          type="tel"
+          placeholder="+201234567890"
+          controlClassName="h-9"
+        />
+      )}
+    </div>
+  );
+}
+
+/** The WhatsApp-style preview; the only part that re-renders on every keystroke. */
+function LivePreview({ control }: { control: TemplateControl }) {
+  const [headerText, bodyText, footerText, examples, buttons] = useWatch({
+    control,
+    name: ["headerText", "bodyText", "footerText", "examples", "buttons"],
+  });
+  return (
+    <WhatsappPreview
+      headerText={headerText}
+      bodyText={bodyText}
+      variables={examples}
+      footerText={footerText}
+      buttons={toTemplateButtons(buttons)}
+      className="md:sticky md:top-4"
+    />
   );
 }

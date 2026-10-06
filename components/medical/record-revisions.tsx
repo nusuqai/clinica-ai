@@ -9,6 +9,7 @@ import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import type { ProcedureKind } from "@prisma/client";
 import type { TreatmentRecordView } from "@/server/services/treatments";
 import { Alert } from "@/components/ui/alert";
+import { Hint } from "@/components/ui/tooltip";
 
 // The edit history of one treatment record, opened from its "عُدّل" badge on the
 // admin timeline. Rather than just a count, it shows WHAT each edit changed:
@@ -203,12 +204,14 @@ export default function RecordRevisions({ record }: { record: TreatmentRecordVie
 
   return (
     <>
-      <Badge asChild variant="warning" className="cursor-pointer gap-1 hover:bg-amber-200">
-        <button type="button" onClick={openHistory} title="عرض سجل التعديلات">
-          <History className="h-3 w-3" />
-          {count === 1 ? "تعديل واحد" : `${count} تعديلات`} — عرض التغييرات
-        </button>
-      </Badge>
+      <Hint label="عرض سجل التعديلات">
+        <Badge asChild variant="warning" className="cursor-pointer gap-1 hover:bg-amber-200">
+          <button type="button" onClick={openHistory}>
+            <History className="h-3 w-3" />
+            {count === 1 ? "تعديل واحد" : `${count} تعديلات`} — عرض التغييرات
+          </button>
+        </Badge>
+      </Hint>
 
       <Modal
         open={open}

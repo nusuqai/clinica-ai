@@ -2,8 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2, Star, MapPin, Phone, Car, Navigation, X } from "lucide-react";
+import { useForm, useWatch, type Control } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Plus, Pencil, Trash2, Star, MapPin, Phone, Car, Navigation } from "lucide-react";
 import Modal from "@/components/admin/modal";
+import { PhoneRows, phonesForSave } from "@/components/admin/phone-rows";
 import {
   createBranchAction,
   updateBranchAction,
@@ -19,7 +22,13 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Hint } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import {
+  branchFormSchema,
+  type BranchDayMode,
+  type BranchFormValues,
+} from "@/lib/validations/admin";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,40 +72,13 @@ const DAYS: { key: DayOfWeek; label: string }[] = [
   { key: DayOfWeek.FRI, label: "الجمعة" },
 ];
 
-const PHONE_TYPES: { value: PhoneType; label: string }[] = [
-  { value: PhoneType.LANDLINE, label: "أرضي" },
-  { value: PhoneType.MOBILE, label: "موبايل" },
-  { value: PhoneType.WHATSAPP, label: "واتساب" },
-];
-
-type DayMode = "unset" | "open" | "closed";
-interface DayState {
-  mode: DayMode;
-  openTime: string;
-  closeTime: string;
-}
-
-interface FormState {
-  name: string;
-  address: string;
-  mapsUrl: string;
-  latitude: string;
-  longitude: string;
-  hasParking: boolean;
-  parkingInfo: string;
-  nearestLandmark: string;
-  directions: string;
-  phones: BranchPhoneView[];
-  hours: Record<DayOfWeek, DayState>;
-}
-
-function emptyHours(): Record<DayOfWeek, DayState> {
-  const out = {} as Record<DayOfWeek, DayState>;
+function emptyHours(): BranchFormValues["hours"] {
+  const out = {} as BranchFormValues["hours"];
   for (const d of DAYS) out[d.key] = { mode: "unset", openTime: "09:00", closeTime: "17:00" };
   return out;
 }
 
-function formFromBranch(b?: BranchView): FormState {
+function formFromBranch(b?: BranchView): BranchFormValues {
   const hours = emptyHours();
   if (b) {
     for (const h of b.hours) {
@@ -117,12 +99,12 @@ function formFromBranch(b?: BranchView): FormState {
     parkingInfo: b?.parkingInfo ?? "",
     nearestLandmark: b?.nearestLandmark ?? "",
     directions: b?.directions ?? "",
-    phones: b?.phones.map((p) => ({ ...p })) ?? [],
+    phones: b?.phones.map((p) => ({ ...p, label: p.label ?? "" })) ?? [],
     hours,
   };
 }
 
-const DAY_MODE_OPTIONS: { value: DayMode; label: string }[] = [
+const DAY_MODE_OPTIONS: { value: BranchDayMode; label: string }[] = [
   { value: "unset", label: "غير محدد" },
   { value: "open", label: "مفتوح" },
   { value: "closed", label: "مغلق (عطلة)" },
@@ -140,25 +122,31 @@ export default function BranchesManager({
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BranchView | null>(null);
-  const [form, setForm] = useState<FormState>(formFromBranch());
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const confirm = useConfirm();
 
+  const form = useForm<BranchFormValues>({
+    resolver: zodResolver(branchFormSchema),
+    defaultValues: formFromBranch(),
+    mode: "onTouched",
+  });
+  const hasParking = useWatch({ control: form.control, name: "hasParking" });
+
   function openCreate() {
     setEditing(null);
-    setForm(formFromBranch());
+    form.reset(formFromBranch());
     setError(null);
     setModalOpen(true);
   }
   function openEdit(b: BranchView) {
     setEditing(b);
-    setForm(formFromBranch(b));
+    form.reset(formFromBranch(b));
     setError(null);
     setModalOpen(true);
   }
 
-  function buildPayload() {
+  function buildPayload(form: BranchFormValues) {
     const hours: BranchHoursView[] = [];
     for (const d of DAYS) {
       const s = form.hours[d.key];
@@ -183,19 +171,14 @@ export default function BranchesManager({
       parkingInfo: form.parkingInfo || null,
       nearestLandmark: form.nearestLandmark || null,
       directions: form.directions || null,
-      phones: form.phones.filter((p) => p.number.trim()),
+      phones: phonesForSave(form.phones),
       hours,
     };
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const handleSubmit = form.handleSubmit((values) => {
     setError(null);
-    if (!form.name.trim()) {
-      setError("اسم الفرع مطلوب");
-      return;
-    }
-    const payload = buildPayload();
+    const payload = buildPayload(values);
     startTransition(async () => {
       const res = editing
         ? await updateBranchAction({ branchId: editing.id, clinicId: clinicId, ...payload })
@@ -206,7 +189,7 @@ export default function BranchesManager({
         router.refresh();
       }
     });
-  }
+  });
 
   async function runAction(fn: () => Promise<{ error?: string } | void>, confirmMsg?: string) {
     if (confirmMsg && !(await confirm({ title: "حذف الفرع", description: confirmMsg }))) return;
@@ -215,31 +198,6 @@ export default function BranchesManager({
       if (res && "error" in res && res.error) toast.error(res.error);
       else router.refresh();
     });
-  }
-
-  // Phone row helpers
-  function addPhone() {
-    setForm((f) => ({
-      ...f,
-      phones: [
-        ...f.phones,
-        { type: PhoneType.MOBILE, number: "", label: null, isPrimary: f.phones.length === 0 },
-      ],
-    }));
-  }
-  function updatePhone(i: number, patch: Partial<BranchPhoneView>) {
-    setForm((f) => {
-      const phones = f.phones.map((p, idx) => (idx === i ? { ...p, ...patch } : p));
-      // Single primary: if this row was set primary, clear the others.
-      if (patch.isPrimary) phones.forEach((p, idx) => (p.isPrimary = idx === i));
-      return { ...f, phones };
-    });
-  }
-  function removePhone(i: number) {
-    setForm((f) => ({ ...f, phones: f.phones.filter((_, idx) => idx !== i) }));
-  }
-  function setDay(day: DayOfWeek, patch: Partial<DayState>) {
-    setForm((f) => ({ ...f, hours: { ...f.hours, [day]: { ...f.hours[day], ...patch } } }));
   }
 
   return (
@@ -277,51 +235,56 @@ export default function BranchesManager({
                   </p>
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => openEdit(b)}
-                    title="تعديل"
-                    className="hover:bg-primary/10 hover:text-primary"
-                  >
-                    <Pencil />
-                  </Button>
-                  {!b.isMain && (
+                  <Hint label="تعديل">
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => runAction(() => setMainBranchAction(b.id))}
-                      disabled={isPending}
-                      title="تعيين كفرع رئيسي"
-                      className="hover:bg-amber-50 hover:text-amber-500"
+                      onClick={() => openEdit(b)}
+                      aria-label="تعديل"
+                      className="hover:bg-primary/10 hover:text-primary"
                     >
-                      <Star />
+                      <Pencil />
                     </Button>
+                  </Hint>
+                  {!b.isMain && (
+                    <Hint label="تعيين كفرع رئيسي">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => runAction(() => setMainBranchAction(b.id))}
+                        disabled={isPending}
+                        aria-label="تعيين كفرع رئيسي"
+                        className="hover:bg-amber-50 hover:text-amber-500"
+                      >
+                        <Star />
+                      </Button>
+                    </Hint>
                   )}
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => runAction(() => setBranchActiveAction(b.id, !b.isActive))}
                     disabled={isPending}
-                    title={b.isActive ? "تعطيل" : "تفعيل"}
                   >
                     {b.isActive ? "تعطيل" : "تفعيل"}
                   </Button>
                   {!b.isMain && (
-                    <Button
-                      variant="ghost-destructive"
-                      size="icon"
-                      onClick={() =>
-                        runAction(
-                          () => deleteBranchAction(b.id),
-                          "سيتم حذف هذا الفرع نهائياً. هل تريد المتابعة؟"
-                        )
-                      }
-                      disabled={isPending}
-                      title="حذف"
-                    >
-                      <Trash2 />
-                    </Button>
+                    <Hint label="حذف">
+                      <Button
+                        variant="ghost-destructive"
+                        size="icon"
+                        onClick={() =>
+                          runAction(
+                            () => deleteBranchAction(b.id),
+                            "سيتم حذف هذا الفرع نهائياً. هل تريد المتابعة؟"
+                          )
+                        }
+                        disabled={isPending}
+                        aria-label="حذف"
+                      >
+                        <Trash2 />
+                      </Button>
+                    </Hint>
                   )}
                 </div>
               </div>
@@ -366,42 +329,42 @@ export default function BranchesManager({
         title={editing ? "تعديل الفرع" : "إضافة فرع"}
         width="max-w-3xl"
       >
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} noValidate className="space-y-5">
           {error && <Alert variant="destructive">{error}</Alert>}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField
+              control={form.control}
+              name="name"
               label="اسم الفرع *"
-              value={form.name}
-              onValueChange={(v) => setForm({ ...form, name: v })}
               placeholder="فرع المعادي"
               className="sm:col-span-2"
             />
             <FormField
+              control={form.control}
+              name="address"
               label="العنوان"
-              value={form.address}
-              onValueChange={(v) => setForm({ ...form, address: v })}
               className="sm:col-span-2"
             />
             <FormField
+              control={form.control}
+              name="mapsUrl"
               type="url"
               label="رابط خرائط جوجل"
-              value={form.mapsUrl}
-              onValueChange={(v) => setForm({ ...form, mapsUrl: v })}
               placeholder="https://maps.google.com/…"
               className="sm:col-span-2"
             />
             <FormField
+              control={form.control}
+              name="nearestLandmark"
               label="أقرب معلم"
-              value={form.nearestLandmark}
-              onValueChange={(v) => setForm({ ...form, nearestLandmark: v })}
               className="sm:col-span-2"
             />
             <FormField
+              control={form.control}
+              name="directions"
               type="textarea"
               label="كيفية الوصول"
-              value={form.directions}
-              onValueChange={(v) => setForm({ ...form, directions: v })}
               rows={2}
               className="sm:col-span-2"
             />
@@ -410,15 +373,15 @@ export default function BranchesManager({
           {/* Parking */}
           <div className="space-y-3 rounded-xl border border-border p-4">
             <FormField
+              control={form.control}
+              name="hasParking"
               type="checkbox"
               label="يوجد موقف سيارات"
-              checked={form.hasParking}
-              onCheckedChange={(v) => setForm({ ...form, hasParking: v })}
             />
-            {form.hasParking && (
+            {hasParking && (
               <FormField
-                value={form.parkingInfo}
-                onValueChange={(v) => setForm({ ...form, parkingInfo: v })}
+                control={form.control}
+                name="parkingInfo"
                 placeholder="وصف الموقف (مدفوع/مجاني، سعة، مكانه…)"
               />
             )}
@@ -426,62 +389,12 @@ export default function BranchesManager({
 
           {/* Phones */}
           <div className="space-y-3 rounded-xl border border-border p-4">
-            <div className="flex items-center justify-between">
-              <Label className="font-sans text-sm font-medium text-foreground">
-                أرقام هواتف الفرع
-              </Label>
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                onClick={addPhone}
-                className="h-auto px-0 text-sm [&_svg]:size-3.5"
-              >
-                <Plus /> إضافة رقم
-              </Button>
-            </div>
-            {form.phones.length === 0 && (
-              <p className="font-sans text-xs text-muted-foreground">لا توجد أرقام مضافة.</p>
-            )}
-            {form.phones.map((p, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2">
-                <FormField
-                  type="select"
-                  value={p.type}
-                  onValueChange={(v) => updatePhone(i, { type: v as PhoneType })}
-                  options={PHONE_TYPES}
-                  className="w-28"
-                />
-                <FormField
-                  type="tel"
-                  value={p.number}
-                  onValueChange={(v) => updatePhone(i, { number: v })}
-                  placeholder="الرقم"
-                  className="min-w-[120px] flex-1"
-                />
-                <FormField
-                  value={p.label ?? ""}
-                  onValueChange={(v) => updatePhone(i, { label: v || null })}
-                  placeholder="وصف (استقبال…)"
-                  className="w-28"
-                />
-                <FormField
-                  type="checkbox"
-                  label="أساسي"
-                  labelClassName="text-xs font-normal text-muted-foreground"
-                  checked={p.isPrimary}
-                  onCheckedChange={(v) => updatePhone(i, { isPrimary: v })}
-                />
-                <Button
-                  type="button"
-                  variant="ghost-destructive"
-                  size="icon"
-                  onClick={() => removePhone(i)}
-                >
-                  <X />
-                </Button>
-              </div>
-            ))}
+            <PhoneRows
+              control={form.control}
+              setValue={form.setValue}
+              title="أرقام هواتف الفرع"
+              labelPlaceholder="وصف (استقبال…)"
+            />
           </div>
 
           {/* Working hours */}
@@ -492,41 +405,9 @@ export default function BranchesManager({
               الأطباء.
             </p>
             <div className="mt-2 space-y-2">
-              {DAYS.map((d) => {
-                const s = form.hours[d.key];
-                return (
-                  <div key={d.key} className="flex flex-wrap items-center gap-2">
-                    <span className="w-16 font-sans text-sm text-foreground">{d.label}</span>
-                    <FormField
-                      type="select"
-                      value={s.mode}
-                      onValueChange={(v) => setDay(d.key, { mode: v as DayMode })}
-                      options={DAY_MODE_OPTIONS}
-                      className="w-36"
-                      controlClassName="h-9"
-                    />
-                    {s.mode === "open" && (
-                      <>
-                        <FormField
-                          type="time"
-                          value={s.openTime}
-                          onValueChange={(v) => setDay(d.key, { openTime: v })}
-                          className="w-32"
-                          controlClassName="h-9"
-                        />
-                        <span className="text-sm text-muted-foreground">–</span>
-                        <FormField
-                          type="time"
-                          value={s.closeTime}
-                          onValueChange={(v) => setDay(d.key, { closeTime: v })}
-                          className="w-32"
-                          controlClassName="h-9"
-                        />
-                      </>
-                    )}
-                  </div>
-                );
-              })}
+              {DAYS.map((d) => (
+                <DayHoursRow key={d.key} control={form.control} day={d.key} label={d.label} />
+              ))}
             </div>
           </div>
 
@@ -540,6 +421,51 @@ export default function BranchesManager({
           </div>
         </form>
       </Modal>
+    </div>
+  );
+}
+
+/** One weekday's hours. Watches only its own mode, so changing it re-renders just this row. */
+function DayHoursRow({
+  control,
+  day,
+  label,
+}: {
+  control: Control<BranchFormValues>;
+  day: DayOfWeek;
+  label: string;
+}) {
+  const mode = useWatch({ control, name: `hours.${day}.mode` });
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="w-16 font-sans text-sm text-foreground">{label}</span>
+      <FormField
+        control={control}
+        name={`hours.${day}.mode`}
+        type="select"
+        options={DAY_MODE_OPTIONS}
+        className="w-36"
+        controlClassName="h-9"
+      />
+      {mode === "open" && (
+        <>
+          <FormField
+            control={control}
+            name={`hours.${day}.openTime`}
+            type="time"
+            className="w-32"
+            controlClassName="h-9"
+          />
+          <span className="text-sm text-muted-foreground">–</span>
+          <FormField
+            control={control}
+            name={`hours.${day}.closeTime`}
+            type="time"
+            className="w-32"
+            controlClassName="h-9"
+          />
+        </>
+      )}
     </div>
   );
 }

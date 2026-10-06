@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Lock, ArrowLeft } from "lucide-react";
 import { setNewPassword } from "@/server/actions/auth";
+import { setPasswordSchema, type SetPasswordValues } from "@/lib/validations/auth";
+import { toFormData } from "@/lib/form-data";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Alert } from "@/components/ui/alert";
@@ -19,15 +23,19 @@ export default function SetPasswordForm({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const form = useForm<SetPasswordValues>({
+    resolver: zodResolver(setPasswordSchema),
+    defaultValues: { password: "", confirmPassword: "" },
+    mode: "onTouched",
+  });
+
+  const handleSubmit = form.handleSubmit((values) => {
     setError(null);
-    const formData = new FormData(e.currentTarget);
     startTransition(async () => {
-      const result = await setNewPassword(formData);
+      const result = await setNewPassword(toFormData(values));
       if (result?.error) setError(result.error);
     });
-  }
+  });
 
   return (
     <div className="relative z-10 w-full max-w-md">
@@ -47,26 +55,26 @@ export default function SetPasswordForm({
         </Alert>
       )}
 
-      <form className="space-y-5" onSubmit={handleSubmit}>
+      <form className="space-y-5" onSubmit={handleSubmit} noValidate>
         <FormField
+          control={form.control}
           type="password"
           name="password"
           label="كلمة المرور الجديدة"
           labelClassName="text-text/70"
           required
-          minLength={8}
           size="lg"
           startIcon={<Lock />}
           placeholder="••••••••"
         />
 
         <FormField
+          control={form.control}
           type="password"
           name="confirmPassword"
           label="تأكيد كلمة المرور"
           labelClassName="text-text/70"
           required
-          minLength={8}
           size="lg"
           startIcon={<Lock />}
           placeholder="••••••••"

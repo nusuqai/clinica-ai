@@ -1,7 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { updateMyProfileAction } from "@/server/actions/doctor";
+import {
+  doctorProfileSchema,
+  doctorProfileToFormData,
+  type DoctorProfileValues,
+} from "@/lib/validations/doctor";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import SpecialtySelect, {
@@ -30,64 +37,77 @@ export default function ProfileForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const form = useForm<DoctorProfileValues>({
+    resolver: zodResolver(doctorProfileSchema),
+    defaultValues: {
+      fullName,
+      phone: phone ?? "",
+      specialtyId: specialtyId ?? "",
+      newSpecialtyName: "",
+      consultationFee: consultationFee ?? "",
+      bio: bio ?? "",
+    },
+    mode: "onTouched",
+  });
+
+  const handleSubmit = form.handleSubmit((values) => {
     setError(null);
     setSuccess(false);
-    const formData = new FormData(e.currentTarget);
     startTransition(async () => {
-      const res = await updateMyProfileAction(formData);
+      const res = await updateMyProfileAction(doctorProfileToFormData(values));
       if (res?.error) {
         setError(res.error);
         return;
       }
       setSuccess(true);
+      // The saved values are the new baseline (no longer "dirty").
+      form.reset(values);
       setTimeout(() => setSuccess(false), 4000);
     });
-  }
+  });
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} noValidate className="space-y-6">
       {error && <Alert variant="destructive">{error}</Alert>}
       {success && <Alert variant="success">تم تحديث الملف الشخصي بنجاح</Alert>}
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <FormField
+          control={form.control}
           name="fullName"
           label="الاسم الكامل *"
           required
-          defaultValue={fullName}
           placeholder="د. محمد أحمد"
         />
 
         <FormField
           type="tel"
+          control={form.control}
           name="phone"
           label="رقم الهاتف"
-          defaultValue={phone ?? ""}
           placeholder="+966 5XXXXXXXX"
         />
 
         <div>
-          <SpecialtySelect specialties={specialties} defaultSpecialtyId={specialtyId} />
+          <SpecialtySelect control={form.control} specialties={specialties} />
         </div>
 
         <FormField
           type="number"
+          control={form.control}
           name="consultationFee"
           label="رسوم الاستشارة (ر.س)"
           min="0"
           step="0.01"
-          defaultValue={consultationFee ?? ""}
           placeholder="150"
         />
 
         <FormField
           type="textarea"
+          control={form.control}
           name="bio"
           label="نبذة عنك"
           rows={4}
-          defaultValue={bio ?? ""}
           placeholder="اكتب نبذة مختصرة عن خبرتك وتخصصك..."
           className="sm:col-span-2"
         />

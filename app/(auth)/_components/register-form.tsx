@@ -2,9 +2,13 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Mail, Lock, User, Phone, ArrowLeft } from "lucide-react";
 import { startClinicSignup } from "@/server/actions/auth";
-import { PHONE_EXAMPLE, normalizePhone, isValidPhone } from "@/lib/phone";
+import { PHONE_EXAMPLE, normalizePhone } from "@/lib/phone";
+import { registerSchema } from "@/lib/validations/auth";
+import { toFormData } from "@/lib/form-data";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Alert } from "@/components/ui/alert";
@@ -21,35 +25,28 @@ export function RegisterForm({ clinicName, initialPhone = "" }: Props) {
   const [needsLogin, setNeedsLogin] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const form = useForm({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      fullName: "",
+      phone: normalizePhone(initialPhone),
+      email: "",
+      password: "",
+      confirmPassword: "",
+    },
+    mode: "onTouched",
+  });
+
+  // `values.phone` is already normalized by the schema, so it matches the WhatsApp number exactly.
+  const handleSubmit = form.handleSubmit((values) => {
     setError(null);
     setNeedsLogin(false);
-    const formData = new FormData(e.currentTarget);
-
-    const phone = normalizePhone((formData.get("phone") as string) ?? "");
-    if (!isValidPhone(phone)) {
-      setError(
-        `أدخل رقم الهاتف بالصيغة الدولية بدون علامة (+) وبدون صفر في البداية: بادئة الدولة ثم الرقم، مثال: ${PHONE_EXAMPLE}`
-      );
-      return;
-    }
-    // Store the normalized number so it matches the WhatsApp number exactly.
-    formData.set("phone", phone);
-
-    const password = formData.get("password") as string;
-    const confirm = formData.get("confirmPassword") as string;
-    if (password !== confirm) {
-      setError("كلمتا المرور غير متطابقتين.");
-      return;
-    }
-
     startTransition(async () => {
-      const result = await startClinicSignup(formData);
+      const result = await startClinicSignup(toFormData(values));
       if (result?.error) setError(result.error);
       if (result?.needsLogin) setNeedsLogin(true);
     });
-  }
+  });
 
   return (
     <div className="relative z-10 w-full max-w-md">
@@ -78,8 +75,9 @@ export function RegisterForm({ clinicName, initialPhone = "" }: Props) {
         </Alert>
       )}
 
-      <form className="space-y-4" onSubmit={handleSubmit}>
+      <form className="space-y-4" onSubmit={handleSubmit} noValidate>
         <FormField
+          control={form.control}
           name="fullName"
           label="الاسم الكامل"
           labelClassName="text-text/70"
@@ -90,6 +88,7 @@ export function RegisterForm({ clinicName, initialPhone = "" }: Props) {
         />
 
         <FormField
+          control={form.control}
           type="tel"
           name="phone"
           label="رقم الهاتف"
@@ -99,7 +98,6 @@ export function RegisterForm({ clinicName, initialPhone = "" }: Props) {
           required
           size="lg"
           startIcon={<Phone />}
-          defaultValue={normalizePhone(initialPhone)}
           placeholder={PHONE_EXAMPLE}
           hint={
             <>
@@ -110,6 +108,7 @@ export function RegisterForm({ clinicName, initialPhone = "" }: Props) {
         />
 
         <FormField
+          control={form.control}
           type="email"
           name="email"
           label="البريد الإلكتروني"
@@ -122,17 +121,18 @@ export function RegisterForm({ clinicName, initialPhone = "" }: Props) {
 
         <div className="grid grid-cols-2 gap-3">
           <FormField
+            control={form.control}
             type="password"
             name="password"
             label="كلمة المرور"
             labelClassName="text-text/70"
             required
-            minLength={6}
             size="lg"
             startIcon={<Lock />}
             placeholder="••••••••"
           />
           <FormField
+            control={form.control}
             type="password"
             name="confirmPassword"
             label="تأكيد المرور"

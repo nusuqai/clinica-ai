@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useForm, useWatch, type Control } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Loader2,
   Trash2,
@@ -24,6 +26,7 @@ import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Card } from "@/components/ui/card";
+import { sendTemplateSchema, type SendTemplateValues } from "@/lib/validations/platform";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
@@ -265,15 +268,18 @@ function SendToNumber({
   template: MessageTemplate;
   onDone: () => void;
 }) {
-  const [phone, setPhone] = useState("");
-  const [variables, setVariables] = useState<string[]>(
-    Array.from({ length: template.variableCount }, () => "")
-  );
-  const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const form = useForm<SendTemplateValues>({
+    resolver: zodResolver(sendTemplateSchema),
+    defaultValues: {
+      phone: "",
+      variables: Array.from({ length: template.variableCount }, () => ""),
+    },
+    mode: "onTouched",
+  });
+  const sending = form.formState.isSubmitting;
 
-  const handleSend = async () => {
-    setSending(true);
+  const handleSend = form.handleSubmit(async ({ phone, variables }) => {
     setMessage(null);
     const res = await sendClinicTemplateToNumberAction({
       clinicId,
@@ -282,7 +288,6 @@ function SendToNumber({
       language: template.language,
       variables,
     });
-    setSending(false);
     if (res.ok) {
       setMessage({ ok: true, text: "تم الإرسال." });
       setTimeout(onDone, 1200);
@@ -292,52 +297,67 @@ function SendToNumber({
         text: ("message" in res && res.message) || "تعذّر الإرسال.",
       });
     }
-  };
+  });
 
   return (
-    <div className="mt-2 space-y-2 rounded-lg bg-muted/40 p-3">
+    <form onSubmit={handleSend} noValidate className="mt-2 space-y-2 rounded-lg bg-muted/40 p-3">
       <FormField
+        control={form.control}
+        name="phone"
         type="tel"
-        value={phone}
-        onValueChange={setPhone}
         placeholder="رقم الهاتف مع رمز الدولة، أرقام فقط"
         controlClassName="h-9"
       />
-      {variables.map((v, i) => (
+      {Array.from({ length: template.variableCount }, (_, i) => (
         <FormField
           key={i}
-          value={v}
-          onValueChange={(next) => setVariables((prev) => prev.map((x, j) => (j === i ? next : x)))}
+          control={form.control}
+          name={`variables.${i}`}
           placeholder={`القيمة ${i + 1} ({{${i + 1}}})`}
           controlClassName="h-9"
         />
       ))}
-      <WhatsappPreview
-        headerText={template.headerText}
-        bodyText={template.bodyText}
-        variables={variables}
-        footerText={template.footerText}
-        buttons={template.buttons}
-      />
+      <SendPreview control={form.control} template={template} />
       {message && (
         <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
           {message.text}
         </p>
       )}
       <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          onClick={handleSend}
-          loading={sending}
-          disabled={!phone.trim() || variables.some((v) => !v.trim())}
-        >
+        <Button type="submit" size="sm" loading={sending}>
           {!sending && <Send />}
           إرسال
         </Button>
-        <Button variant="link" size="sm" onClick={onDone} className="text-muted-foreground">
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={onDone}
+          className="text-muted-foreground"
+        >
           إلغاء
         </Button>
       </div>
-    </div>
+    </form>
+  );
+}
+
+/** Preview with the typed variable values; re-renders alone as they change. */
+function SendPreview({
+  control,
+  template,
+}: {
+  control: Control<SendTemplateValues>;
+  template: MessageTemplate;
+}) {
+  const variables = useWatch({ control, name: "variables" });
+  return (
+    <WhatsappPreview
+      headerText={template.headerText}
+      bodyText={template.bodyText}
+      variables={variables}
+      footerText={template.footerText}
+      buttons={template.buttons}
+    />
   );
 }

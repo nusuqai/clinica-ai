@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircle, AlertCircle, Save } from "lucide-react";
 import { updateProfileAction } from "@/server/actions/patient";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Alert } from "@/components/ui/alert";
+import { patientProfileSelfSchema, type PatientProfileSelfValues } from "@/lib/validations/public";
 
 interface Props {
   email: string;
@@ -14,18 +17,17 @@ interface Props {
 }
 
 export function ProfileForm({ email, defaultFullName, defaultPhone }: Props) {
-  const [fullName, setFullName] = useState(defaultFullName);
-  const [phone, setPhone] = useState(defaultPhone ?? "");
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!fullName.trim()) {
-      setError("الاسم الكامل مطلوب");
-      return;
-    }
+  const form = useForm<PatientProfileSelfValues>({
+    resolver: zodResolver(patientProfileSelfSchema),
+    defaultValues: { fullName: defaultFullName, phone: defaultPhone ?? "" },
+    mode: "onTouched",
+  });
+
+  const handleSubmit = form.handleSubmit(({ fullName, phone }) => {
     setError("");
     setSuccess(false);
     startTransition(async () => {
@@ -33,10 +35,10 @@ export function ProfileForm({ email, defaultFullName, defaultPhone }: Props) {
       if (res.ok) setSuccess(true);
       else setError(res.error ?? "حدث خطأ غير متوقع");
     });
-  }
+  });
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
       {/* Email (read-only) */}
       <FormField
         type="email"
@@ -54,8 +56,8 @@ export function ProfileForm({ email, defaultFullName, defaultPhone }: Props) {
             الاسم الكامل <span className="text-red-500">*</span>
           </>
         }
-        value={fullName}
-        onValueChange={setFullName}
+        control={form.control}
+        name="fullName"
         required
         placeholder="أدخل اسمك الكامل"
         controlClassName="h-12 px-4"
@@ -69,8 +71,8 @@ export function ProfileForm({ email, defaultFullName, defaultPhone }: Props) {
             رقم الهاتف <span className="font-normal text-muted-foreground">(اختياري)</span>
           </>
         }
-        value={phone}
-        onValueChange={setPhone}
+        control={form.control}
+        name="phone"
         placeholder="01xxxxxxxxx"
         controlClassName="h-12 px-4"
       />

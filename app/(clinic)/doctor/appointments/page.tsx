@@ -22,6 +22,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Hint } from "@/components/ui/tooltip";
 
 interface PageProps {
   searchParams: Promise<{ status?: string }>;
@@ -158,25 +159,23 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
                     <TableCell className="px-4 py-3">
                       <AppointmentStatusBadge status={appt.status} />
                       {appt.cancellationReason && (
-                        <p
-                          className="mt-1 max-w-[120px] truncate text-xs text-muted-foreground"
-                          title={appt.cancellationReason}
-                        >
-                          {appt.cancellationReason}
-                        </p>
+                        <Hint label={appt.cancellationReason}>
+                          <p className="mt-1 max-w-[120px] truncate text-xs text-muted-foreground">
+                            {appt.cancellationReason}
+                          </p>
+                        </Hint>
                       )}
                     </TableCell>
                     <TableCell className="max-w-[160px] px-4 py-3 text-muted-foreground">
-                      <p className="truncate text-xs" title={appt.patientNotes ?? ""}>
-                        {appt.patientNotes || "—"}
-                      </p>
+                      <Hint label={appt.patientNotes ?? ""}>
+                        <p className="truncate text-xs">{appt.patientNotes || "—"}</p>
+                      </Hint>
                       {appt.doctorNotes && (
-                        <p
-                          className="mt-0.5 truncate text-xs text-primary"
-                          title={appt.doctorNotes}
-                        >
-                          ✍ {appt.doctorNotes}
-                        </p>
+                        <Hint label={appt.doctorNotes}>
+                          <p className="mt-0.5 truncate text-xs text-primary">
+                            ✍ {appt.doctorNotes}
+                          </p>
+                        </Hint>
                       )}
                     </TableCell>
                     <TableCell className="px-4 py-3">

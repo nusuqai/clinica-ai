@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
 import { X, Clock, CheckCircle, AlertCircle, LogIn, Users } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -109,7 +110,8 @@ export function BookAppointmentModal({
   const [dayError, setDayError] = useState<Record<string, string>>({});
 
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [notes, setNotes] = useState("");
+  // Its own form: typing a note re-renders only the textarea, not this whole modal.
+  const notesForm = useForm<{ notes: string }>({ defaultValues: { notes: "" } });
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState(false);
   const [bookedOrder, setBookedOrder] = useState<number | null>(null);
@@ -179,11 +181,18 @@ export function BookAppointmentModal({
     setBookingError("");
     startTransition(async () => {
       if (selection.mode === "SLOT_BASED") {
-        const res = await bookAppointmentAction(selection.slot.id, notes || undefined);
+        const res = await bookAppointmentAction(
+          selection.slot.id,
+          notesForm.getValues("notes").trim() || undefined
+        );
         if (res.ok) setSuccess(true);
         else setBookingError(res.error ?? "حدث خطأ غير متوقع");
       } else {
-        const res = await bookOrderAppointmentAction(doctor.id, selection.date, notes || undefined);
+        const res = await bookOrderAppointmentAction(
+          doctor.id,
+          selection.date,
+          notesForm.getValues("notes").trim() || undefined
+        );
         if (res.ok) {
           setBookedArrival(res.mode === "arrival");
           setBookedOrder(res.orderNumber ?? null);
@@ -475,8 +484,8 @@ export function BookAppointmentModal({
                   </>
                 }
                 labelClassName="text-text"
-                value={notes}
-                onValueChange={setNotes}
+                control={notesForm.control}
+                name="notes"
                 rows={3}
                 placeholder="اكتب أي أعراض أو معلومات تريد إبلاغ الطبيب بها..."
                 controlClassName="px-4 py-3 text-text placeholder:text-text/30 focus-visible:border-accent focus-visible:ring-accent/20"

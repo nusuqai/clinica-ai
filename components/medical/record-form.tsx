@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useFieldArray, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
 import { ProcedureKind } from "@prisma/client";
 import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
@@ -11,18 +13,87 @@ import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { Hint } from "@/components/ui/tooltip";
+import { recordFormSchema, type RecordFormValues } from "@/lib/validations/treatment";
 
 // The clinical record form body — dates, narrative fields, procedure and
 // prescription lines. Shared by the doctor's modal (per appointment) and the
 // admin's modal (per patient); each wrapper decides where the record comes from
-// and which action saves it. State is seeded from `initial` once, so a wrapper
+// and which action saves it. The form is seeded from `initial` once, so a wrapper
 // that swaps records must remount it (pass a `key`).
 
-type ProcedureRow = TreatmentRecordPayload["procedures"][number];
-type PrescriptionRow = TreatmentRecordPayload["prescriptions"][number];
+type ProcedureRow = RecordFormValues["procedures"][number];
+type PrescriptionRow = RecordFormValues["prescriptions"][number];
 
-const emptyProcedure = (): ProcedureRow => ({ kind: ProcedureKind.EXAMINATION, name: "" });
-const emptyPrescription = (): PrescriptionRow => ({ drugName: "" });
+const emptyProcedure = (): ProcedureRow => ({
+  kind: ProcedureKind.EXAMINATION,
+  name: "",
+  cost: "",
+  note: "",
+});
+const emptyPrescription = (): PrescriptionRow => ({
+  drugName: "",
+  dose: "",
+  frequency: "",
+  durationDays: "",
+  instructions: "",
+});
+
+/** Seed values: the stored record, or a blank one dated `defaultVisitDate` (today if absent). */
+function formFromRecord(
+  initial: TreatmentRecordView | null,
+  defaultVisitDate: Date | string | null | undefined
+): RecordFormValues {
+  return {
+    visitDate: toDateInput(initial?.visitDate ?? defaultVisitDate) || toDateInput(new Date()),
+    followUpDate: toDateInput(initial?.followUpDate),
+    chiefComplaint: initial?.chiefComplaint ?? "",
+    diagnosis: initial?.diagnosis ?? "",
+    clinicalNotes: initial?.clinicalNotes ?? "",
+    procedures: initial?.procedures.length
+      ? initial.procedures.map((p) => ({
+          kind: p.kind,
+          name: p.name,
+          cost: p.cost ?? "",
+          note: p.note ?? "",
+        }))
+      : [emptyProcedure()],
+    prescriptions: initial?.prescriptions.length
+      ? initial.prescriptions.map((p) => ({
+          drugName: p.drugName,
+          dose: p.dose ?? "",
+          frequency: p.frequency ?? "",
+          durationDays: p.durationDays?.toString() ?? "",
+          instructions: p.instructions ?? "",
+        }))
+      : [emptyPrescription()],
+  };
+}
+
+/** Empty optional strings go to the server as undefined, like the old form sent them. */
+const opt = (v: string) => v || undefined;
+
+function toPayload(v: RecordFormValues): TreatmentRecordPayload {
+  return {
+    visitDate: v.visitDate,
+    chiefComplaint: v.chiefComplaint,
+    diagnosis: v.diagnosis,
+    clinicalNotes: v.clinicalNotes,
+    followUpDate: v.followUpDate || null,
+    procedures: v.procedures.map((p) => ({
+      kind: p.kind,
+      name: p.name,
+      cost: opt(p.cost),
+      note: opt(p.note),
+    })),
+    prescriptions: v.prescriptions.map((p) => ({
+      drugName: p.drugName,
+      dose: opt(p.dose),
+      frequency: opt(p.frequency),
+      durationDays: opt(p.durationDays),
+      instructions: opt(p.instructions),
+    })),
+  };
+}
 
 /** A Date (or ISO string) as the "YYYY-MM-DD" an <input type="date"> wants. */
 export function toDateInput(value: Date | string | null | undefined): string {
@@ -56,60 +127,25 @@ export default function RecordForm({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const [visitDate, setVisitDate] = useState(
-    toDateInput(initial?.visitDate ?? defaultVisitDate) || toDateInput(new Date())
-  );
-  const [chiefComplaint, setChiefComplaint] = useState(initial?.chiefComplaint ?? "");
-  const [diagnosis, setDiagnosis] = useState(initial?.diagnosis ?? "");
-  const [clinicalNotes, setClinicalNotes] = useState(initial?.clinicalNotes ?? "");
-  const [followUpDate, setFollowUpDate] = useState(toDateInput(initial?.followUpDate));
-  const [procedures, setProcedures] = useState<ProcedureRow[]>(() =>
-    initial?.procedures.length
-      ? initial.procedures.map((p) => ({
-          kind: p.kind,
-          name: p.name,
-          note: p.note ?? undefined,
-          cost: p.cost ?? undefined,
-        }))
-      : [emptyProcedure()]
-  );
-  const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>(() =>
-    initial?.prescriptions.length
-      ? initial.prescriptions.map((p) => ({
-          drugName: p.drugName,
-          dose: p.dose ?? undefined,
-          frequency: p.frequency ?? undefined,
-          durationDays: p.durationDays?.toString() ?? undefined,
-          instructions: p.instructions ?? undefined,
-        }))
-      : [emptyPrescription()]
-  );
+  const form = useForm<RecordFormValues>({
+    resolver: zodResolver(recordFormSchema),
+    defaultValues: formFromRecord(initial, defaultVisitDate),
+    mode: "onTouched",
+  });
+  const { control } = form;
+  const procedures = useFieldArray({ control, name: "procedures" });
+  const prescriptions = useFieldArray({ control, name: "prescriptions" });
 
-  function updateProcedure(i: number, patch: Partial<ProcedureRow>) {
-    setProcedures((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  }
-  function updatePrescription(i: number, patch: Partial<PrescriptionRow>) {
-    setPrescriptions((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  }
-
-  function handleSave() {
+  const handleSave = form.handleSubmit((values) => {
     setError(null);
     startTransition(async () => {
-      const res = await onSubmit({
-        visitDate,
-        chiefComplaint,
-        diagnosis,
-        clinicalNotes,
-        followUpDate: followUpDate || null,
-        procedures,
-        prescriptions,
-      });
+      const res = await onSubmit(toPayload(values));
       if (res?.error) setError(res.error);
     });
-  }
+  });
 
   return (
-    <div className="space-y-6">
+    <form onSubmit={handleSave} noValidate className="space-y-6">
       {initial && (
         <Alert
           variant="warning"
@@ -123,81 +159,71 @@ export default function RecordForm({
 
       {/* Dates */}
       <div className="grid gap-4 sm:grid-cols-2">
+        <FormField control={control} name="visitDate" type="date" label="تاريخ الزيارة" />
         <FormField
-          type="date"
-          label="تاريخ الزيارة"
-          value={visitDate}
-          onValueChange={setVisitDate}
-        />
-        <FormField
+          control={control}
+          name="followUpDate"
           type="date"
           label="موعد المتابعة (اختياري)"
-          value={followUpDate}
-          onValueChange={setFollowUpDate}
         />
       </div>
 
       <FormField
+        control={control}
+        name="chiefComplaint"
         type="textarea"
         label="شكوى المريض"
-        value={chiefComplaint}
-        onValueChange={setChiefComplaint}
         rows={2}
         placeholder="ما الذي يشكو منه المريض؟"
       />
       <FormField
+        control={control}
+        name="diagnosis"
         type="textarea"
         label="التشخيص"
-        value={diagnosis}
-        onValueChange={setDiagnosis}
         rows={2}
         placeholder="التشخيص المبدئي أو النهائي..."
       />
       <FormField
+        control={control}
+        name="clinicalNotes"
         type="textarea"
         label="ملاحظات الطبيب"
-        value={clinicalNotes}
-        onValueChange={setClinicalNotes}
         rows={4}
         placeholder="نتائج الفحص، الخطة العلاجية..."
       />
 
       {/* Procedures */}
-      <RowSection
-        title="الإجراءات المُنفَّذة"
-        onAdd={() => setProcedures((rows) => [...rows, emptyProcedure()])}
-      >
-        {procedures.map((row, i) => (
-          <div key={i} className="rounded-xl border border-border p-3">
-            <div className="flex gap-2">
+      <RowSection title="الإجراءات المُنفَّذة" onAdd={() => procedures.append(emptyProcedure())}>
+        {procedures.fields.map((field, i) => (
+          <div key={field.id} className="rounded-xl border border-border p-3">
+            <div className="flex items-start gap-2">
               <FormField
+                control={control}
+                name={`procedures.${i}.kind`}
                 type="select"
                 options={PROCEDURE_KIND_OPTIONS}
-                value={row.kind}
-                onValueChange={(v) => updateProcedure(i, { kind: v as ProcedureKind })}
                 className="w-36 shrink-0"
               />
               <FormField
-                value={row.name}
-                onValueChange={(v) => updateProcedure(i, { name: v })}
+                control={control}
+                name={`procedures.${i}.name`}
                 placeholder="اسم الإجراء"
                 className="min-w-0 flex-1"
               />
               <FormField
-                value={row.cost ?? ""}
-                onValueChange={(v) => updateProcedure(i, { cost: v })}
+                control={control}
+                name={`procedures.${i}.cost`}
                 inputMode="decimal"
                 placeholder="التكلفة"
                 dir="ltr"
                 className="w-24 shrink-0"
               />
-              <RemoveButton
-                onClick={() => setProcedures((rows) => rows.filter((_, j) => j !== i))}
-              />
+              <RemoveButton onClick={() => procedures.remove(i)} />
             </div>
             <FormField
-              value={row.note ?? ""}
-              onValueChange={(v) => updateProcedure(i, { note: v })}
+              control={control}
+              name={`procedures.${i}.note`}
               placeholder="ملاحظة (اختياري)"
               className="mt-2"
             />
@@ -206,44 +232,39 @@ export default function RecordForm({
       </RowSection>
 
       {/* Prescriptions */}
-      <RowSection
-        title="الروشتة"
-        onAdd={() => setPrescriptions((rows) => [...rows, emptyPrescription()])}
-      >
-        {prescriptions.map((row, i) => (
-          <div key={i} className="rounded-xl border border-border p-3">
-            <div className="flex gap-2">
+      <RowSection title="الروشتة" onAdd={() => prescriptions.append(emptyPrescription())}>
+        {prescriptions.fields.map((field, i) => (
+          <div key={field.id} className="rounded-xl border border-border p-3">
+            <div className="flex items-start gap-2">
               <FormField
-                value={row.drugName}
-                onValueChange={(v) => updatePrescription(i, { drugName: v })}
+                control={control}
+                name={`prescriptions.${i}.drugName`}
                 placeholder="اسم الدواء"
                 className="min-w-0 flex-1"
               />
-              <RemoveButton
-                onClick={() => setPrescriptions((rows) => rows.filter((_, j) => j !== i))}
-              />
+              <RemoveButton onClick={() => prescriptions.remove(i)} />
             </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
               <FormField
-                value={row.dose ?? ""}
-                onValueChange={(v) => updatePrescription(i, { dose: v })}
+                control={control}
+                name={`prescriptions.${i}.dose`}
                 placeholder="الجرعة (500 مجم)"
               />
               <FormField
-                value={row.frequency ?? ""}
-                onValueChange={(v) => updatePrescription(i, { frequency: v })}
+                control={control}
+                name={`prescriptions.${i}.frequency`}
                 placeholder="التكرار (مرتين يومياً)"
               />
               <FormField
-                value={row.durationDays ?? ""}
-                onValueChange={(v) => updatePrescription(i, { durationDays: v })}
+                control={control}
+                name={`prescriptions.${i}.durationDays`}
                 inputMode="numeric"
                 placeholder="المدة (أيام)"
               />
             </div>
             <FormField
-              value={row.instructions ?? ""}
-              onValueChange={(v) => updatePrescription(i, { instructions: v })}
+              control={control}
+              name={`prescriptions.${i}.instructions`}
               placeholder="تعليمات (بعد الأكل...)"
               className="mt-2"
             />
@@ -254,14 +275,14 @@ export default function RecordForm({
       {error && <p className="font-sans text-sm text-red-600">{error}</p>}
 
       <div className="flex gap-3">
-        <Button onClick={handleSave} loading={isPending} className="flex-1">
+        <Button type="submit" loading={isPending} className="flex-1">
           {isPending ? "جارٍ الحفظ..." : initial ? "حفظ التعديلات" : "حفظ السجل"}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>
           إلغاء
         </Button>
       </div>
-    </div>
+    </form>
   );
 }
 

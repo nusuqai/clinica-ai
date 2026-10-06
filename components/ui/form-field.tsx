@@ -5,6 +5,7 @@ import { format, parse, isValid } from "date-fns";
 import { ar as arDateFns } from "date-fns/locale";
 import { ar } from "react-day-picker/locale";
 import { CalendarIcon, Eye, EyeOff } from "lucide-react";
+import { useController, type Control, type FieldPath, type FieldValues } from "react-hook-form";
 
 import { cn } from "@/lib/utils";
 import { Calendar } from "@/components/ui/calendar";
@@ -35,6 +36,13 @@ import { Textarea } from "@/components/ui/textarea";
  *
  * Works controlled (`value` + `onValueChange`) or uncontrolled inside a `<form>`
  * (`name` + `defaultValue`) — every widget submits its value under `name`.
+ *
+ * Or hand it react-hook-form's `control`: value, change/blur, focus-on-error and
+ * the error message then all come from the form, and typing re-renders only this
+ * field rather than the whole form:
+ *
+ *   const form = useForm({ resolver: zodResolver(schema), defaultValues });
+ *   <FormField control={form.control} name="email" type="email" label="البريد" />
  */
 
 type FieldChrome = {
@@ -43,6 +51,8 @@ type FieldChrome = {
   hint?: React.ReactNode;
   /** Red text under the control; also marks it aria-invalid. */
   error?: string | null;
+  /** Classes for the error text, e.g. a lighter red on a dark section. */
+  errorClassName?: string;
   /** Classes for the wrapper (label + control + messages). */
   className?: string;
   /** Classes for the control itself. */
@@ -52,7 +62,12 @@ type FieldChrome = {
   labelAction?: React.ReactNode;
   /** "lg" is the taller, rounder control used on auth and public pages. */
   size?: "default" | "lg";
+  /** Set only through the react-hook-form overload below. */
+  control?: undefined;
 };
+
+/** Internal: lets react-hook-form focus non-input widgets (select, date, otp, checkbox) on error. */
+type ControlRef = { controlRef?: React.Ref<HTMLElement> };
 
 const SIZE_CLASSES = {
   default: "",
@@ -89,7 +104,7 @@ type SelectFieldProps = FieldChrome & {
   required?: boolean;
   disabled?: boolean;
   dir?: "rtl" | "ltr";
-};
+} & ControlRef;
 
 type DateFieldProps = FieldChrome & {
   type: "date";
@@ -105,7 +120,7 @@ type DateFieldProps = FieldChrome & {
   /** "YYYY-MM-DD" bounds, inclusive. */
   min?: string;
   max?: string;
-};
+} & ControlRef;
 
 type OtpFieldProps = FieldChrome & {
   type: "otp";
@@ -115,11 +130,12 @@ type OtpFieldProps = FieldChrome & {
   onValueChange?: (value: string) => void;
   /** Fired once every box is filled. */
   onComplete?: (value: string) => void;
+  onBlur?: () => void;
   name?: string;
   id?: string;
   required?: boolean;
   disabled?: boolean;
-};
+} & ControlRef;
 
 type CheckFieldProps = FieldChrome & {
   type: "checkbox" | "switch";
@@ -132,7 +148,7 @@ type CheckFieldProps = FieldChrome & {
   id?: string;
   required?: boolean;
   disabled?: boolean;
-};
+} & ControlRef;
 
 export type FormFieldProps =
   | TextFieldProps
@@ -142,10 +158,124 @@ export type FormFieldProps =
   | OtpFieldProps
   | CheckFieldProps;
 
+/** `Omit` that keeps a union a union (plain `Omit` would flatten it). */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** The react-hook-form flavour: `control` + a typed `name` replace value/checked/onChange. */
+export type ConnectedFormFieldProps<T extends FieldValues> = DistributiveOmit<
+  FormFieldProps,
+  "control" | "name" | "value" | "defaultValue" | "checked" | "defaultChecked" | "ref"
+> & {
+  // `any` for the context/transformed-value slots: a zod schema whose input and
+  // output types differ yields Control<Input, any, Output>.
+  control: Control<T, any, any>;
+  name: FieldPath<T>;
+};
+
 /** Types whose content is Latin/numeric and reads better left-to-right. */
 const LTR_TYPES = new Set(["email", "tel", "number", "url", "time"]);
 
-export function FormField(props: FormFieldProps) {
+export function FormField<T extends FieldValues>(
+  props: ConnectedFormFieldProps<T>
+): React.JSX.Element;
+export function FormField(props: FormFieldProps): React.JSX.Element;
+export function FormField<T extends FieldValues>(
+  props: FormFieldProps | ConnectedFormFieldProps<T>
+) {
+  if (props.control) return <ConnectedField {...(props as ConnectedFormFieldProps<T>)} />;
+  return <FieldView {...(props as FormFieldProps)} />;
+}
+
+/**
+ * Binds one field to react-hook-form via useController, so only this component
+ * subscribes to (and re-renders for) its own value and error.
+ */
+function ConnectedField<T extends FieldValues>({
+  control,
+  name,
+  ...props
+}: ConnectedFormFieldProps<T>) {
+  const { field, fieldState } = useController({ control, name });
+  const error = props.error ?? fieldState.error?.message;
+
+  // The caller's own handlers still fire after the form's. Loosely typed here
+  // because they differ per widget; each case below passes the matching shape.
+  const own = props as {
+    onValueChange?: (v: string) => void;
+    onCheckedChange?: (c: boolean) => void;
+    onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onBlur?: (e?: React.FocusEvent<HTMLElement>) => void;
+  };
+
+  let bound: Record<string, unknown>;
+  switch (props.type) {
+    case "checkbox":
+    case "switch":
+      bound = {
+        controlRef: field.ref,
+        checked: !!field.value,
+        onCheckedChange: (checked: boolean) => {
+          field.onChange(checked);
+          own.onCheckedChange?.(checked);
+        },
+      };
+      break;
+
+    case "select":
+    case "date":
+    case "otp":
+      // No blur for select/date: focus moves into their popup, which would mark
+      // them touched (and flash "required") the moment they open.
+      bound = {
+        controlRef: field.ref,
+        value: field.value ?? "",
+        onValueChange: (value: string) => {
+          field.onChange(value);
+          own.onValueChange?.(value);
+        },
+        ...(props.type === "otp" && {
+          onBlur: () => {
+            field.onBlur();
+            own.onBlur?.();
+          },
+        }),
+      };
+      break;
+
+    case "file":
+      // A file input can't be given a value; hand the form the picked FileList instead.
+      bound = {
+        ref: field.ref,
+        onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+          field.onChange(e.target.files);
+          own.onChange?.(e);
+        },
+        onBlur: (e: React.FocusEvent<HTMLElement>) => {
+          field.onBlur();
+          own.onBlur?.(e);
+        },
+      };
+      break;
+
+    default:
+      bound = {
+        ref: field.ref,
+        value: field.value ?? "",
+        onValueChange: (value: string) => {
+          field.onChange(value);
+          own.onValueChange?.(value);
+        },
+        onBlur: (e: React.FocusEvent<HTMLElement>) => {
+          field.onBlur();
+          own.onBlur?.(e);
+        },
+      };
+  }
+
+  return <FieldView {...({ ...props, ...bound, name: field.name, error } as FormFieldProps)} />;
+}
+
+function FieldView(props: FormFieldProps) {
   const autoId = React.useId();
   const id = props.id ?? autoId;
   const { label, hint, error, className, labelClassName, labelAction } = props;
@@ -184,7 +314,10 @@ export function FormField(props: FormFieldProps) {
         </>
       )}
       {error ? (
-        <p id={`${id}-error`} className="font-sans text-xs text-red-600">
+        <p
+          id={`${id}-error`}
+          className={cn("font-sans text-xs text-red-600", props.errorClassName)}
+        >
           {error}
         </p>
       ) : hint ? (
@@ -206,9 +339,11 @@ function renderControl(props: FormFieldProps, id: string, describedBy: string | 
         label: _l,
         hint: _h,
         error: _e,
+        errorClassName: _ec,
         className: _c,
         labelClassName: _lc,
         labelAction: _la,
+        control: _ctl,
         size = "default",
         controlClassName,
         onValueChange,
@@ -250,6 +385,8 @@ function renderControl(props: FormFieldProps, id: string, describedBy: string | 
             value={props.value}
             onChange={(v) => props.onValueChange?.(v)}
             onComplete={props.onComplete}
+            onBlur={props.onBlur}
+            ref={props.controlRef as React.Ref<HTMLInputElement>}
             required={props.required}
             disabled={props.disabled}
             aria-invalid={invalid}
@@ -276,6 +413,7 @@ function renderControl(props: FormFieldProps, id: string, describedBy: string | 
           checked={props.checked}
           defaultChecked={props.defaultChecked}
           onCheckedChange={(c) => props.onCheckedChange?.(c === true)}
+          ref={props.controlRef as React.Ref<HTMLButtonElement>}
           required={props.required}
           disabled={props.disabled}
           aria-invalid={invalid}
@@ -295,9 +433,11 @@ function TextControl({
   label: _l,
   hint: _h,
   error: _e,
+  errorClassName: _ec,
   className: _c,
   labelClassName: _lc,
   labelAction: _la,
+  control: _ctl,
   size = "default",
   controlClassName,
   onValueChange,
@@ -378,6 +518,7 @@ function SelectControl({
   dir,
   size = "default",
   controlClassName,
+  controlRef,
   invalid,
   describedBy,
 }: SelectFieldProps & { id: string; invalid?: boolean; describedBy?: string }) {
@@ -401,6 +542,7 @@ function SelectControl({
       >
         <SelectTrigger
           id={id}
+          ref={controlRef as React.Ref<HTMLButtonElement>}
           aria-invalid={invalid}
           aria-describedby={describedBy}
           className={cn(SIZE_CLASSES[size], controlClassName)}
@@ -452,6 +594,7 @@ function DateControl({
   max,
   size = "default",
   controlClassName,
+  controlRef,
   invalid,
   describedBy,
 }: DateFieldProps & { id: string; invalid?: boolean; describedBy?: string }) {
@@ -473,6 +616,7 @@ function DateControl({
         <button
           type="button"
           id={id}
+          ref={controlRef as React.Ref<HTMLButtonElement>}
           disabled={disabled}
           data-invalid={invalid}
           aria-describedby={describedBy}

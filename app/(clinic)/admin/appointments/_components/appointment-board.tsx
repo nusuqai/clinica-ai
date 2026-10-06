@@ -23,6 +23,7 @@ import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import Modal from "@/components/admin/modal";
+import { CancelReasonForm } from "@/components/appointments/cancel-reason-form";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import BoardColumn from "./board-column";
@@ -60,7 +61,6 @@ export default function AppointmentBoard({
 }: AppointmentBoardProps) {
   const [appointments, setAppointments] = useState(initial);
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
-  const [cancelReason, setCancelReason] = useState("");
   const [detailsAppt, setDetailsAppt] = useState<AdminAppointment | null>(null);
   const [, startTransition] = useTransition();
 
@@ -153,7 +153,6 @@ export default function AppointmentBoard({
 
     if (newStatus === AppointmentStatus.CANCELLED) {
       setPendingCancelId(appointment.id);
-      setCancelReason("");
       return;
     }
 
@@ -162,16 +161,15 @@ export default function AppointmentBoard({
     commitStatus(appointment.id, previousStatus, newStatus);
   }
 
-  function confirmCancel() {
-    if (!pendingCancelId || !cancelReason.trim()) return;
+  function confirmCancel(reason: string) {
+    if (!pendingCancelId) return;
     const appointment = appointments.find((a) => a.id === pendingCancelId);
     if (!appointment) return;
 
     const previousStatus = appointment.status;
-    applyStatus(appointment.id, AppointmentStatus.CANCELLED, cancelReason.trim());
-    commitStatus(appointment.id, previousStatus, AppointmentStatus.CANCELLED, cancelReason.trim());
+    applyStatus(appointment.id, AppointmentStatus.CANCELLED, reason);
+    commitStatus(appointment.id, previousStatus, AppointmentStatus.CANCELLED, reason);
     setPendingCancelId(null);
-    setCancelReason("");
   }
 
   return (
@@ -236,32 +234,12 @@ export default function AppointmentBoard({
         title="إلغاء الموعد"
         width="max-w-md"
       >
-        <div className="space-y-4">
-          <p className="font-sans text-sm text-muted-foreground">
-            الرجاء إدخال سبب إلغاء هذا الموعد.
-          </p>
-          <FormField
-            type="textarea"
-            label="سبب الإلغاء"
-            value={cancelReason}
-            onValueChange={setCancelReason}
-            rows={3}
-            placeholder="أدخل سبب الإلغاء..."
-          />
-          <div className="flex gap-3">
-            <Button
-              variant="destructive"
-              onClick={confirmCancel}
-              disabled={!cancelReason.trim()}
-              className="flex-1"
-            >
-              تأكيد الإلغاء
-            </Button>
-            <Button type="button" variant="outline" onClick={() => setPendingCancelId(null)}>
-              تراجع
-            </Button>
-          </div>
-        </div>
+        <CancelReasonForm
+          prompt="الرجاء إدخال سبب إلغاء هذا الموعد."
+          required
+          onConfirm={confirmCancel}
+          onBack={() => setPendingCancelId(null)}
+        />
       </Modal>
 
       <Modal

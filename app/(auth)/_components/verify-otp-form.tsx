@@ -2,8 +2,12 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, ShieldCheck, RotateCw } from "lucide-react";
 import { verifyClinicSignup, resendClinicSignupOtp } from "@/server/actions/auth";
+import { OTP_LENGTH, verifyOtpSchema, type VerifyOtpValues } from "@/lib/validations/auth";
+import { toFormData } from "@/lib/form-data";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Alert } from "@/components/ui/alert";
@@ -16,7 +20,6 @@ interface Props {
 }
 
 export function VerifyOtpForm({ clinicName, email, initialResendIn }: Props) {
-  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   // Seeded from the server (the real remaining time based on last-sent), so a
@@ -32,15 +35,20 @@ export function VerifyOtpForm({ clinicName, email, initialResendIn }: Props) {
     return () => clearTimeout(t);
   }, [resendIn]);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const form = useForm<VerifyOtpValues>({
+    resolver: zodResolver(verifyOtpSchema),
+    defaultValues: { email, token: "" },
+  });
+  // Only to enable the submit button once every box is filled.
+  const code = useWatch({ control: form.control, name: "token" });
+
+  const handleSubmit = form.handleSubmit((values) => {
     setError(null);
-    const formData = new FormData(e.currentTarget);
     startTransition(async () => {
-      const result = await verifyClinicSignup(formData);
+      const result = await verifyClinicSignup(toFormData(values));
       if (result?.error) setError(result.error);
     });
-  }
+  });
 
   async function handleResend() {
     if (resendIn > 0 || resending) return;
@@ -73,7 +81,7 @@ export function VerifyOtpForm({ clinicName, email, initialResendIn }: Props) {
           تأكيد البريد الإلكتروني
         </h1>
         <p className="font-sans text-sm leading-relaxed text-text/50">
-          أدخل الرمز المكوّن من 8 أرقام الذي أرسلناه إلى
+          أدخل الرمز المكوّن من {OTP_LENGTH} أرقام الذي أرسلناه إلى
           <br />
           <span dir="ltr" className="font-semibold text-text/70">
             {email}
@@ -97,24 +105,22 @@ export function VerifyOtpForm({ clinicName, email, initialResendIn }: Props) {
         </Alert>
       )}
 
-      <form className="space-y-5" onSubmit={handleSubmit}>
-        <input type="hidden" name="email" value={email} />
+      <form className="space-y-5" onSubmit={handleSubmit} noValidate>
         <FormField
+          control={form.control}
           type="otp"
-          length={8}
+          length={OTP_LENGTH}
           name="token"
           label="رمز التحقق"
           labelClassName="block text-center text-text/70"
           required
-          value={code}
-          onValueChange={setCode}
         />
 
         <Button
           type="submit"
           size="lg"
           loading={isPending}
-          disabled={code.length < 8}
+          disabled={code.length < OTP_LENGTH}
           className="w-full rounded-2xl font-semibold shadow-lg shadow-primary/20"
         >
           {!isPending && <ShieldCheck />}

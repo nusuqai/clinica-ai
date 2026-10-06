@@ -882,24 +882,22 @@ export default function ChatInbox({
                     );
                   })()}
                 {selectedConversation.activeSessionId && (
-                  <Badge
-                    asChild
-                    variant={selectedConversation.aiEnabled ? "accent" : "muted"}
-                    className="cursor-pointer gap-1.5 py-1 font-normal disabled:opacity-50"
-                  >
-                    <button
-                      onClick={handleToggleAi}
-                      disabled={aiTogglePending}
-                      title="تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة"
+                  <Hint label="تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة">
+                    <Badge
+                      asChild
+                      variant={selectedConversation.aiEnabled ? "accent" : "muted"}
+                      className="cursor-pointer gap-1.5 py-1 font-normal disabled:opacity-50"
                     >
-                      {selectedConversation.aiEnabled ? (
-                        <Bot className="h-3.5 w-3.5" />
-                      ) : (
-                        <BotOff className="h-3.5 w-3.5" />
-                      )}
-                      {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
-                    </button>
-                  </Badge>
+                      <button onClick={handleToggleAi} disabled={aiTogglePending}>
+                        {selectedConversation.aiEnabled ? (
+                          <Bot className="h-3.5 w-3.5" />
+                        ) : (
+                          <BotOff className="h-3.5 w-3.5" />
+                        )}
+                        {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
+                      </button>
+                    </Badge>
+                  </Hint>
                 )}
                 {selectedConversation.channel === Channel.WHATSAPP ? (
                   <Badge className="bg-green-100 px-2 font-normal text-green-700">

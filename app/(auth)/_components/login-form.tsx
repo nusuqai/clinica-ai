@@ -2,8 +2,12 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Mail, Lock, ArrowLeft, UserPlus } from "lucide-react";
 import { signIn, joinClinic } from "@/server/actions/auth";
+import { loginSchema, type LoginValues } from "@/lib/validations/auth";
+import { toFormData } from "@/lib/form-data";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Alert } from "@/components/ui/alert";
@@ -19,35 +23,34 @@ export function LoginForm({ clinicName }: Props) {
   const [needsJoin, setNeedsJoin] = useState(false);
   // Held only to re-authenticate on "create account here" — the non-member
   // sign-in is logged out server-side, so joinClinic must sign in again.
-  const [creds, setCreds] = useState<{ email: string; password: string } | null>(null);
+  const [creds, setCreds] = useState<LoginValues | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isJoining, startJoin] = useTransition();
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const form = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: "", password: "" },
+    mode: "onTouched",
+  });
+
+  const handleSubmit = form.handleSubmit((values) => {
     setError(null);
     setNeedsJoin(false);
-    const formData = new FormData(e.currentTarget);
-    const email = String(formData.get("email") ?? "");
-    const password = String(formData.get("password") ?? "");
     startTransition(async () => {
-      const result = await signIn(formData);
+      const result = await signIn(toFormData(values));
       if (result && "error" in result) setError(result.error);
       else if (result && "needsJoin" in result) {
         // Known account, but not a member of this clinic yet.
-        setCreds({ email, password });
+        setCreds(values);
         setNeedsJoin(true);
       }
     });
-  }
+  });
 
   function handleJoin() {
     if (!creds) return;
     startJoin(async () => {
-      const fd = new FormData();
-      fd.set("email", creds.email);
-      fd.set("password", creds.password);
-      const res = await joinClinic(fd);
+      const res = await joinClinic(toFormData(creds));
       if (res?.error) setError(res.error);
     });
   }
@@ -118,8 +121,9 @@ export function LoginForm({ clinicName }: Props) {
           </Button>
         </div>
       ) : (
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-5" onSubmit={handleSubmit} noValidate>
           <FormField
+            control={form.control}
             type="email"
             name="email"
             label="البريد الإلكتروني"
@@ -131,6 +135,7 @@ export function LoginForm({ clinicName }: Props) {
           />
 
           <FormField
+            control={form.control}
             type="password"
             name="password"
             label="كلمة المرور"

@@ -296,25 +296,27 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
                     </div>
                     {renamingId === a.id ? (
                       <>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onRename(a.id, a.fileName)}
-                          loading={savingId === a.id}
-                          className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
-                          title="حفظ الاسم"
-                        >
-                          {savingId !== a.id && <Check />}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setRenamingId(null)}
-                          disabled={savingId === a.id}
-                          title="إلغاء"
-                        >
-                          <X />
-                        </Button>
+                        <Hint label="حفظ الاسم">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => onRename(a.id, a.fileName)}
+                            loading={savingId === a.id}
+                            className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
+                          >
+                            {savingId !== a.id && <Check />}
+                          </Button>
+                        </Hint>
+                        <Hint label="إلغاء">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setRenamingId(null)}
+                            disabled={savingId === a.id}
+                          >
+                            <X />
+                          </Button>
+                        </Hint>
                       </>
                     ) : (
                       <>
@@ -327,27 +329,30 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
                         </Hint>
                         {canManage && (
                           <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                setError(null);
-                                setRenamingId(a.id);
-                                setRenameValue(a.fileName);
-                              }}
-                              title="إعادة تسمية"
-                            >
-                              <Pencil />
-                            </Button>
-                            <Button
-                              variant="ghost-destructive"
-                              size="icon"
-                              onClick={() => onDelete(a.id)}
-                              loading={deletingId === a.id}
-                              title="حذف"
-                            >
-                              {deletingId !== a.id && <Trash2 />}
-                            </Button>
+                            <Hint label="إعادة تسمية">
+                              <Button
+                                aria-label="إعادة تسمية"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  setError(null);
+                                  setRenamingId(a.id);
+                                  setRenameValue(a.fileName);
+                                }}
+                              >
+                                <Pencil />
+                              </Button>
+                            </Hint>
+                            <Hint label="حذف">
+                              <Button
+                                variant="ghost-destructive"
+                                size="icon"
+                                onClick={() => onDelete(a.id)}
+                                loading={deletingId === a.id}
+                              >
+                                {deletingId !== a.id && <Trash2 />}
+                              </Button>
+                            </Hint>
                           </>
                         )}
                       </>

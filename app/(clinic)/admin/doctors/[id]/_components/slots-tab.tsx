@@ -21,6 +21,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Spinner } from "@/components/ui/spinner";
+import { Hint } from "@/components/ui/tooltip";
 
 interface DaySlot {
   id: string;
@@ -289,20 +290,21 @@ function SlotList({
             </div>
 
             {!isBooked && (
-              <Button
-                variant={isBlocked ? "ghost" : "ghost-destructive"}
-                size="icon"
-                onClick={() => onToggleBlock(slot.id)}
-                disabled={isPending}
-                title={isBlocked ? "إتاحة الموعد" : "حظر الموعد"}
-                className={
-                  isBlocked
-                    ? "shrink-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
-                    : "shrink-0"
-                }
-              >
-                {isBlocked ? <CheckCircle /> : <Ban />}
-              </Button>
+              <Hint label={isBlocked ? "إتاحة الموعد" : "حظر الموعد"}>
+                <Button
+                  variant={isBlocked ? "ghost" : "ghost-destructive"}
+                  size="icon"
+                  onClick={() => onToggleBlock(slot.id)}
+                  disabled={isPending}
+                  className={
+                    isBlocked
+                      ? "shrink-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
+                      : "shrink-0"
+                  }
+                >
+                  {isBlocked ? <CheckCircle /> : <Ban />}
+                </Button>
+              </Hint>
             )}
           </div>
         );

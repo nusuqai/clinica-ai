@@ -2,8 +2,12 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Mail, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { forgotPassword } from "@/server/actions/auth";
+import { forgotPasswordSchema, type ForgotPasswordValues } from "@/lib/validations/auth";
+import { toFormData } from "@/lib/form-data";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Alert } from "@/components/ui/alert";
@@ -13,16 +17,20 @@ export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const form = useForm<ForgotPasswordValues>({
+    resolver: zodResolver(forgotPasswordSchema),
+    defaultValues: { email: "" },
+    mode: "onTouched",
+  });
+
+  const handleSubmit = form.handleSubmit((values) => {
     setError(null);
-    const formData = new FormData(e.currentTarget);
     startTransition(async () => {
-      const result = await forgotPassword(formData);
+      const result = await forgotPassword(toFormData(values));
       if (result?.error) setError(result.error);
       else setSent(true);
     });
-  }
+  });
 
   if (sent) {
     return (
@@ -70,8 +78,9 @@ export default function ForgotPasswordPage() {
         </Alert>
       )}
 
-      <form className="space-y-5" onSubmit={handleSubmit}>
+      <form className="space-y-5" onSubmit={handleSubmit} noValidate>
         <FormField
+          control={form.control}
           type="email"
           name="email"
           label="البريد الإلكتروني"

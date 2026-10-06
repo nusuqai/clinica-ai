@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { useForm, useWatch, type Control } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Loader2, X, Send, FileText, AlertTriangle } from "lucide-react";
 import { listTemplatesAction } from "@/server/actions/whatsapp";
 import { sendWhatsappTemplate } from "@/server/actions/messages";
@@ -11,6 +14,11 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Alert } from "@/components/ui/alert";
+
+const variablesSchema = z.object({
+  variables: z.array(z.string().trim().min(1, "أدخل قيمة هذا المتغيّر.")),
+});
+type VariablesValues = z.infer<typeof variablesSchema>;
 
 interface TemplatePickerProps {
   conversationId: string;
@@ -32,8 +40,13 @@ export default function WhatsappTemplatePicker({
   const [error, setError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [selected, setSelected] = useState<MessageTemplate | null>(null);
-  const [variables, setVariables] = useState<string[]>([]);
-  const [sending, setSending] = useState(false);
+  const formId = useId();
+  const form = useForm<VariablesValues>({
+    resolver: zodResolver(variablesSchema),
+    defaultValues: { variables: [] },
+    mode: "onTouched",
+  });
+  const sending = form.formState.isSubmitting;
 
   useEffect(() => {
     let cancelled = false;
@@ -62,24 +75,20 @@ export default function WhatsappTemplatePicker({
 
   const selectTemplate = (t: MessageTemplate) => {
     setSelected(t);
-    setVariables(Array.from({ length: t.variableCount }, () => ""));
+    form.reset({ variables: Array.from({ length: t.variableCount }, () => "") });
     setError(null);
   };
 
-  const rendered = selected ? fillTemplate(selected.bodyText, variables) : "";
-  const allFilled = !selected || variables.every((v) => v.trim().length > 0);
-
-  const handleSend = async () => {
-    if (!selected || !allFilled || sending) return;
-    setSending(true);
+  const handleSend = form.handleSubmit(async ({ variables }) => {
+    if (!selected) return;
     setError(null);
+    const rendered = fillTemplate(selected.bodyText, variables);
     const res = await sendWhatsappTemplate(conversationId, {
       name: selected.name,
       language: selected.language,
       variables,
       renderedText: rendered,
     });
-    setSending(false);
     if (!res.ok) {
       setError(
         res.reason === "not_configured"
@@ -92,7 +101,7 @@ export default function WhatsappTemplatePicker({
     }
     onSent({ messageId: res.messageId, createdAt: res.createdAt, content: rendered });
     onClose();
-  };
+  });
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -162,31 +171,28 @@ export default function WhatsappTemplatePicker({
 
               {/* Variable inputs + preview */}
               {selected && (
-                <div className="space-y-3 border-t border-border pt-4">
-                  {variables.map((v, i) => (
+                <form
+                  id={formId}
+                  onSubmit={handleSend}
+                  noValidate
+                  className="space-y-3 border-t border-border pt-4"
+                >
+                  {Array.from({ length: selected.variableCount }, (_, i) => (
                     <FormField
-                      key={i}
+                      key={`${selected.name}-${i}`}
+                      control={form.control}
+                      name={`variables.${i}`}
                       label={
                         <>
                           القيمة {i + 1} ({`{{${i + 1}}}`})
                         </>
                       }
                       labelClassName="text-xs font-normal text-muted-foreground"
-                      value={v}
-                      onValueChange={(next) =>
-                        setVariables((prev) => prev.map((x, j) => (j === i ? next : x)))
-                      }
                     />
                   ))}
                   <div>
                     <p className="mb-1 text-xs text-muted-foreground">معاينة</p>
-                    <WhatsappPreview
-                      headerText={selected.headerText}
-                      bodyText={selected.bodyText}
-                      variables={variables}
-                      footerText={selected.footerText}
-                      buttons={selected.buttons}
-                    />
+                    <LivePreview control={form.control} template={selected} />
                   </div>
                   {error && (
                     <p className="flex items-center gap-1 text-xs text-red-600">
@@ -194,7 +200,7 @@ export default function WhatsappTemplatePicker({
                       {error}
                     </p>
                   )}
-                </div>
+                </form>
               )}
             </>
           )}
@@ -202,7 +208,8 @@ export default function WhatsappTemplatePicker({
 
         {selected && (
           <div className="border-t border-border px-5 py-3">
-            <Button onClick={handleSend} loading={sending} disabled={!allFilled} className="w-full">
+            {/* In the footer, outside the scrolling body, so it targets the form by id. */}
+            <Button type="submit" form={formId} loading={sending} className="w-full">
               {!sending && <Send />}
               إرسال القالب
             </Button>
@@ -210,5 +217,25 @@ export default function WhatsappTemplatePicker({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The preview with the typed values; re-renders alone as they change. */
+function LivePreview({
+  control,
+  template,
+}: {
+  control: Control<VariablesValues>;
+  template: MessageTemplate;
+}) {
+  const variables = useWatch({ control, name: "variables" });
+  return (
+    <WhatsappPreview
+      headerText={template.headerText}
+      bodyText={template.bodyText}
+      variables={variables}
+      footerText={template.footerText}
+      buttons={template.buttons}
+    />
   );
 }

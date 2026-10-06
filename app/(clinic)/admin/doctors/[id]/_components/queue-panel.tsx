@@ -273,16 +273,17 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
               ) : (
                 <>
                   {currentPatient && (
-                    <Button
-                      variant="outline"
-                      onClick={() => skip(currentPatient.id)}
-                      disabled={isPending}
-                      title="تخطّي المريض الحالي مؤقتاً (غير حاضر)"
-                      className="border-amber-300 px-3 text-amber-700 hover:bg-amber-50"
-                    >
-                      <SkipForward />
-                      تخطّي
-                    </Button>
+                    <Hint label="تخطّي المريض الحالي مؤقتاً (غير حاضر)">
+                      <Button
+                        variant="outline"
+                        onClick={() => skip(currentPatient.id)}
+                        disabled={isPending}
+                        className="border-amber-300 px-3 text-amber-700 hover:bg-amber-50"
+                      >
+                        <SkipForward />
+                        تخطّي
+                      </Button>
+                    </Hint>
                   )}
                   {(currentPatient || hasNext) && (
                     <Button onClick={handleNextClick} disabled={isPending}>
@@ -326,15 +327,16 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                         )}
                       </div>
                     </div>
-                    <Button
-                      onClick={() => markArrived(p.id)}
-                      disabled={isPending}
-                      title="تسجيل وصول المريض وإعطاؤه رقم الدور"
-                      className="shrink-0 px-3"
-                    >
-                      <UserCheck />
-                      وصل
-                    </Button>
+                    <Hint label="تسجيل وصول المريض وإعطاؤه رقم الدور">
+                      <Button
+                        onClick={() => markArrived(p.id)}
+                        disabled={isPending}
+                        className="shrink-0 px-3"
+                      >
+                        <UserCheck />
+                        وصل
+                      </Button>
+                    </Hint>
                   </div>
                 ))}
               </div>
@@ -411,17 +413,18 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                           controls above and act on the current patient. Not shown
                           for a recalled patient who is already being served. */}
                       {showSkipped && (
-                        <Button
-                          variant="link"
-                          size="sm"
-                          onClick={() => recall(p.id)}
-                          disabled={isPending}
-                          title="إرجاع المريض ليُخدَم الآن"
-                          className="h-auto gap-1 px-0 [&_svg]:size-3.5"
-                        >
-                          <Undo2 />
-                          إرجاع
-                        </Button>
+                        <Hint label="إرجاع المريض ليُخدَم الآن">
+                          <Button
+                            variant="link"
+                            size="sm"
+                            onClick={() => recall(p.id)}
+                            disabled={isPending}
+                            className="h-auto gap-1 px-0 [&_svg]:size-3.5"
+                          >
+                            <Undo2 />
+                            إرجاع
+                          </Button>
+                        </Hint>
                       )}
                     </div>
                   </div>

@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +16,10 @@ import {
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Hint } from "@/components/ui/tooltip";
+import { specialtySchema, type SpecialtyValues } from "@/lib/validations/admin";
+
+type RunFn = (fn: () => Promise<{ error?: string } | void>, after?: () => void) => void;
 
 export interface SpecialtyView {
   id: string;
@@ -24,13 +30,16 @@ export interface SpecialtyView {
 export default function SpecialtiesManager({ specialties }: { specialties: SpecialtyView[] }) {
   const router = useRouter();
   const confirm = useConfirm();
-  const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  function run(fn: () => Promise<{ error?: string } | void>, after?: () => void) {
+  const addForm = useForm<SpecialtyValues>({
+    resolver: zodResolver(specialtySchema),
+    defaultValues: { name: "" },
+  });
+
+  const run: RunFn = (fn, after) => {
     setError(null);
     startTransition(async () => {
       const res = await fn();
@@ -40,16 +49,14 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
         router.refresh();
       }
     });
-  }
+  };
 
-  function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newName.trim()) return;
+  const handleAdd = addForm.handleSubmit(({ name }) =>
     run(
-      () => createSpecialtyAction(newName.trim()),
-      () => setNewName("")
-    );
-  }
+      () => createSpecialtyAction(name),
+      () => addForm.reset()
+    )
+  );
 
   return (
     <div className="max-w-2xl">
@@ -60,14 +67,14 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
       )}
 
       {/* Add */}
-      <form onSubmit={handleAdd} className="mb-6 flex gap-2">
+      <form onSubmit={handleAdd} noValidate className="mb-6 flex items-start gap-2">
         <FormField
-          value={newName}
-          onValueChange={setNewName}
+          control={addForm.control}
+          name="name"
           placeholder="اسم تخصص جديد (مثال: طب الأطفال)"
           className="flex-1"
         />
-        <Button type="submit" disabled={isPending || !newName.trim()}>
+        <Button type="submit" disabled={isPending}>
           <Plus />
           إضافة
         </Button>
@@ -84,71 +91,47 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
           {specialties.map((s) => (
             <div key={s.id} className="flex items-center gap-3 px-5 py-3">
               {editingId === s.id ? (
-                <>
-                  <FormField
-                    value={editName}
-                    onValueChange={setEditName}
-                    className="flex-1"
-                    autoFocus
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() =>
-                      run(
-                        () => renameSpecialtyAction(s.id, editName.trim()),
-                        () => setEditingId(null)
-                      )
-                    }
-                    disabled={isPending || !editName.trim()}
-                    title="حفظ"
-                    className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
-                  >
-                    <Check />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setEditingId(null)}
-                    title="إلغاء"
-                  >
-                    <X />
-                  </Button>
-                </>
+                <RenameRow
+                  specialty={s}
+                  isPending={isPending}
+                  run={run}
+                  onDone={() => setEditingId(null)}
+                />
               ) : (
                 <>
                   <span className="flex-1 font-sans font-medium text-foreground">{s.name}</span>
                   <Badge variant="muted">{s.doctorCount} طبيب</Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      setEditingId(s.id);
-                      setEditName(s.name);
-                    }}
-                    title="تعديل"
-                    className="hover:bg-primary/10 hover:text-primary"
-                  >
-                    <Pencil />
-                  </Button>
-                  <Button
-                    variant="ghost-destructive"
-                    size="icon"
-                    onClick={async () => {
-                      const ok = await confirm({
-                        title: "حذف التخصص",
-                        description:
-                          s.doctorCount > 0
-                            ? `هذا التخصص مرتبط بـ ${s.doctorCount} طبيب. سيُزال تخصصهم عند الحذف. متابعة؟`
-                            : "حذف هذا التخصص؟",
-                      });
-                      if (ok) run(() => deleteSpecialtyAction(s.id));
-                    }}
-                    disabled={isPending}
-                    title="حذف"
-                  >
-                    <Trash2 />
-                  </Button>
+                  <Hint label="تعديل">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setEditingId(s.id)}
+                      aria-label="تعديل"
+                      className="hover:bg-primary/10 hover:text-primary"
+                    >
+                      <Pencil />
+                    </Button>
+                  </Hint>
+                  <Hint label="حذف">
+                    <Button
+                      variant="ghost-destructive"
+                      size="icon"
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "حذف التخصص",
+                          description:
+                            s.doctorCount > 0
+                              ? `هذا التخصص مرتبط بـ ${s.doctorCount} طبيب. سيُزال تخصصهم عند الحذف. متابعة؟`
+                              : "حذف هذا التخصص؟",
+                        });
+                        if (ok) run(() => deleteSpecialtyAction(s.id));
+                      }}
+                      disabled={isPending}
+                      aria-label="حذف"
+                    >
+                      <Trash2 />
+                    </Button>
+                  </Hint>
                 </>
               )}
             </div>
@@ -156,5 +139,50 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
         </Card>
       )}
     </div>
+  );
+}
+
+/** Inline rename: its own small form, so typing re-renders just this row. */
+function RenameRow({
+  specialty,
+  isPending,
+  run,
+  onDone,
+}: {
+  specialty: SpecialtyView;
+  isPending: boolean;
+  run: RunFn;
+  onDone: () => void;
+}) {
+  const form = useForm<SpecialtyValues>({
+    resolver: zodResolver(specialtySchema),
+    defaultValues: { name: specialty.name },
+  });
+
+  const handleSave = form.handleSubmit(({ name }) =>
+    run(() => renameSpecialtyAction(specialty.id, name), onDone)
+  );
+
+  return (
+    <form onSubmit={handleSave} noValidate className="flex flex-1 items-start gap-3">
+      <FormField control={form.control} name="name" className="flex-1" autoFocus />
+      <Hint label="حفظ">
+        <Button
+          type="submit"
+          variant="ghost"
+          size="icon"
+          disabled={isPending}
+          aria-label="حفظ"
+          className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
+        >
+          <Check />
+        </Button>
+      </Hint>
+      <Hint label="إلغاء">
+        <Button type="button" variant="ghost" size="icon" onClick={onDone} aria-label="إلغاء">
+          <X />
+        </Button>
+      </Hint>
+    </form>
   );
 }

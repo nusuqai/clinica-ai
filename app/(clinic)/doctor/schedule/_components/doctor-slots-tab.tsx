@@ -19,6 +19,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { toast } from "sonner";
+import { Hint } from "@/components/ui/tooltip";
 
 type FilterStatus = "all" | "available" | "blocked" | "booked";
 
@@ -202,20 +203,21 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                           </div>
 
                           {!isBooked && (
-                            <Button
-                              variant={isBlocked ? "ghost" : "ghost-destructive"}
-                              size="icon"
-                              onClick={() => handleToggle(slot.id)}
-                              disabled={isPending}
-                              title={isBlocked ? "إتاحة الموعد" : "حظر الموعد"}
-                              className={
-                                isBlocked
-                                  ? "shrink-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
-                                  : "shrink-0"
-                              }
-                            >
-                              {isBlocked ? <CheckCircle /> : <Ban />}
-                            </Button>
+                            <Hint label={isBlocked ? "إتاحة الموعد" : "حظر الموعد"}>
+                              <Button
+                                variant={isBlocked ? "ghost" : "ghost-destructive"}
+                                size="icon"
+                                onClick={() => handleToggle(slot.id)}
+                                disabled={isPending}
+                                className={
+                                  isBlocked
+                                    ? "shrink-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
+                                    : "shrink-0"
+                                }
+                              >
+                                {isBlocked ? <CheckCircle /> : <Ban />}
+                              </Button>
+                            </Hint>
                           )}
                         </div>
                       );

@@ -44,13 +44,15 @@ export default function DoctorRowActions({ doctorId, isActive }: DoctorRowAction
 
   return (
     <div className="flex items-center gap-2">
-      <Switch
-        checked={active}
-        onCheckedChange={toggleActive}
-        disabled={isPending}
-        title={active ? "إلغاء تفعيل" : "تفعيل"}
-        className="data-[state=checked]:bg-emerald-500"
-      />
+      <Hint label={active ? "إلغاء تفعيل" : "تفعيل"}>
+        <Switch
+          aria-label={active ? "إلغاء تفعيل" : "تفعيل"}
+          checked={active}
+          onCheckedChange={toggleActive}
+          disabled={isPending}
+          className="data-[state=checked]:bg-emerald-500"
+        />
+      </Hint>
       <Hint label="حذف الطبيب">
         <Button
           aria-label="حذف الطبيب"
