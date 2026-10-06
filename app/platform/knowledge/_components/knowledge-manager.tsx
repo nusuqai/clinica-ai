@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export interface KnowledgeDocView {
   id: string;
@@ -64,6 +65,7 @@ export default function KnowledgeManager({
   docs: KnowledgeDocView[];
 }) {
   const router = useRouter();
+  const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -190,12 +192,13 @@ export default function KnowledgeManager({
                   <Button
                     variant="ghost-destructive"
                     size="icon"
-                    onClick={() =>
-                      run(() => {
-                        if (!confirm(`حذف المستند «${d.title}» نهائياً؟`)) return Promise.resolve();
-                        return deleteClinicKnowledgeDocAction({ clinicId, id: d.id });
-                      })
-                    }
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "حذف المستند",
+                        description: `حذف المستند «${d.title}» نهائياً؟`,
+                      });
+                      if (ok) run(() => deleteClinicKnowledgeDocAction({ clinicId, id: d.id }));
+                    }}
                     disabled={isPending}
                     title="حذف"
                   >

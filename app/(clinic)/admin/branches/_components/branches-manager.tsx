@@ -18,6 +18,8 @@ import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,6 +143,7 @@ export default function BranchesManager({
   const [form, setForm] = useState<FormState>(formFromBranch());
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   function openCreate() {
     setEditing(null);
@@ -205,11 +208,11 @@ export default function BranchesManager({
     });
   }
 
-  function runAction(fn: () => Promise<{ error?: string } | void>, confirmMsg?: string) {
-    if (confirmMsg && !confirm(confirmMsg)) return;
+  async function runAction(fn: () => Promise<{ error?: string } | void>, confirmMsg?: string) {
+    if (confirmMsg && !(await confirm({ title: "حذف الفرع", description: confirmMsg }))) return;
     startTransition(async () => {
       const res = await fn();
-      if (res && "error" in res && res.error) alert(res.error);
+      if (res && "error" in res && res.error) toast.error(res.error);
       else router.refresh();
     });
   }

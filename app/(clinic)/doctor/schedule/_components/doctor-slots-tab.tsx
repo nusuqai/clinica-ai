@@ -11,6 +11,7 @@ import type { AppointmentStatus } from "@prisma/client";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 
 type FilterStatus = "all" | "available" | "blocked" | "booked";
 
@@ -34,7 +35,7 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
     startTransition(async () => {
       const res = await toggleMySlotBlockedAction(slotId);
       if (res?.error) {
-        alert(res.error);
+        toast.error(res.error);
         return;
       }
       router.refresh();

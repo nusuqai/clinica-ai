@@ -20,6 +20,7 @@ import { queueCapacityHint } from "@/lib/availability/queue-capacity";
 import { isQueueMode, MODE_BADGE_AR } from "@/lib/availability/modes";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export interface DoctorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -66,6 +67,7 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [selBranch, setSelBranch] = useState<string>(branches[0]?.id ?? "");
   const [selDay, setSelDay] = useState<DayOfWeek>(DayOfWeek.SAT);
@@ -111,8 +113,13 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
     });
   }
 
-  function handleDelete(ruleId: string) {
-    if (!confirm("سيتم حذف هذه القاعدة والمواعيد المستقبلية غير المحجوزة. هل تريد المتابعة؟"))
+  async function handleDelete(ruleId: string) {
+    if (
+      !(await confirm({
+        title: "حذف القاعدة",
+        description: "سيتم حذف هذه القاعدة والمواعيد المستقبلية غير المحجوزة. هل تريد المتابعة؟",
+      }))
+    )
       return;
     setError(null);
     startTransition(async () => {

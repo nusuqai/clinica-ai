@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export interface EditorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -115,6 +116,7 @@ export default function AvailabilityRulesEditor(props: Props) {
   const [loading, setLoading] = useState(props.mode === "live");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   // "New rule" row — controlled so it never participates in the parent form.
   const [nBranch, setNBranch] = useState(branches[0]?.id ?? "");
@@ -219,14 +221,19 @@ export default function AvailabilityRulesEditor(props: Props) {
     });
   }
 
-  function removeRow(idx: number) {
+  async function removeRow(idx: number) {
     const row = rows[idx];
     // Draft rows (and any not yet persisted) just drop from local state.
     if (props.mode === "draft" || !row.id) {
       setRows((rs) => rs.filter((_, i) => i !== idx));
       return;
     }
-    if (!confirm("سيتم حذف هذه القاعدة والمواعيد المستقبلية غير المحجوزة. هل تريد المتابعة؟"))
+    if (
+      !(await confirm({
+        title: "حذف القاعدة",
+        description: "سيتم حذف هذه القاعدة والمواعيد المستقبلية غير المحجوزة. هل تريد المتابعة؟",
+      }))
+    )
       return;
     const ruleId = row.id;
     setError(null);

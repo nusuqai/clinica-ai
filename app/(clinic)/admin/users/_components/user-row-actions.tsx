@@ -6,6 +6,7 @@ import { Role } from "@prisma/client";
 import { updateUserRoleAction, deleteUserAction } from "@/server/actions/admin";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const roles: { value: Role; label: string }[] = [
   { value: Role.PATIENT, label: "مريض" },
@@ -22,6 +23,7 @@ interface UserRowActionsProps {
 export default function UserRowActions({ userId, currentRole, isSelf }: UserRowActionsProps) {
   const [role, setRole] = useState(currentRole);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
 
   function handleRoleChange(newRole: Role) {
@@ -36,8 +38,12 @@ export default function UserRowActions({ userId, currentRole, isSelf }: UserRowA
     });
   }
 
-  function handleDelete() {
-    if (!confirm("هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع.")) return;
+  async function handleDelete() {
+    const ok = await confirm({
+      title: "حذف المستخدم",
+      description: "هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع.",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await deleteUserAction(userId);
       if (res?.error) setError(res.error);

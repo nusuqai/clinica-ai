@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { setDoctorActiveAction, deleteDoctorAction } from "@/server/actions/admin";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface DoctorRowActionsProps {
   doctorId: string;
@@ -14,6 +15,7 @@ interface DoctorRowActionsProps {
 export default function DoctorRowActions({ doctorId, isActive }: DoctorRowActionsProps) {
   const [active, setActive] = useState(isActive);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
 
   function toggleActive() {
@@ -27,8 +29,12 @@ export default function DoctorRowActions({ doctorId, isActive }: DoctorRowAction
     });
   }
 
-  function handleDelete() {
-    if (!confirm("هل أنت متأكد من حذف هذا الطبيب وحسابه كاملاً؟")) return;
+  async function handleDelete() {
+    const ok = await confirm({
+      title: "حذف الطبيب",
+      description: "هل أنت متأكد من حذف هذا الطبيب وحسابه كاملاً؟",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await deleteDoctorAction(doctorId);
       if (res?.error) setError(res.error);

@@ -13,6 +13,7 @@ import {
 } from "@/server/actions/admin";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export interface SpecialtyView {
   id: string;
@@ -22,6 +23,7 @@ export interface SpecialtyView {
 
 export default function SpecialtiesManager({ specialties }: { specialties: SpecialtyView[] }) {
   const router = useRouter();
+  const confirm = useConfirm();
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -132,19 +134,16 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
                   <Button
                     variant="ghost-destructive"
                     size="icon"
-                    onClick={() =>
-                      run(() => {
-                        if (
-                          !confirm(
-                            s.doctorCount > 0
-                              ? `هذا التخصص مرتبط بـ ${s.doctorCount} طبيب. سيُزال تخصصهم عند الحذف. متابعة؟`
-                              : "حذف هذا التخصص؟"
-                          )
-                        )
-                          return Promise.resolve();
-                        return deleteSpecialtyAction(s.id);
-                      })
-                    }
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "حذف التخصص",
+                        description:
+                          s.doctorCount > 0
+                            ? `هذا التخصص مرتبط بـ ${s.doctorCount} طبيب. سيُزال تخصصهم عند الحذف. متابعة؟`
+                            : "حذف هذا التخصص؟",
+                      });
+                      if (ok) run(() => deleteSpecialtyAction(s.id));
+                    }}
                     disabled={isPending}
                     title="حذف"
                   >
