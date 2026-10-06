@@ -30,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
@@ -107,14 +108,9 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
               <h1 className="font-heading text-2xl font-bold text-foreground">
                 {doctor.profile.fullName}
               </h1>
-              <span
-                className={[
-                  "inline-flex items-center rounded-full px-2.5 py-0.5 font-sans text-xs font-medium",
-                  doctor.isActive ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500",
-                ].join(" ")}
-              >
+              <Badge variant={doctor.isActive ? "success" : "neutral"}>
                 {doctor.isActive ? "نشط" : "غير نشط"}
-              </span>
+              </Badge>
             </div>
             <p className="font-sans text-muted-foreground">{doctor.specialty}</p>
             <div className="mt-2 flex flex-wrap items-center gap-4">
@@ -157,18 +153,18 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {doctor.title && (
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 font-sans text-xs font-medium text-primary">
+                <Badge className="px-2">
                   {doctor.title === "CONSULTANT" ? "استشاري" : "أخصائي"}
-                </span>
+                </Badge>
               )}
               {doctor.acceptsChildren && (
-                <span className="rounded-full bg-sky-100 px-2 py-0.5 font-sans text-xs font-medium text-sky-700">
+                <Badge variant="sky" className="px-2">
                   يكشف على الأطفال
-                </span>
+                </Badge>
               )}
-              <span className="rounded-full bg-muted px-2 py-0.5 font-sans text-xs font-medium text-muted-foreground">
+              <Badge variant="muted" className="px-2">
                 {doctor.requiresAdvanceBooking ? "يحتاج حجزاً مسبقاً" : "يقبل بدون حجز مسبق"}
-              </span>
+              </Badge>
             </div>
             {doctor.qualifications && (
               <p className="mt-2 max-w-xl font-sans text-sm text-muted-foreground">

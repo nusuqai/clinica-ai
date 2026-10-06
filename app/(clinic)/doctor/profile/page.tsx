@@ -5,6 +5,7 @@ import { getDoctorByProfileId } from "@/server/services/doctors";
 import { listSpecialtyOptions } from "@/server/services/specialties";
 import ProfileForm from "./_components/profile-form";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 export default async function DoctorProfilePage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
@@ -55,14 +56,9 @@ export default async function DoctorProfilePage() {
                   {String(doctor.consultationFee)} ر.س
                 </span>
               )}
-              <span
-                className={[
-                  "rounded-full px-2 py-0.5 font-sans text-xs font-medium",
-                  doctor.isActive ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500",
-                ].join(" ")}
-              >
+              <Badge variant={doctor.isActive ? "success" : "neutral"}>
                 {doctor.isActive ? "نشط" : "غير نشط"}
-              </span>
+              </Badge>
             </div>
           </div>
         </div>

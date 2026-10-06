@@ -18,6 +18,7 @@ import { RecordsPanel } from "@/components/landing/records-panel";
 import { ShowMore } from "@/components/landing/show-more";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
 // The signed-in patient's area on the clinic's own home page, right under the
 // hero: upcoming bookings as cards, plus past visits and the treatment record
@@ -170,10 +171,10 @@ function PastVisitsList({
           </p>
         </div>
         {documented.has(appt.id) && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 font-sans text-xs font-medium text-primary">
+          <Badge>
             <FileText className="h-3 w-3" />
             له سجل علاجي
-          </span>
+          </Badge>
         )}
         <AppointmentStatusBadge status={appt.status} />
         <Link
@@ -240,11 +241,7 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
       <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <AppointmentStatusBadge status={appt.status} />
-          {isNext && (
-            <span className="rounded-full bg-accent/15 px-2.5 py-0.5 font-sans text-xs font-medium text-accent">
-              الأقرب
-            </span>
-          )}
+          {isNext && <Badge className="bg-accent/15 text-accent">الأقرب</Badge>}
         </div>
 
         <div className="min-w-0">

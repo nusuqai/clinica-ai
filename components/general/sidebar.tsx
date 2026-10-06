@@ -16,6 +16,7 @@ import {
 import { signOut } from "@/server/actions/auth";
 import { Button } from "@/components/ui/button";
 import { useEscalationAlerts } from "./escalation-provider";
+import { Badge } from "@/components/ui/badge";
 
 export interface NavItem {
   href: string;
@@ -202,9 +203,7 @@ function SidebarContent({
       {/* Role badge */}
       {!collapsed && (
         <div className="px-4 pb-2 pt-4">
-          <span className="inline-flex items-center rounded-full bg-accent/20 px-2.5 py-0.5 font-sans text-xs font-medium text-accent">
-            {roleLabel}
-          </span>
+          <Badge className="bg-accent/20 text-accent">{roleLabel}</Badge>
         </div>
       )}
 

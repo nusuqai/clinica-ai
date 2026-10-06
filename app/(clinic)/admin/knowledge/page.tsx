@@ -3,6 +3,7 @@ import { requireClinicMember } from "@/lib/auth";
 import { listKnowledgeDocsForAdmin } from "@/server/services/knowledge";
 import PageHeader from "@/components/admin/page-header";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Read-only knowledge base for a clinic admin. Authoring lives in the platform
@@ -37,15 +38,15 @@ export default async function AdminKnowledgePage() {
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-heading font-bold text-foreground">{d.title}</h3>
                 {d.isActive ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 font-sans text-xs text-emerald-600">
+                  <Badge className="bg-emerald-500/10 px-2 font-normal text-emerald-600">
                     <Eye className="h-3 w-3" />
                     مفعّل
-                  </span>
+                  </Badge>
                 ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-sans text-xs text-muted-foreground">
+                  <Badge variant="muted" className="px-2 font-normal">
                     <EyeOff className="h-3 w-3" />
                     غير مفعّل
-                  </span>
+                  </Badge>
                 )}
               </div>
               <p className="mt-1 font-sans text-sm text-muted-foreground">{d.summary}</p>

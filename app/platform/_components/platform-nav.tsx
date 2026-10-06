@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { signOut } from "@/server/actions/auth";
+import { Badge } from "@/components/ui/badge";
 
 interface NavLink {
   href: string;
@@ -171,9 +172,9 @@ function NavPill({
       <Icon className="h-4 w-4 flex-shrink-0" />
       <span>{label}</span>
       {badge != null && badge > 0 && (
-        <span className="ms-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-medium text-white">
+        <Badge className="ms-1 h-5 min-w-5 justify-center bg-red-500 px-1.5 text-[11px] text-white">
           {badge}
-        </span>
+        </Badge>
       )}
     </Link>
   );

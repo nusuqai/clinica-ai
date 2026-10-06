@@ -15,6 +15,7 @@ import {
 } from "@/server/actions/patient";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
 interface Doctor {
   id: string;
@@ -302,10 +303,10 @@ export function BookAppointmentModal({
                               })}
                             </span>
                             {mode !== "SLOT_BASED" && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 font-sans text-[11px] font-medium text-accent">
+                              <Badge variant="accent" className="px-2 text-[11px]">
                                 <Users className="h-3 w-3" />
                                 {mode === "ARRIVAL_BASED" ? "أسبقية الحضور" : "طابور"}
-                              </span>
+                              </Badge>
                             )}
                           </span>
                           <ChevronDown

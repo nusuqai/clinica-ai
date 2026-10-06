@@ -838,13 +838,13 @@ export default function ChatInbox({
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 ) : (
-                  <span
-                    className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 font-sans text-xs text-muted-foreground/60"
+                  <Badge
+                    className="cursor-not-allowed gap-1.5 bg-muted py-1 font-normal text-muted-foreground/60"
                     title="لا يوجد حساب مرتبط بعد — سيظهر الملف بعد تسجيل العميل"
                   >
                     <UserRound className="h-3.5 w-3.5" />
                     ملف العميل
-                  </span>
+                  </Badge>
                 )}
                 {selectedConversation.escalations.length > 0 &&
                   (() => {
@@ -889,15 +889,15 @@ export default function ChatInbox({
                   </Badge>
                 )}
                 {selectedConversation.channel === Channel.WHATSAPP ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 font-sans text-xs text-green-700">
+                  <Badge className="bg-green-100 px-2 font-normal text-green-700">
                     <WhatsappIcon className="h-3 w-3" />
                     واتساب
-                  </span>
+                  </Badge>
                 ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 font-sans text-xs text-accent">
+                  <Badge variant="accent" className="px-2 font-normal">
                     <Globe className="h-3 w-3" />
                     ويب
-                  </span>
+                  </Badge>
                 )}
               </div>
             </div>

@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 export default async function AdminDoctorsPage() {
   const { clinic } = await requireClinicMember(["ADMIN"]);
@@ -86,16 +87,9 @@ export default async function AdminDoctorsPage() {
                     {doctor._count.appointments}
                   </TableCell>
                   <TableCell className="px-4 py-3">
-                    <span
-                      className={[
-                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                        doctor.isActive
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-gray-100 text-gray-500",
-                      ].join(" ")}
-                    >
+                    <Badge variant={doctor.isActive ? "success" : "neutral"}>
                       {doctor.isActive ? "نشط" : "غير نشط"}
-                    </span>
+                    </Badge>
                   </TableCell>
                   <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-1">

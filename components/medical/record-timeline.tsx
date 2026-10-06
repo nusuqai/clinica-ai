@@ -16,6 +16,7 @@ import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import { formatSlotDate } from "@/lib/slot-time";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
 // One patient's clinical history, newest visit first. Rendered identically for
 // the doctor, the admin and the patient — the three pages differ in what they
@@ -108,22 +109,24 @@ export default function RecordTimeline({
                     (renderRevisionBadge ? (
                       renderRevisionBadge(record)
                     ) : (
-                      <span
-                        className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700"
+                      <Badge
+                        variant="warning"
+                        className="px-2 text-[length:inherit]"
                         title={`عُدّل ${record.revisionCount} مرة`}
                       >
                         عُدّل {record.revisionCount === 1 ? "مرة" : `${record.revisionCount} مرات`}
-                      </span>
+                      </Badge>
                     ))}
                   {appointmentBasePath && record.appointmentId && (
-                    <Link
-                      href={`${appointmentBasePath}/${record.appointmentId}`}
-                      className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary transition-colors hover:bg-primary/20"
-                      title="فتح صفحة الموعد المرتبط بهذا السجل"
-                    >
-                      <CalendarSearch className="h-3.5 w-3.5" />
-                      الموعد المرتبط
-                    </Link>
+                    <Badge asChild className="px-2 text-[length:inherit] hover:bg-primary/20">
+                      <Link
+                        href={`${appointmentBasePath}/${record.appointmentId}`}
+                        title="فتح صفحة الموعد المرتبط بهذا السجل"
+                      >
+                        <CalendarSearch className="h-3.5 w-3.5" />
+                        الموعد المرتبط
+                      </Link>
+                    </Badge>
                   )}
                 </div>
               </div>

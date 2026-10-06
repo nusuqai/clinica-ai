@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 export default async function PlatformRequestsPage() {
   const requests = await prisma.clinicRequest.findMany({
@@ -68,9 +69,9 @@ export default async function PlatformRequestsPage() {
                     {r.requesterPhone && <div>{r.requesterPhone}</div>}
                   </TableCell>
                   <TableCell className="px-4 py-3">
-                    <span className="inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-foreground">
+                    <Badge className="bg-muted text-foreground">
                       {CLINIC_REQUEST_STATUS_LABELS[r.status]}
-                    </span>
+                    </Badge>
                   </TableCell>
                   <TableCell className="px-4 py-3">
                     {r.status === ClinicRequestStatus.PENDING ? (

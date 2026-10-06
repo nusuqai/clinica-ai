@@ -20,6 +20,7 @@ import AppointmentAttachments from "@/components/appointments/appointment-attach
 import AdminRecordModal from "@/components/medical/admin-record-modal";
 import EditPatientModal from "./_components/edit-patient-modal";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 const ROLE_LABEL: Record<Role, string> = {
   [Role.PATIENT]: "مريض",
@@ -80,19 +81,17 @@ export default async function UserDetailPage({ params }: PageProps) {
           <div className="min-w-0 flex-1">
             <div className="mb-1 flex flex-wrap items-center gap-2">
               <h1 className="font-heading text-2xl font-bold text-foreground">{user.fullName}</h1>
-              <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 font-sans text-xs font-medium text-primary">
-                {ROLE_LABEL[user.role]}
-              </span>
+              <Badge>{ROLE_LABEL[user.role]}</Badge>
               {user.claimed ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 font-sans text-xs font-medium text-emerald-700">
+                <Badge variant="success">
                   <ShieldCheck className="h-3 w-3" />
                   حساب مُفعّل
-                </span>
+                </Badge>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 font-sans text-xs font-medium text-amber-700">
+                <Badge variant="warning">
                   <ShieldAlert className="h-3 w-3" />
                   عبر واتساب (لم يُفعّل الدخول للموقع)
-                </span>
+                </Badge>
               )}
             </div>
 

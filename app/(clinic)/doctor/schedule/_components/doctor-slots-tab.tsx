@@ -10,6 +10,7 @@ import type { DoctorSlot } from "@/server/services/doctors";
 import type { AppointmentStatus } from "@prisma/client";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 type FilterStatus = "all" | "available" | "blocked" | "booked";
 
@@ -143,19 +144,19 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                     </span>
                     <div className="flex flex-shrink-0 items-center gap-1.5">
                       {dayCounts.available > 0 && (
-                        <span className="rounded-full bg-emerald-50 px-1.5 py-px font-sans text-[10px] font-medium text-emerald-600">
+                        <Badge className="bg-emerald-50 px-1.5 py-px text-[10px] text-emerald-600">
                           {dayCounts.available} متاح
-                        </span>
+                        </Badge>
                       )}
                       {dayCounts.blocked > 0 && (
-                        <span className="rounded-full bg-gray-100 px-1.5 py-px font-sans text-[10px] font-medium text-gray-500">
+                        <Badge className="bg-gray-100 px-1.5 py-px text-[10px] text-gray-500">
                           {dayCounts.blocked} محظور
-                        </span>
+                        </Badge>
                       )}
                       {dayCounts.booked > 0 && (
-                        <span className="rounded-full bg-blue-50 px-1.5 py-px font-sans text-[10px] font-medium text-blue-600">
+                        <Badge className="bg-blue-50 px-1.5 py-px text-[10px] text-blue-600">
                           {dayCounts.booked} محجوز
-                        </span>
+                        </Badge>
                       )}
                     </div>
                   </div>
@@ -194,14 +195,10 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                               </div>
                             )}
                             {!isBooked && !isBlocked && (
-                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-sans text-xs font-medium text-emerald-600">
-                                متاح
-                              </span>
+                              <Badge className="bg-emerald-50 px-2 text-emerald-600">متاح</Badge>
                             )}
                             {isBlocked && (
-                              <span className="rounded-full bg-gray-100 px-2 py-0.5 font-sans text-xs font-medium text-gray-500">
-                                محظور
-                              </span>
+                              <Badge className="bg-gray-100 px-2 text-gray-500">محظور</Badge>
                             )}
                           </div>
 

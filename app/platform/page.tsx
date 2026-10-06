@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 export default async function PlatformOverviewPage() {
   const [clinicCount, pendingRequests, doctorCount, memberCount, clinics] = await Promise.all([
@@ -101,16 +102,9 @@ export default async function PlatformOverviewPage() {
                     {c._count.appointments}
                   </TableCell>
                   <TableCell className="px-4 py-3">
-                    <span
-                      className={[
-                        "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
-                        c.isActive
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-gray-100 text-gray-500",
-                      ].join(" ")}
-                    >
+                    <Badge variant={c.isActive ? "success" : "neutral"}>
                       {c.isActive ? "نشطة" : "معطّلة"}
-                    </span>
+                    </Badge>
                   </TableCell>
                 </TableRow>
               ))}

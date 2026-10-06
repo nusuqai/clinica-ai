@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import type { AppointmentStatus, AvailabilityMode } from "@prisma/client";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
 interface QueuePatient {
   id: string;
@@ -381,9 +382,12 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                             {p.patientName}
                           </p>
                           {showSkipped && (
-                            <span className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 py-px font-sans text-[10px] font-medium text-amber-700">
+                            <Badge
+                              variant="warning"
+                              className="flex-shrink-0 px-1.5 py-px text-[10px]"
+                            >
                               مؤجّل
-                            </span>
+                            </Badge>
                           )}
                         </div>
                         <div className="flex items-center gap-2 font-sans text-xs text-muted-foreground">
