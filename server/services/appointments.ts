@@ -143,13 +143,20 @@ const pastOrder: Prisma.AppointmentOrderByWithRelationInput[] = [
   { createdAt: "desc" },
   { id: "desc" },
 ];
+// Upcoming lists read the other way: the soonest visit first.
+const upcomingOrder: Prisma.AppointmentOrderByWithRelationInput[] = [
+  { slot: { startTime: "asc" } },
+  { bookingDate: "asc" },
+  { createdAt: "asc" },
+  { id: "asc" },
+];
 
-/** One page of a patient's appointments in a clinic with the given status. */
+/** One page of a patient's appointments in a clinic (any status when `status` is undefined). */
 export async function getPatientAppointmentsPage(
   patientId: string,
   clinicId: string,
-  status: AppointmentStatus,
-  filters: Pick<AppointmentFilters, "doctorId" | "date">,
+  status: AppointmentStatus | undefined,
+  filters: Pick<AppointmentFilters, "doctorId" | "date" | "upcoming">,
   req: PageRequest
 ): Promise<Paginated<PatientAppointment>> {
   const where = appointmentWhere(clinicId, { ...filters, patientId, status });
@@ -164,7 +171,7 @@ export async function getPatientAppointmentsPage(
           doctor: doctorNameSelect,
           ...queueInfoInclude,
         },
-        orderBy: pastOrder,
+        orderBy: filters.upcoming ? upcomingOrder : pastOrder,
         ...args,
       });
       return rows.map((row) => ({ ...reshapeDoctor(row), ...queueView(row) }));
@@ -231,6 +238,8 @@ export interface AppointmentFilters {
   patientQuery?: string;
   /** "YYYY-MM-DD": the visit day — slot date, or booking date for queue bookings. */
   date?: string;
+  /** Only open (pending/confirmed) appointments that haven't happened yet. */
+  upcoming?: boolean;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -241,13 +250,19 @@ function filterWhere(f: Omit<AppointmentFilters, "doctorId">): Prisma.Appointmen
   const day = f.date && /^\d{4}-\d{2}-\d{2}$/.test(f.date) ? new Date(f.date) : null;
   const status = f.status && f.status in AppointmentStatus ? f.status : undefined;
   const patient = personSearch(f.patientQuery);
+  // Both the day and "upcoming" are OR conditions, so they're ANDed rather than
+  // spread — spreading would let one overwrite the other's OR.
+  const and: Prisma.AppointmentWhereInput[] = [
+    // The visit day: the slot's date, or the booking date for queue bookings.
+    ...(day ? [{ OR: [{ slot: { date: day } }, { bookingDate: day }] }] : []),
+    ...(f.upcoming ? [upcomingAppointmentWhere()] : []),
+  ];
   return {
     ...(status && { status }),
     ...(f.patientId && UUID_RE.test(f.patientId) && { patientId: f.patientId }),
     ...(f.branchId && UUID_RE.test(f.branchId) && { branchId: f.branchId }),
     ...(patient && { patient }),
-    // The visit day: the slot's date, or the booking date for queue bookings.
-    ...(day && { OR: [{ slot: { date: day } }, { bookingDate: day }] }),
+    ...(and.length > 0 && { AND: and }),
   };
 }
 
@@ -281,12 +296,14 @@ export async function listAppointments(
           doctor: doctorNameSelect,
           ...queueInfoInclude,
         },
-        orderBy: [
-          { slot: { date: "desc" } },
-          { bookingDate: "desc" },
-          { createdAt: "desc" },
-          { id: "desc" },
-        ],
+        orderBy: filters.upcoming
+          ? upcomingOrder
+          : [
+              { slot: { date: "desc" } },
+              { bookingDate: "desc" },
+              { createdAt: "desc" },
+              { id: "desc" },
+            ],
         ...args,
       });
       return rows.map((row) => {
@@ -502,7 +519,7 @@ export async function getDoctorAppointmentsPage(
           patient: { select: { fullName: true, phone: true } },
           ...queueInfoInclude,
         },
-        orderBy: pastOrder,
+        orderBy: filters.upcoming ? upcomingOrder : pastOrder,
         ...args,
       });
       return rows.map((row) => ({ ...row, ...queueView(row) }));

@@ -6,7 +6,8 @@ import { prisma } from "@/lib/prisma";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
 import type { AgentContext } from "@/agent/types";
-import { jsonTool, dateStr, timeStr, money } from "./shared";
+import { pageRequest } from "@/lib/pagination";
+import { jsonTool, dateStr, timeStr, money, LIST_HINT, pageField, pageInfo } from "./shared";
 
 /**
  * Full confirmation card for an appointment, read straight from the DB so the
@@ -166,19 +167,33 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "list_my_appointments",
         description:
-          "اعرض مواعيد المريض الحالي (القادمة أو كلها). استخدمها أيضاً عندما يسأل المريض «ما هو دوري؟» أو «كم رقمي؟». لكل موعد: bookingType (slot موعد بوقت ثابت، order نظام الدور، arrival أسبقية الحضور)، وorderNumber، وarrived. في أسبقية الحضور (arrival): إن كان arrived=false فلا رقم بعد — أخبر المريض أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور؛ وإن كان arrived=true فاذكر رقمه (orderNumber)، ومع تفعيل التتبّع اذكر الدور الجاري الآن (currentOrder) ومدة الانتظار التقديرية (estimatedWaitMin).",
-        schema: z.object({ upcoming: z.boolean().nullable() }),
+          `اعرض مواعيد المريض الحالي (القادمة أو كلها). استخدمها أيضاً عندما يسأل المريض «ما هو دوري؟» أو «كم رقمي؟». لكل موعد: bookingType (slot موعد بوقت ثابت، order نظام الدور، arrival أسبقية الحضور)، وorderNumber، وarrived. في أسبقية الحضور (arrival): إن كان arrived=false فلا رقم بعد — أخبر المريض أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور؛ وإن كان arrived=true فاذكر رقمه (orderNumber)، ومع تفعيل التتبّع اذكر الدور الجاري الآن (currentOrder) ومدة الانتظار التقديرية (estimatedWaitMin). القادمة تُعرض الأقرب أولاً، والسابقة الأحدث أولاً (٢٠ في الصفحة)؛ يمكن التصفية بالطبيب (doctorId) أو الحالة أو اليوم (YYYY-MM-DD). ${LIST_HINT}`,
+        schema: z.object({
+          upcoming: z.boolean().nullable().describe("true للمواعيد القادمة فقط"),
+          doctorId: z.string().nullable().describe("معرّف الطبيب (اختياري)"),
+          status: z.nativeEnum(AppointmentStatus).nullable(),
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
+            .nullable(),
+          page: pageField,
+        }),
       },
-      async ({ upcoming }) => {
-        const appts = await AppointmentService.getPatientAppointments(
+      async ({ upcoming, doctorId, status, date, page }) => {
+        const appts = await AppointmentService.getPatientAppointmentsPage(
           patientId,
+          ctx.clinicId,
+          status ?? undefined,
           {
-            clinicId: ctx.clinicId,
             upcoming: upcoming ?? false,
+            doctorId: doctorId ?? undefined,
+            date: date ?? undefined,
           },
+          pageRequest(page ?? 1, 20),
         );
         return {
-          appointments: appts.map((a) => ({
+          ...pageInfo(appts),
+          appointments: appts.items.map((a) => ({
             id: a.id,
             status: a.status,
             doctorName: a.doctor.profile.fullName,

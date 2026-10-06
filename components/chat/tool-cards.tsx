@@ -71,7 +71,23 @@ function StatusPill({ status }: { status: string }) {
 type R = Record<string, unknown>;
 
 function DoctorListCard({ result }: { result: R }) {
+  // A big clinic asked for "the doctors" with no filter: the agent offers the
+  // specialties to choose from instead of the full list.
+  if (result.chooseSpecialty) {
+    const specialties = (result.specialties as R[]) ?? [];
+    return (
+      <CardShell icon={<Stethoscope className="h-4 w-4" />} title="التخصصات">
+        {specialties.map((s, i) => (
+          <div key={i} className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-foreground">{String(s.name)}</p>
+            <span className="text-[11px] text-muted-foreground">{String(s.doctors)} أطباء</span>
+          </div>
+        ))}
+      </CardShell>
+    );
+  }
   const doctors = (result.doctors as R[]) ?? [];
+  const more = typeof result.total === "number" ? result.total - doctors.length : 0;
   return (
     <CardShell icon={<Stethoscope className="h-4 w-4" />} title="الأطباء">
       {doctors.length === 0 && (
@@ -88,6 +104,9 @@ function DoctorListCard({ result }: { result: R }) {
           )}
         </div>
       ))}
+      {result.hasMore === true && more > 0 && (
+        <p className="text-[11px] text-muted-foreground">و{more} آخرون</p>
+      )}
     </CardShell>
   );
 }

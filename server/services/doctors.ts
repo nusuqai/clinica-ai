@@ -348,9 +348,12 @@ export interface DoctorFilters {
   /** Name or phone (see personSearch). */
   query?: string;
   specialtyId?: string;
+  /** Part of the specialty's name, case-insensitive — when the id isn't known. */
+  specialtyName?: string;
   branchId?: string;
   /** "active" | "inactive"; anything else = both. */
   status?: string;
+  acceptsChildren?: boolean;
 }
 
 // The WHERE every doctor list runs in the database — before LIMIT/OFFSET and in
@@ -358,10 +361,15 @@ export interface DoctorFilters {
 // are ignored rather than let Prisma throw.
 function doctorWhere(clinicId: string, f: DoctorFilters): Prisma.DoctorWhereInput {
   const search = personSearch(f.query);
+  const specialtyName = f.specialtyName?.trim();
   return {
     clinicId,
     ...(search ?? {}),
     ...(f.specialtyId && UUID_RE.test(f.specialtyId) && { specialtyId: f.specialtyId }),
+    ...(specialtyName && {
+      specialty: { name: { contains: specialtyName, mode: "insensitive" as const } },
+    }),
+    ...(typeof f.acceptsChildren === "boolean" && { acceptsChildren: f.acceptsChildren }),
     ...(f.branchId && UUID_RE.test(f.branchId) && { branches: { some: { branchId: f.branchId } } }),
     ...(f.status === "active" && { isActive: true }),
     ...(f.status === "inactive" && { isActive: false }),

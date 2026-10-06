@@ -11,7 +11,7 @@ import { listDoctorBranchIds } from "@/server/services/branches";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import type { AgentContext } from "@/agent/types";
 import { pageRequest } from "@/lib/pagination";
-import { jsonTool, dateStr, timeStr } from "./shared";
+import { jsonTool, dateStr, timeStr, LIST_HINT, pageField, pageInfo } from "./shared";
 
 async function assertOwnedAppointment(doctorId: string, appointmentId: string) {
   const appt = await prisma.appointment.findUnique({
@@ -81,8 +81,7 @@ export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredT
     jsonTool(
       {
         name: "list_my_appointments",
-        description:
-          "اعرض مواعيد الطبيب الحالي (حتى ٥٠): القادمة فقط (upcoming)، أو صفِّها بالحالة أو باليوم (YYYY-MM-DD).",
+        description: `اعرض مواعيد الطبيب الحالي (٣٠ في الصفحة؛ القادمة الأقرب أولاً، والباقي الأحدث أولاً). صفِّ بالقادمة فقط (upcoming) و/أو الحالة و/أو اليوم (YYYY-MM-DD) و/أو اسم المريض أو هاتفه (patientQuery) — يمكن الجمع بينها. ${LIST_HINT}`,
         schema: z.object({
           upcoming: z.boolean().nullable(),
           status: z.nativeEnum(AppointmentStatus).nullable(),
@@ -90,18 +89,24 @@ export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredT
             .string()
             .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
             .nullable(),
+          patientQuery: z.string().nullable().describe("اسم المريض أو رقم هاتفه (اختياري)"),
+          page: pageField,
         }),
       },
-      async ({ upcoming, status, date }) => {
-        // Capped: a tool result goes straight into the model's context.
-        const appts = await AppointmentService.getDoctorAppointments(doctorId, {
-          upcoming: upcoming ?? false,
-          status: status ?? undefined,
-          date: date ?? undefined,
-          limit: 50,
-        });
+      async ({ upcoming, status, date, patientQuery, page }) => {
+        const appts = await AppointmentService.getDoctorAppointmentsPage(
+          doctorId,
+          {
+            upcoming: upcoming ?? false,
+            status: status ?? undefined,
+            date: date ?? undefined,
+            patientQuery: patientQuery ?? undefined,
+          },
+          pageRequest(page ?? 1, 30),
+        );
         return {
-          appointments: appts.map((a) => ({
+          ...pageInfo(appts),
+          appointments: appts.items.map((a) => ({
             id: a.id,
             status: a.status,
             patientName: a.patient.fullName,
@@ -142,11 +147,10 @@ export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredT
     jsonTool(
       {
         name: "list_my_patients",
-        description:
-          "اعرض مرضى الطبيب الحالي (الأحدث زيارةً أولاً، ٣٠ في الصفحة). ابحث بالاسم أو الهاتف عبر query. فضّل التصفية على التصفح: إذا كان hasMore=true فاقترح على المستخدم تضييق البحث، ولا تطلب الصفحة التالية (page) إلا إذا طلب المزيد.",
+        description: `اعرض مرضى الطبيب الحالي (الأحدث زيارةً أولاً، ٣٠ في الصفحة). ابحث بالاسم أو الهاتف عبر query. ${LIST_HINT}`,
         schema: z.object({
           query: z.string().nullable().describe("بحث بالاسم أو رقم الهاتف (اختياري)"),
-          page: z.number().int().nullable().describe("رقم الصفحة، يبدأ من 1"),
+          page: pageField,
         }),
       },
       async ({ query, page }) => {
@@ -156,9 +160,7 @@ export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredT
           query ?? undefined,
         );
         return {
-          total: patients.total,
-          page: patients.page,
-          hasMore: patients.hasMore,
+          ...pageInfo(patients),
           patients: patients.items.map((p) => ({
             name: p.fullName,
             phone: p.phone,

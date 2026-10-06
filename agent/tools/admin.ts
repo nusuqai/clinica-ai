@@ -13,21 +13,37 @@ import * as SpecialtyService from "@/server/services/specialties";
 import { getDashboardStats } from "@/server/services/reports";
 import type { AgentContext } from "@/agent/types";
 import { modeTag } from "@/lib/availability/modes";
-import { pageRequest } from "@/lib/pagination";
-import { jsonTool, dateStr, timeStr } from "./shared";
+import { pageArgs, pageRequest, toPaginated } from "@/lib/pagination";
+import { jsonTool, dateStr, timeStr, LIST_HINT, pageField, pageInfo } from "./shared";
 
 export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
   return [
     jsonTool(
       {
         name: "list_all_doctors",
-        description: "اعرض كل الأطباء (نشطين وغير نشطين).",
-        schema: z.object({}),
+        description: `اعرض أطباء العيادة، النشطين وغير النشطين (٣٠ في الصفحة). ابحث بالاسم أو الهاتف عبر query، أو صفِّ بالتخصص (specialtyId) أو الفرع (branchId) أو الحالة (status). ${LIST_HINT}`,
+        schema: z.object({
+          query: z.string().nullable().describe("اسم الطبيب أو هاتفه (اختياري)"),
+          specialtyId: z.string().nullable().describe("معرّف التخصص (اختياري)"),
+          branchId: z.string().nullable().describe("معرّف الفرع (اختياري)"),
+          status: z.enum(["active", "inactive"]).nullable().describe("النشطون أو غير النشطين فقط (اختياري)"),
+          page: pageField,
+        }),
       },
-      async () => {
-        const doctors = await DoctorService.listDoctors(ctx.clinicId);
+      async ({ query, specialtyId, branchId, status, page }) => {
+        const doctors = await DoctorService.listDoctorsPage(
+          ctx.clinicId,
+          {
+            query: query ?? undefined,
+            specialtyId: specialtyId ?? undefined,
+            branchId: branchId ?? undefined,
+            status: status ?? undefined,
+          },
+          pageRequest(page ?? 1, 30),
+        );
         return {
-          doctors: doctors.map((d) => ({
+          ...pageInfo(doctors),
+          doctors: doctors.items.map((d) => ({
             id: d.id,
             name: d.profile.fullName,
             title: d.title,
@@ -171,12 +187,11 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
     jsonTool(
       {
         name: "list_users",
-        description:
-          "اعرض المستخدمين مع أدوارهم وبريدهم (٣٠ في الصفحة). ابحث بالاسم أو الهاتف عبر query، أو صفِّ بالدور عبر role. فضّل التصفية على التصفح: إذا كان hasMore=true فاقترح على المستخدم تضييق البحث، ولا تطلب الصفحة التالية (page) إلا إذا طلب المزيد.",
+        description: `اعرض المستخدمين مع أدوارهم وبريدهم (٣٠ في الصفحة). ابحث بالاسم أو الهاتف عبر query، أو صفِّ بالدور عبر role. ${LIST_HINT}`,
         schema: z.object({
           query: z.string().nullable().describe("بحث بالاسم أو رقم الهاتف (اختياري)"),
           role: z.enum(["PATIENT", "DOCTOR", "ADMIN"]).nullable().describe("الدور (اختياري)"),
-          page: z.number().int().nullable().describe("رقم الصفحة، يبدأ من 1"),
+          page: pageField,
         }),
       },
       async ({ query, role, page }) => {
@@ -186,9 +201,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           pageRequest(page ?? 1, 30),
         );
         return {
-          total: users.total,
-          page: users.page,
-          hasMore: users.hasMore,
+          ...pageInfo(users),
           users: users.items.map((u) => ({
             id: u.id,
             name: u.fullName,
@@ -216,9 +229,9 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
     jsonTool(
       {
         name: "list_all_appointments",
-        description:
-          "اعرض المواعيد (الأحدث أولاً، ٥٠ في الصفحة) مع إمكانية التصفية بالحالة أو الطبيب أو المريض (بالاسم أو الهاتف عبر patientQuery) أو اليوم. فضّل التصفية على التصفح: إذا كان hasMore=true فاقترح على المستخدم تضييق البحث، ولا تطلب الصفحة التالية (page) إلا إذا طلب المزيد.",
+        description: `اعرض المواعيد (٥٠ في الصفحة؛ القادمة الأقرب أولاً، والباقي الأحدث أولاً) مع إمكانية التصفية بالقادمة فقط (upcoming) أو الحالة أو الطبيب أو المريض (بالاسم أو الهاتف عبر patientQuery) أو اليوم — يمكن الجمع بينها. ${LIST_HINT}`,
         schema: z.object({
+          upcoming: z.boolean().nullable().describe("true للمواعيد القادمة فقط"),
           status: z.nativeEnum(AppointmentStatus).nullable(),
           doctorId: z.string().nullable(),
           patientId: z.string().nullable(),
@@ -230,13 +243,14 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             .string()
             .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
             .nullable(),
-          page: z.number().int().nullable().describe("رقم الصفحة، يبدأ من 1"),
+          page: pageField,
         }),
       },
       async (filters) => {
         const appts = await AppointmentService.listAppointments(
           ctx.clinicId,
           {
+            upcoming: filters.upcoming ?? false,
             status: filters.status ?? undefined,
             doctorId: filters.doctorId ?? undefined,
             patientId: filters.patientId ?? undefined,
@@ -246,9 +260,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           pageRequest(filters.page ?? 1, 50),
         );
         return {
-          total: appts.total,
-          page: appts.page,
-          hasMore: appts.hasMore,
+          ...pageInfo(appts),
           appointments: appts.items.map((a) => ({
             id: a.id,
             status: a.status,
@@ -417,8 +429,10 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "list_doctor_slots",
         description:
-          "اعرض فترات طبيب معيّن ضمن نطاق تاريخ (YYYY-MM-DD)، اختياري.",
+          `اعرض فترات طبيب معيّن ضمن نطاق تاريخ (YYYY-MM-DD)، اختياري — الافتراضي الثلاثون يوماً القادمة (٥٠ في الصفحة). صفِّ بالحالة عبر state: free (متاحة)، booked (محجوزة)، blocked (معطّلة). ${LIST_HINT}`,
         schema: z.object({
+          state: z.enum(["free", "booked", "blocked"]).nullable(),
+          page: pageField,
           doctorId: z.string(),
           from: z
             .string()
@@ -430,14 +444,28 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             .nullable(),
         }),
       },
-      async ({ doctorId, from, to }) => {
-        const slots = await DoctorService.listDoctorSlots(doctorId, {
+      async ({ doctorId, from, to, state, page }) => {
+        const all = await DoctorService.listDoctorSlots(doctorId, {
           from: from ? new Date(from) : undefined,
           to: to ? new Date(to) : undefined,
           clinicId: ctx.clinicId, // #38: scope to this clinic
         });
+        // Bounded by the date range, so filter + page in memory.
+        const matched = all.filter((s) =>
+          state === "free"
+            ? !s.isBlocked && !s.appointment
+            : state === "booked"
+              ? !!s.appointment
+              : state === "blocked"
+                ? s.isBlocked
+                : true,
+        );
+        const req = pageRequest(page ?? 1, 50);
+        const { skip, take } = pageArgs(req);
+        const slots = toPaginated(matched.slice(skip, skip + take), matched.length, req);
         return {
-          slots: slots.map((s) => ({
+          ...pageInfo(slots),
+          slots: slots.items.map((s) => ({
             id: s.id,
             date: dateStr(s.date),
             time: timeStr(s.startTime),
