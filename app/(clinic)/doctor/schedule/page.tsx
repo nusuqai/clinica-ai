@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import LinkTabs from "@/components/general/link-tabs";
 import { Activity, CalendarClock } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { listDoctorRules, listDoctorSlots, getDoctorByProfileId } from "@/server/services/doctors";
@@ -38,30 +38,24 @@ export default async function DoctorSchedulePage({ searchParams }: PageProps) {
         </p>
       </div>
 
-      {/* Tab nav */}
-      <div className="mb-6 flex w-fit gap-1 rounded-xl border border-border bg-muted/40 p-1">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <Link
-            key={key}
-            href={`/doctor/schedule?tab=${key}`}
-            className={[
-              "flex items-center gap-2 rounded-lg px-4 py-2 font-sans text-sm font-medium transition-all",
-              activeTab === key
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            ].join(" ")}
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </Link>
-        ))}
-      </div>
-
-      {/* Tab content */}
-      {activeTab === "rules" && (
-        <RulesContent doctorId={doctor.id} clinicId={ctx.clinic.id} branchIds={doctor.branchIds} />
-      )}
-      {activeTab === "slots" && <SlotsContent doctorId={doctor.id} />}
+      <LinkTabs
+        value={activeTab}
+        tabs={TABS.map(({ key, label, icon: Icon }) => ({
+          value: key,
+          label,
+          href: `/doctor/schedule?tab=${key}`,
+          icon: <Icon />,
+        }))}
+      >
+        {activeTab === "rules" && (
+          <RulesContent
+            doctorId={doctor.id}
+            clinicId={ctx.clinic.id}
+            branchIds={doctor.branchIds}
+          />
+        )}
+        {activeTab === "slots" && <SlotsContent doctorId={doctor.id} />}
+      </LinkTabs>
     </div>
   );
 }

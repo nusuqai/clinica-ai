@@ -33,6 +33,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useEscalationAlerts } from "./escalation-provider";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 export interface NavItem {
   href: string;
@@ -197,9 +198,11 @@ export default function AppSidebar({
       {/* Bottom: user info + sign out + collapse toggle */}
       <SidebarFooter className="gap-1 border-t border-white/10 p-3 group-data-[collapsible=icon]:items-center">
         <div className="flex items-center gap-3 rounded-xl px-2 py-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/30">
-            <span className="font-sans text-xs font-bold text-accent">{initials}</span>
-          </div>
+          <Avatar className="h-8 w-8 rounded-full">
+            <AvatarFallback className="bg-accent/30 font-sans text-xs font-bold text-accent">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
           <div className={cn("overflow-hidden", HIDE_COLLAPSED)}>
             <p className="truncate font-sans text-sm font-medium leading-tight text-white">
               {userFullName}

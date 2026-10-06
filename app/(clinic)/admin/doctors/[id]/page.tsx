@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import LinkTabs from "@/components/general/link-tabs";
 import {
   ArrowRight,
   Phone,
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
@@ -100,9 +102,11 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
       {/* Doctor header card */}
       <Card className="mb-6 p-6">
         <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-          <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10">
-            <span className="font-sans text-xl font-bold text-primary">{initials}</span>
-          </div>
+          <Avatar className="h-16 w-16 rounded-2xl">
+            <AvatarFallback className="rounded-2xl bg-primary/10 font-sans text-xl font-bold text-primary">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
           <div className="min-w-0 flex-1">
             <div className="mb-1 flex flex-wrap items-center gap-2">
               <h1 className="font-heading text-2xl font-bold text-foreground">
@@ -188,32 +192,22 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
         </div>
       </Card>
 
-      {/* Tab nav */}
-      <div className="mb-6 flex w-fit gap-1 rounded-xl border border-border bg-muted/40 p-1">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <Link
-            key={key}
-            href={`/admin/doctors/${id}?tab=${key}`}
-            className={[
-              "flex items-center gap-2 rounded-lg px-4 py-2 font-sans text-sm font-medium transition-all",
-              activeTab === key
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            ].join(" ")}
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </Link>
-        ))}
-      </div>
-
-      {/* Tab content — each fetches only what it needs */}
-      {activeTab === "appointments" && <AppointmentsContent doctorId={id} />}
-      {activeTab === "rules" && (
-        <RulesContent doctorId={id} branches={doctorBranches} clinicId={clinic.id} />
-      )}
-      {activeTab === "slots" && <SlotsContent doctorId={id} />}
-      {activeTab === "queue" && <QueuePanel doctorId={id} />}
+      <LinkTabs
+        value={activeTab}
+        tabs={TABS.map(({ key, label, icon: Icon }) => ({
+          value: key,
+          label,
+          href: `/admin/doctors/${id}?tab=${key}`,
+          icon: <Icon />,
+        }))}
+      >
+        {activeTab === "appointments" && <AppointmentsContent doctorId={id} />}
+        {activeTab === "rules" && (
+          <RulesContent doctorId={id} branches={doctorBranches} clinicId={clinic.id} />
+        )}
+        {activeTab === "slots" && <SlotsContent doctorId={id} />}
+        {activeTab === "queue" && <QueuePanel doctorId={id} />}
+      </LinkTabs>
     </div>
   );
 }

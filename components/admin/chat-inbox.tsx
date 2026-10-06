@@ -63,6 +63,8 @@ import {
 import type { AgentMessageMetadata } from "@/agent/types";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
 
 interface ChatInboxProps {
   conversations: ConversationSummary[];
@@ -805,11 +807,11 @@ export default function ChatInbox({
           <>
             {/* Thread header */}
             <div className="flex flex-shrink-0 items-center gap-3 border-b border-border px-5 py-3">
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent/20">
-                <span className="font-sans text-xs font-bold text-accent">
+              <Avatar className="h-9 w-9 rounded-full">
+                <AvatarFallback className="bg-accent/20 font-sans text-xs font-bold text-accent">
                   {selectedConversation.contactName.charAt(0)}
-                </span>
-              </div>
+                </AvatarFallback>
+              </Avatar>
               <div>
                 <p className="font-sans text-sm font-medium text-foreground">
                   {selectedConversation.contactName}
@@ -927,7 +929,7 @@ export default function ChatInbox({
                   <Fragment key={msg.key}>
                     {showDivider && (
                       <div className="flex items-center gap-2 py-1" dir="rtl">
-                        <div className="h-px flex-1 bg-border" />
+                        <Separator className="flex-1" />
                         <span className="whitespace-nowrap font-sans text-[10px] text-muted-foreground">
                           جلسة جديدة ·{" "}
                           {new Date(msg.createdAt).toLocaleString("ar-EG", {
@@ -935,7 +937,7 @@ export default function ChatInbox({
                             timeStyle: "short",
                           })}
                         </span>
-                        <div className="h-px flex-1 bg-border" />
+                        <Separator className="flex-1" />
                       </div>
                     )}
                     <div

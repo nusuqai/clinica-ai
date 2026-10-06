@@ -16,6 +16,7 @@ import {
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface Doctor {
   id: string;
@@ -201,9 +202,11 @@ export function BookAppointmentModal({
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary font-heading text-sm font-bold text-white">
-              {initials}
-            </div>
+            <Avatar className="h-10 w-10 rounded-xl">
+              <AvatarFallback className="rounded-xl bg-primary font-heading text-sm font-bold text-white">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
             <div>
               <DialogTitle className="font-sans text-sm font-semibold leading-normal tracking-normal text-text">
                 {doctor.name}

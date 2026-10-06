@@ -6,6 +6,7 @@ import { listSpecialtyOptions } from "@/server/services/specialties";
 import ProfileForm from "./_components/profile-form";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 export default async function DoctorProfilePage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
@@ -32,9 +33,11 @@ export default async function DoctorProfilePage() {
       {/* Avatar card */}
       <Card className="mb-6 p-6">
         <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10">
-            <span className="font-sans text-2xl font-bold text-primary">{initials}</span>
-          </div>
+          <Avatar className="h-16 w-16 rounded-2xl">
+            <AvatarFallback className="rounded-2xl bg-primary/10 font-sans text-2xl font-bold text-primary">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
           <div>
             <h2 className="font-heading text-lg font-bold text-foreground">
               {doctor.profile.fullName}

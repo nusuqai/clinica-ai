@@ -7,6 +7,7 @@ import { signIn, joinClinic } from "@/server/actions/auth";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Alert } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 
 interface Props {
   /** The clinic this host belongs to, or null on the platform's own login. */
@@ -164,9 +165,9 @@ export function LoginForm({ clinicName }: Props) {
       {clinicName && (
         <>
           <div className="my-6 flex items-center gap-4">
-            <div className="bg-text/8 h-px flex-1" />
+            <Separator className="bg-text/8 flex-1" />
             <span className="font-sans text-xs text-text/30">أو</span>
-            <div className="bg-text/8 h-px flex-1" />
+            <Separator className="bg-text/8 flex-1" />
           </div>
 
           <p className="text-center font-sans text-sm text-text/50">

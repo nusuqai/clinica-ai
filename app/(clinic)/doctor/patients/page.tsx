@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 export default async function DoctorPatientsPage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
@@ -74,11 +75,11 @@ export default async function DoctorPatientsPage() {
                     >
                       <TableCell className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent/10">
-                            <span className="text-sm font-bold text-accent">
+                          <Avatar className="h-9 w-9 rounded-xl">
+                            <AvatarFallback className="rounded-xl bg-accent/10 text-sm font-bold text-accent">
                               {patient.fullName.charAt(0)}
-                            </span>
-                          </div>
+                            </AvatarFallback>
+                          </Avatar>
                           <p className="font-medium text-foreground">{patient.fullName}</p>
                         </div>
                       </TableCell>

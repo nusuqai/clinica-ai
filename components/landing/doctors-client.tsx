@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Phone, DollarSign, Calendar } from "lucide-react";
 import { BookAppointmentModal } from "./book-appointment-modal";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface Doctor {
   id: string;
@@ -126,11 +127,13 @@ export function DoctorsClient({
               >
                 {/* Avatar + name */}
                 <div className="flex items-center gap-4">
-                  <div
-                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${color} font-heading text-lg font-bold text-white`}
-                  >
-                    {initials}
-                  </div>
+                  <Avatar className="h-14 w-14 rounded-2xl">
+                    <AvatarFallback
+                      className={`rounded-2xl ${color} font-heading text-lg font-bold text-white`}
+                    >
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="min-w-0">
                     <p className="truncate font-heading text-base font-bold text-text">
                       د. {doctor.profile.fullName}

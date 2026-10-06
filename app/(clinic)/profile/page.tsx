@@ -16,6 +16,7 @@ import { countPatientRecords } from "@/server/services/treatments";
 import { ProfileForm } from "@/components/dashboard/profile-form";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 // The patient's profile as a page of its own, opened from the avatar in the
 // clinic home page's nav. Deliberately outside the dashboard shell: it belongs
@@ -78,9 +79,11 @@ export default async function PatientProfilePage() {
         <Card asChild className="p-6 shadow-sm">
           <section>
             <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-start">
-              <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-full bg-primary ring-4 ring-card">
-                <span className="font-heading text-2xl font-bold text-white">{initials}</span>
-              </div>
+              <Avatar className="h-20 w-20 rounded-full ring-4 ring-card">
+                <AvatarFallback className="bg-primary font-heading text-2xl font-bold text-white">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
               <div className="min-w-0 flex-1">
                 <h1 className="font-heading text-2xl font-bold text-foreground">
                   {fullName || "المريض"}

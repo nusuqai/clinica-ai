@@ -2,8 +2,24 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Stethoscope, Menu, X, UserRound } from "lucide-react";
+import { Stethoscope, Menu, UserRound } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  NavigationMenu,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+  navigationMenuTriggerStyle,
+} from "@/components/ui/navigation-menu";
+import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+
+/** Nav link styling on the dark (navy / transparent-over-hero) bar. */
+export const DARK_NAV_LINK = cn(
+  navigationMenuTriggerStyle(),
+  "font-normal text-white/80 hover:bg-white/10 hover:text-accent focus:bg-white/10 focus:text-accent"
+);
 
 /** Round avatar (the patient's initials) that opens their profile page. */
 function ProfileAvatar({ name }: { name: string | null }) {
@@ -19,9 +35,13 @@ function ProfileAvatar({ name }: { name: string | null }) {
       href="/profile"
       title="الملف الشخصي"
       aria-label="الملف الشخصي"
-      className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white/30 bg-white/10 font-heading text-sm font-bold text-white transition-colors hover:border-accent hover:bg-accent"
+      className="group rounded-full"
     >
-      {initials ?? <UserRound className="h-4 w-4" />}
+      <Avatar className="h-9 w-9 border-2 border-white/30 transition-colors group-hover:border-accent">
+        <AvatarFallback className="bg-white/10 font-heading text-sm font-bold text-white transition-colors group-hover:bg-accent">
+          {initials ?? <UserRound className="h-4 w-4" />}
+        </AvatarFallback>
+      </Avatar>
     </Link>
   );
 }
@@ -56,7 +76,12 @@ export function LandingNav({
   logoUrl = null,
 }: LandingNavProps) {
   const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+
+  const links = [
+    ...(isAuthenticated && isPatient ? [{ href: "#my-appointments", label: "مواعيدي" }] : []),
+    { href: "#doctors", label: "الأطباء" },
+    { href: "#book", label: "احجز موعد" },
+  ];
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 20);
@@ -85,28 +110,17 @@ export function LandingNav({
         </Link>
 
         {/* Desktop links */}
-        <div className="hidden items-center gap-8 md:flex">
-          {isAuthenticated && isPatient && (
-            <a
-              href="#my-appointments"
-              className="font-sans text-sm text-white/80 transition-colors hover:text-accent"
-            >
-              مواعيدي
-            </a>
-          )}
-          <a
-            href="#doctors"
-            className="font-sans text-sm text-white/80 transition-colors hover:text-accent"
-          >
-            الأطباء
-          </a>
-          <a
-            href="#book"
-            className="font-sans text-sm text-white/80 transition-colors hover:text-accent"
-          >
-            احجز موعد
-          </a>
-        </div>
+        <NavigationMenu className="hidden md:flex">
+          <NavigationMenuList>
+            {links.map((l) => (
+              <NavigationMenuItem key={l.href}>
+                <NavigationMenuLink asChild className={DARK_NAV_LINK}>
+                  <a href={l.href}>{l.label}</a>
+                </NavigationMenuLink>
+              </NavigationMenuItem>
+            ))}
+          </NavigationMenuList>
+        </NavigationMenu>
 
         {/* Auth buttons */}
         <div className="hidden items-center gap-3 md:flex">
@@ -142,75 +156,80 @@ export function LandingNav({
           )}
         </div>
 
-        {/* Mobile menu button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-white hover:bg-white/10 hover:text-white md:hidden [&_svg]:size-6"
-          onClick={() => setMenuOpen((v) => !v)}
-          aria-label="القائمة"
-        >
-          {menuOpen ? <X /> : <Menu />}
-        </Button>
+        {/* Mobile menu — a drawer from the hamburger's side (left, on this RTL page). */}
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white hover:bg-white/10 hover:text-white md:hidden [&_svg]:size-6"
+              aria-label="القائمة"
+            >
+              <Menu />
+            </Button>
+          </SheetTrigger>
+          <SheetContent
+            side="left"
+            aria-describedby={undefined}
+            className="w-72 border-0 bg-primary p-6 pt-14 text-white [&>button]:text-white"
+          >
+            <SheetTitle className="sr-only">القائمة</SheetTitle>
+            <nav className="flex flex-col gap-1">
+              {links.map((l) => (
+                <SheetClose asChild key={l.href}>
+                  <a
+                    href={l.href}
+                    className={cn(
+                      "rounded-lg px-3 py-2.5 font-sans text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-accent",
+                      l.href === "#my-appointments" && "font-medium text-accent"
+                    )}
+                  >
+                    {l.label}
+                  </a>
+                </SheetClose>
+              ))}
+              {isAuthenticated && isPatient ? (
+                <SheetClose asChild>
+                  <Link
+                    href="/profile"
+                    className="flex items-center gap-2 rounded-lg px-3 py-2.5 font-sans text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-accent"
+                  >
+                    <UserRound className="h-4 w-4" />
+                    الملف الشخصي
+                  </Link>
+                </SheetClose>
+              ) : !isAuthenticated ? (
+                <div className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-4">
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="h-auto rounded-lg border-white/30 bg-transparent px-4 py-2 text-center text-sm text-white hover:bg-transparent"
+                  >
+                    <Link href={loginHref}>تسجيل الدخول</Link>
+                  </Button>
+                  <Button
+                    asChild
+                    variant="accent"
+                    className="h-auto rounded-lg px-4 py-2 text-center text-sm"
+                  >
+                    <Link href={registerHref}>إنشاء حساب</Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <Button
+                    asChild
+                    variant="accent"
+                    className="h-auto w-full rounded-lg px-4 py-2 text-sm"
+                  >
+                    <Link href={dashboardHref}>لوحة التحكم</Link>
+                  </Button>
+                </div>
+              )}
+            </nav>
+          </SheetContent>
+        </Sheet>
       </nav>
-
-      {/* Mobile menu */}
-      {menuOpen && (
-        <div className="border-t border-white/10 bg-primary px-6 py-4 md:hidden">
-          <div className="flex flex-col gap-4">
-            {isAuthenticated && isPatient && (
-              <a
-                href="#my-appointments"
-                className="font-sans text-sm font-medium text-accent"
-                onClick={() => setMenuOpen(false)}
-              >
-                مواعيدي
-              </a>
-            )}
-            <a
-              href="#doctors"
-              className="font-sans text-sm text-white/80 hover:text-accent"
-              onClick={() => setMenuOpen(false)}
-            >
-              الأطباء
-            </a>
-            <a
-              href="#book"
-              className="font-sans text-sm text-white/80 hover:text-accent"
-              onClick={() => setMenuOpen(false)}
-            >
-              احجز موعد
-            </a>
-            {isAuthenticated && isPatient ? (
-              <Link
-                href="/profile"
-                className="flex items-center gap-2 font-sans text-sm text-white/80 hover:text-accent"
-                onClick={() => setMenuOpen(false)}
-              >
-                <UserRound className="h-4 w-4" />
-                الملف الشخصي
-              </Link>
-            ) : !isAuthenticated ? (
-              <div className="flex flex-col gap-2">
-                <Button
-                  asChild
-                  variant="outline"
-                  className="h-auto rounded-lg border-white/30 bg-transparent px-4 py-2 text-center text-sm text-white hover:bg-transparent"
-                >
-                  <Link href={loginHref}>تسجيل الدخول</Link>
-                </Button>
-                <Button
-                  asChild
-                  variant="accent"
-                  className="h-auto rounded-lg px-4 py-2 text-center text-sm"
-                >
-                  <Link href={registerHref}>إنشاء حساب</Link>
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      )}
     </header>
   );
 }

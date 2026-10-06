@@ -7,6 +7,7 @@ import { getDoctorAppointments } from "@/server/services/appointments";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Card } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 export default async function DoctorDashboardPage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
@@ -85,11 +86,11 @@ export default async function DoctorDashboardPage() {
                   className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-muted/30"
                 >
                   <div className="flex min-w-0 items-center gap-4">
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                      <span className="font-sans text-sm font-bold text-primary">
+                    <Avatar className="h-10 w-10 rounded-xl">
+                      <AvatarFallback className="rounded-xl bg-primary/10 font-sans text-sm font-bold text-primary">
                         {appt.patient.fullName.charAt(0)}
-                      </span>
-                    </div>
+                      </AvatarFallback>
+                    </Avatar>
                     <div className="min-w-0">
                       <p className="truncate font-sans font-medium text-foreground">
                         {appt.patient.fullName}

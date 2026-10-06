@@ -21,6 +21,7 @@ import AdminRecordModal from "@/components/medical/admin-record-modal";
 import EditPatientModal from "./_components/edit-patient-modal";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const ROLE_LABEL: Record<Role, string> = {
   [Role.PATIENT]: "مريض",
@@ -74,9 +75,11 @@ export default async function UserDetailPage({ params }: PageProps) {
 
       <Card className="p-6">
         <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-          <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10">
-            <span className="font-sans text-xl font-bold text-primary">{initials}</span>
-          </div>
+          <Avatar className="h-16 w-16 rounded-2xl">
+            <AvatarFallback className="rounded-2xl bg-primary/10 font-sans text-xl font-bold text-primary">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
 
           <div className="min-w-0 flex-1">
             <div className="mb-1 flex flex-wrap items-center gap-2">

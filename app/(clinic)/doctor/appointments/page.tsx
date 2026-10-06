@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface PageProps {
   searchParams: Promise<{ status?: string }>;
@@ -119,11 +120,11 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
                   <TableRow key={appt.id} className="align-top transition-colors hover:bg-muted/30">
                     <TableCell className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                          <span className="text-xs font-bold text-primary">
+                        <Avatar className="h-8 w-8 rounded-lg">
+                          <AvatarFallback className="rounded-lg bg-primary/10 text-xs font-bold text-primary">
                             {appt.patient.fullName.charAt(0)}
-                          </span>
-                        </div>
+                          </AvatarFallback>
+                        </Avatar>
                         <div>
                           <p className="font-medium text-foreground">{appt.patient.fullName}</p>
                           {appt.patient.phone && (

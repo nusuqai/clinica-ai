@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { updatePatientProfileAction, changePatientEmailAction } from "@/server/actions/admin";
 import { Alert } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 
 interface Props {
   userId: string;
@@ -93,7 +94,7 @@ export default function EditPatientModal({ userId, fullName, phone, email, claim
           </Button>
         </form>
 
-        <hr className="my-6 border-border" />
+        <Separator className="my-6" />
 
         {/* Email change (with verification) */}
         <form onSubmit={handleEmail} className="space-y-4">
