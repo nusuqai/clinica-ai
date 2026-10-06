@@ -22,6 +22,15 @@
     --input: 214 24% 88%;
     --ring: 215 68% 14%;
     --radius: 0.75rem;
+    /* Sidebar — the ClinicaAI navy rail (#0B1F3A) with the cyan (#00C2CB) accent */
+    --sidebar-background: 215 68% 14%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 182 100% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 45% 20%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 215 40% 22%;
+    --sidebar-ring: 182 100% 40%;
   }
 
   body {

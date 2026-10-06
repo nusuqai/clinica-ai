@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { ShieldAlert } from "lucide-react";
-import Sidebar, { type AiUnitsBadge } from "./sidebar";
+import AppSidebar, { type AiUnitsBadge } from "./sidebar";
 import Topbar from "./topbar";
 import { navConfig, roleMeta } from "./nav-config";
 import ChatBubble from "@/components/chat/chat-bubble";
 import EscalationProvider from "./escalation-provider";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 export type DashboardRole = "doctor" | "admin";
 
@@ -42,18 +42,6 @@ export default function DashboardShell({
   viaPlatformAdmin = false,
   initialUnresolvedEscalationConversationIds = [],
 }: DashboardShellProps) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  // The drawer is a modal Sheet; close it if the viewport grows to desktop
-  // width so its backdrop doesn't linger over the static sidebar.
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
-    const onChange = (e: MediaQueryListEvent) => e.matches && setMobileOpen(false);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-
   // Each clinic is served from its own subdomain, so the nav config's hrefs
   // ("/admin", "/dashboard", "/" …) are already correct as-is — no clinic
   // prefix to apply.
@@ -61,8 +49,10 @@ export default function DashboardShell({
   const { label: roleLabel, pageTitle } = roleMeta[role];
 
   const shell = (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
-      <Sidebar
+    // SidebarProvider owns the sidebar state: expanded/collapsed rail on desktop
+    // (Ctrl/⌘+B toggles it), the off-canvas Sheet on mobile.
+    <SidebarProvider className="h-screen overflow-hidden bg-background">
+      <AppSidebar
         navItems={navItems}
         roleLabel={roleLabel}
         userFullName={userFullName}
@@ -70,10 +60,6 @@ export default function DashboardShell({
         clinicName={clinicName}
         clinicLogoUrl={clinicLogoUrl}
         aiUnits={aiUnits}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((v) => !v)}
-        mobileOpen={mobileOpen}
-        onMobileClose={() => setMobileOpen(false)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -92,14 +78,14 @@ export default function DashboardShell({
           </div>
         )}
 
-        <Topbar title={pageTitle} clinicName={clinicName} onMenuClick={() => setMobileOpen(true)} />
+        <Topbar title={pageTitle} clinicName={clinicName} />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
 
       {/* AI assistant — for patients & doctors only; hidden on the admin side
           (admins manage conversations from the Messages inbox instead). */}
       {role !== "admin" && <ChatBubble />}
-    </div>
+    </SidebarProvider>
   );
 
   if (role !== "admin") return shell;
