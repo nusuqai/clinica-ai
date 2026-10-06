@@ -7,7 +7,18 @@ import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
 import type { AgentContext } from "@/agent/types";
 import { pageRequest } from "@/lib/pagination";
-import { jsonTool, dateStr, timeStr, money, LIST_HINT, pageField, pageInfo } from "./shared";
+import {
+  jsonTool,
+  dateStr,
+  timeStr,
+  money,
+  LIST_HINT,
+  pageField,
+  pageInfo,
+  showAllField,
+  shouldAskForFilter,
+  askForFilter,
+} from "./shared";
 
 /**
  * Full confirmation card for an appointment, read straight from the DB so the
@@ -167,7 +178,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "list_my_appointments",
         description:
-          `اعرض مواعيد المريض الحالي (القادمة أو كلها). استخدمها أيضاً عندما يسأل المريض «ما هو دوري؟» أو «كم رقمي؟». لكل موعد: bookingType (slot موعد بوقت ثابت، order نظام الدور، arrival أسبقية الحضور)، وorderNumber، وarrived. في أسبقية الحضور (arrival): إن كان arrived=false فلا رقم بعد — أخبر المريض أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور؛ وإن كان arrived=true فاذكر رقمه (orderNumber)، ومع تفعيل التتبّع اذكر الدور الجاري الآن (currentOrder) ومدة الانتظار التقديرية (estimatedWaitMin). القادمة تُعرض الأقرب أولاً، والسابقة الأحدث أولاً (٢٠ في الصفحة)؛ يمكن التصفية بالطبيب (doctorId) أو الحالة أو اليوم (YYYY-MM-DD). ${LIST_HINT}`,
+          `اعرض مواعيد المريض الحالي (القادمة أو كلها). استخدمها أيضاً (مع upcoming=true) عندما يسأل المريض «ما هو دوري؟» أو «كم رقمي؟» أو «موعدي القادم». لكل موعد: bookingType (slot موعد بوقت ثابت، order نظام الدور، arrival أسبقية الحضور)، وorderNumber، وarrived. في أسبقية الحضور (arrival): إن كان arrived=false فلا رقم بعد — أخبر المريض أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور؛ وإن كان arrived=true فاذكر رقمه (orderNumber)، ومع تفعيل التتبّع اذكر الدور الجاري الآن (currentOrder) ومدة الانتظار التقديرية (estimatedWaitMin). القادمة تُعرض الأقرب أولاً، والسابقة الأحدث أولاً (٢٠ في الصفحة)؛ يمكن التصفية بالطبيب (doctorId) أو الحالة أو اليوم (YYYY-MM-DD). ${LIST_HINT}`,
         schema: z.object({
           upcoming: z.boolean().nullable().describe("true للمواعيد القادمة فقط"),
           doctorId: z.string().nullable().describe("معرّف الطبيب (اختياري)"),
@@ -176,21 +187,47 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
             .string()
             .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
             .nullable(),
+          showAll: showAllField,
           page: pageField,
         }),
       },
-      async ({ upcoming, doctorId, status, date, page }) => {
-        const appts = await AppointmentService.getPatientAppointmentsPage(
-          patientId,
-          ctx.clinicId,
+      async (input) => {
+        const { upcoming, doctorId, status, date, page } = input;
+        const fetchPage = (
+          s: AppointmentStatus | undefined,
+          f: { upcoming?: boolean; doctorId?: string; date?: string },
+          size: number,
+        ) =>
+          AppointmentService.getPatientAppointmentsPage(
+            patientId,
+            ctx.clinicId,
+            s,
+            f,
+            pageRequest(page ?? 1, size),
+          );
+        const appts = await fetchPage(
           status ?? undefined,
           {
             upcoming: upcoming ?? false,
             doctorId: doctorId ?? undefined,
             date: date ?? undefined,
           },
-          pageRequest(page ?? 1, 20),
+          20,
         );
+        const filtered = !!(upcoming || doctorId || status || date);
+        if (shouldAskForFilter(filtered, input, appts.total)) {
+          // Size-1 pages: only their totals are read.
+          const [next, done, cancelled] = await Promise.all([
+            fetchPage(undefined, { upcoming: true }, 1),
+            fetchPage(AppointmentStatus.COMPLETED, {}, 1),
+            fetchPage(AppointmentStatus.CANCELLED, {}, 1),
+          ]);
+          return askForFilter(appts.total, "أي مواعيد تريد أن تراها؟", [
+            { label: "القادمة", args: { upcoming: true }, count: next.total },
+            { label: "الزيارات السابقة", args: { status: AppointmentStatus.COMPLETED }, count: done.total },
+            { label: "الملغاة", args: { status: AppointmentStatus.CANCELLED }, count: cancelled.total },
+          ]);
+        }
         return {
           ...pageInfo(appts),
           appointments: appts.items.map((a) => ({

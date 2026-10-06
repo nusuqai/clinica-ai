@@ -71,21 +71,6 @@ function StatusPill({ status }: { status: string }) {
 type R = Record<string, unknown>;
 
 function DoctorListCard({ result }: { result: R }) {
-  // A big clinic asked for "the doctors" with no filter: the agent offers the
-  // specialties to choose from instead of the full list.
-  if (result.chooseSpecialty) {
-    const specialties = (result.specialties as R[]) ?? [];
-    return (
-      <CardShell icon={<Stethoscope className="h-4 w-4" />} title="التخصصات">
-        {specialties.map((s, i) => (
-          <div key={i} className="flex items-center justify-between gap-2">
-            <p className="text-xs font-medium text-foreground">{String(s.name)}</p>
-            <span className="text-[11px] text-muted-foreground">{String(s.doctors)} أطباء</span>
-          </div>
-        ))}
-      </CardShell>
-    );
-  }
   const doctors = (result.doctors as R[]) ?? [];
   const more = typeof result.total === "number" ? result.total - doctors.length : 0;
   return (
@@ -364,6 +349,26 @@ function GenericToolCard({ name, result }: { name: string; result: R }) {
   );
 }
 
+// A broad (unfiltered) list request: the tool returned the choices the agent
+// asks the user to pick from, instead of the rows.
+function FilterChoicesCard({ result }: { result: R }) {
+  const choices = (result.choices as R[]) ?? [];
+  return (
+    <CardShell icon={<Wrench className="h-4 w-4" />} title={String(result.question ?? "اختر")}>
+      {choices.map((c, i) => (
+        <div key={i} className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-foreground">
+            {i + 1}. {String(c.label)}
+          </p>
+          {typeof c.count === "number" && (
+            <span className="text-[11px] text-muted-foreground">{c.count}</span>
+          )}
+        </div>
+      ))}
+    </CardShell>
+  );
+}
+
 // ── registry ─────────────────────────────────────────────────────────────────
 
 const REGISTRY: Record<string, (r: R) => React.ReactNode> = {
@@ -386,6 +391,7 @@ export function ToolCallCard({ call }: { call: ClientToolCall }) {
   if (call.status === "error") {
     return <ErrorCard message={String(result.error ?? "حدث خطأ أثناء تنفيذ العملية")} />;
   }
+  if (result.needsFilter) return <FilterChoicesCard result={result} />;
   const render = REGISTRY[call.name];
   return <>{render ? render(result) : <GenericToolCard name={call.name} result={result} />}</>;
 }

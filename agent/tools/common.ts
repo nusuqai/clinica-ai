@@ -9,7 +9,18 @@ import { listSpecialties } from "@/server/services/specialties";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import { modeTag } from "@/lib/availability/modes";
 import { pageRequest } from "@/lib/pagination";
-import { jsonTool, money, timeStr, LIST_HINT, pageField, pageInfo } from "./shared";
+import {
+  jsonTool,
+  money,
+  timeStr,
+  LIST_HINT,
+  pageField,
+  pageInfo,
+  showAllField,
+  shouldAskForFilter,
+  askForFilter,
+  type FilterChoice,
+} from "./shared";
 
 /** Arabic label for a doctor's rank (null when unset). */
 function doctorTitleAr(title: string | null): string | null {
@@ -28,8 +39,6 @@ const DAY_LABELS_AR: Record<string, string> = {
   SAT: "السبت",
 };
 
-/** Up to this many active doctors, "show me the doctors" lists them all directly. */
-const SMALL_CLINIC_DOCTORS = 10;
 const DOCTORS_PAGE_SIZE = 20;
 
 /** Tools available to every caller, including unknown WhatsApp contacts. */
@@ -71,6 +80,14 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
     };
   }
 
+  /** The clinic's specialties that have doctors, as choices to narrow a doctor list. */
+  async function specialtyChoices(): Promise<FilterChoice[]> {
+    const specialties = await listSpecialties(clinicId);
+    return specialties
+      .filter((s) => s._count.doctors > 0)
+      .map((s) => ({ label: s.name, args: { specialtyId: s.id }, count: s._count.doctors }));
+  }
+
   return [
     jsonTool(
       {
@@ -95,37 +112,30 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
     jsonTool(
       {
         name: "list_doctors",
-        description: `اعرض أطباء العيادة المتاحين مع تخصصاتهم (٢٠ في الصفحة). ابحث باسم الطبيب عبر query، أو صفِّ بالتخصص (specialtyId) أو بالفرع (branchId) أو بمن يكشف على الأطفال (acceptsChildren). إذا طُلب «الأطباء» دون تحديد والعيادة كبيرة، تعيد الأداة chooseSpecialty=true مع قائمة التخصصات بدلاً من الأطباء: اعرض التخصصات على المستخدم كخيارات واسأله بلطف عن التخصص الذي يحتاجه، ثم أعد الطلب بـ specialtyId. مرّر showAll=true فقط إذا طلب المستخدم صراحةً كل الأطباء. ${LIST_HINT}`,
+        description: `اعرض أطباء العيادة المتاحين مع تخصصاتهم (٢٠ في الصفحة). ابحث باسم الطبيب عبر query، أو صفِّ بالتخصص (specialtyId) أو بالفرع (branchId) أو بمن يكشف على الأطفال (acceptsChildren). عند طلب «الأطباء» دون تحديد تُعيد الأداة التخصصات كخيارات ليختار المستخدم. ${LIST_HINT}`,
         schema: z.object({
           query: z.string().nullable().describe("اسم الطبيب أو جزء منه (اختياري)"),
           specialtyId: z.string().nullable().describe("معرّف التخصص من list_specialties (اختياري)"),
           branchId: z.string().nullable().describe("معرّف الفرع من list_branches (اختياري)"),
           acceptsChildren: z.boolean().nullable().describe("true لمن يكشف على الأطفال فقط (اختياري)"),
-          showAll: z.boolean().nullable().describe("true إذا طلب المستخدم صراحةً كل الأطباء"),
+          showAll: showAllField,
           page: pageField,
         }),
       },
-      async ({ query, specialtyId, branchId, acceptsChildren, showAll, page }) => {
-        const filters: DoctorService.DoctorFilters = {
-          query: query ?? undefined,
-          specialtyId: specialtyId ?? undefined,
-          branchId: branchId ?? undefined,
-          acceptsChildren: acceptsChildren ?? undefined,
-        };
-        const unfiltered = !query && !specialtyId && !branchId && acceptsChildren == null;
-        const result = await findDoctors(filters, page);
-        // A big clinic asked for "the doctors" with nothing to go on: hand back
-        // the specialties so the agent can offer them as choices, instead of
-        // dumping a long list the patient has to read through.
-        if (unfiltered && !showAll && !page && result.total > SMALL_CLINIC_DOCTORS) {
-          const specialties = await listSpecialties(clinicId);
-          return {
-            chooseSpecialty: true,
-            totalDoctors: result.total,
-            specialties: specialties
-              .filter((s) => s._count.doctors > 0)
-              .map((s) => ({ id: s.id, name: s.name, doctors: s._count.doctors })),
-          };
+      async (input) => {
+        const { query, specialtyId, branchId, acceptsChildren } = input;
+        const result = await findDoctors(
+          {
+            query: query ?? undefined,
+            specialtyId: specialtyId ?? undefined,
+            branchId: branchId ?? undefined,
+            acceptsChildren: acceptsChildren ?? undefined,
+          },
+          input.page,
+        );
+        const filtered = !!(query || specialtyId || branchId || acceptsChildren != null);
+        if (shouldAskForFilter(filtered, input, result.total)) {
+          return askForFilter(result.total, "ما التخصص الذي تحتاجه؟", await specialtyChoices());
         }
         return result;
       },
@@ -162,19 +172,27 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
             .string()
             .nullable()
             .describe("نص التخصص المطلوب إن لم يتوفّر المعرّف"),
+          showAll: showAllField,
           page: pageField,
         }),
       },
-      async ({ specialtyId, specialty, page }) => ({
-        specialtyId: specialtyId ?? null,
-        specialty: specialty ?? null,
-        ...(await findDoctors(
+      async (input) => {
+        const { specialtyId, specialty } = input;
+        const result = await findDoctors(
           specialtyId
             ? { specialtyId }
             : { specialtyName: specialty ?? undefined },
-          page,
-        )),
-      }),
+          input.page,
+        );
+        if (shouldAskForFilter(!!(specialtyId || specialty?.trim()), input, result.total)) {
+          return askForFilter(result.total, "ما التخصص الذي تحتاجه؟", await specialtyChoices());
+        }
+        return {
+          specialtyId: specialtyId ?? null,
+          specialty: specialty ?? null,
+          ...result,
+        };
+      },
     ),
     jsonTool(
       {

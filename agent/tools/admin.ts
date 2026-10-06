@@ -14,7 +14,17 @@ import { getDashboardStats } from "@/server/services/reports";
 import type { AgentContext } from "@/agent/types";
 import { modeTag } from "@/lib/availability/modes";
 import { pageArgs, pageRequest, toPaginated } from "@/lib/pagination";
-import { jsonTool, dateStr, timeStr, LIST_HINT, pageField, pageInfo } from "./shared";
+import {
+  jsonTool,
+  dateStr,
+  timeStr,
+  LIST_HINT,
+  pageField,
+  pageInfo,
+  showAllField,
+  shouldAskForFilter,
+  askForFilter,
+} from "./shared";
 
 export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
   return [
@@ -27,10 +37,12 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           specialtyId: z.string().nullable().describe("معرّف التخصص (اختياري)"),
           branchId: z.string().nullable().describe("معرّف الفرع (اختياري)"),
           status: z.enum(["active", "inactive"]).nullable().describe("النشطون أو غير النشطين فقط (اختياري)"),
+          showAll: showAllField,
           page: pageField,
         }),
       },
-      async ({ query, specialtyId, branchId, status, page }) => {
+      async (input) => {
+        const { query, specialtyId, branchId, status, page } = input;
         const doctors = await DoctorService.listDoctorsPage(
           ctx.clinicId,
           {
@@ -41,6 +53,15 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           },
           pageRequest(page ?? 1, 30),
         );
+        if (shouldAskForFilter(!!(query?.trim() || specialtyId || branchId || status), input, doctors.total)) {
+          const specialties = await SpecialtyService.listSpecialties(ctx.clinicId);
+          return askForFilter(doctors.total, "أي تخصص تريد؟ أو اذكر اسم الطبيب.", [
+            ...specialties
+              .filter((s) => s._count.doctors > 0)
+              .map((s) => ({ label: s.name, args: { specialtyId: s.id }, count: s._count.doctors })),
+            { label: "غير النشطين", args: { status: "inactive" } },
+          ]);
+        }
         return {
           ...pageInfo(doctors),
           doctors: doctors.items.map((d) => ({
@@ -191,15 +212,32 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
         schema: z.object({
           query: z.string().nullable().describe("بحث بالاسم أو رقم الهاتف (اختياري)"),
           role: z.enum(["PATIENT", "DOCTOR", "ADMIN"]).nullable().describe("الدور (اختياري)"),
+          showAll: showAllField,
           page: pageField,
         }),
       },
-      async ({ query, role, page }) => {
+      async (input) => {
+        const { query, role, page } = input;
         const users = await UserService.listUsers(
           ctx.clinicId,
           { query: query ?? undefined, role: role ?? undefined },
           pageRequest(page ?? 1, 30),
         );
+        if (shouldAskForFilter(!!(query?.trim() || role), input, users.total)) {
+          // Size-1 pages: only their totals are read.
+          const roleCount = (r: "PATIENT" | "DOCTOR" | "ADMIN") =>
+            UserService.listUsers(ctx.clinicId, { role: r }, pageRequest(1, 1)).then((p) => p.total);
+          const [patients, doctors, admins] = await Promise.all([
+            roleCount("PATIENT"),
+            roleCount("DOCTOR"),
+            roleCount("ADMIN"),
+          ]);
+          return askForFilter(users.total, "تبحث عن شخص معيّن (اسم أو هاتف)؟ أو اختر الفئة:", [
+            { label: "المرضى", args: { role: "PATIENT" }, count: patients },
+            { label: "الأطباء", args: { role: "DOCTOR" }, count: doctors },
+            { label: "المسؤولون", args: { role: "ADMIN" }, count: admins },
+          ]);
+        }
         return {
           ...pageInfo(users),
           users: users.items.map((u) => ({
@@ -243,6 +281,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             .string()
             .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
             .nullable(),
+          showAll: showAllField,
           page: pageField,
         }),
       },
@@ -259,6 +298,34 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           },
           pageRequest(filters.page ?? 1, 50),
         );
+        const filtered = !!(
+          filters.upcoming ||
+          filters.status ||
+          filters.doctorId ||
+          filters.patientId ||
+          filters.patientQuery?.trim() ||
+          filters.date
+        );
+        if (shouldAskForFilter(filtered, filters, appts.total)) {
+          const today = dateStr(new Date());
+          // Size-1 pages: only their totals are read.
+          const count = (f: AppointmentService.AppointmentFilters) =>
+            AppointmentService.listAppointments(ctx.clinicId, f, pageRequest(1, 1)).then((p) => p.total);
+          const [todays, next, pending] = await Promise.all([
+            count({ date: today }),
+            count({ upcoming: true }),
+            count({ status: AppointmentStatus.PENDING }),
+          ]);
+          return askForFilter(
+            appts.total,
+            "أي مواعيد تريد أن تراها؟ أو اذكر طبيباً أو مريضاً أو يوماً معيّناً.",
+            [
+              { label: "مواعيد اليوم", args: { date: today }, count: todays },
+              { label: "القادمة", args: { upcoming: true }, count: next },
+              { label: "بانتظار التأكيد", args: { status: AppointmentStatus.PENDING }, count: pending },
+            ],
+          );
+        }
         return {
           ...pageInfo(appts),
           appointments: appts.items.map((a) => ({
@@ -432,6 +499,7 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
           `اعرض فترات طبيب معيّن ضمن نطاق تاريخ (YYYY-MM-DD)، اختياري — الافتراضي الثلاثون يوماً القادمة (٥٠ في الصفحة). صفِّ بالحالة عبر state: free (متاحة)، booked (محجوزة)، blocked (معطّلة). ${LIST_HINT}`,
         schema: z.object({
           state: z.enum(["free", "booked", "blocked"]).nullable(),
+          showAll: showAllField,
           page: pageField,
           doctorId: z.string(),
           from: z
@@ -444,7 +512,8 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
             .nullable(),
         }),
       },
-      async ({ doctorId, from, to, state, page }) => {
+      async (input) => {
+        const { doctorId, from, to, state, page } = input;
         const all = await DoctorService.listDoctorSlots(doctorId, {
           from: from ? new Date(from) : undefined,
           to: to ? new Date(to) : undefined,
@@ -460,6 +529,16 @@ export function adminTools(ctx: AgentContext): DynamicStructuredTool[] {
                 ? s.isBlocked
                 : true,
         );
+        if (shouldAskForFilter(!!(from || to || state), input, matched.length)) {
+          const free = all.filter((s) => !s.isBlocked && !s.appointment).length;
+          const booked = all.filter((s) => !!s.appointment).length;
+          const blocked = all.filter((s) => s.isBlocked).length;
+          return askForFilter(all.length, "أي فترات تريد أن ترى؟ أو اذكر يوماً معيّناً.", [
+            { label: "المتاحة", args: { doctorId, state: "free" }, count: free },
+            { label: "المحجوزة", args: { doctorId, state: "booked" }, count: booked },
+            { label: "المعطّلة", args: { doctorId, state: "blocked" }, count: blocked },
+          ]);
+        }
         const req = pageRequest(page ?? 1, 50);
         const { skip, take } = pageArgs(req);
         const slots = toPaginated(matched.slice(skip, skip + take), matched.length, req);
