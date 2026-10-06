@@ -9,11 +9,21 @@ const config: Config = {
     extend: {
       colors: {
         // ClinicaAI brand palette (preserved from the original Vite app)
-        primary: "#0B1F3A",
-        accent: "#00C2CB",
+        primary: {
+          DEFAULT: "#0B1F3A",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        accent: {
+          DEFAULT: "#00C2CB",
+          foreground: "hsl(var(--accent-foreground))",
+        },
         background: "#F0F4F8",
         text: "#1C1C1E",
         // shadcn/ui semantic tokens (driven by CSS variables in globals.css)
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

@@ -6,6 +6,9 @@ import { ProcedureKind } from "@prisma/client";
 import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import type { TreatmentRecordPayload } from "@/server/actions/treatments";
 import type { TreatmentRecordView } from "@/server/services/treatments";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
 
 // The clinical record form body — dates, narrative fields, procedure and
 // prescription lines. Shared by the doctor's modal (per appointment) and the
@@ -25,8 +28,10 @@ export function toDateInput(value: Date | string | null | undefined): string {
   return new Date(value).toISOString().slice(0, 10);
 }
 
-const inputClass =
-  "w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30";
+const PROCEDURE_KIND_OPTIONS = Object.entries(PROCEDURE_KIND_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
 
 interface RecordFormProps {
   /** The stored record when editing; null when creating. */
@@ -113,51 +118,44 @@ export default function RecordForm({
 
       {/* Dates */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Labeled label="تاريخ الزيارة">
-          <input
-            type="date"
-            value={visitDate}
-            onChange={(e) => setVisitDate(e.target.value)}
-            className={inputClass}
-          />
-        </Labeled>
-        <Labeled label="موعد المتابعة (اختياري)">
-          <input
-            type="date"
-            value={followUpDate}
-            onChange={(e) => setFollowUpDate(e.target.value)}
-            className={inputClass}
-          />
-        </Labeled>
+        <FormField
+          type="date"
+          label="تاريخ الزيارة"
+          value={visitDate}
+          onValueChange={setVisitDate}
+        />
+        <FormField
+          type="date"
+          label="موعد المتابعة (اختياري)"
+          value={followUpDate}
+          onValueChange={setFollowUpDate}
+        />
       </div>
 
-      <Labeled label="شكوى المريض">
-        <textarea
-          value={chiefComplaint}
-          onChange={(e) => setChiefComplaint(e.target.value)}
-          rows={2}
-          placeholder="ما الذي يشكو منه المريض؟"
-          className={`${inputClass} resize-none`}
-        />
-      </Labeled>
-      <Labeled label="التشخيص">
-        <textarea
-          value={diagnosis}
-          onChange={(e) => setDiagnosis(e.target.value)}
-          rows={2}
-          placeholder="التشخيص المبدئي أو النهائي..."
-          className={`${inputClass} resize-none`}
-        />
-      </Labeled>
-      <Labeled label="ملاحظات الطبيب">
-        <textarea
-          value={clinicalNotes}
-          onChange={(e) => setClinicalNotes(e.target.value)}
-          rows={4}
-          placeholder="نتائج الفحص، الخطة العلاجية..."
-          className={`${inputClass} resize-none`}
-        />
-      </Labeled>
+      <FormField
+        type="textarea"
+        label="شكوى المريض"
+        value={chiefComplaint}
+        onValueChange={setChiefComplaint}
+        rows={2}
+        placeholder="ما الذي يشكو منه المريض؟"
+      />
+      <FormField
+        type="textarea"
+        label="التشخيص"
+        value={diagnosis}
+        onValueChange={setDiagnosis}
+        rows={2}
+        placeholder="التشخيص المبدئي أو النهائي..."
+      />
+      <FormField
+        type="textarea"
+        label="ملاحظات الطبيب"
+        value={clinicalNotes}
+        onValueChange={setClinicalNotes}
+        rows={4}
+        placeholder="نتائج الفحص، الخطة العلاجية..."
+      />
 
       {/* Procedures */}
       <RowSection
@@ -167,40 +165,36 @@ export default function RecordForm({
         {procedures.map((row, i) => (
           <div key={i} className="rounded-xl border border-border p-3">
             <div className="flex gap-2">
-              <select
+              <FormField
+                type="select"
+                options={PROCEDURE_KIND_OPTIONS}
                 value={row.kind}
-                onChange={(e) => updateProcedure(i, { kind: e.target.value as ProcedureKind })}
-                className="rounded-xl border border-border bg-background px-2 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {Object.entries(PROCEDURE_KIND_LABELS).map(([val, label]) => (
-                  <option key={val} value={val}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={row.name}
-                onChange={(e) => updateProcedure(i, { name: e.target.value })}
-                placeholder="اسم الإجراء"
-                className={`${inputClass} min-w-0 flex-1`}
+                onValueChange={(v) => updateProcedure(i, { kind: v as ProcedureKind })}
+                className="w-36 shrink-0"
               />
-              <input
+              <FormField
+                value={row.name}
+                onValueChange={(v) => updateProcedure(i, { name: v })}
+                placeholder="اسم الإجراء"
+                className="min-w-0 flex-1"
+              />
+              <FormField
                 value={row.cost ?? ""}
-                onChange={(e) => updateProcedure(i, { cost: e.target.value })}
+                onValueChange={(v) => updateProcedure(i, { cost: v })}
                 inputMode="decimal"
                 placeholder="التكلفة"
                 dir="ltr"
-                className={`${inputClass} !w-24`}
+                className="w-24 shrink-0"
               />
               <RemoveButton
                 onClick={() => setProcedures((rows) => rows.filter((_, j) => j !== i))}
               />
             </div>
-            <input
+            <FormField
               value={row.note ?? ""}
-              onChange={(e) => updateProcedure(i, { note: e.target.value })}
+              onValueChange={(v) => updateProcedure(i, { note: v })}
               placeholder="ملاحظة (اختياري)"
-              className={`${inputClass} mt-2`}
+              className="mt-2"
             />
           </div>
         ))}
@@ -214,42 +208,39 @@ export default function RecordForm({
         {prescriptions.map((row, i) => (
           <div key={i} className="rounded-xl border border-border p-3">
             <div className="flex gap-2">
-              <input
+              <FormField
                 value={row.drugName}
-                onChange={(e) => updatePrescription(i, { drugName: e.target.value })}
+                onValueChange={(v) => updatePrescription(i, { drugName: v })}
                 placeholder="اسم الدواء"
-                className={`${inputClass} min-w-0 flex-1`}
+                className="min-w-0 flex-1"
               />
               <RemoveButton
                 onClick={() => setPrescriptions((rows) => rows.filter((_, j) => j !== i))}
               />
             </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
-              <input
+              <FormField
                 value={row.dose ?? ""}
-                onChange={(e) => updatePrescription(i, { dose: e.target.value })}
+                onValueChange={(v) => updatePrescription(i, { dose: v })}
                 placeholder="الجرعة (500 مجم)"
-                className={inputClass}
               />
-              <input
+              <FormField
                 value={row.frequency ?? ""}
-                onChange={(e) => updatePrescription(i, { frequency: e.target.value })}
+                onValueChange={(v) => updatePrescription(i, { frequency: v })}
                 placeholder="التكرار (مرتين يومياً)"
-                className={inputClass}
               />
-              <input
+              <FormField
                 value={row.durationDays ?? ""}
-                onChange={(e) => updatePrescription(i, { durationDays: e.target.value })}
+                onValueChange={(v) => updatePrescription(i, { durationDays: v })}
                 inputMode="numeric"
                 placeholder="المدة (أيام)"
-                className={inputClass}
               />
             </div>
-            <input
+            <FormField
               value={row.instructions ?? ""}
-              onChange={(e) => updatePrescription(i, { instructions: e.target.value })}
+              onValueChange={(v) => updatePrescription(i, { instructions: v })}
               placeholder="تعليمات (بعد الأكل...)"
-              className={`${inputClass} mt-2`}
+              className="mt-2"
             />
           </div>
         ))}
@@ -258,20 +249,12 @@ export default function RecordForm({
       {error && <p className="font-sans text-sm text-red-600">{error}</p>}
 
       <div className="flex gap-3">
-        <button
-          onClick={handleSave}
-          disabled={isPending}
-          className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-        >
+        <Button onClick={handleSave} loading={isPending} className="flex-1">
           {isPending ? "جارٍ الحفظ..." : initial ? "حفظ التعديلات" : "حفظ السجل"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-        >
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
           إلغاء
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -282,7 +265,7 @@ export default function RecordForm({
 export function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="font-sans text-sm font-medium text-foreground">{label}</label>
+      <Label className="font-sans text-sm font-medium text-foreground">{label}</Label>
       {children}
     </div>
   );
@@ -301,14 +284,10 @@ function RowSection({
     <section className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="font-sans text-sm font-medium text-foreground">{title}</h3>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-        >
-          <Plus className="h-3.5 w-3.5" />
+        <Button type="button" variant="outline" size="sm" onClick={onAdd}>
+          <Plus />
           إضافة
-        </button>
+        </Button>
       </div>
       <div className="space-y-2">{children}</div>
     </section>
@@ -317,13 +296,15 @@ function RowSection({
 
 function RemoveButton({ onClick }: { onClick: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost-destructive"
+      size="icon"
       onClick={onClick}
       title="حذف"
-      className="flex-shrink-0 rounded-lg border border-border px-2 text-muted-foreground transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+      className="h-10 shrink-0 border border-border hover:border-red-200"
     >
-      <Trash2 className="h-4 w-4" />
-    </button>
+      <Trash2 />
+    </Button>
   );
 }

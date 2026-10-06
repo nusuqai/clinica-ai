@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { History, Loader2, ArrowLeft } from "lucide-react";
 import Modal from "@/components/admin/modal";
+import { Badge } from "@/components/ui/badge";
 import { getRecordRevisionsAction } from "@/server/actions/treatments";
 import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import type { ProcedureKind } from "@prisma/client";
@@ -201,15 +202,12 @@ export default function RecordRevisions({ record }: { record: TreatmentRecordVie
 
   return (
     <>
-      <button
-        type="button"
-        onClick={openHistory}
-        title="عرض سجل التعديلات"
-        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 font-sans text-xs font-medium text-amber-700 transition-colors hover:bg-amber-200"
-      >
-        <History className="h-3 w-3" />
-        {count === 1 ? "تعديل واحد" : `${count} تعديلات`} — عرض التغييرات
-      </button>
+      <Badge asChild variant="warning" className="cursor-pointer gap-1 hover:bg-amber-200">
+        <button type="button" onClick={openHistory} title="عرض سجل التعديلات">
+          <History className="h-3 w-3" />
+          {count === 1 ? "تعديل واحد" : `${count} تعديلات`} — عرض التغييرات
+        </button>
+      </Badge>
 
       <Modal
         open={open}
