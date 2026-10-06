@@ -2,15 +2,22 @@
 
 import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, CheckCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Ban, CheckCircle } from "lucide-react";
 import { toggleMySlotBlockedAction } from "@/server/actions/doctor";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { DoctorSlot } from "@/server/services/doctors";
 import type { AppointmentStatus } from "@prisma/client";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { toast } from "sonner";
 
 type FilterStatus = "all" | "available" | "blocked" | "booked";
@@ -39,15 +46,6 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
         return;
       }
       router.refresh();
-    });
-  }
-
-  function toggleCollapse(dateKey: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(dateKey)) next.delete(dateKey);
-      else next.add(dateKey);
-      return next;
     });
   }
 
@@ -85,14 +83,19 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
   return (
     <div>
       {/* Filter bar */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <ToggleGroup
+        type="single"
+        size="sm"
+        value={filter}
+        // Radix lets a single group deselect; keep one filter always active.
+        onValueChange={(v) => v && setFilter(v as FilterStatus)}
+        className="mb-4 flex-wrap justify-start gap-2"
+      >
         {(Object.keys(FILTER_LABELS) as FilterStatus[]).map((f) => (
-          <Button
+          <ToggleGroupItem
             key={f}
-            variant={filter === f ? "default" : "secondary"}
-            size="sm"
-            onClick={() => setFilter(f)}
-            className={filter === f ? undefined : "bg-muted/60 text-muted-foreground"}
+            value={f}
+            className="rounded-lg bg-muted/60 px-3 text-xs text-muted-foreground"
           >
             {FILTER_LABELS[f]}
             <span
@@ -103,9 +106,9 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
             >
               {totalByStatus[f]}
             </span>
-          </Button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
 
       {slots.length === 0 ? (
         <Card className="py-16 text-center">
@@ -114,62 +117,57 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
           </p>
         </Card>
       ) : (
-        <div className="space-y-2">
+        <Accordion
+          type="multiple"
+          value={dateKeys.filter((k) => !collapsed.has(k))}
+          onValueChange={(open) => setCollapsed(new Set(dateKeys.filter((k) => !open.includes(k))))}
+          className="space-y-2"
+        >
           {dateKeys.map((dateKey) => {
             const daySlots = grouped[dateKey];
             const filteredSlots =
               filter === "all" ? daySlots : daySlots.filter((s) => slotStatus(s) === filter);
             if (filteredSlots.length === 0) return null;
 
-            const isOpen = !collapsed.has(dateKey);
             const date = new Date(dateKey + "T00:00:00Z");
 
             const dayCounts = { available: 0, blocked: 0, booked: 0 };
             for (const s of daySlots) dayCounts[slotStatus(s) as Exclude<FilterStatus, "all">]++;
 
             return (
-              <Card key={dateKey} className="overflow-hidden">
-                <Button
-                  variant="ghost"
-                  onClick={() => toggleCollapse(dateKey)}
-                  className="h-auto w-full justify-between whitespace-normal rounded-none bg-muted/30 px-5 py-3 text-start font-normal hover:bg-muted/50"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="font-sans text-sm font-medium text-foreground">
-                      {formatSlotDate(date, {
-                        weekday: "long",
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                      })}
-                    </span>
-                    <div className="flex flex-shrink-0 items-center gap-1.5">
-                      {dayCounts.available > 0 && (
-                        <Badge className="bg-emerald-50 px-1.5 py-px text-[10px] text-emerald-600">
-                          {dayCounts.available} متاح
-                        </Badge>
-                      )}
-                      {dayCounts.blocked > 0 && (
-                        <Badge className="bg-gray-100 px-1.5 py-px text-[10px] text-gray-500">
-                          {dayCounts.blocked} محظور
-                        </Badge>
-                      )}
-                      {dayCounts.booked > 0 && (
-                        <Badge className="bg-blue-50 px-1.5 py-px text-[10px] text-blue-600">
-                          {dayCounts.booked} محجوز
-                        </Badge>
-                      )}
+              <Card key={dateKey} asChild className="overflow-hidden">
+                <AccordionItem value={dateKey}>
+                  <AccordionTrigger className="gap-3 bg-muted/30 px-5 py-3 font-normal hover:bg-muted/50">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="font-sans text-sm font-medium text-foreground">
+                        {formatSlotDate(date, {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })}
+                      </span>
+                      <div className="flex flex-shrink-0 items-center gap-1.5">
+                        {dayCounts.available > 0 && (
+                          <Badge className="bg-emerald-50 px-1.5 py-px text-[10px] text-emerald-600">
+                            {dayCounts.available} متاح
+                          </Badge>
+                        )}
+                        {dayCounts.blocked > 0 && (
+                          <Badge className="bg-gray-100 px-1.5 py-px text-[10px] text-gray-500">
+                            {dayCounts.blocked} محظور
+                          </Badge>
+                        )}
+                        {dayCounts.booked > 0 && (
+                          <Badge className="bg-blue-50 px-1.5 py-px text-[10px] text-blue-600">
+                            {dayCounts.booked} محجوز
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  {isOpen ? (
-                    <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                  )}
-                </Button>
+                  </AccordionTrigger>
 
-                {isOpen && (
-                  <div className="divide-y divide-border">
+                  <AccordionContent className="divide-y divide-border p-0">
                     {filteredSlots.map((slot) => {
                       const isBooked = !!slot.appointment;
                       const isBlocked = slot.isBlocked;
@@ -222,12 +220,12 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                         </div>
                       );
                     })}
-                  </div>
-                )}
+                  </AccordionContent>
+                </AccordionItem>
               </Card>
             );
           })}
-        </div>
+        </Accordion>
       )}
     </div>
   );

@@ -251,9 +251,9 @@ function BindingCard({
       {/* Variable mapping */}
       {template && template.variableCount > 0 && (
         <div className="space-y-2">
-          <label className="text-xs font-medium text-foreground">
+          <Label className="text-xs font-medium text-foreground">
             ربط متغيّرات القالب ({template.variableCount})
-          </label>
+          </Label>
           {variableMap.map((token, i) => (
             <div key={i} className="flex items-center gap-2">
               <span className="w-12 shrink-0 text-xs text-muted-foreground">{`{{${i + 1}}}`}</span>

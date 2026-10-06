@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { X, Clock, CheckCircle, AlertCircle, LogIn, ChevronDown, Users } from "lucide-react";
+import { X, Clock, CheckCircle, AlertCircle, LogIn, Users } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -16,6 +16,14 @@ import {
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Spinner } from "@/components/ui/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface Doctor {
@@ -268,7 +276,7 @@ export function BookAppointmentModal({
 
               {daysLoading && (
                 <div className="flex items-center justify-center py-6">
-                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                  <Spinner className="size-6 text-accent" />
                 </div>
               )}
 
@@ -283,20 +291,29 @@ export function BookAppointmentModal({
               )}
 
               {!daysLoading && availableDays.length > 0 && (
-                <div className="flex flex-col gap-2">
+                <Accordion
+                  type="single"
+                  collapsible
+                  value={openDate ?? ""}
+                  onValueChange={(value) => {
+                    const day = availableDays.find((d) => d.date === value);
+                    if (day) toggleDay(day.date, day.mode);
+                    else setOpenDate(null);
+                  }}
+                  className="flex flex-col gap-2"
+                >
                   {availableDays.map(({ date, mode }) => {
-                    const isOpen = openDate === date;
                     const data = dayData[date];
                     const loading = dayLoading[date];
                     const errorMsg = dayError[date];
                     return (
-                      <div key={date} className="overflow-hidden rounded-xl border border-border">
+                      <AccordionItem
+                        key={date}
+                        value={date}
+                        className="overflow-hidden rounded-xl border border-border"
+                      >
                         {/* Day header */}
-                        <Button
-                          variant="ghost"
-                          onClick={() => toggleDay(date, mode)}
-                          className="h-auto w-full justify-between whitespace-normal rounded-none px-4 py-3 text-start font-normal text-text hover:bg-muted/60 hover:text-text [&_svg]:size-auto"
-                        >
+                        <AccordionTrigger className="gap-2 px-4 py-3 font-normal text-text hover:bg-muted/60 [&>svg]:text-text/40">
                           <span className="flex items-center gap-2">
                             <span className="font-sans text-sm font-medium text-text">
                               {formatSlotDate(date, {
@@ -312,91 +329,77 @@ export function BookAppointmentModal({
                               </Badge>
                             )}
                           </span>
-                          <ChevronDown
-                            className={`h-4 w-4 shrink-0 text-text/40 transition-transform ${
-                              isOpen ? "rotate-180" : ""
-                            }`}
-                          />
-                        </Button>
+                        </AccordionTrigger>
 
-                        {/* Day body — lazy content */}
-                        {isOpen && (
-                          <div className="border-t border-border px-4 py-3">
-                            {loading && (
-                              <div className="flex items-center justify-center py-4">
-                                <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                              </div>
-                            )}
+                        {/* Day body — only mounted while open, so content stays lazy */}
+                        <AccordionContent className="border-t border-border px-4 py-3">
+                          {loading && (
+                            <div className="flex items-center justify-center py-4">
+                              <Spinner className="text-accent" />
+                            </div>
+                          )}
 
-                            {errorMsg && !loading && (
-                              <Alert
-                                variant="destructive"
-                                className="items-center rounded-lg border-transparent px-3 py-2 text-red-600"
+                          {errorMsg && !loading && (
+                            <Alert
+                              variant="destructive"
+                              className="items-center rounded-lg border-transparent px-3 py-2 text-red-600"
+                            >
+                              <AlertCircle className="h-4 w-4 shrink-0" />
+                              {errorMsg}
+                            </Alert>
+                          )}
+
+                          {/* Slot-based day */}
+                          {!loading && data?.kind === "slots" && data.slots.length > 0 && (
+                            <>
+                              <p className="mb-2 flex items-center gap-1.5 font-sans text-xs font-medium text-text/60">
+                                <Clock className="h-3.5 w-3.5" />
+                                اختر وقت الموعد
+                              </p>
+                              <ToggleGroup
+                                type="single"
+                                variant="accent"
+                                value={selection?.mode === "SLOT_BASED" ? selection.slot.id : ""}
+                                onValueChange={(id) => {
+                                  const slot = data.slots.find((s) => s.id === id);
+                                  if (slot) setSelection({ mode: "SLOT_BASED", date, slot });
+                                }}
+                                className="grid grid-cols-3 gap-2"
                               >
-                                <AlertCircle className="h-4 w-4 shrink-0" />
-                                {errorMsg}
-                              </Alert>
-                            )}
+                                {data.slots.map((slot) => (
+                                  <ToggleGroupItem
+                                    key={slot.id}
+                                    value={slot.id}
+                                    className="h-auto rounded-lg bg-background px-3 py-2 text-text hover:border-accent/50 hover:bg-background hover:text-text"
+                                  >
+                                    {formatTime(slot.startTime)}
+                                  </ToggleGroupItem>
+                                ))}
+                              </ToggleGroup>
+                            </>
+                          )}
 
-                            {/* Slot-based day */}
-                            {!loading && data?.kind === "slots" && data.slots.length > 0 && (
-                              <>
-                                <p className="mb-2 flex items-center gap-1.5 font-sans text-xs font-medium text-text/60">
-                                  <Clock className="h-3.5 w-3.5" />
-                                  اختر وقت الموعد
-                                </p>
-                                <div className="grid grid-cols-3 gap-2">
-                                  {data.slots.map((slot) => {
-                                    const isSel =
-                                      selection?.mode === "SLOT_BASED" &&
-                                      selection.slot.id === slot.id;
-                                    return (
-                                      <Button
-                                        key={slot.id}
-                                        variant="outline"
-                                        onClick={() =>
-                                          setSelection({
-                                            mode: "SLOT_BASED",
-                                            date,
-                                            slot,
-                                          })
-                                        }
-                                        className={`h-auto rounded-lg px-3 py-2 transition-all ${
-                                          isSel
-                                            ? "border-accent bg-accent text-white shadow-md shadow-accent/20 hover:bg-accent"
-                                            : "bg-background text-text hover:border-accent/50 hover:bg-background"
-                                        }`}
-                                      >
-                                        {formatTime(slot.startTime)}
-                                      </Button>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            )}
-
-                            {/* Order-based (queue) day */}
-                            {!loading && data?.kind === "queue" && (
-                              <QueueBox
-                                info={data.info}
-                                selected={
-                                  selection?.mode === "ORDER_BASED" && selection.date === date
-                                }
-                                onSelect={() =>
-                                  setSelection({
-                                    mode: "ORDER_BASED",
-                                    date,
-                                    info: data.info,
-                                  })
-                                }
-                              />
-                            )}
-                          </div>
-                        )}
-                      </div>
+                          {/* Order-based (queue) day */}
+                          {!loading && data?.kind === "queue" && (
+                            <QueueBox
+                              info={data.info}
+                              selected={
+                                selection?.mode === "ORDER_BASED" && selection.date === date
+                              }
+                              onSelect={() =>
+                                setSelection({
+                                  mode: "ORDER_BASED",
+                                  date,
+                                  info: data.info,
+                                })
+                              }
+                            />
+                          )}
+                        </AccordionContent>
+                      </AccordionItem>
                     );
                   })}
-                </div>
+                </Accordion>
               )}
 
               {selection && (

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Phone, DollarSign, Calendar } from "lucide-react";
 import { BookAppointmentModal } from "./book-appointment-modal";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface Doctor {
@@ -91,22 +92,19 @@ export function DoctorsClient({
         </div>
 
         {/* Specialty filter pills */}
-        <div className="mb-8 flex flex-wrap justify-center gap-2">
+        <ToggleGroup
+          type="single"
+          variant="accent"
+          value={filter}
+          onValueChange={(v) => v && setFilter(v)}
+          className="mb-8 flex-wrap gap-2"
+        >
           {specialties.map((spec) => (
-            <Button
-              key={spec}
-              variant="outline"
-              onClick={() => setFilter(spec)}
-              className={`rounded-full px-4 transition-all ${
-                filter === spec
-                  ? "border-accent bg-accent text-white shadow-md shadow-accent/20 hover:bg-accent"
-                  : "bg-white text-text/70 hover:border-accent/40 hover:bg-white hover:text-accent"
-              }`}
-            >
+            <ToggleGroupItem key={spec} value={spec} className="rounded-full px-4">
               {spec}
-            </Button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
 
         {/* Empty state */}
         {filtered.length === 0 && (

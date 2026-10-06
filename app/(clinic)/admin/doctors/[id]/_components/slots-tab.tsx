@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Ban, CheckCircle, ChevronDown, ChevronRight, ListOrdered, Users } from "lucide-react";
+import { Ban, CheckCircle, ListOrdered, Users } from "lucide-react";
 import {
   toggleSlotBlockedAction,
   getDoctorDaySlotsAction,
@@ -14,6 +14,13 @@ import type { AppointmentStatus } from "@prisma/client";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Spinner } from "@/components/ui/spinner";
 
 interface DaySlot {
   id: string;
@@ -135,10 +142,19 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
   }
 
   return (
-    <div className="space-y-2">
+    <Accordion
+      type="single"
+      collapsible
+      value={openDate ?? ""}
+      onValueChange={(value) => {
+        const day = days.find((d) => d.date === value);
+        if (day) toggleDay(day);
+        else setOpenDate(null);
+      }}
+      className="space-y-2"
+    >
       {days.map((day) => {
         const { date, mode } = day;
-        const isOpen = openDate === date;
         const isQueue = mode !== "SLOT_BASED";
         const queueLabel = mode === "ARRIVAL_BASED" ? "أسبقية الحضور" : "نظام الدور";
         const dateObj = new Date(date + "T00:00:00Z");
@@ -148,68 +164,59 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
         const counts = daySlots[date] ? slotCountsFrom(daySlots[date]) : day.slotCounts;
 
         return (
-          <Card key={date} className="overflow-hidden">
-            {/* Collapsible header */}
-            <Button
-              variant="ghost"
-              onClick={() => toggleDay(day)}
-              className="h-auto w-full justify-between whitespace-normal rounded-none bg-muted/30 px-5 py-3 text-start font-normal hover:bg-muted/50"
-            >
-              <div className="flex min-w-0 flex-wrap items-center gap-3">
-                <span className="font-sans text-sm font-medium text-foreground">
-                  {formatSlotDate(dateObj, {
-                    weekday: "long",
-                    day: "numeric",
-                    month: "long",
-                    year: "numeric",
-                  })}
-                </span>
+          <Card key={date} asChild className="overflow-hidden">
+            <AccordionItem value={date}>
+              {/* Collapsible header */}
+              <AccordionTrigger className="gap-3 bg-muted/30 px-5 py-3 font-normal hover:bg-muted/50">
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
+                  <span className="font-sans text-sm font-medium text-foreground">
+                    {formatSlotDate(dateObj, {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </span>
 
-                {isQueue ? (
-                  <Badge className="px-2 py-px text-[10px]">
-                    <ListOrdered className="h-3 w-3" />
-                    {queueLabel}
-                    {day.queue && (
-                      <span className="tabular-nums">
-                        {" "}
-                        · {day.queue.booked} حجز
-                        {day.queue.cap != null ? ` / ${day.queue.cap}` : ""}
-                      </span>
-                    )}
-                  </Badge>
-                ) : (
-                  <div className="flex flex-shrink-0 items-center gap-1.5">
-                    {counts && counts.available > 0 && (
-                      <Badge className="bg-emerald-50 px-1.5 py-px text-[10px] text-emerald-600">
-                        {counts.available} متاح
-                      </Badge>
-                    )}
-                    {counts && counts.booked > 0 && (
-                      <Badge className="bg-blue-50 px-1.5 py-px text-[10px] text-blue-600">
-                        {counts.booked} محجوز
-                      </Badge>
-                    )}
-                    {counts && counts.blocked > 0 && (
-                      <Badge className="bg-gray-100 px-1.5 py-px text-[10px] text-gray-500">
-                        {counts.blocked} محظور
-                      </Badge>
-                    )}
-                  </div>
-                )}
-              </div>
-              {isOpen ? (
-                <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-              )}
-            </Button>
+                  {isQueue ? (
+                    <Badge className="px-2 py-px text-[10px]">
+                      <ListOrdered className="h-3 w-3" />
+                      {queueLabel}
+                      {day.queue && (
+                        <span className="tabular-nums">
+                          {" "}
+                          · {day.queue.booked} حجز
+                          {day.queue.cap != null ? ` / ${day.queue.cap}` : ""}
+                        </span>
+                      )}
+                    </Badge>
+                  ) : (
+                    <div className="flex flex-shrink-0 items-center gap-1.5">
+                      {counts && counts.available > 0 && (
+                        <Badge className="bg-emerald-50 px-1.5 py-px text-[10px] text-emerald-600">
+                          {counts.available} متاح
+                        </Badge>
+                      )}
+                      {counts && counts.booked > 0 && (
+                        <Badge className="bg-blue-50 px-1.5 py-px text-[10px] text-blue-600">
+                          {counts.booked} محجوز
+                        </Badge>
+                      )}
+                      {counts && counts.blocked > 0 && (
+                        <Badge className="bg-gray-100 px-1.5 py-px text-[10px] text-gray-500">
+                          {counts.blocked} محظور
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </AccordionTrigger>
 
-            {/* Lazy body */}
-            {isOpen && (
-              <div className="border-t border-border">
+              {/* Lazy body — only mounted while open */}
+              <AccordionContent className="border-t border-border p-0">
                 {loading[date] && (
                   <div className="flex items-center justify-center py-6">
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                    <Spinner className="text-primary" />
                   </div>
                 )}
 
@@ -230,12 +237,12 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
                 {!loading[date] && isQueue && dayQueue[date] && (
                   <QueueList queue={dayQueue[date]} />
                 )}
-              </div>
-            )}
+              </AccordionContent>
+            </AccordionItem>
           </Card>
         );
       })}
-    </div>
+    </Accordion>
   );
 }
 

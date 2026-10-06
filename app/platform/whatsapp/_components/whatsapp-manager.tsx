@@ -5,6 +5,7 @@ import { ChevronDown, Settings2 } from "lucide-react";
 import type { WhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
 import ConnectionConfig from "./connection-config";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import TemplatesList from "./templates-list";
 // Imported but not rendered — the template composer was already commented out on
 // the clinic page this moved from, and stays dormant here. Kept wired so it can
@@ -27,25 +28,28 @@ export default function WhatsappManager({ clinicId, config, appUrl }: Props) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setOpen((v) => !v)}
-        className="text-sm text-muted-foreground hover:text-foreground"
-      >
-        <Settings2 />
-        {open ? "إخفاء الإعدادات" : config ? "إدارة الاتصال والقوالب" : "إعداد واتساب لهذه العيادة"}
-        <ChevronDown className={`transition-transform ${open ? "rotate-180" : ""}`} />
-      </Button>
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          <Settings2 />
+          {open
+            ? "إخفاء الإعدادات"
+            : config
+              ? "إدارة الاتصال والقوالب"
+              : "إعداد واتساب لهذه العيادة"}
+          <ChevronDown className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        </Button>
+      </CollapsibleTrigger>
 
-      {open && (
-        <div className="mt-4 space-y-5 border-t border-border pt-4">
-          <ConnectionConfig clinicId={clinicId} initialConfig={config} appUrl={appUrl} />
-          {/* <CreateTemplate clinicId={clinicId} disabled={!config} /> */}
-          <TemplatesList clinicId={clinicId} disabled={!config} />
-        </div>
-      )}
-    </div>
+      <CollapsibleContent className="mt-4 space-y-5 border-t border-border pt-4">
+        <ConnectionConfig clinicId={clinicId} initialConfig={config} appUrl={appUrl} />
+        {/* <CreateTemplate clinicId={clinicId} disabled={!config} /> */}
+        <TemplatesList clinicId={clinicId} disabled={!config} />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

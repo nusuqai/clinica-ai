@@ -766,9 +766,13 @@ export default function ChatInbox({
                   </span>
                   <div className="flex flex-shrink-0 items-center gap-1.5">
                     {conv.unreadCount > 0 && (
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-accent font-sans text-[10px] font-bold text-white">
+                      <Badge
+                        variant="accent"
+                        dir="ltr"
+                        className="h-4 min-w-4 justify-center bg-accent px-1 text-[10px] font-bold leading-none text-white"
+                      >
                         {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
-                      </span>
+                      </Badge>
                     )}
                     {conv.channel === Channel.WHATSAPP ? (
                       <WhatsappIcon className="h-3.5 w-3.5 text-green-500" />
