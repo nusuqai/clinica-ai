@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { signOut } from "@/server/actions/auth";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useEscalationAlerts } from "./escalation-provider";
 import { Badge } from "@/components/ui/badge";
 
@@ -95,36 +96,40 @@ export default function Sidebar({
         />
       </aside>
 
-      {/* Mobile drawer */}
-      <aside
-        className={[
-          "fixed inset-y-0 end-0 z-30 flex w-72 flex-col bg-primary text-white transition-transform duration-300 ease-in-out md:hidden",
-          mobileOpen ? "translate-x-0" : "translate-x-full rtl:-translate-x-full",
-        ].join(" ")}
-      >
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onMobileClose}
-          className="absolute start-4 top-4 text-white/60 hover:bg-white/10 hover:text-white [&_svg]:size-5"
-          aria-label="إغلاق القائمة"
+      {/* Mobile drawer — the page is RTL, so the logical end edge is the left. */}
+      <Sheet open={mobileOpen} onOpenChange={(open) => !open && onMobileClose()}>
+        <SheetContent
+          side="left"
+          showCloseButton={false}
+          aria-describedby={undefined}
+          dir="rtl"
+          className="flex w-72 flex-col gap-0 border-0 bg-primary p-0 text-white sm:max-w-none md:hidden"
         >
-          <X />
-        </Button>
-        <SidebarContent
-          navItems={navItems}
-          roleLabel={roleLabel}
-          userFullName={userFullName}
-          userEmail={userEmail}
-          clinicName={clinicName}
-          clinicLogoUrl={clinicLogoUrl}
-          aiUnits={aiUnits}
-          initials={initials}
-          collapsed={false}
-          onToggleCollapse={onMobileClose}
-          pathname={pathname}
-        />
-      </aside>
+          <SheetTitle className="sr-only">القائمة</SheetTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onMobileClose}
+            className="absolute start-4 top-4 text-white/60 hover:bg-white/10 hover:text-white [&_svg]:size-5"
+            aria-label="إغلاق القائمة"
+          >
+            <X />
+          </Button>
+          <SidebarContent
+            navItems={navItems}
+            roleLabel={roleLabel}
+            userFullName={userFullName}
+            userEmail={userEmail}
+            clinicName={clinicName}
+            clinicLogoUrl={clinicLogoUrl}
+            aiUnits={aiUnits}
+            initials={initials}
+            collapsed={false}
+            onToggleCollapse={onMobileClose}
+            pathname={pathname}
+          />
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ShieldAlert } from "lucide-react";
 import Sidebar, { type AiUnitsBadge } from "./sidebar";
 import Topbar from "./topbar";
@@ -45,6 +45,15 @@ export default function DashboardShell({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // The drawer is a modal Sheet; close it if the viewport grows to desktop
+  // width so its backdrop doesn't linger over the static sidebar.
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const onChange = (e: MediaQueryListEvent) => e.matches && setMobileOpen(false);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   // Each clinic is served from its own subdomain, so the nav config's hrefs
   // ("/admin", "/dashboard", "/" …) are already correct as-is — no clinic
   // prefix to apply.
@@ -53,14 +62,6 @@ export default function DashboardShell({
 
   const shell = (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-black/50 md:hidden"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
       <Sidebar
         navItems={navItems}
         roleLabel={roleLabel}
