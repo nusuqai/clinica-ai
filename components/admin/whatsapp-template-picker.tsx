@@ -1,12 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { useForm, useWatch, type Control } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Loader2, X, Send, FileText, AlertTriangle } from "lucide-react";
 import { listTemplatesAction } from "@/server/actions/whatsapp";
 import { sendWhatsappTemplate } from "@/server/actions/messages";
 import type { MessageTemplate } from "@/lib/meta/whatsapp";
 import { fillTemplate } from "@/lib/meta/template-render";
 import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Alert } from "@/components/ui/alert";
+
+const variablesSchema = z.object({
+  variables: z.array(z.string().trim().min(1, "أدخل قيمة هذا المتغيّر.")),
+});
+type VariablesValues = z.infer<typeof variablesSchema>;
 
 interface TemplatePickerProps {
   conversationId: string;
@@ -28,8 +40,13 @@ export default function WhatsappTemplatePicker({
   const [error, setError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [selected, setSelected] = useState<MessageTemplate | null>(null);
-  const [variables, setVariables] = useState<string[]>([]);
-  const [sending, setSending] = useState(false);
+  const formId = useId();
+  const form = useForm<VariablesValues>({
+    resolver: zodResolver(variablesSchema),
+    defaultValues: { variables: [] },
+    mode: "onTouched",
+  });
+  const sending = form.formState.isSubmitting;
 
   useEffect(() => {
     let cancelled = false;
@@ -58,24 +75,20 @@ export default function WhatsappTemplatePicker({
 
   const selectTemplate = (t: MessageTemplate) => {
     setSelected(t);
-    setVariables(Array.from({ length: t.variableCount }, () => ""));
+    form.reset({ variables: Array.from({ length: t.variableCount }, () => "") });
     setError(null);
   };
 
-  const rendered = selected ? fillTemplate(selected.bodyText, variables) : "";
-  const allFilled = !selected || variables.every((v) => v.trim().length > 0);
-
-  const handleSend = async () => {
-    if (!selected || !allFilled || sending) return;
-    setSending(true);
+  const handleSend = form.handleSubmit(async ({ variables }) => {
+    if (!selected) return;
     setError(null);
+    const rendered = fillTemplate(selected.bodyText, variables);
     const res = await sendWhatsappTemplate(conversationId, {
       name: selected.name,
       language: selected.language,
       variables,
       renderedText: rendered,
     });
-    setSending(false);
     if (!res.ok) {
       setError(
         res.reason === "not_configured"
@@ -88,30 +101,30 @@ export default function WhatsappTemplatePicker({
     }
     onSent({ messageId: res.messageId, createdAt: res.createdAt, content: rendered });
     onClose();
-  };
+  });
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        aria-describedby={undefined}
+        className="flex max-h-[85vh] w-[calc(100%-2rem)] max-w-lg flex-col gap-0 overflow-hidden rounded-2xl border-border bg-card p-0 shadow-xl"
         dir="rtl"
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h3 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
+          <DialogTitle className="flex items-center gap-2 font-heading text-sm font-semibold leading-normal tracking-normal text-foreground">
             <FileText className="h-4 w-4 text-accent" />
             إرسال قالب معتمد
-          </h3>
-          <button
+          </DialogTitle>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onClose}
-            className="text-muted-foreground hover:text-foreground"
             aria-label="إغلاق"
+            className="[&_svg]:size-4"
           >
-            <X className="h-4 w-4" />
-          </button>
+            <X />
+          </Button>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
@@ -121,10 +134,10 @@ export default function WhatsappTemplatePicker({
               جارٍ تحميل القوالب...
             </div>
           ) : error && templates.length === 0 ? (
-            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-700">
+            <Alert variant="warning" className="px-3.5 py-2.5 text-xs">
               <AlertTriangle className="h-4 w-4 flex-shrink-0" />
               <span>{error}</span>
-            </div>
+            </Alert>
           ) : templates.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               لا توجد قوالب معتمدة بعد. تواصل مع إدارة المنصّة لإنشاء القوالب واعتمادها من ميتا.
@@ -134,11 +147,12 @@ export default function WhatsappTemplatePicker({
               {/* Template list */}
               <div className="space-y-2">
                 {templates.map((t) => (
-                  <button
+                  <Button
                     key={t.id}
+                    variant="outline"
                     onClick={() => selectTemplate(t)}
                     className={[
-                      "w-full rounded-xl border px-3.5 py-2.5 text-start transition-colors",
+                      "block h-auto w-full whitespace-normal px-3.5 py-2.5 text-start font-normal",
                       selected?.id === t.id
                         ? "bg-accent/8 border-accent"
                         : "border-border hover:bg-muted/50",
@@ -151,36 +165,34 @@ export default function WhatsappTemplatePicker({
                       </span>
                     </div>
                     <p className="line-clamp-2 text-xs text-muted-foreground">{t.bodyText}</p>
-                  </button>
+                  </Button>
                 ))}
               </div>
 
               {/* Variable inputs + preview */}
               {selected && (
-                <div className="space-y-3 border-t border-border pt-4">
-                  {variables.map((v, i) => (
-                    <div key={i}>
-                      <label className="mb-1 block text-xs text-muted-foreground">
-                        القيمة {i + 1} ({`{{${i + 1}}}`})
-                      </label>
-                      <input
-                        value={v}
-                        onChange={(e) =>
-                          setVariables((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
-                        }
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                    </div>
+                <form
+                  id={formId}
+                  onSubmit={handleSend}
+                  noValidate
+                  className="space-y-3 border-t border-border pt-4"
+                >
+                  {Array.from({ length: selected.variableCount }, (_, i) => (
+                    <FormField
+                      key={`${selected.name}-${i}`}
+                      control={form.control}
+                      name={`variables.${i}`}
+                      label={
+                        <>
+                          القيمة {i + 1} ({`{{${i + 1}}}`})
+                        </>
+                      }
+                      labelClassName="text-xs font-normal text-muted-foreground"
+                    />
                   ))}
                   <div>
                     <p className="mb-1 text-xs text-muted-foreground">معاينة</p>
-                    <WhatsappPreview
-                      headerText={selected.headerText}
-                      bodyText={selected.bodyText}
-                      variables={variables}
-                      footerText={selected.footerText}
-                      buttons={selected.buttons}
-                    />
+                    <LivePreview control={form.control} template={selected} />
                   </div>
                   {error && (
                     <p className="flex items-center gap-1 text-xs text-red-600">
@@ -188,7 +200,7 @@ export default function WhatsappTemplatePicker({
                       {error}
                     </p>
                   )}
-                </div>
+                </form>
               )}
             </>
           )}
@@ -196,21 +208,34 @@ export default function WhatsappTemplatePicker({
 
         {selected && (
           <div className="border-t border-border px-5 py-3">
-            <button
-              onClick={handleSend}
-              disabled={!allFilled || sending}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
-            >
-              {sending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
+            {/* In the footer, outside the scrolling body, so it targets the form by id. */}
+            <Button type="submit" form={formId} loading={sending} className="w-full">
+              {!sending && <Send />}
               إرسال القالب
-            </button>
+            </Button>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The preview with the typed values; re-renders alone as they change. */
+function LivePreview({
+  control,
+  template,
+}: {
+  control: Control<VariablesValues>;
+  template: MessageTemplate;
+}) {
+  const variables = useWatch({ control, name: "variables" });
+  return (
+    <WhatsappPreview
+      headerText={template.headerText}
+      bodyText={template.bodyText}
+      variables={variables}
+      footerText={template.footerText}
+      buttons={template.buttons}
+    />
   );
 }

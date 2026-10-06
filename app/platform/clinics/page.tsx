@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { CreateClinicForm, ClinicCard } from "./_components/clinic-forms";
+import { Card } from "@/components/ui/card";
 
 export default async function PlatformClinicsPage() {
   const clinics = await prisma.clinic.findMany({
@@ -20,10 +21,10 @@ export default async function PlatformClinicsPage() {
     <div>
       <h1 className="mb-6 font-heading text-2xl font-bold text-foreground">العيادات</h1>
 
-      <div className="mb-8 rounded-2xl border border-border bg-card p-6">
+      <Card className="mb-8 p-6">
         <h2 className="mb-4 font-heading font-semibold text-foreground">إنشاء عيادة جديدة</h2>
         <CreateClinicForm />
-      </div>
+      </Card>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {clinics.map((c) => (

@@ -23,7 +23,11 @@ import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import Modal from "@/components/admin/modal";
+import { CancelReasonForm } from "@/components/appointments/cancel-reason-form";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import BoardColumn from "./board-column";
+import { Alert } from "@/components/ui/alert";
 
 interface DoctorOption {
   id: string;
@@ -57,7 +61,6 @@ export default function AppointmentBoard({
 }: AppointmentBoardProps) {
   const [appointments, setAppointments] = useState(initial);
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
-  const [cancelReason, setCancelReason] = useState("");
   const [detailsAppt, setDetailsAppt] = useState<AdminAppointment | null>(null);
   const [, startTransition] = useTransition();
 
@@ -150,7 +153,6 @@ export default function AppointmentBoard({
 
     if (newStatus === AppointmentStatus.CANCELLED) {
       setPendingCancelId(appointment.id);
-      setCancelReason("");
       return;
     }
 
@@ -159,61 +161,56 @@ export default function AppointmentBoard({
     commitStatus(appointment.id, previousStatus, newStatus);
   }
 
-  function confirmCancel() {
-    if (!pendingCancelId || !cancelReason.trim()) return;
+  function confirmCancel(reason: string) {
+    if (!pendingCancelId) return;
     const appointment = appointments.find((a) => a.id === pendingCancelId);
     if (!appointment) return;
 
     const previousStatus = appointment.status;
-    applyStatus(appointment.id, AppointmentStatus.CANCELLED, cancelReason.trim());
-    commitStatus(appointment.id, previousStatus, AppointmentStatus.CANCELLED, cancelReason.trim());
+    applyStatus(appointment.id, AppointmentStatus.CANCELLED, reason);
+    commitStatus(appointment.id, previousStatus, AppointmentStatus.CANCELLED, reason);
     setPendingCancelId(null);
-    setCancelReason("");
   }
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={patientQuery}
-            onChange={(e) => setPatientQuery(e.target.value)}
-            placeholder="بحث باسم المريض..."
-            className="w-56 rounded-xl border border-border bg-background py-2 pl-3 pr-9 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+        <FormField
+          type="search"
+          value={patientQuery}
+          onValueChange={setPatientQuery}
+          placeholder="بحث باسم المريض..."
+          startIcon={<Search />}
+          className="w-56"
+        />
 
-        <select
+        <FormField
+          type="select"
           value={doctorFilter}
-          onChange={(e) => setDoctorFilter(e.target.value)}
-          className="rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-        >
-          <option value="">كل الأطباء</option>
-          {doctors.map((doc) => (
-            <option key={doc.id} value={doc.id}>
-              {doc.fullName} · {doc.specialty}
-            </option>
-          ))}
-        </select>
+          onValueChange={setDoctorFilter}
+          options={[
+            { value: "", label: "كل الأطباء" },
+            ...doctors.map((doc) => ({
+              value: doc.id,
+              label: `${doc.fullName} · ${doc.specialty}`,
+            })),
+          ]}
+          className="w-56"
+        />
 
-        <input
+        <FormField
           type="date"
           value={dateFilter}
-          onChange={(e) => setDateFilter(e.target.value)}
-          className="rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+          onValueChange={setDateFilter}
+          placeholder="كل التواريخ"
+          className="w-48"
         />
 
         {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="inline-flex items-center gap-1 px-3 py-2 font-sans text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
+          <Button type="button" variant="ghost" onClick={clearFilters}>
+            <X />
             مسح الفلاتر
-          </button>
+          </Button>
         )}
       </div>
 
@@ -237,37 +234,12 @@ export default function AppointmentBoard({
         title="إلغاء الموعد"
         width="max-w-md"
       >
-        <div className="space-y-4">
-          <p className="font-sans text-sm text-muted-foreground">
-            الرجاء إدخال سبب إلغاء هذا الموعد.
-          </p>
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">سبب الإلغاء</label>
-            <textarea
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.target.value)}
-              rows={3}
-              placeholder="أدخل سبب الإلغاء..."
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={confirmCancel}
-              disabled={!cancelReason.trim()}
-              className="flex-1 rounded-xl bg-red-500 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              تأكيد الإلغاء
-            </button>
-            <button
-              type="button"
-              onClick={() => setPendingCancelId(null)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
-              تراجع
-            </button>
-          </div>
-        </div>
+        <CancelReasonForm
+          prompt="الرجاء إدخال سبب إلغاء هذا الموعد."
+          required
+          onConfirm={confirmCancel}
+          onBack={() => setPendingCancelId(null)}
+        />
       </Modal>
 
       <Modal
@@ -331,10 +303,10 @@ export default function AppointmentBoard({
                 </DetailRow>
               )}
               {detailsAppt.cancellationReason && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <Alert variant="destructive" className="block px-3 py-2">
                   <span className="font-medium">سبب الإلغاء: </span>
                   {detailsAppt.cancellationReason}
-                </div>
+                </Alert>
               )}
             </div>
 
@@ -342,12 +314,9 @@ export default function AppointmentBoard({
               تم الحجز في {formatSlotDate(detailsAppt.createdAt)}
             </p>
 
-            <Link
-              href={`/admin/appointments/${detailsAppt.id}`}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
-            >
-              فتح صفحة الموعد الكاملة
-            </Link>
+            <Button asChild className="flex h-auto w-full gap-1.5 rounded-xl px-4 py-2.5 text-sm">
+              <Link href={`/admin/appointments/${detailsAppt.id}`}>فتح صفحة الموعد الكاملة</Link>
+            </Button>
           </div>
         )}
       </Modal>

@@ -1,24 +1,28 @@
 "use client";
 
 import { Menu, Bell } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useSidebar } from "@/components/ui/sidebar";
 
 interface TopbarProps {
   title: string;
   clinicName: string;
-  onMenuClick: () => void;
 }
 
-export default function Topbar({ title, clinicName, onMenuClick }: TopbarProps) {
+export default function Topbar({ title, clinicName }: TopbarProps) {
+  const { setOpenMobile } = useSidebar();
   return (
     <header className="border-primary/8 flex h-16 flex-shrink-0 items-center justify-between gap-4 border-b bg-white px-4 md:px-6">
       {/* Mobile hamburger */}
-      <button
-        onClick={onMenuClick}
-        className="rounded-xl p-2 text-primary/60 transition-colors hover:bg-primary/5 hover:text-primary md:hidden"
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setOpenMobile(true)}
+        className="rounded-xl text-primary/60 hover:bg-primary/5 hover:text-primary md:hidden [&_svg]:size-5"
         aria-label="فتح القائمة"
       >
-        <Menu className="h-5 w-5" />
-      </button>
+        <Menu />
+      </Button>
 
       {/* Page title (desktop) */}
       <h2 className="hidden font-heading text-lg font-bold text-primary md:block">{title}</h2>

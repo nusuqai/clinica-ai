@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { Phone, DollarSign, Calendar } from "lucide-react";
 import { BookAppointmentModal } from "./book-appointment-modal";
+import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface Doctor {
   id: string;
@@ -89,21 +92,19 @@ export function DoctorsClient({
         </div>
 
         {/* Specialty filter pills */}
-        <div className="mb-8 flex flex-wrap justify-center gap-2">
+        <ToggleGroup
+          type="single"
+          variant="accent"
+          value={filter}
+          onValueChange={(v) => v && setFilter(v)}
+          className="mb-8 flex-wrap gap-2"
+        >
           {specialties.map((spec) => (
-            <button
-              key={spec}
-              onClick={() => setFilter(spec)}
-              className={`inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 font-sans text-sm font-medium transition-all ${
-                filter === spec
-                  ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-                  : "border-border bg-white text-text/70 hover:border-accent/40 hover:text-accent"
-              }`}
-            >
+            <ToggleGroupItem key={spec} value={spec} className="rounded-full px-4">
               {spec}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
 
         {/* Empty state */}
         {filtered.length === 0 && (
@@ -124,11 +125,13 @@ export function DoctorsClient({
               >
                 {/* Avatar + name */}
                 <div className="flex items-center gap-4">
-                  <div
-                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${color} font-heading text-lg font-bold text-white`}
-                  >
-                    {initials}
-                  </div>
+                  <Avatar className="h-14 w-14 rounded-2xl">
+                    <AvatarFallback
+                      className={`rounded-2xl ${color} font-heading text-lg font-bold text-white`}
+                    >
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="min-w-0">
                     <p className="truncate font-heading text-base font-bold text-text">
                       د. {doctor.profile.fullName}
@@ -165,7 +168,7 @@ export function DoctorsClient({
                 </div>
 
                 {/* Book button */}
-                <button
+                <Button
                   onClick={() =>
                     setBookTarget({
                       id: doctor.id,
@@ -174,10 +177,10 @@ export function DoctorsClient({
                       fee: doctor.consultationFee,
                     })
                   }
-                  className="mt-5 w-full rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-all group-hover:bg-accent"
+                  className="mt-5 w-full transition-all group-hover:bg-accent"
                 >
                   احجز موعد
-                </button>
+                </Button>
               </div>
             );
           })}

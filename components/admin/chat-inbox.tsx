@@ -30,6 +30,9 @@ import WhatsappTemplatePicker from "@/components/admin/whatsapp-template-picker"
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
 import { escalationReasonLabel } from "@/lib/escalation-reasons";
 import { ChatImage } from "@/components/ui/chat-image";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
 import {
   sendAdminReply,
@@ -58,6 +61,11 @@ import {
   fetchMessages,
 } from "@/server/actions/conversations";
 import type { AgentMessageMetadata } from "@/agent/types";
+import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
+import { Hint } from "@/components/ui/tooltip";
 
 interface ChatInboxProps {
   conversations: ConversationSummary[];
@@ -721,7 +729,7 @@ export default function ChatInbox({
   }, [activeId]);
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-border bg-card">
+    <Card className="flex h-[calc(100vh-7rem)] overflow-hidden">
       {/* ── Left pane: conversations list ── */}
       <aside className="flex w-72 flex-shrink-0 flex-col border-e border-border">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -738,10 +746,11 @@ export default function ChatInbox({
           )}
           {conversations.map((conv) => (
             <li key={conv.id}>
-              <button
+              <Button
+                variant="ghost"
                 onClick={() => handleSelectConversation(conv.id)}
                 className={[
-                  "w-full px-4 py-3 text-start transition-colors hover:bg-muted/50",
+                  "block h-auto w-full whitespace-normal rounded-none px-4 py-3 text-start font-normal text-foreground hover:bg-muted/50 hover:text-foreground",
                   conv.hasUnresolvedEscalation ? "bg-red-50" : "",
                   activeId === conv.id ? "bg-accent/8 border-e-2 border-accent" : "",
                 ].join(" ")}
@@ -758,9 +767,13 @@ export default function ChatInbox({
                   </span>
                   <div className="flex flex-shrink-0 items-center gap-1.5">
                     {conv.unreadCount > 0 && (
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-accent font-sans text-[10px] font-bold text-white">
+                      <Badge
+                        variant="accent"
+                        dir="ltr"
+                        className="h-4 min-w-4 justify-center bg-accent px-1 text-[10px] font-bold leading-none text-white"
+                      >
                         {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
-                      </span>
+                      </Badge>
                     )}
                     {conv.channel === Channel.WHATSAPP ? (
                       <WhatsappIcon className="h-3.5 w-3.5 text-green-500" />
@@ -782,7 +795,7 @@ export default function ChatInbox({
                     })}
                   </p>
                 )}
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -799,11 +812,11 @@ export default function ChatInbox({
           <>
             {/* Thread header */}
             <div className="flex flex-shrink-0 items-center gap-3 border-b border-border px-5 py-3">
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent/20">
-                <span className="font-sans text-xs font-bold text-accent">
+              <Avatar className="h-9 w-9 rounded-full">
+                <AvatarFallback className="bg-accent/20 font-sans text-xs font-bold text-accent">
                   {selectedConversation.contactName.charAt(0)}
-                </span>
-              </div>
+                </AvatarFallback>
+              </Avatar>
               <div>
                 <p className="font-sans text-sm font-medium text-foreground">
                   {selectedConversation.contactName}
@@ -820,25 +833,30 @@ export default function ChatInbox({
               </div>
               <div className="ms-auto flex items-center gap-2">
                 {selectedConversation.userId ? (
-                  <a
-                    href={`/admin/users/${selectedConversation.userId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 font-sans text-xs text-primary transition-colors hover:bg-primary/20"
-                    title="فتح ملف العميل في تبويب جديد"
-                  >
-                    <UserRound className="h-3.5 w-3.5" />
-                    ملف العميل
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
+                  <Hint label="فتح ملف العميل في تبويب جديد">
+                    <Button
+                      asChild
+                      variant="ghost"
+                      className="h-auto gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-normal text-primary hover:bg-primary/20 hover:text-primary [&_svg]:size-3.5"
+                    >
+                      <a
+                        href={`/admin/users/${selectedConversation.userId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <UserRound className="h-3.5 w-3.5" />
+                        ملف العميل
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </Button>
+                  </Hint>
                 ) : (
-                  <span
-                    className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 font-sans text-xs text-muted-foreground/60"
-                    title="لا يوجد حساب مرتبط بعد — سيظهر الملف بعد تسجيل العميل"
-                  >
-                    <UserRound className="h-3.5 w-3.5" />
-                    ملف العميل
-                  </span>
+                  <Hint label="لا يوجد حساب مرتبط بعد — سيظهر الملف بعد تسجيل العميل">
+                    <Badge className="cursor-not-allowed gap-1.5 bg-muted py-1 font-normal text-muted-foreground/60">
+                      <UserRound className="h-3.5 w-3.5" />
+                      ملف العميل
+                    </Badge>
+                  </Hint>
                 )}
                 {selectedConversation.escalations.length > 0 &&
                   (() => {
@@ -848,50 +866,49 @@ export default function ChatInbox({
                     const isUnresolved = unresolved.length > 0;
                     const shown = isUnresolved ? unresolved : selectedConversation.escalations;
                     return (
-                      <span
-                        className={[
-                          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[10px]",
-                          isUnresolved ? "bg-red-100 text-red-700" : "text-muted-foreground",
-                        ].join(" ")}
-                        title={shown.map((e) => escalationReasonLabel(e.reason)).join(" · ")}
-                      >
-                        {isUnresolved && <AlertTriangle className="h-3 w-3" />}
-                        {isUnresolved
-                          ? `${unresolved.length} طلب تصعيد بانتظار الرد`
-                          : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد)`}
-                      </span>
+                      <Hint label={shown.map((e) => escalationReasonLabel(e.reason)).join(" · ")}>
+                        <span
+                          className={[
+                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[10px]",
+                            isUnresolved ? "bg-red-100 text-red-700" : "text-muted-foreground",
+                          ].join(" ")}
+                        >
+                          {isUnresolved && <AlertTriangle className="h-3 w-3" />}
+                          {isUnresolved
+                            ? `${unresolved.length} طلب تصعيد بانتظار الرد`
+                            : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد)`}
+                        </span>
+                      </Hint>
                     );
                   })()}
                 {selectedConversation.activeSessionId && (
-                  <button
-                    onClick={handleToggleAi}
-                    disabled={aiTogglePending}
-                    className={[
-                      "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-sans text-xs transition-colors disabled:opacity-50",
-                      selectedConversation.aiEnabled
-                        ? "bg-accent/10 text-accent"
-                        : "bg-muted text-muted-foreground",
-                    ].join(" ")}
-                    title="تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة"
-                  >
-                    {selectedConversation.aiEnabled ? (
-                      <Bot className="h-3.5 w-3.5" />
-                    ) : (
-                      <BotOff className="h-3.5 w-3.5" />
-                    )}
-                    {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
-                  </button>
+                  <Hint label="تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة">
+                    <Badge
+                      asChild
+                      variant={selectedConversation.aiEnabled ? "accent" : "muted"}
+                      className="cursor-pointer gap-1.5 py-1 font-normal disabled:opacity-50"
+                    >
+                      <button onClick={handleToggleAi} disabled={aiTogglePending}>
+                        {selectedConversation.aiEnabled ? (
+                          <Bot className="h-3.5 w-3.5" />
+                        ) : (
+                          <BotOff className="h-3.5 w-3.5" />
+                        )}
+                        {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
+                      </button>
+                    </Badge>
+                  </Hint>
                 )}
                 {selectedConversation.channel === Channel.WHATSAPP ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 font-sans text-xs text-green-700">
+                  <Badge className="bg-green-100 px-2 font-normal text-green-700">
                     <WhatsappIcon className="h-3 w-3" />
                     واتساب
-                  </span>
+                  </Badge>
                 ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 font-sans text-xs text-accent">
+                  <Badge variant="accent" className="px-2 font-normal">
                     <Globe className="h-3 w-3" />
                     ويب
-                  </span>
+                  </Badge>
                 )}
               </div>
             </div>
@@ -915,7 +932,7 @@ export default function ChatInbox({
                   <Fragment key={msg.key}>
                     {showDivider && (
                       <div className="flex items-center gap-2 py-1" dir="rtl">
-                        <div className="h-px flex-1 bg-border" />
+                        <Separator className="flex-1" />
                         <span className="whitespace-nowrap font-sans text-[10px] text-muted-foreground">
                           جلسة جديدة ·{" "}
                           {new Date(msg.createdAt).toLocaleString("ar-EG", {
@@ -923,7 +940,7 @@ export default function ChatInbox({
                             timeStyle: "short",
                           })}
                         </span>
-                        <div className="h-px flex-1 bg-border" />
+                        <Separator className="flex-1" />
                       </div>
                     )}
                     <div
@@ -1004,18 +1021,19 @@ export default function ChatInbox({
                                 />
                               ) : (
                                 // document (or archived audio) — a download link.
-                                <a
-                                  href={mediaUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/50 px-3 py-2 text-xs text-foreground hover:bg-muted"
+                                <Button
+                                  asChild
+                                  variant="outline"
+                                  className="h-auto gap-2 rounded-lg bg-background/50 px-3 py-2 text-xs font-normal hover:bg-muted"
                                 >
-                                  <FileText className="h-4 w-4 flex-shrink-0" />
-                                  <span className="max-w-[180px] truncate">
-                                    {msg.media.filename ?? "ملف مرفق"}
-                                  </span>
-                                  <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
-                                </a>
+                                  <a href={mediaUrl} target="_blank" rel="noopener noreferrer">
+                                    <FileText className="h-4 w-4 flex-shrink-0" />
+                                    <span className="max-w-[180px] truncate">
+                                      {msg.media.filename ?? "ملف مرفق"}
+                                    </span>
+                                    <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
+                                  </a>
+                                </Button>
                               );
                             })()}
                             {msg.media.analysis && (
@@ -1045,19 +1063,23 @@ export default function ChatInbox({
                           msg.content && <p>{msg.content}</p>
                         )}
                         {msg.escalation && !resolvedEscalations.has(msg.escalation.id) && (
-                          <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                          <Alert
+                            variant="warning"
+                            className="mt-1.5 items-center rounded-lg border-amber-300 px-2 py-1 text-[11px] text-amber-800"
+                          >
                             <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
                             <span className="flex-1">
                               {escalationReasonLabel(msg.escalation.reason)}
                             </span>
-                            <button
+                            <Button
+                              size="sm"
                               onClick={() => handleResolveEscalation(msg.escalation!.id)}
-                              className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 font-medium text-white transition-colors hover:bg-amber-700"
+                              className="h-auto gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-xs hover:bg-amber-700 [&_svg]:size-3"
                             >
-                              <CheckCircle2 className="h-3 w-3" />
+                              <CheckCircle2 />
                               تحديد كمحلولة
-                            </button>
-                          </div>
+                            </Button>
+                          </Alert>
                         )}
                         {status === "sending" ? (
                           <p className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -1072,13 +1094,15 @@ export default function ChatInbox({
                                 ? "تم الحفظ لكن لم تصل إلى واتساب"
                                 : "لم يتم حفظ الرسالة"}
                             </span>
-                            <button
+                            <Button
+                              variant="link"
+                              size="sm"
                               onClick={() => handleRetry(msg.pending!.clientId)}
-                              className="inline-flex items-center gap-1 font-medium underline hover:no-underline"
+                              className="h-auto gap-1 p-0 text-xs text-[inherit] underline hover:no-underline [&_svg]:size-3"
                             >
-                              <RotateCw className="h-3 w-3" />
+                              <RotateCw />
                               إعادة المحاولة
-                            </button>
+                            </Button>
                           </div>
                         ) : (
                           <p
@@ -1112,7 +1136,7 @@ export default function ChatInbox({
               {isOutsideWindow ? (
                 // Outside the 24-hour window WhatsApp refuses free-form text —
                 // only an approved template can reach the contact.
-                <div className="flex flex-col gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 font-sans text-xs text-amber-800">
+                <Alert variant="warning" className="flex-col gap-2.5 px-3.5 text-xs text-amber-800">
                   <div className="flex items-start gap-2">
                     <Clock className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <span>
@@ -1120,14 +1144,15 @@ export default function ChatInbox({
                       أرسل قالبًا معتمدًا من ميتا بدلاً من ذلك.
                     </span>
                   </div>
-                  <button
+                  <Button
+                    size="sm"
                     onClick={() => setShowTemplatePicker(true)}
-                    className="inline-flex items-center gap-1.5 self-start rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90"
+                    className="self-start [&_svg]:size-3.5"
                   >
-                    <FileText className="h-3.5 w-3.5" />
+                    <FileText />
                     إرسال قالب معتمد
-                  </button>
-                </div>
+                  </Button>
+                </Alert>
               ) : (
                 <div className="flex flex-col gap-2">
                   {/* Staged attachment preview */}
@@ -1146,16 +1171,18 @@ export default function ChatInbox({
                       <span className="flex-1 truncate text-xs text-foreground">
                         {pendingFile.name}
                       </span>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={() => {
                           setPendingFile(null);
                           if (fileInputRef.current) fileInputRef.current.value = "";
                         }}
-                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                         aria-label="إلغاء المرفق"
+                        className="[&_svg]:size-4"
                       >
-                        <X className="h-4 w-4" />
-                      </button>
+                        <X />
+                      </Button>
                     </div>
                   )}
                   <div className="flex items-end gap-2">
@@ -1168,14 +1195,16 @@ export default function ChatInbox({
                         if (f) setPendingFile(f);
                       }}
                     />
-                    <button
+                    <Button
+                      variant="outline"
+                      size="icon"
                       onClick={() => fileInputRef.current?.click()}
-                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       aria-label="إرفاق ملف"
+                      className="h-10 w-10 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
                     >
-                      <Paperclip className="h-4 w-4" />
-                    </button>
-                    <textarea
+                      <Paperclip />
+                    </Button>
+                    <Textarea
                       value={reply}
                       onChange={(e) => setReply(e.target.value)}
                       onKeyDown={handleKeyDown}
@@ -1185,19 +1214,20 @@ export default function ChatInbox({
                           : "اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
                       }
                       rows={2}
-                      className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 font-sans text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+                      className="flex-1 px-3.5 py-2.5 leading-relaxed"
                       dir="rtl"
                     />
-                    <button
+                    <Button
+                      size="icon"
                       onClick={() => {
                         if (pendingFile) handleSendMedia(pendingFile);
                         else handleSend();
                       }}
                       disabled={!pendingFile && !reply.trim()}
-                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+                      className="h-10 w-10 shrink-0 rounded-xl"
                     >
-                      <Send className="h-4 w-4" />
-                    </button>
+                      <Send />
+                    </Button>
                   </div>
                 </div>
               )}
@@ -1213,6 +1243,6 @@ export default function ChatInbox({
           onSent={handleTemplateSent}
         />
       )}
-    </div>
+    </Card>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -12,10 +12,20 @@ import {
   Wallet,
   LogOut,
   Menu,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import { signOut } from "@/server/actions/auth";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import {
+  NavigationMenu,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+  navigationMenuTriggerStyle,
+} from "@/components/ui/navigation-menu";
+import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Hint } from "@/components/ui/tooltip";
 
 interface NavLink {
   href: string;
@@ -31,7 +41,6 @@ interface Props {
 
 export default function PlatformNav({ email, pendingRequests }: Props) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
 
   const links: NavLink[] = [
     { href: "/platform", label: "نظرة عامة", icon: LayoutDashboard },
@@ -67,107 +76,127 @@ export default function PlatformNav({ email, pendingRequests }: Props) {
         </div>
 
         {/* Desktop nav */}
-        <nav className="hidden items-center gap-1 md:flex">
-          {links.map((link) => (
-            <NavPill key={link.href} link={link} active={isActive(link.href)} />
-          ))}
-        </nav>
+        <NavigationMenu className="hidden md:flex">
+          <NavigationMenuList>
+            {links.map((link) => (
+              <NavigationMenuItem key={link.href}>
+                <NavPill link={link} active={isActive(link.href)} />
+              </NavigationMenuItem>
+            ))}
+          </NavigationMenuList>
+        </NavigationMenu>
 
         {/* User + logout (desktop) */}
         <div className="hidden items-center gap-3 md:flex">
-          <span
-            className="max-w-[180px] truncate text-xs text-muted-foreground"
-            dir="ltr"
-            title={email}
-          >
-            {email}
-          </span>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600"
-            >
-              <LogOut className="h-4 w-4" />
-              تسجيل الخروج
-            </button>
-          </form>
-        </div>
-
-        {/* Mobile toggle */}
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="rounded-lg p-2 text-muted-foreground hover:bg-muted md:hidden"
-          aria-label="القائمة"
-        >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
-      </div>
-
-      {/* Mobile menu */}
-      {open && (
-        <div className="border-t border-border bg-card px-4 py-3 md:hidden">
-          <nav className="flex flex-col gap-1">
-            {links.map((link) => (
-              <NavPill
-                key={link.href}
-                link={link}
-                active={isActive(link.href)}
-                onClick={() => setOpen(false)}
-                block
-              />
-            ))}
-          </nav>
-          <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+          <Hint label={email}>
             <span className="max-w-[180px] truncate text-xs text-muted-foreground" dir="ltr">
               {email}
             </span>
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600"
-              >
-                <LogOut className="h-4 w-4" />
-                تسجيل الخروج
-              </button>
-            </form>
-          </div>
+          </Hint>
+          <form action={signOut}>
+            <Button
+              type="submit"
+              variant="outline"
+              size="sm"
+              className="text-sm text-muted-foreground hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600"
+            >
+              <LogOut />
+              تسجيل الخروج
+            </Button>
+          </form>
         </div>
-      )}
+
+        {/* Mobile menu — a drawer from the hamburger's side (left, on this RTL page). */}
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden [&_svg]:size-5"
+              aria-label="القائمة"
+            >
+              <Menu />
+            </Button>
+          </SheetTrigger>
+          <SheetContent
+            side="left"
+            aria-describedby={undefined}
+            className="flex w-72 flex-col border-border bg-card p-4 pt-14"
+          >
+            <SheetTitle className="sr-only">القائمة</SheetTitle>
+            <nav className="flex flex-col gap-1">
+              {links.map((link) => (
+                <SheetClose asChild key={link.href}>
+                  <NavPill link={link} active={isActive(link.href)} block />
+                </SheetClose>
+              ))}
+            </nav>
+            <div className="mt-auto flex flex-col gap-3 border-t border-border pt-3">
+              <span className="truncate text-xs text-muted-foreground" dir="ltr">
+                {email}
+              </span>
+              <form action={signOut}>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-sm text-muted-foreground hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600"
+                >
+                  <LogOut />
+                  تسجيل الخروج
+                </Button>
+              </form>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
     </header>
   );
 }
 
+/**
+ * A section link. On the desktop bar it's a NavigationMenuLink; in the mobile
+ * drawer (`block`) it's a plain Link — NavigationMenuLink needs the menu's
+ * focus-group context, which the drawer doesn't have. Both mark the active page
+ * with `data-active`, so they share one style.
+ */
 function NavPill({
   link,
   active,
-  onClick,
   block,
+  ...props
 }: {
   link: NavLink;
   active: boolean;
-  onClick?: () => void;
   block?: boolean;
-}) {
+} & Omit<React.ComponentProps<typeof Link>, "href">) {
   const { href, label, icon: Icon, badge } = link;
-  return (
+  const anchor = (
     <Link
       href={href}
-      onClick={onClick}
-      className={[
-        "relative inline-flex items-center gap-2 rounded-lg px-3 py-2 font-sans text-sm transition-colors",
-        block ? "w-full" : "",
-        active
-          ? "bg-primary/10 text-primary"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground",
-      ].join(" ")}
+      {...props}
+      data-active={block && active ? "" : undefined}
+      aria-current={block && active ? "page" : undefined}
+      className={cn(
+        navigationMenuTriggerStyle(),
+        "relative gap-2 px-3 font-normal text-muted-foreground",
+        "data-[active]:bg-primary/10 data-[active]:text-primary",
+        block && "w-full justify-start"
+      )}
     >
       <Icon className="h-4 w-4 flex-shrink-0" />
       <span>{label}</span>
       {badge != null && badge > 0 && (
-        <span className="ms-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-medium text-white">
+        <Badge className="ms-1 h-5 min-w-5 justify-center bg-red-500 px-1.5 text-[11px] text-white">
           {badge}
-        </span>
+        </Badge>
       )}
     </Link>
+  );
+  if (block) return anchor;
+  return (
+    <NavigationMenuLink asChild active={active}>
+      {anchor}
+    </NavigationMenuLink>
   );
 }

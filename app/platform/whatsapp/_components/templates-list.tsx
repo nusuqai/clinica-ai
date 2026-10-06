@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useForm, useWatch, type Control } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Loader2,
   Trash2,
@@ -21,6 +23,10 @@ import type { MessageTemplate } from "@/lib/meta/whatsapp";
 // page and the inbox template picker share them.
 import { languageLabel } from "@/components/admin/whatsapp/languages";
 import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Card } from "@/components/ui/card";
+import { sendTemplateSchema, type SendTemplateValues } from "@/lib/validations/platform";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
@@ -133,12 +139,17 @@ export default function TemplatesList({
           القوالب
         </h2>
         {!disabled && (
-          <button onClick={() => void load()} className="text-xs text-accent hover:underline">
+          <Button
+            variant="link"
+            size="sm"
+            onClick={() => void load()}
+            className="h-auto px-0 text-accent"
+          >
             تحديث
-          </button>
+          </Button>
         )}
       </div>
-      <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
+      <Card className="space-y-4 p-5">
         {disabled ? (
           <p className="text-xs text-muted-foreground">أدخل بيانات الاتصال لعرض القوالب.</p>
         ) : loading ? (
@@ -153,15 +164,14 @@ export default function TemplatesList({
           <>
             {/* Filter bar */}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="relative sm:col-span-2 lg:col-span-1">
-                <Search className="absolute start-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="بحث بالاسم أو النص"
-                  className="w-full rounded-lg border border-border bg-background py-2 pe-3 ps-8 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-              </div>
+              <FormField
+                type="search"
+                value={search}
+                onValueChange={setSearch}
+                placeholder="بحث بالاسم أو النص"
+                startIcon={<Search />}
+                className="sm:col-span-2 lg:col-span-1"
+              />
               <FilterSelect
                 value={status}
                 onChange={setStatus}
@@ -197,13 +207,14 @@ export default function TemplatesList({
                       <span className="text-sm font-medium text-foreground">{t.name}</span>
                       <div className="flex items-center gap-2">
                         <StatusBadge status={t.status} />
-                        <button
+                        <Button
+                          variant="ghost-destructive"
+                          size="icon-sm"
                           onClick={() => handleDelete(t.name)}
-                          className="text-muted-foreground hover:text-red-600"
                           aria-label="حذف"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                          <Trash2 />
+                        </Button>
                       </div>
                     </div>
                     <p className="mb-2 text-[10px] uppercase text-muted-foreground">
@@ -221,7 +232,7 @@ export default function TemplatesList({
             )}
           </>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
@@ -238,18 +249,13 @@ function FilterSelect({
   options: { value: string; label: string }[];
 }) {
   return (
-    <select
+    <FormField
+      type="select"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-    >
-      <option value={ALL}>{allLabel}</option>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+      onValueChange={onChange}
+      options={[{ value: ALL, label: allLabel }, ...options]}
+      controlClassName="text-muted-foreground"
+    />
   );
 }
 
@@ -262,15 +268,18 @@ function SendToNumber({
   template: MessageTemplate;
   onDone: () => void;
 }) {
-  const [phone, setPhone] = useState("");
-  const [variables, setVariables] = useState<string[]>(
-    Array.from({ length: template.variableCount }, () => "")
-  );
-  const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const form = useForm<SendTemplateValues>({
+    resolver: zodResolver(sendTemplateSchema),
+    defaultValues: {
+      phone: "",
+      variables: Array.from({ length: template.variableCount }, () => ""),
+    },
+    mode: "onTouched",
+  });
+  const sending = form.formState.isSubmitting;
 
-  const handleSend = async () => {
-    setSending(true);
+  const handleSend = form.handleSubmit(async ({ phone, variables }) => {
     setMessage(null);
     const res = await sendClinicTemplateToNumberAction({
       clinicId,
@@ -279,7 +288,6 @@ function SendToNumber({
       language: template.language,
       variables,
     });
-    setSending(false);
     if (res.ok) {
       setMessage({ ok: true, text: "تم الإرسال." });
       setTimeout(onDone, 1200);
@@ -289,53 +297,67 @@ function SendToNumber({
         text: ("message" in res && res.message) || "تعذّر الإرسال.",
       });
     }
-  };
+  });
 
   return (
-    <div className="mt-2 space-y-2 rounded-lg bg-muted/40 p-3">
-      <input
-        value={phone}
-        onChange={(e) => setPhone(e.target.value)}
+    <form onSubmit={handleSend} noValidate className="mt-2 space-y-2 rounded-lg bg-muted/40 p-3">
+      <FormField
+        control={form.control}
+        name="phone"
+        type="tel"
         placeholder="رقم الهاتف مع رمز الدولة، أرقام فقط"
-        className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-        dir="ltr"
+        controlClassName="h-9"
       />
-      {variables.map((v, i) => (
-        <input
+      {Array.from({ length: template.variableCount }, (_, i) => (
+        <FormField
           key={i}
-          value={v}
-          onChange={(e) =>
-            setVariables((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
-          }
+          control={form.control}
+          name={`variables.${i}`}
           placeholder={`القيمة ${i + 1} ({{${i + 1}}})`}
-          className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+          controlClassName="h-9"
         />
       ))}
-      <WhatsappPreview
-        headerText={template.headerText}
-        bodyText={template.bodyText}
-        variables={variables}
-        footerText={template.footerText}
-        buttons={template.buttons}
-      />
+      <SendPreview control={form.control} template={template} />
       {message && (
         <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
           {message.text}
         </p>
       )}
       <div className="flex items-center gap-2">
-        <button
-          onClick={handleSend}
-          disabled={sending || !phone.trim() || variables.some((v) => !v.trim())}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-40"
-        >
-          {sending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+        <Button type="submit" size="sm" loading={sending}>
+          {!sending && <Send />}
           إرسال
-        </button>
-        <button onClick={onDone} className="text-xs text-muted-foreground hover:underline">
+        </Button>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={onDone}
+          className="text-muted-foreground"
+        >
           إلغاء
-        </button>
+        </Button>
       </div>
-    </div>
+    </form>
+  );
+}
+
+/** Preview with the typed variable values; re-renders alone as they change. */
+function SendPreview({
+  control,
+  template,
+}: {
+  control: Control<SendTemplateValues>;
+  template: MessageTemplate;
+}) {
+  const variables = useWatch({ control, name: "variables" });
+  return (
+    <WhatsappPreview
+      headerText={template.headerText}
+      bodyText={template.bodyText}
+      variables={variables}
+      footerText={template.footerText}
+      buttons={template.buttons}
+    />
   );
 }

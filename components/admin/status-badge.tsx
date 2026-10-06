@@ -1,32 +1,27 @@
 import { AppointmentStatus, Role } from "@prisma/client";
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
 
 // ─── Appointment status badge ─────────────────────────────────────────────────
 
-const appointmentColors: Record<AppointmentStatus, string> = {
-  [AppointmentStatus.PENDING]: "bg-amber-100 text-amber-700",
-  [AppointmentStatus.CONFIRMED]: "bg-blue-100 text-blue-700",
-  [AppointmentStatus.CANCELLED]: "bg-red-100 text-red-700",
-  [AppointmentStatus.COMPLETED]: "bg-emerald-100 text-emerald-700",
-  [AppointmentStatus.NO_SHOW]: "bg-gray-100 text-gray-600",
+const appointmentVariants: Record<AppointmentStatus, BadgeVariant> = {
+  [AppointmentStatus.PENDING]: "warning",
+  [AppointmentStatus.CONFIRMED]: "info",
+  [AppointmentStatus.CANCELLED]: "danger",
+  [AppointmentStatus.COMPLETED]: "success",
+  [AppointmentStatus.NO_SHOW]: "neutral",
 };
 
 export function AppointmentStatusBadge({ status }: { status: AppointmentStatus }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 font-sans text-xs font-medium ${appointmentColors[status]}`}
-    >
-      {APPOINTMENT_STATUS_LABELS[status]}
-    </span>
-  );
+  return <Badge variant={appointmentVariants[status]}>{APPOINTMENT_STATUS_LABELS[status]}</Badge>;
 }
 
 // ─── Role badge ───────────────────────────────────────────────────────────────
 
-const roleColors: Record<Role, string> = {
-  [Role.PATIENT]: "bg-sky-100 text-sky-700",
-  [Role.DOCTOR]: "bg-violet-100 text-violet-700",
-  [Role.ADMIN]: "bg-rose-100 text-rose-700",
+const roleVariants: Record<Role, BadgeVariant> = {
+  [Role.PATIENT]: "sky",
+  [Role.DOCTOR]: "violet",
+  [Role.ADMIN]: "rose",
 };
 
 const roleLabels: Record<Role, string> = {
@@ -36,11 +31,5 @@ const roleLabels: Record<Role, string> = {
 };
 
 export function RoleBadge({ role }: { role: Role }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 font-sans text-xs font-medium ${roleColors[role]}`}
-    >
-      {roleLabels[role]}
-    </span>
-  );
+  return <Badge variant={roleVariants[role]}>{roleLabels[role]}</Badge>;
 }

@@ -3,6 +3,10 @@
 import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { setDoctorActiveAction, deleteDoctorAction } from "@/server/actions/admin";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Hint } from "@/components/ui/tooltip";
 
 interface DoctorRowActionsProps {
   doctorId: string;
@@ -12,6 +16,7 @@ interface DoctorRowActionsProps {
 export default function DoctorRowActions({ doctorId, isActive }: DoctorRowActionsProps) {
   const [active, setActive] = useState(isActive);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
 
   function toggleActive() {
@@ -25,8 +30,12 @@ export default function DoctorRowActions({ doctorId, isActive }: DoctorRowAction
     });
   }
 
-  function handleDelete() {
-    if (!confirm("هل أنت متأكد من حذف هذا الطبيب وحسابه كاملاً؟")) return;
+  async function handleDelete() {
+    const ok = await confirm({
+      title: "حذف الطبيب",
+      description: "هل أنت متأكد من حذف هذا الطبيب وحسابه كاملاً؟",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await deleteDoctorAction(doctorId);
       if (res?.error) setError(res.error);
@@ -35,30 +44,26 @@ export default function DoctorRowActions({ doctorId, isActive }: DoctorRowAction
 
   return (
     <div className="flex items-center gap-2">
-      <button
-        onClick={toggleActive}
-        disabled={isPending}
-        className={[
-          "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50",
-          active ? "bg-emerald-500" : "bg-muted-foreground/30",
-        ].join(" ")}
-        title={active ? "إلغاء تفعيل" : "تفعيل"}
-      >
-        <span
-          className={[
-            "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform",
-            active ? "-translate-x-4" : "-translate-x-1",
-          ].join(" ")}
+      <Hint label={active ? "إلغاء تفعيل" : "تفعيل"}>
+        <Switch
+          aria-label={active ? "إلغاء تفعيل" : "تفعيل"}
+          checked={active}
+          onCheckedChange={toggleActive}
+          disabled={isPending}
+          className="data-[state=checked]:bg-emerald-500"
         />
-      </button>
-      <button
-        onClick={handleDelete}
-        disabled={isPending}
-        title="حذف الطبيب"
-        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+      </Hint>
+      <Hint label="حذف الطبيب">
+        <Button
+          aria-label="حذف الطبيب"
+          variant="ghost-destructive"
+          size="icon"
+          onClick={handleDelete}
+          disabled={isPending}
+        >
+          <Trash2 />
+        </Button>
+      </Hint>
       {error && <p className="font-sans text-xs text-red-500">{error}</p>}
     </div>
   );

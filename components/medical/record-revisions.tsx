@@ -3,10 +3,13 @@
 import { useState } from "react";
 import { History, Loader2, ArrowLeft } from "lucide-react";
 import Modal from "@/components/admin/modal";
+import { Badge } from "@/components/ui/badge";
 import { getRecordRevisionsAction } from "@/server/actions/treatments";
 import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import type { ProcedureKind } from "@prisma/client";
 import type { TreatmentRecordView } from "@/server/services/treatments";
+import { Alert } from "@/components/ui/alert";
+import { Hint } from "@/components/ui/tooltip";
 
 // The edit history of one treatment record, opened from its "عُدّل" badge on the
 // admin timeline. Rather than just a count, it shows WHAT each edit changed:
@@ -201,15 +204,14 @@ export default function RecordRevisions({ record }: { record: TreatmentRecordVie
 
   return (
     <>
-      <button
-        type="button"
-        onClick={openHistory}
-        title="عرض سجل التعديلات"
-        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 font-sans text-xs font-medium text-amber-700 transition-colors hover:bg-amber-200"
-      >
-        <History className="h-3 w-3" />
-        {count === 1 ? "تعديل واحد" : `${count} تعديلات`} — عرض التغييرات
-      </button>
+      <Hint label="عرض سجل التعديلات">
+        <Badge asChild variant="warning" className="cursor-pointer gap-1 hover:bg-amber-200">
+          <button type="button" onClick={openHistory}>
+            <History className="h-3 w-3" />
+            {count === 1 ? "تعديل واحد" : `${count} تعديلات`} — عرض التغييرات
+          </button>
+        </Badge>
+      </Hint>
 
       <Modal
         open={open}
@@ -230,7 +232,9 @@ export default function RecordRevisions({ record }: { record: TreatmentRecordVie
         )}
 
         {error && (
-          <p className="rounded-xl bg-red-50 px-3 py-2 font-sans text-sm text-red-700">{error}</p>
+          <Alert variant="destructive" className="block border-transparent px-3 py-2">
+            {error}
+          </Alert>
         )}
 
         {!loading && !error && entries.length === 0 && (

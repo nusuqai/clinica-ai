@@ -1,57 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useWatch, type Control, type Path } from "react-hook-form";
+import { FormField } from "@/components/ui/form-field";
+import { NEW_SPECIALTY } from "@/lib/validations/doctor";
+
+/** Any form with the two specialty fields (the doctor modals, the doctor's own profile). */
+type WithSpecialty = { specialtyId: string; newSpecialtyName: string };
 
 export interface SpecialtyOption {
   id: string;
   name: string;
 }
 
-const inputCls =
-  "w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30";
-
 /**
  * Specialty picker: choose from the clinic's list, or "➕ تخصص جديد" to create
- * one inline. Submits `specialtyId` (hidden) or `newSpecialtyName` — the server
- * resolves either into a specialtyId (find-or-create, case-insensitive).
+ * one inline. Sets `specialtyId` (or NEW_SPECIALTY + `newSpecialtyName`); the
+ * server resolves either into a specialtyId (find-or-create, case-insensitive).
  */
-export default function SpecialtySelect({
+export default function SpecialtySelect<T extends WithSpecialty>({
+  control,
   specialties,
-  defaultSpecialtyId = null,
-  required = false,
 }: {
+  control: Control<T>;
   specialties: SpecialtyOption[];
-  defaultSpecialtyId?: string | null;
-  required?: boolean;
 }) {
-  const [value, setValue] = useState<string>(defaultSpecialtyId ?? "");
-  const isNew = value === "__new__";
+  const idName = "specialtyId" as Path<T>;
+  const isNew = useWatch({ control, name: idName }) === NEW_SPECIALTY;
 
   return (
     <div className="space-y-2">
-      <label className="font-sans text-sm font-medium text-foreground">التخصص</label>
-      {/* Real submitted value: empty when creating a new specialty. */}
-      <input type="hidden" name="specialtyId" value={isNew ? "" : value} />
-      <select
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        required={required && !isNew}
-        className={inputCls}
-      >
-        <option value="">— اختر التخصص —</option>
-        {specialties.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-          </option>
-        ))}
-        <option value="__new__">➕ تخصص جديد…</option>
-      </select>
+      <FormField
+        control={control}
+        name={idName}
+        type="select"
+        label="التخصص"
+        options={[
+          { value: "", label: "— اختر التخصص —" },
+          ...specialties.map((s) => ({ value: s.id, label: s.name })),
+          { value: NEW_SPECIALTY, label: "➕ تخصص جديد…" },
+        ]}
+      />
       {isNew && (
-        <input
-          name="newSpecialtyName"
-          required={required}
+        <FormField
+          control={control}
+          name={"newSpecialtyName" as Path<T>}
           placeholder="اسم التخصص الجديد"
-          className={inputCls}
+          autoFocus
         />
       )}
     </div>

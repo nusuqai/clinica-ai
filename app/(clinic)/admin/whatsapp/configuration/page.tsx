@@ -2,6 +2,7 @@ import { CheckCircle2, XCircle } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import PageHeader from "@/components/admin/page-header";
 import { getWhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
+import { Card } from "@/components/ui/card";
 
 /**
  * Read-only WhatsApp status for a clinic admin. Connecting a clinic to Meta is
@@ -21,7 +22,7 @@ export default async function WhatsAppStatusPage() {
       <PageHeader title="حالة اتصال واتساب" subtitle="يتولّى إعداد الاتصال بواتساب مسؤول المنصّة" />
 
       <div className="max-w-xl space-y-4">
-        <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
+        <Card className="space-y-4 p-5">
           <div className="flex items-center gap-2">
             {config ? (
               <>
@@ -62,7 +63,7 @@ export default async function WhatsAppStatusPage() {
               ? "لتغيير رقم واتساب أو بيانات الاتصال، تواصل مع إدارة المنصّة."
               : "لتفعيل واتساب لعيادتك، تواصل مع إدارة المنصّة."}
           </p>
-        </div>
+        </Card>
       </div>
     </div>
   );

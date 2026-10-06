@@ -170,9 +170,7 @@ export async function getUnprocessedUserMessages(
  * failed, or crashed between persist and send). The processor re-delivers this
  * instead of re-running the agent — so a send retry never re-charges AI.
  */
-export async function findUndeliveredAgentReply(
-  conversationId: string
-): Promise<{
+export async function findUndeliveredAgentReply(conversationId: string): Promise<{
   id: string;
   sessionId: string | null;
   clinicId: string;

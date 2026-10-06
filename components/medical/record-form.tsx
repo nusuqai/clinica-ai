@@ -1,23 +1,99 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useFieldArray, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
 import { ProcedureKind } from "@prisma/client";
 import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import type { TreatmentRecordPayload } from "@/server/actions/treatments";
 import type { TreatmentRecordView } from "@/server/services/treatments";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
+import { Alert } from "@/components/ui/alert";
+import { Hint } from "@/components/ui/tooltip";
+import { recordFormSchema, type RecordFormValues } from "@/lib/validations/treatment";
 
 // The clinical record form body — dates, narrative fields, procedure and
 // prescription lines. Shared by the doctor's modal (per appointment) and the
 // admin's modal (per patient); each wrapper decides where the record comes from
-// and which action saves it. State is seeded from `initial` once, so a wrapper
+// and which action saves it. The form is seeded from `initial` once, so a wrapper
 // that swaps records must remount it (pass a `key`).
 
-type ProcedureRow = TreatmentRecordPayload["procedures"][number];
-type PrescriptionRow = TreatmentRecordPayload["prescriptions"][number];
+type ProcedureRow = RecordFormValues["procedures"][number];
+type PrescriptionRow = RecordFormValues["prescriptions"][number];
 
-const emptyProcedure = (): ProcedureRow => ({ kind: ProcedureKind.EXAMINATION, name: "" });
-const emptyPrescription = (): PrescriptionRow => ({ drugName: "" });
+const emptyProcedure = (): ProcedureRow => ({
+  kind: ProcedureKind.EXAMINATION,
+  name: "",
+  cost: "",
+  note: "",
+});
+const emptyPrescription = (): PrescriptionRow => ({
+  drugName: "",
+  dose: "",
+  frequency: "",
+  durationDays: "",
+  instructions: "",
+});
+
+/** Seed values: the stored record, or a blank one dated `defaultVisitDate` (today if absent). */
+function formFromRecord(
+  initial: TreatmentRecordView | null,
+  defaultVisitDate: Date | string | null | undefined
+): RecordFormValues {
+  return {
+    visitDate: toDateInput(initial?.visitDate ?? defaultVisitDate) || toDateInput(new Date()),
+    followUpDate: toDateInput(initial?.followUpDate),
+    chiefComplaint: initial?.chiefComplaint ?? "",
+    diagnosis: initial?.diagnosis ?? "",
+    clinicalNotes: initial?.clinicalNotes ?? "",
+    procedures: initial?.procedures.length
+      ? initial.procedures.map((p) => ({
+          kind: p.kind,
+          name: p.name,
+          cost: p.cost ?? "",
+          note: p.note ?? "",
+        }))
+      : [emptyProcedure()],
+    prescriptions: initial?.prescriptions.length
+      ? initial.prescriptions.map((p) => ({
+          drugName: p.drugName,
+          dose: p.dose ?? "",
+          frequency: p.frequency ?? "",
+          durationDays: p.durationDays?.toString() ?? "",
+          instructions: p.instructions ?? "",
+        }))
+      : [emptyPrescription()],
+  };
+}
+
+/** Empty optional strings go to the server as undefined, like the old form sent them. */
+const opt = (v: string) => v || undefined;
+
+function toPayload(v: RecordFormValues): TreatmentRecordPayload {
+  return {
+    visitDate: v.visitDate,
+    chiefComplaint: v.chiefComplaint,
+    diagnosis: v.diagnosis,
+    clinicalNotes: v.clinicalNotes,
+    followUpDate: v.followUpDate || null,
+    procedures: v.procedures.map((p) => ({
+      kind: p.kind,
+      name: p.name,
+      cost: opt(p.cost),
+      note: opt(p.note),
+    })),
+    prescriptions: v.prescriptions.map((p) => ({
+      drugName: p.drugName,
+      dose: opt(p.dose),
+      frequency: opt(p.frequency),
+      durationDays: opt(p.durationDays),
+      instructions: opt(p.instructions),
+    })),
+  };
+}
 
 /** A Date (or ISO string) as the "YYYY-MM-DD" an <input type="date"> wants. */
 export function toDateInput(value: Date | string | null | undefined): string {
@@ -25,8 +101,10 @@ export function toDateInput(value: Date | string | null | undefined): string {
   return new Date(value).toISOString().slice(0, 10);
 }
 
-const inputClass =
-  "w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30";
+const PROCEDURE_KIND_OPTIONS = Object.entries(PROCEDURE_KIND_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
 
 interface RecordFormProps {
   /** The stored record when editing; null when creating. */
@@ -49,207 +127,146 @@ export default function RecordForm({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const [visitDate, setVisitDate] = useState(
-    toDateInput(initial?.visitDate ?? defaultVisitDate) || toDateInput(new Date())
-  );
-  const [chiefComplaint, setChiefComplaint] = useState(initial?.chiefComplaint ?? "");
-  const [diagnosis, setDiagnosis] = useState(initial?.diagnosis ?? "");
-  const [clinicalNotes, setClinicalNotes] = useState(initial?.clinicalNotes ?? "");
-  const [followUpDate, setFollowUpDate] = useState(toDateInput(initial?.followUpDate));
-  const [procedures, setProcedures] = useState<ProcedureRow[]>(() =>
-    initial?.procedures.length
-      ? initial.procedures.map((p) => ({
-          kind: p.kind,
-          name: p.name,
-          note: p.note ?? undefined,
-          cost: p.cost ?? undefined,
-        }))
-      : [emptyProcedure()]
-  );
-  const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>(() =>
-    initial?.prescriptions.length
-      ? initial.prescriptions.map((p) => ({
-          drugName: p.drugName,
-          dose: p.dose ?? undefined,
-          frequency: p.frequency ?? undefined,
-          durationDays: p.durationDays?.toString() ?? undefined,
-          instructions: p.instructions ?? undefined,
-        }))
-      : [emptyPrescription()]
-  );
+  const form = useForm<RecordFormValues>({
+    resolver: zodResolver(recordFormSchema),
+    defaultValues: formFromRecord(initial, defaultVisitDate),
+    mode: "onTouched",
+  });
+  const { control } = form;
+  const procedures = useFieldArray({ control, name: "procedures" });
+  const prescriptions = useFieldArray({ control, name: "prescriptions" });
 
-  function updateProcedure(i: number, patch: Partial<ProcedureRow>) {
-    setProcedures((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  }
-  function updatePrescription(i: number, patch: Partial<PrescriptionRow>) {
-    setPrescriptions((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  }
-
-  function handleSave() {
+  const handleSave = form.handleSubmit((values) => {
     setError(null);
     startTransition(async () => {
-      const res = await onSubmit({
-        visitDate,
-        chiefComplaint,
-        diagnosis,
-        clinicalNotes,
-        followUpDate: followUpDate || null,
-        procedures,
-        prescriptions,
-      });
+      const res = await onSubmit(toPayload(values));
       if (res?.error) setError(res.error);
     });
-  }
+  });
 
   return (
-    <div className="space-y-6">
+    <form onSubmit={handleSave} noValidate className="space-y-6">
       {initial && (
-        <p className="rounded-xl bg-amber-50 px-3 py-2 font-sans text-xs text-amber-800">
+        <Alert
+          variant="warning"
+          className="block border-transparent px-3 py-2 text-xs text-amber-800"
+        >
           أنت تعدّل سجلاً محفوظاً. سيتم حفظ نسخة من القيم السابقة في سجل التعديلات.
-        </p>
+        </Alert>
       )}
 
       {header}
 
       {/* Dates */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Labeled label="تاريخ الزيارة">
-          <input
-            type="date"
-            value={visitDate}
-            onChange={(e) => setVisitDate(e.target.value)}
-            className={inputClass}
-          />
-        </Labeled>
-        <Labeled label="موعد المتابعة (اختياري)">
-          <input
-            type="date"
-            value={followUpDate}
-            onChange={(e) => setFollowUpDate(e.target.value)}
-            className={inputClass}
-          />
-        </Labeled>
+        <FormField control={control} name="visitDate" type="date" label="تاريخ الزيارة" />
+        <FormField
+          control={control}
+          name="followUpDate"
+          type="date"
+          label="موعد المتابعة (اختياري)"
+        />
       </div>
 
-      <Labeled label="شكوى المريض">
-        <textarea
-          value={chiefComplaint}
-          onChange={(e) => setChiefComplaint(e.target.value)}
-          rows={2}
-          placeholder="ما الذي يشكو منه المريض؟"
-          className={`${inputClass} resize-none`}
-        />
-      </Labeled>
-      <Labeled label="التشخيص">
-        <textarea
-          value={diagnosis}
-          onChange={(e) => setDiagnosis(e.target.value)}
-          rows={2}
-          placeholder="التشخيص المبدئي أو النهائي..."
-          className={`${inputClass} resize-none`}
-        />
-      </Labeled>
-      <Labeled label="ملاحظات الطبيب">
-        <textarea
-          value={clinicalNotes}
-          onChange={(e) => setClinicalNotes(e.target.value)}
-          rows={4}
-          placeholder="نتائج الفحص، الخطة العلاجية..."
-          className={`${inputClass} resize-none`}
-        />
-      </Labeled>
+      <FormField
+        control={control}
+        name="chiefComplaint"
+        type="textarea"
+        label="شكوى المريض"
+        rows={2}
+        placeholder="ما الذي يشكو منه المريض؟"
+      />
+      <FormField
+        control={control}
+        name="diagnosis"
+        type="textarea"
+        label="التشخيص"
+        rows={2}
+        placeholder="التشخيص المبدئي أو النهائي..."
+      />
+      <FormField
+        control={control}
+        name="clinicalNotes"
+        type="textarea"
+        label="ملاحظات الطبيب"
+        rows={4}
+        placeholder="نتائج الفحص، الخطة العلاجية..."
+      />
 
       {/* Procedures */}
-      <RowSection
-        title="الإجراءات المُنفَّذة"
-        onAdd={() => setProcedures((rows) => [...rows, emptyProcedure()])}
-      >
-        {procedures.map((row, i) => (
-          <div key={i} className="rounded-xl border border-border p-3">
-            <div className="flex gap-2">
-              <select
-                value={row.kind}
-                onChange={(e) => updateProcedure(i, { kind: e.target.value as ProcedureKind })}
-                className="rounded-xl border border-border bg-background px-2 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {Object.entries(PROCEDURE_KIND_LABELS).map(([val, label]) => (
-                  <option key={val} value={val}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={row.name}
-                onChange={(e) => updateProcedure(i, { name: e.target.value })}
-                placeholder="اسم الإجراء"
-                className={`${inputClass} min-w-0 flex-1`}
+      <RowSection title="الإجراءات المُنفَّذة" onAdd={() => procedures.append(emptyProcedure())}>
+        {procedures.fields.map((field, i) => (
+          <div key={field.id} className="rounded-xl border border-border p-3">
+            <div className="flex items-start gap-2">
+              <FormField
+                control={control}
+                name={`procedures.${i}.kind`}
+                type="select"
+                options={PROCEDURE_KIND_OPTIONS}
+                className="w-36 shrink-0"
               />
-              <input
-                value={row.cost ?? ""}
-                onChange={(e) => updateProcedure(i, { cost: e.target.value })}
+              <FormField
+                control={control}
+                name={`procedures.${i}.name`}
+                placeholder="اسم الإجراء"
+                className="min-w-0 flex-1"
+              />
+              <FormField
+                control={control}
+                name={`procedures.${i}.cost`}
                 inputMode="decimal"
                 placeholder="التكلفة"
                 dir="ltr"
-                className={`${inputClass} !w-24`}
+                className="w-24 shrink-0"
               />
-              <RemoveButton
-                onClick={() => setProcedures((rows) => rows.filter((_, j) => j !== i))}
-              />
+              <RemoveButton onClick={() => procedures.remove(i)} />
             </div>
-            <input
-              value={row.note ?? ""}
-              onChange={(e) => updateProcedure(i, { note: e.target.value })}
+            <FormField
+              control={control}
+              name={`procedures.${i}.note`}
               placeholder="ملاحظة (اختياري)"
-              className={`${inputClass} mt-2`}
+              className="mt-2"
             />
           </div>
         ))}
       </RowSection>
 
       {/* Prescriptions */}
-      <RowSection
-        title="الروشتة"
-        onAdd={() => setPrescriptions((rows) => [...rows, emptyPrescription()])}
-      >
-        {prescriptions.map((row, i) => (
-          <div key={i} className="rounded-xl border border-border p-3">
-            <div className="flex gap-2">
-              <input
-                value={row.drugName}
-                onChange={(e) => updatePrescription(i, { drugName: e.target.value })}
+      <RowSection title="الروشتة" onAdd={() => prescriptions.append(emptyPrescription())}>
+        {prescriptions.fields.map((field, i) => (
+          <div key={field.id} className="rounded-xl border border-border p-3">
+            <div className="flex items-start gap-2">
+              <FormField
+                control={control}
+                name={`prescriptions.${i}.drugName`}
                 placeholder="اسم الدواء"
-                className={`${inputClass} min-w-0 flex-1`}
+                className="min-w-0 flex-1"
               />
-              <RemoveButton
-                onClick={() => setPrescriptions((rows) => rows.filter((_, j) => j !== i))}
-              />
+              <RemoveButton onClick={() => prescriptions.remove(i)} />
             </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
-              <input
-                value={row.dose ?? ""}
-                onChange={(e) => updatePrescription(i, { dose: e.target.value })}
+              <FormField
+                control={control}
+                name={`prescriptions.${i}.dose`}
                 placeholder="الجرعة (500 مجم)"
-                className={inputClass}
               />
-              <input
-                value={row.frequency ?? ""}
-                onChange={(e) => updatePrescription(i, { frequency: e.target.value })}
+              <FormField
+                control={control}
+                name={`prescriptions.${i}.frequency`}
                 placeholder="التكرار (مرتين يومياً)"
-                className={inputClass}
               />
-              <input
-                value={row.durationDays ?? ""}
-                onChange={(e) => updatePrescription(i, { durationDays: e.target.value })}
+              <FormField
+                control={control}
+                name={`prescriptions.${i}.durationDays`}
                 inputMode="numeric"
                 placeholder="المدة (أيام)"
-                className={inputClass}
               />
             </div>
-            <input
-              value={row.instructions ?? ""}
-              onChange={(e) => updatePrescription(i, { instructions: e.target.value })}
+            <FormField
+              control={control}
+              name={`prescriptions.${i}.instructions`}
               placeholder="تعليمات (بعد الأكل...)"
-              className={`${inputClass} mt-2`}
+              className="mt-2"
             />
           </div>
         ))}
@@ -258,22 +275,14 @@ export default function RecordForm({
       {error && <p className="font-sans text-sm text-red-600">{error}</p>}
 
       <div className="flex gap-3">
-        <button
-          onClick={handleSave}
-          disabled={isPending}
-          className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-        >
+        <Button type="submit" loading={isPending} className="flex-1">
           {isPending ? "جارٍ الحفظ..." : initial ? "حفظ التعديلات" : "حفظ السجل"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-        >
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
           إلغاء
-        </button>
+        </Button>
       </div>
-    </div>
+    </form>
   );
 }
 
@@ -282,7 +291,7 @@ export default function RecordForm({
 export function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="font-sans text-sm font-medium text-foreground">{label}</label>
+      <Label className="font-sans text-sm font-medium text-foreground">{label}</Label>
       {children}
     </div>
   );
@@ -301,14 +310,10 @@ function RowSection({
     <section className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="font-sans text-sm font-medium text-foreground">{title}</h3>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-        >
-          <Plus className="h-3.5 w-3.5" />
+        <Button type="button" variant="outline" size="sm" onClick={onAdd}>
+          <Plus />
           إضافة
-        </button>
+        </Button>
       </div>
       <div className="space-y-2">{children}</div>
     </section>
@@ -317,13 +322,17 @@ function RowSection({
 
 function RemoveButton({ onClick }: { onClick: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title="حذف"
-      className="flex-shrink-0 rounded-lg border border-border px-2 text-muted-foreground transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-    >
-      <Trash2 className="h-4 w-4" />
-    </button>
+    <Hint label="حذف">
+      <Button
+        aria-label="حذف"
+        type="button"
+        variant="ghost-destructive"
+        size="icon"
+        onClick={onClick}
+        className="h-10 shrink-0 border border-border hover:border-red-200"
+      >
+        <Trash2 />
+      </Button>
+    </Hint>
   );
 }

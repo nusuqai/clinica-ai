@@ -17,6 +17,9 @@ import { PatientHistoryPanels } from "@/components/landing/patient-history-panel
 import { RecordsPanel } from "@/components/landing/records-panel";
 import { ShowMore } from "@/components/landing/show-more";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 // The signed-in patient's area on the clinic's own home page, right under the
 // hero: upcoming bookings as cards, plus past visits and the treatment record
@@ -82,13 +85,15 @@ export function MyAppointmentsSection({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <a
-              href="#book"
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-sans text-sm font-medium text-white shadow-sm transition-opacity hover:opacity-90"
+            <Button
+              asChild
+              className="h-auto gap-2 rounded-xl px-4 py-2.5 text-sm shadow-sm transition-opacity hover:opacity-90"
             >
-              <CalendarPlus className="h-4 w-4" />
-              احجز موعداً جديداً
-            </a>
+              <a href="#book">
+                <CalendarPlus className="h-4 w-4" />
+                احجز موعداً جديداً
+              </a>
+            </Button>
           </div>
         </div>
 
@@ -169,10 +174,10 @@ function PastVisitsList({
           </p>
         </div>
         {documented.has(appt.id) && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 font-sans text-xs font-medium text-primary">
+          <Badge>
             <FileText className="h-3 w-3" />
             له سجل علاجي
-          </span>
+          </Badge>
         )}
         <AppointmentStatusBadge status={appt.status} />
         <Link
@@ -239,11 +244,7 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
       <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <AppointmentStatusBadge status={appt.status} />
-          {isNext && (
-            <span className="rounded-full bg-accent/15 px-2.5 py-0.5 font-sans text-xs font-medium text-accent">
-              الأقرب
-            </span>
-          )}
+          {isNext && <Badge className="bg-accent/15 text-accent">الأقرب</Badge>}
         </div>
 
         <div className="min-w-0">
@@ -277,11 +278,14 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
               </p>
               {/* Live queue position — only when the clinic tracks "now serving". */}
               {appt.currentOrder != null && (
-                <p className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1 text-xs text-blue-700">
+                <Alert
+                  variant="info"
+                  className="items-center gap-1.5 rounded-lg border-transparent px-2 py-1 text-xs"
+                >
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
                   يُخدم الآن: رقم {appt.currentOrder}
                   {appt.estimatedWaitMin != null && ` · انتظار ~${appt.estimatedWaitMin} دقيقة`}
-                </p>
+                </Alert>
               )}
             </>
           ) : appt.arrivalBased ? (
@@ -324,13 +328,15 @@ function EmptyState() {
       <p className="max-w-sm font-sans text-sm text-muted-foreground">
         اختر طبيبك من القائمة بالأسفل واحجز الوقت المناسب لك في ثوانٍ.
       </p>
-      <a
-        href="#book"
-        className="mt-1 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-sans text-sm font-medium text-white transition-opacity hover:opacity-90"
+      <Button
+        asChild
+        className="mt-1 h-auto gap-2 rounded-xl px-5 py-2.5 text-sm transition-opacity hover:opacity-90"
       >
-        <CalendarPlus className="h-4 w-4" />
-        احجز موعدك الآن
-      </a>
+        <a href="#book">
+          <CalendarPlus className="h-4 w-4" />
+          احجز موعدك الآن
+        </a>
+      </Button>
     </div>
   );
 }

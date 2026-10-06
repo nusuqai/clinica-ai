@@ -2,12 +2,24 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import {
   createSpecialtyAction,
   renameSpecialtyAction,
   deleteSpecialtyAction,
 } from "@/server/actions/admin";
+import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Hint } from "@/components/ui/tooltip";
+import { specialtySchema, type SpecialtyValues } from "@/lib/validations/admin";
+
+type RunFn = (fn: () => Promise<{ error?: string } | void>, after?: () => void) => void;
 
 export interface SpecialtyView {
   id: string;
@@ -15,18 +27,19 @@ export interface SpecialtyView {
   doctorCount: number;
 }
 
-const inputCls =
-  "border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30";
-
 export default function SpecialtiesManager({ specialties }: { specialties: SpecialtyView[] }) {
   const router = useRouter();
-  const [newName, setNewName] = useState("");
+  const confirm = useConfirm();
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  function run(fn: () => Promise<{ error?: string } | void>, after?: () => void) {
+  const addForm = useForm<SpecialtyValues>({
+    resolver: zodResolver(specialtySchema),
+    defaultValues: { name: "" },
+  });
+
+  const run: RunFn = (fn, after) => {
     setError(null);
     startTransition(async () => {
       const res = await fn();
@@ -36,124 +49,140 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
         router.refresh();
       }
     });
-  }
+  };
 
-  function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newName.trim()) return;
+  const handleAdd = addForm.handleSubmit(({ name }) =>
     run(
-      () => createSpecialtyAction(newName.trim()),
-      () => setNewName("")
-    );
-  }
+      () => createSpecialtyAction(name),
+      () => addForm.reset()
+    )
+  );
 
   return (
     <div className="max-w-2xl">
       {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
+        <Alert variant="destructive" className="mb-4">
           {error}
-        </div>
+        </Alert>
       )}
 
       {/* Add */}
-      <form onSubmit={handleAdd} className="mb-6 flex gap-2">
-        <input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
+      <form onSubmit={handleAdd} noValidate className="mb-6 flex items-start gap-2">
+        <FormField
+          control={addForm.control}
+          name="name"
           placeholder="اسم تخصص جديد (مثال: طب الأطفال)"
-          className={inputCls + " flex-1"}
+          className="flex-1"
         />
-        <button
-          type="submit"
-          disabled={isPending || !newName.trim()}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" />
+        <Button type="submit" disabled={isPending}>
+          <Plus />
           إضافة
-        </button>
+        </Button>
       </form>
 
       {specialties.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="font-sans text-muted-foreground">
             لا توجد تخصصات بعد. أضف تخصصاً ليظهر في نموذج إضافة الأطباء.
           </p>
-        </div>
+        </Card>
       ) : (
-        <div className="divide-y divide-border rounded-2xl border border-border bg-card">
+        <Card className="divide-y divide-border">
           {specialties.map((s) => (
             <div key={s.id} className="flex items-center gap-3 px-5 py-3">
               {editingId === s.id ? (
-                <>
-                  <input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className={inputCls + " flex-1"}
-                    autoFocus
-                  />
-                  <button
-                    onClick={() =>
-                      run(
-                        () => renameSpecialtyAction(s.id, editName.trim()),
-                        () => setEditingId(null)
-                      )
-                    }
-                    disabled={isPending || !editName.trim()}
-                    title="حفظ"
-                    className="rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
-                  >
-                    <Check className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => setEditingId(null)}
-                    title="إلغاء"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </>
+                <RenameRow
+                  specialty={s}
+                  isPending={isPending}
+                  run={run}
+                  onDone={() => setEditingId(null)}
+                />
               ) : (
                 <>
                   <span className="flex-1 font-sans font-medium text-foreground">{s.name}</span>
-                  <span className="rounded-full bg-muted px-2 py-0.5 font-sans text-xs text-muted-foreground">
-                    {s.doctorCount} طبيب
-                  </span>
-                  <button
-                    onClick={() => {
-                      setEditingId(s.id);
-                      setEditName(s.name);
-                    }}
-                    title="تعديل"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() =>
-                      run(() => {
-                        if (
-                          !confirm(
+                  <Badge variant="muted">{s.doctorCount} طبيب</Badge>
+                  <Hint label="تعديل">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setEditingId(s.id)}
+                      aria-label="تعديل"
+                      className="hover:bg-primary/10 hover:text-primary"
+                    >
+                      <Pencil />
+                    </Button>
+                  </Hint>
+                  <Hint label="حذف">
+                    <Button
+                      variant="ghost-destructive"
+                      size="icon"
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "حذف التخصص",
+                          description:
                             s.doctorCount > 0
                               ? `هذا التخصص مرتبط بـ ${s.doctorCount} طبيب. سيُزال تخصصهم عند الحذف. متابعة؟`
-                              : "حذف هذا التخصص؟"
-                          )
-                        )
-                          return Promise.resolve();
-                        return deleteSpecialtyAction(s.id);
-                      })
-                    }
-                    disabled={isPending}
-                    title="حذف"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                              : "حذف هذا التخصص؟",
+                        });
+                        if (ok) run(() => deleteSpecialtyAction(s.id));
+                      }}
+                      disabled={isPending}
+                      aria-label="حذف"
+                    >
+                      <Trash2 />
+                    </Button>
+                  </Hint>
                 </>
               )}
             </div>
           ))}
-        </div>
+        </Card>
       )}
     </div>
+  );
+}
+
+/** Inline rename: its own small form, so typing re-renders just this row. */
+function RenameRow({
+  specialty,
+  isPending,
+  run,
+  onDone,
+}: {
+  specialty: SpecialtyView;
+  isPending: boolean;
+  run: RunFn;
+  onDone: () => void;
+}) {
+  const form = useForm<SpecialtyValues>({
+    resolver: zodResolver(specialtySchema),
+    defaultValues: { name: specialty.name },
+  });
+
+  const handleSave = form.handleSubmit(({ name }) =>
+    run(() => renameSpecialtyAction(specialty.id, name), onDone)
+  );
+
+  return (
+    <form onSubmit={handleSave} noValidate className="flex flex-1 items-start gap-3">
+      <FormField control={form.control} name="name" className="flex-1" autoFocus />
+      <Hint label="حفظ">
+        <Button
+          type="submit"
+          variant="ghost"
+          size="icon"
+          disabled={isPending}
+          aria-label="حفظ"
+          className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
+        >
+          <Check />
+        </Button>
+      </Hint>
+      <Hint label="إلغاء">
+        <Button type="button" variant="ghost" size="icon" onClick={onDone} aria-label="إلغاء">
+          <X />
+        </Button>
+      </Hint>
+    </form>
   );
 }

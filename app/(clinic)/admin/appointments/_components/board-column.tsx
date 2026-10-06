@@ -4,6 +4,7 @@ import { useDroppable } from "@dnd-kit/core";
 import type { AppointmentStatus } from "@prisma/client";
 import type { AdminAppointment } from "@/server/services/appointments";
 import AppointmentCard from "./appointment-card";
+import { Badge } from "@/components/ui/badge";
 
 const COLUMN_ACCENTS: Record<AppointmentStatus, string> = {
   PENDING: "border-t-amber-400",
@@ -34,9 +35,9 @@ export default function BoardColumn({
         className={`flex items-center justify-between rounded-t-xl border-t-4 bg-muted/40 px-3 py-2 ${COLUMN_ACCENTS[status]}`}
       >
         <h3 className="font-heading text-sm font-bold text-foreground">{label}</h3>
-        <span className="rounded-full border border-border bg-background px-2 py-0.5 font-sans text-xs font-medium text-muted-foreground">
+        <Badge variant="outline" className="px-2">
           {appointments.length}
-        </span>
+        </Badge>
       </div>
 
       <div

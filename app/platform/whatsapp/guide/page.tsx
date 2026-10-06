@@ -2,6 +2,8 @@ import Link from "next/link";
 import { KeyRound, Settings, Webhook, MessageSquareText, ExternalLink } from "lucide-react";
 import { requirePlatformAdmin } from "@/lib/auth";
 import PageHeader from "@/components/admin/page-header";
+import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 export default async function WhatsAppGuidePage() {
   await requirePlatformAdmin();
@@ -92,9 +94,9 @@ export default async function WhatsAppGuidePage() {
               <span dir="ltr">Webhook fields</span>).
             </li>
           </ul>
-          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          <Alert variant="warning" className="mt-2 block rounded-lg px-3 py-2 text-xs">
             حافظ على سرية رابط الويبهوك — فمن يملكه يستطيع إرسال رسائل واردة إلى عيادتك.
-          </p>
+          </Alert>
         </Step>
 
         <Step n={5} icon={<MessageSquareText className="h-4 w-4" />} title="أنشئ قوالبك">
@@ -115,12 +117,12 @@ export default async function WhatsAppGuidePage() {
 
 function Intro() {
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 text-sm leading-relaxed text-muted-foreground">
+    <Card className="p-5 text-sm leading-relaxed text-muted-foreground">
       تستخدم كل عيادة تطبيق ميتا الخاص بها، ويتولّى إعدادَه مسؤول المنصّة نيابةً عنها. اتبع الخطوات
       التالية للحصول على المفاتيح المطلوبة ولصقها في{" "}
       <b className="text-foreground">بطاقة العيادة بصفحة واتساب</b>. تحتاج عادةً إلى ربط واحد لكل
       عيادة، ثم تكتفي بإنشاء القوالب.
-    </div>
+    </Card>
   );
 }
 
@@ -136,7 +138,7 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card className="p-5">
       <div className="mb-3 flex items-center gap-3">
         <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-bold text-accent">
           {n}
@@ -147,7 +149,7 @@ function Step({
         </h2>
       </div>
       <div className="ps-10 text-sm leading-relaxed text-muted-foreground">{children}</div>
-    </div>
+    </Card>
   );
 }
 

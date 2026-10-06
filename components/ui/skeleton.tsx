@@ -1,5 +1,15 @@
-export function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded-md bg-muted ${className}`} aria-hidden="true" />;
+import type * as React from "react";
+import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+
+export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn("animate-pulse rounded-md bg-muted", className)}
+      aria-hidden="true"
+      {...props}
+    />
+  );
 }
 
 export function PageHeaderSkeleton({ withAction = false }: { withAction?: boolean }) {
@@ -16,13 +26,13 @@ export function PageHeaderSkeleton({ withAction = false }: { withAction?: boolea
 
 export function StatCardSkeleton() {
   return (
-    <div className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5">
+    <Card className="flex items-center gap-4 p-5">
       <Skeleton className="h-12 w-12 flex-shrink-0 rounded-xl" />
       <div className="flex-1 space-y-2">
         <Skeleton className="h-6 w-10" />
         <Skeleton className="h-3 w-20" />
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -44,7 +54,7 @@ export function StatCardGridSkeleton({
 
 export function TableSkeleton({ columns = 5, rows = 6 }: { columns?: number; rows?: number }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+    <Card className="overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full font-sans text-sm">
           <thead>
@@ -69,13 +79,13 @@ export function TableSkeleton({ columns = 5, rows = 6 }: { columns?: number; row
           </tbody>
         </table>
       </div>
-    </div>
+    </Card>
   );
 }
 
 export function ListCardSkeleton({ rows = 5 }: { rows?: number }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+    <Card className="overflow-hidden">
       <div className="border-b border-border px-6 py-4">
         <Skeleton className="h-4 w-32" />
       </div>
@@ -93,7 +103,7 @@ export function ListCardSkeleton({ rows = 5 }: { rows?: number }) {
           </li>
         ))}
       </ul>
-    </div>
+    </Card>
   );
 }
 
@@ -101,11 +111,11 @@ export function CardGridSkeleton({ count = 3 }: { count?: number }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="space-y-3 rounded-2xl border border-border bg-card p-5">
+        <Card key={i} className="space-y-3 p-5">
           <Skeleton className="h-12 w-12 rounded-xl" />
           <Skeleton className="h-4 w-2/3" />
           <Skeleton className="h-3 w-1/2" />
-        </div>
+        </Card>
       ))}
     </div>
   );
@@ -113,7 +123,7 @@ export function CardGridSkeleton({ count = 3 }: { count?: number }) {
 
 export function FormCardSkeleton({ fields = 4 }: { fields?: number }) {
   return (
-    <div className="space-y-5 rounded-2xl border border-border bg-card p-6">
+    <Card className="space-y-5 p-6">
       {Array.from({ length: fields }).map((_, i) => (
         <div key={i} className="space-y-1.5">
           <Skeleton className="h-3.5 w-24" />
@@ -121,6 +131,6 @@ export function FormCardSkeleton({ fields = 4 }: { fields?: number }) {
         </div>
       ))}
       <Skeleton className="h-11 w-32 rounded-xl" />
-    </div>
+    </Card>
   );
 }

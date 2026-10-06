@@ -4,6 +4,10 @@ import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { Role } from "@prisma/client";
 import { updateUserRoleAction, deleteUserAction } from "@/server/actions/admin";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Hint } from "@/components/ui/tooltip";
 
 const roles: { value: Role; label: string }[] = [
   { value: Role.PATIENT, label: "مريض" },
@@ -20,6 +24,7 @@ interface UserRowActionsProps {
 export default function UserRowActions({ userId, currentRole, isSelf }: UserRowActionsProps) {
   const [role, setRole] = useState(currentRole);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
 
   function handleRoleChange(newRole: Role) {
@@ -34,8 +39,12 @@ export default function UserRowActions({ userId, currentRole, isSelf }: UserRowA
     });
   }
 
-  function handleDelete() {
-    if (!confirm("هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع.")) return;
+  async function handleDelete() {
+    const ok = await confirm({
+      title: "حذف المستخدم",
+      description: "هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع.",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await deleteUserAction(userId);
       if (res?.error) setError(res.error);
@@ -44,26 +53,26 @@ export default function UserRowActions({ userId, currentRole, isSelf }: UserRowA
 
   return (
     <div className="flex items-center gap-2">
-      <select
+      <FormField
+        type="select"
         value={role}
         disabled={isSelf || isPending}
-        onChange={(e) => handleRoleChange(e.target.value as Role)}
-        className="rounded-lg border border-border bg-background px-2 py-1 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-      >
-        {roles.map((r) => (
-          <option key={r.value} value={r.value}>
-            {r.label}
-          </option>
-        ))}
-      </select>
-      <button
-        onClick={handleDelete}
-        disabled={isSelf || isPending}
-        title="حذف المستخدم"
-        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+        onValueChange={(v) => handleRoleChange(v as Role)}
+        options={roles}
+        className="w-28"
+        controlClassName="h-8 rounded-lg"
+      />
+      <Hint label="حذف المستخدم">
+        <Button
+          aria-label="حذف المستخدم"
+          variant="ghost-destructive"
+          size="icon"
+          onClick={handleDelete}
+          disabled={isSelf || isPending}
+        >
+          <Trash2 />
+        </Button>
+      </Hint>
       {error && <p className="font-sans text-xs text-red-500">{error}</p>}
     </div>
   );

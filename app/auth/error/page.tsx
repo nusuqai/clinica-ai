@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 // Shown when an emailed auth link is invalid or expired (verifyOtp failed in
 // /auth/confirm). Kept outside the (auth) layout so it renders standalone.
@@ -19,18 +20,19 @@ export default function AuthErrorPage() {
         المرور.
       </p>
       <div className="flex items-center gap-3">
-        <Link
-          href="/forgot-password"
-          className="rounded-2xl bg-primary px-6 py-3 font-sans text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
+        <Button
+          asChild
+          className="h-auto rounded-2xl px-6 py-3 text-sm font-semibold shadow-lg shadow-primary/20 transition-all"
         >
-          طلب رابط جديد
-        </Link>
-        <Link
-          href="/login"
-          className="rounded-2xl border border-text/10 bg-white px-6 py-3 font-sans text-sm font-semibold text-primary transition-all hover:bg-text/5"
+          <Link href="/forgot-password">طلب رابط جديد</Link>
+        </Button>
+        <Button
+          asChild
+          variant="outline"
+          className="h-auto rounded-2xl border-text/10 bg-white px-6 py-3 text-sm font-semibold text-primary transition-all hover:bg-text/5"
         >
-          تسجيل الدخول
-        </Link>
+          <Link href="/login">تسجيل الدخول</Link>
+        </Button>
       </div>
     </div>
   );

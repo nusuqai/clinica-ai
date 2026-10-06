@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { X, Clock, CheckCircle, AlertCircle, LogIn, ChevronDown, Users } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { X, Clock, CheckCircle, AlertCircle, LogIn, Users } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { FormField } from "@/components/ui/form-field";
 import {
   bookAppointmentAction,
   bookOrderAppointmentAction,
@@ -11,6 +15,17 @@ import {
   getOrderBookingInfoAction,
 } from "@/server/actions/patient";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Spinner } from "@/components/ui/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface Doctor {
   id: string;
@@ -82,7 +97,6 @@ export function BookAppointmentModal({
   loginHref = "/login",
   registerHref = "/register",
 }: Props) {
-  const overlayRef = useRef<HTMLDivElement>(null);
   const needsAuth = !isAuthenticated || !isPatient;
   const [step, setStep] = useState<1 | 2>(1);
   const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
@@ -96,7 +110,8 @@ export function BookAppointmentModal({
   const [dayError, setDayError] = useState<Record<string, string>>({});
 
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [notes, setNotes] = useState("");
+  // Its own form: typing a note re-renders only the textarea, not this whole modal.
+  const notesForm = useForm<{ notes: string }>({ defaultValues: { notes: "" } });
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState(false);
   const [bookedOrder, setBookedOrder] = useState<number | null>(null);
@@ -127,27 +142,6 @@ export function BookAppointmentModal({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doctor.id, needsAuth]);
-
-  // Lock background scroll while modal is open
-  useEffect(() => {
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = original;
-    };
-  }, []);
-
-  function handleOverlayClick(e: React.MouseEvent) {
-    if (e.target === overlayRef.current) onClose();
-  }
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
 
   async function toggleDay(date: string, mode: Mode) {
     // Collapse if already open.
@@ -187,11 +181,18 @@ export function BookAppointmentModal({
     setBookingError("");
     startTransition(async () => {
       if (selection.mode === "SLOT_BASED") {
-        const res = await bookAppointmentAction(selection.slot.id, notes || undefined);
+        const res = await bookAppointmentAction(
+          selection.slot.id,
+          notesForm.getValues("notes").trim() || undefined
+        );
         if (res.ok) setSuccess(true);
         else setBookingError(res.error ?? "حدث خطأ غير متوقع");
       } else {
-        const res = await bookOrderAppointmentAction(doctor.id, selection.date, notes || undefined);
+        const res = await bookOrderAppointmentAction(
+          doctor.id,
+          selection.date,
+          notesForm.getValues("notes").trim() || undefined
+        );
         if (res.ok) {
           setBookedArrival(res.mode === "arrival");
           setBookedOrder(res.orderNumber ?? null);
@@ -210,30 +211,37 @@ export function BookAppointmentModal({
     .join("");
 
   return (
-    <div
-      ref={overlayRef}
-      onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-    >
-      <div className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[90vh] w-[calc(100%-2rem)] max-w-lg flex-col gap-0 overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-2xl"
+      >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary font-heading text-sm font-bold text-white">
-              {initials}
-            </div>
+            <Avatar className="h-10 w-10 rounded-xl">
+              <AvatarFallback className="rounded-xl bg-primary font-heading text-sm font-bold text-white">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
             <div>
-              <p className="font-sans text-sm font-semibold text-text">{doctor.name}</p>
-              <p className="font-sans text-xs text-text/50">{doctor.specialty}</p>
+              <DialogTitle className="font-sans text-sm font-semibold leading-normal tracking-normal text-text">
+                {doctor.name}
+              </DialogTitle>
+              <DialogDescription className="font-sans text-xs text-text/50">
+                {doctor.specialty}
+              </DialogDescription>
             </div>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
             aria-label="إغلاق"
-            className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg p-2 text-text/40 transition-colors hover:bg-muted hover:text-text"
+            className="h-10 w-10 text-text/40 hover:text-text [&_svg]:size-5"
           >
-            <X className="h-5 w-5" />
-          </button>
+            <X />
+          </Button>
         </div>
 
         {/* Body */}
@@ -277,31 +285,44 @@ export function BookAppointmentModal({
 
               {daysLoading && (
                 <div className="flex items-center justify-center py-6">
-                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                  <Spinner className="size-6 text-accent" />
                 </div>
               )}
 
               {daysError && !daysLoading && (
-                <div className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+                <Alert
+                  variant="destructive"
+                  className="items-center border-transparent text-red-600"
+                >
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   {daysError}
-                </div>
+                </Alert>
               )}
 
               {!daysLoading && availableDays.length > 0 && (
-                <div className="flex flex-col gap-2">
+                <Accordion
+                  type="single"
+                  collapsible
+                  value={openDate ?? ""}
+                  onValueChange={(value) => {
+                    const day = availableDays.find((d) => d.date === value);
+                    if (day) toggleDay(day.date, day.mode);
+                    else setOpenDate(null);
+                  }}
+                  className="flex flex-col gap-2"
+                >
                   {availableDays.map(({ date, mode }) => {
-                    const isOpen = openDate === date;
                     const data = dayData[date];
                     const loading = dayLoading[date];
                     const errorMsg = dayError[date];
                     return (
-                      <div key={date} className="overflow-hidden rounded-xl border border-border">
+                      <AccordionItem
+                        key={date}
+                        value={date}
+                        className="overflow-hidden rounded-xl border border-border"
+                      >
                         {/* Day header */}
-                        <button
-                          onClick={() => toggleDay(date, mode)}
-                          className="flex w-full items-center justify-between gap-2 px-4 py-3 text-start transition-colors hover:bg-muted/60"
-                        >
+                        <AccordionTrigger className="gap-2 px-4 py-3 font-normal text-text hover:bg-muted/60 [&>svg]:text-text/40">
                           <span className="flex items-center gap-2">
                             <span className="font-sans text-sm font-medium text-text">
                               {formatSlotDate(date, {
@@ -311,102 +332,89 @@ export function BookAppointmentModal({
                               })}
                             </span>
                             {mode !== "SLOT_BASED" && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 font-sans text-[11px] font-medium text-accent">
+                              <Badge variant="accent" className="px-2 text-[11px]">
                                 <Users className="h-3 w-3" />
                                 {mode === "ARRIVAL_BASED" ? "أسبقية الحضور" : "طابور"}
-                              </span>
+                              </Badge>
                             )}
                           </span>
-                          <ChevronDown
-                            className={`h-4 w-4 shrink-0 text-text/40 transition-transform ${
-                              isOpen ? "rotate-180" : ""
-                            }`}
-                          />
-                        </button>
+                        </AccordionTrigger>
 
-                        {/* Day body — lazy content */}
-                        {isOpen && (
-                          <div className="border-t border-border px-4 py-3">
-                            {loading && (
-                              <div className="flex items-center justify-center py-4">
-                                <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                              </div>
-                            )}
+                        {/* Day body — only mounted while open, so content stays lazy */}
+                        <AccordionContent className="border-t border-border px-4 py-3">
+                          {loading && (
+                            <div className="flex items-center justify-center py-4">
+                              <Spinner className="text-accent" />
+                            </div>
+                          )}
 
-                            {errorMsg && !loading && (
-                              <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-                                <AlertCircle className="h-4 w-4 shrink-0" />
-                                {errorMsg}
-                              </div>
-                            )}
+                          {errorMsg && !loading && (
+                            <Alert
+                              variant="destructive"
+                              className="items-center rounded-lg border-transparent px-3 py-2 text-red-600"
+                            >
+                              <AlertCircle className="h-4 w-4 shrink-0" />
+                              {errorMsg}
+                            </Alert>
+                          )}
 
-                            {/* Slot-based day */}
-                            {!loading && data?.kind === "slots" && data.slots.length > 0 && (
-                              <>
-                                <p className="mb-2 flex items-center gap-1.5 font-sans text-xs font-medium text-text/60">
-                                  <Clock className="h-3.5 w-3.5" />
-                                  اختر وقت الموعد
-                                </p>
-                                <div className="grid grid-cols-3 gap-2">
-                                  {data.slots.map((slot) => {
-                                    const isSel =
-                                      selection?.mode === "SLOT_BASED" &&
-                                      selection.slot.id === slot.id;
-                                    return (
-                                      <button
-                                        key={slot.id}
-                                        onClick={() =>
-                                          setSelection({
-                                            mode: "SLOT_BASED",
-                                            date,
-                                            slot,
-                                          })
-                                        }
-                                        className={`rounded-lg border px-3 py-2 text-center font-sans text-sm font-medium transition-all ${
-                                          isSel
-                                            ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-                                            : "border-border bg-background text-text hover:border-accent/50"
-                                        }`}
-                                      >
-                                        {formatTime(slot.startTime)}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            )}
+                          {/* Slot-based day */}
+                          {!loading && data?.kind === "slots" && data.slots.length > 0 && (
+                            <>
+                              <p className="mb-2 flex items-center gap-1.5 font-sans text-xs font-medium text-text/60">
+                                <Clock className="h-3.5 w-3.5" />
+                                اختر وقت الموعد
+                              </p>
+                              <ToggleGroup
+                                type="single"
+                                variant="accent"
+                                value={selection?.mode === "SLOT_BASED" ? selection.slot.id : ""}
+                                onValueChange={(id) => {
+                                  const slot = data.slots.find((s) => s.id === id);
+                                  if (slot) setSelection({ mode: "SLOT_BASED", date, slot });
+                                }}
+                                className="grid grid-cols-3 gap-2"
+                              >
+                                {data.slots.map((slot) => (
+                                  <ToggleGroupItem
+                                    key={slot.id}
+                                    value={slot.id}
+                                    className="h-auto rounded-lg bg-background px-3 py-2 text-text hover:border-accent/50 hover:bg-background hover:text-text"
+                                  >
+                                    {formatTime(slot.startTime)}
+                                  </ToggleGroupItem>
+                                ))}
+                              </ToggleGroup>
+                            </>
+                          )}
 
-                            {/* Order-based (queue) day */}
-                            {!loading && data?.kind === "queue" && (
-                              <QueueBox
-                                info={data.info}
-                                selected={
-                                  selection?.mode === "ORDER_BASED" && selection.date === date
-                                }
-                                onSelect={() =>
-                                  setSelection({
-                                    mode: "ORDER_BASED",
-                                    date,
-                                    info: data.info,
-                                  })
-                                }
-                              />
-                            )}
-                          </div>
-                        )}
-                      </div>
+                          {/* Order-based (queue) day */}
+                          {!loading && data?.kind === "queue" && (
+                            <QueueBox
+                              info={data.info}
+                              selected={
+                                selection?.mode === "ORDER_BASED" && selection.date === date
+                              }
+                              onSelect={() =>
+                                setSelection({
+                                  mode: "ORDER_BASED",
+                                  date,
+                                  info: data.info,
+                                })
+                              }
+                            />
+                          )}
+                        </AccordionContent>
+                      </AccordionItem>
                     );
                   })}
-                </div>
+                </Accordion>
               )}
 
               {selection && (
-                <button
-                  onClick={() => setStep(2)}
-                  className="mt-1 w-full rounded-xl bg-primary py-3 font-medium text-white transition-opacity hover:opacity-90"
-                >
+                <Button onClick={() => setStep(2)} className="mt-1 h-12 w-full text-base">
                   التالي — إضافة ملاحظات
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -468,40 +476,47 @@ export function BookAppointmentModal({
                 </div>
               </div>
 
-              <div>
-                <label className="mb-1.5 block font-sans text-sm font-medium text-text">
-                  ملاحظات للطبيب <span className="font-normal text-text/40">(اختياري)</span>
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                  placeholder="اكتب أي أعراض أو معلومات تريد إبلاغ الطبيب بها..."
-                  className="w-full resize-none rounded-xl border border-border bg-background px-4 py-3 font-sans text-sm text-text placeholder:text-text/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-                />
-              </div>
+              <FormField
+                type="textarea"
+                label={
+                  <>
+                    ملاحظات للطبيب <span className="font-normal text-text/40">(اختياري)</span>
+                  </>
+                }
+                labelClassName="text-text"
+                control={notesForm.control}
+                name="notes"
+                rows={3}
+                placeholder="اكتب أي أعراض أو معلومات تريد إبلاغ الطبيب بها..."
+                controlClassName="px-4 py-3 text-text placeholder:text-text/30 focus-visible:border-accent focus-visible:ring-accent/20"
+              />
 
               {bookingError && (
-                <div className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+                <Alert
+                  variant="destructive"
+                  className="items-center border-transparent text-red-600"
+                >
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   {bookingError}
-                </div>
+                </Alert>
               )}
 
               <div className="flex gap-3">
-                <button
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setStep(1);
                     setBookingError("");
                   }}
-                  className="flex-1 rounded-xl border border-border py-3 font-medium text-text transition-colors hover:bg-muted"
+                  className="h-12 flex-1 text-base text-text"
                 >
                   رجوع
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="accent"
                   onClick={handleBook}
-                  disabled={isPending}
-                  className="flex-1 rounded-xl bg-accent py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  loading={isPending}
+                  className="h-12 flex-1 text-base"
                 >
                   {isPending
                     ? "جارٍ الحجز..."
@@ -510,7 +525,7 @@ export function BookAppointmentModal({
                         ? "تأكيد الحجز"
                         : "تأكيد حجز الدور"
                       : "تأكيد الحجز"}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -552,18 +567,19 @@ export function BookAppointmentModal({
                 >
                   عرض مواعيدي
                 </Link>
-                <button
+                <Button
+                  variant="outline"
                   onClick={onClose}
-                  className="w-full rounded-xl border border-border py-3 font-medium text-text hover:bg-muted"
+                  className="h-12 w-full text-base text-text"
                 >
                   إغلاق
-                </button>
+                </Button>
               </div>
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -579,10 +595,10 @@ function QueueBox({
 }) {
   if (!info.available) {
     return (
-      <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+      <Alert variant="warning" className="items-center rounded-lg border-transparent px-3 py-2">
         <AlertCircle className="h-4 w-4 shrink-0" />
         اكتمل عدد الحجوزات المتاحة لهذا اليوم
-      </div>
+      </Alert>
     );
   }
   // Arrival-priority: no fixed number at booking — reception assigns it on arrival.
@@ -599,16 +615,17 @@ function QueueBox({
             {info.remaining != null && <span>المتبقّي اليوم: {info.remaining} مكان</span>}
           </div>
         </div>
-        <button
+        <Button
+          variant="outline"
           onClick={onSelect}
-          className={`w-full rounded-lg border px-3 py-2.5 text-center font-sans text-sm font-medium transition-all ${
+          className={`h-auto w-full rounded-lg px-3 py-2.5 transition-all ${
             selected
-              ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-              : "border-accent/40 bg-background text-accent hover:bg-accent/5"
+              ? "border-accent bg-accent text-white shadow-md shadow-accent/20 hover:bg-accent hover:text-white"
+              : "border-accent/40 bg-background text-accent hover:bg-accent/5 hover:text-accent"
           }`}
         >
           {selected ? "✓ تم اختيار الحجز" : "احجز مكاني"}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -633,16 +650,17 @@ function QueueBox({
           {info.remaining != null && <span>المتبقّي اليوم: {info.remaining} حجز</span>}
         </div>
       </div>
-      <button
+      <Button
+        variant="outline"
         onClick={onSelect}
-        className={`w-full rounded-lg border px-3 py-2.5 text-center font-sans text-sm font-medium transition-all ${
+        className={`h-auto w-full rounded-lg px-3 py-2.5 transition-all ${
           selected
-            ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-            : "border-accent/40 bg-background text-accent hover:bg-accent/5"
+            ? "border-accent bg-accent text-white shadow-md shadow-accent/20 hover:bg-accent hover:text-white"
+            : "border-accent/40 bg-background text-accent hover:bg-accent/5 hover:text-accent"
         }`}
       >
         {selected ? "✓ تم اختيار الدور" : "احجز دوري"}
-      </button>
+      </Button>
     </div>
   );
 }

@@ -9,11 +9,21 @@ const config: Config = {
     extend: {
       colors: {
         // ClinicaAI brand palette (preserved from the original Vite app)
-        primary: "#0B1F3A",
-        accent: "#00C2CB",
+        primary: {
+          DEFAULT: "#0B1F3A",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        accent: {
+          DEFAULT: "#00C2CB",
+          foreground: "hsl(var(--accent-foreground))",
+        },
         background: "#F0F4F8",
         text: "#1C1C1E",
         // shadcn/ui semantic tokens (driven by CSS variables in globals.css)
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -34,11 +44,40 @@ const config: Config = {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
         },
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar-background))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          primary: "hsl(var(--sidebar-primary))",
+          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
+          accent: "hsl(var(--sidebar-accent))",
+          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
+          border: "hsl(var(--sidebar-border))",
+          ring: "hsl(var(--sidebar-ring))",
+        },
       },
       fontFamily: {
         sans: ["var(--font-tajawal)", "sans-serif"],
         heading: ["var(--font-cairo)", "sans-serif"],
         serif: ["var(--font-amiri)", "serif"],
+      },
+      keyframes: {
+        "caret-blink": {
+          "0%,70%,100%": { opacity: "1" },
+          "20%,50%": { opacity: "0" },
+        },
+        "accordion-down": {
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
+        },
+        "accordion-up": {
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+      },
+      animation: {
+        "caret-blink": "caret-blink 1.25s ease-out infinite",
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
       },
       borderRadius: {
         lg: "var(--radius)",

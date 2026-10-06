@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import RecordTimeline from "@/components/medical/record-timeline";
 import type { TreatmentRecordView } from "@/server/services/treatments";
+import { Button } from "@/components/ui/button";
 
 // The patient's treatment record on the landing page: the first `initial` visits,
 // with the rest revealed in place — so the full clinical history lives here
@@ -28,14 +29,15 @@ export function RecordsPanel({
         appointmentBasePath="/appointments"
       />
       {remaining > 0 && !expanded && (
-        <button
+        <Button
           type="button"
+          variant="link"
           onClick={() => setExpanded(true)}
-          className="mt-4 inline-flex items-center gap-1 font-sans text-sm font-medium text-primary hover:underline"
+          className="mt-4 h-auto gap-1 px-0"
         >
           عرض المزيد ({remaining})
-          <ChevronDown className="h-4 w-4" />
-        </button>
+          <ChevronDown />
+        </Button>
       )}
     </div>
   );

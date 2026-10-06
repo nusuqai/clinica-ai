@@ -3,6 +3,16 @@ import { prisma } from "@/lib/prisma";
 import { CLINIC_REQUEST_STATUS_LABELS } from "@/lib/labels";
 import RequestActions from "./_components/request-actions";
 import { clinicHost, clinicOrigin } from "@/lib/clinic-url";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 export default async function PlatformRequestsPage() {
   const requests = await prisma.clinicRequest.findMany({
@@ -14,33 +24,33 @@ export default async function PlatformRequestsPage() {
     <div>
       <h1 className="mb-6 font-heading text-2xl font-bold text-foreground">طلبات إنشاء العيادات</h1>
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full font-sans text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/40 text-muted-foreground">
-                <th className="px-4 py-3 text-start font-medium">مقدّم الطلب</th>
-                <th className="px-4 py-3 text-start font-medium">العيادة المطلوبة</th>
-                <th className="px-4 py-3 text-start font-medium">التواصل</th>
-                <th className="px-4 py-3 text-start font-medium">الحالة</th>
-                <th className="px-4 py-3 text-start font-medium">إجراءات</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
+          <Table className="w-full font-sans text-sm">
+            <TableHeader>
+              <TableRow className="border-b border-border bg-muted/40 text-muted-foreground">
+                <TableHead className="px-4 py-3 text-start font-medium">مقدّم الطلب</TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium">العيادة المطلوبة</TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium">التواصل</TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium">الحالة</TableHead>
+                <TableHead className="px-4 py-3 text-start font-medium">إجراءات</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-border">
               {requests.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="py-10 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
                     لا توجد طلبات
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
               {requests.map((r) => (
-                <tr key={r.id} className="align-top hover:bg-muted/30">
-                  <td className="px-4 py-3 font-medium text-foreground">
+                <TableRow key={r.id} className="align-top hover:bg-muted/30">
+                  <TableCell className="px-4 py-3 font-medium text-foreground">
                     {r.requesterName}
                     {r.note && <p className="mt-1 text-xs text-muted-foreground">{r.note}</p>}
-                  </td>
-                  <td className="px-4 py-3 text-foreground">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-foreground">
                     {r.requestedClinicName}
                     {r.createdClinic && (
                       <a
@@ -53,29 +63,29 @@ export default async function PlatformRequestsPage() {
                         {clinicHost(r.createdClinic.slug)}
                       </a>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground" dir="ltr">
                     <div>{r.requesterEmail}</div>
                     {r.requesterPhone && <div>{r.requesterPhone}</div>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-foreground">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
+                    <Badge className="bg-muted text-foreground">
                       {CLINIC_REQUEST_STATUS_LABELS[r.status]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     {r.status === ClinicRequestStatus.PENDING ? (
                       <RequestActions requestId={r.id} />
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

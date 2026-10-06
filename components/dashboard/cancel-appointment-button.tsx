@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { X, AlertCircle } from "lucide-react";
 import { cancelAppointmentAction } from "@/server/actions/patient";
 import { AppointmentStatus } from "@prisma/client";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   appointmentId: string;
@@ -21,20 +22,24 @@ export function CancelAppointmentButton({ appointmentId, status }: Props) {
 
   if (!confirmed) {
     return (
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => setConfirmed(true)}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 font-sans text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
+        className="border-red-200 text-red-600 hover:bg-red-50 [&_svg]:size-3.5"
       >
-        <X className="h-3.5 w-3.5" />
+        <X />
         إلغاء الموعد
-      </button>
+      </Button>
     );
   }
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
-        <button
+        <Button
+          variant="destructive"
+          size="sm"
           onClick={() => {
             setError("");
             startTransition(async () => {
@@ -43,18 +48,20 @@ export function CancelAppointmentButton({ appointmentId, status }: Props) {
               else setConfirmed(false);
             });
           }}
-          disabled={isPending}
-          className="rounded-lg bg-red-600 px-3 py-1.5 font-sans text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+          loading={isPending}
+          className="bg-red-600 hover:bg-red-700"
         >
           {isPending ? "جارٍ الإلغاء..." : "تأكيد الإلغاء"}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setConfirmed(false)}
           disabled={isPending}
-          className="rounded-lg border border-border px-3 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+          className="text-muted-foreground"
         >
           تراجع
-        </button>
+        </Button>
       </div>
       {error && (
         <div className="flex items-center gap-1 font-sans text-xs text-red-600">

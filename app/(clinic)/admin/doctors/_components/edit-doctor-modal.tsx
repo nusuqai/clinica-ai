@@ -1,13 +1,25 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Pencil } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import { updateDoctorAction } from "@/server/actions/admin";
 import type { DoctorWithProfile } from "@/server/services/doctors";
-import type { BranchOption } from "./add-doctor-modal";
-import SpecialtySelect, { type SpecialtyOption } from "./specialty-select";
+import { type BranchOption } from "./add-doctor-modal";
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
+import { Hint } from "@/components/ui/tooltip";
+import {
+  doctorToFormData,
+  editDoctorSchema,
+  EMPTY_DOCTOR_FORM,
+  type DoctorFormValues,
+} from "@/lib/validations/doctor";
+import { type SpecialtyOption } from "./specialty-select";
 import AvailabilityRulesEditor from "./availability-rules-editor";
+import { DoctorFormFields } from "./doctor-form-fields";
 
 interface EditDoctorModalProps {
   doctor: DoctorWithProfile;
@@ -15,32 +27,66 @@ interface EditDoctorModalProps {
   specialties: SpecialtyOption[];
 }
 
+function formFromDoctor(doctor: DoctorWithProfile): DoctorFormValues {
+  return {
+    ...EMPTY_DOCTOR_FORM,
+    fullName: doctor.profile.fullName,
+    title: doctor.title ?? "",
+    specialtyId: doctor.specialtyId ?? "",
+    yearsOfExperience: doctor.yearsOfExperience?.toString() ?? "",
+    examinationFee: doctor.examinationFee?.toString() ?? "",
+    consultationFee: doctor.consultationFee?.toString() ?? "",
+    requiresAdvanceBooking: doctor.requiresAdvanceBooking,
+    acceptsChildren: doctor.acceptsChildren,
+    branchIds: doctor.branchIds,
+    qualifications: doctor.qualifications ?? "",
+    expertiseAreas: doctor.expertiseAreas ?? "",
+    bio: doctor.bio ?? "",
+  };
+}
+
 export default function EditDoctorModal({ doctor, branches, specialties }: EditDoctorModalProps) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const form = useForm<DoctorFormValues>({
+    resolver: zodResolver(editDoctorSchema),
+    defaultValues: formFromDoctor(doctor),
+    mode: "onTouched",
+  });
+
+  function openModal() {
+    // Start from the doctor's current data (it may have changed since mount).
+    form.reset(formFromDoctor(doctor));
     setError(null);
-    const formData = new FormData(e.currentTarget);
+    setOpen(true);
+  }
+
+  const handleSubmit = form.handleSubmit((values) => {
+    setError(null);
+    const formData = doctorToFormData(values);
     formData.set("doctorId", doctor.id);
     startTransition(async () => {
       const res = await updateDoctorAction(formData);
       if (res?.error) setError(res.error);
       else setOpen(false);
     });
-  }
+  });
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-        title="تعديل"
-      >
-        <Pencil className="h-4 w-4" />
-      </button>
+      <Hint label="تعديل">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={openModal}
+          aria-label="تعديل"
+          className="hover:bg-primary/10 hover:text-primary"
+        >
+          <Pencil />
+        </Button>
+      </Hint>
 
       <Modal
         open={open}
@@ -48,156 +94,10 @@ export default function EditDoctorModal({ doctor, branches, specialties }: EditD
         title="تعديل بيانات الطبيب"
         width="max-w-2xl"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
-              {error}
-            </div>
-          )}
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          {error && <Alert variant="destructive">{error}</Alert>}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">الاسم الكامل</label>
-              <input
-                name="fullName"
-                defaultValue={doctor.profile.fullName}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">الدرجة</label>
-              <select
-                name="title"
-                defaultValue={doctor.title ?? ""}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                <option value="">غير محدد</option>
-                <option value="SPECIALIST">أخصائي</option>
-                <option value="CONSULTANT">استشاري</option>
-              </select>
-            </div>
-            <div>
-              <SpecialtySelect specialties={specialties} defaultSpecialtyId={doctor.specialtyId} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">سنوات الخبرة</label>
-              <input
-                name="yearsOfExperience"
-                type="number"
-                min={0}
-                dir="ltr"
-                defaultValue={doctor.yearsOfExperience?.toString() ?? ""}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">سعر الكشف</label>
-              <input
-                name="examinationFee"
-                type="number"
-                min={0}
-                step="0.01"
-                dir="ltr"
-                defaultValue={doctor.examinationFee?.toString() ?? ""}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">سعر الاستشارة</label>
-              <input
-                name="consultationFee"
-                type="number"
-                min={0}
-                step="0.01"
-                dir="ltr"
-                defaultValue={doctor.consultationFee?.toString() ?? ""}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-          </div>
-
-          {/* Flags */}
-          <div className="flex flex-wrap gap-4">
-            <label className="flex items-center gap-2 font-sans text-sm font-medium text-foreground">
-              <input
-                type="checkbox"
-                name="requiresAdvanceBooking"
-                defaultChecked={doctor.requiresAdvanceBooking}
-              />
-              يحتاج حجزاً مسبقاً
-            </label>
-            <label className="flex items-center gap-2 font-sans text-sm font-medium text-foreground">
-              <input
-                type="checkbox"
-                name="acceptsChildren"
-                defaultChecked={doctor.acceptsChildren}
-              />
-              يكشف على الأطفال
-            </label>
-          </div>
-
-          {/* Branches */}
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">فروع العمل</label>
-            {branches.length === 0 ? (
-              <p className="font-sans text-xs text-muted-foreground">
-                لا توجد فروع. أضف فرعاً من صفحة الفروع أولاً.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-3">
-                {branches.map((b) => (
-                  <label
-                    key={b.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-border px-3 py-2 font-sans text-sm hover:bg-muted"
-                  >
-                    <input
-                      type="checkbox"
-                      name="branchIds"
-                      value={b.id}
-                      defaultChecked={doctor.branchIds.includes(b.id)}
-                    />
-                    {b.name}
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">
-              المؤهلات العلمية
-            </label>
-            <textarea
-              name="qualifications"
-              rows={2}
-              defaultValue={doctor.qualifications ?? ""}
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">
-              مجالات الخبرة الدقيقة
-            </label>
-            <textarea
-              name="expertiseAreas"
-              rows={2}
-              defaultValue={doctor.expertiseAreas ?? ""}
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">
-              النبذة التعريفية
-            </label>
-            <textarea
-              name="bio"
-              rows={3}
-              defaultValue={doctor.bio ?? ""}
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
+          <DoctorFormFields control={form.control} branches={branches} specialties={specialties} />
 
           {/* Availability rules — live add/remove for the doctor's branches */}
           {open && (
@@ -210,20 +110,12 @@ export default function EditDoctorModal({ doctor, branches, specialties }: EditD
           )}
 
           <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-            >
+            <Button type="submit" loading={isPending} className="flex-1">
               {isPending ? "جارٍ الحفظ..." : "حفظ التعديلات"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               إلغاء
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>

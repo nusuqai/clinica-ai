@@ -10,10 +10,18 @@ import {
   toggleRuleActiveAction,
 } from "@/server/actions/admin";
 import Modal from "@/components/admin/modal";
-import { DayOfWeek, AvailabilityMode, type AvailabilityRule } from "@prisma/client";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { DayOfWeek, type AvailabilityRule } from "@prisma/client";
 import { formatSlotDate } from "@/lib/slot-time";
-import { queueCapacityHint } from "@/lib/availability/queue-capacity";
 import { isQueueMode, MODE_BADGE_AR } from "@/lib/availability/modes";
+import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Hint } from "@/components/ui/tooltip";
+import { RuleFields, useRuleForm } from "@/components/availability/rule-fields";
+import { ruleDraftToFormData, ruleFormDefaults, toRuleDraft } from "@/lib/validations/availability";
 
 export interface DoctorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -39,16 +47,6 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
   [DayOfWeek.SAT]: "السبت",
 };
 
-const DAYS_ORDER: DayOfWeek[] = [
-  DayOfWeek.SUN,
-  DayOfWeek.MON,
-  DayOfWeek.TUE,
-  DayOfWeek.WED,
-  DayOfWeek.THU,
-  DayOfWeek.FRI,
-  DayOfWeek.SAT,
-];
-
 interface RulesTabProps {
   doctorId: string;
   rules: RuleRow[];
@@ -62,40 +60,18 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
   const [generatingId, setGeneratingId] = useState<string | null>(null);
-  const [selBranch, setSelBranch] = useState<string>(branches[0]?.id ?? "");
-  const [selDay, setSelDay] = useState<DayOfWeek>(DayOfWeek.SAT);
-  const [selMode, setSelMode] = useState<AvailabilityMode>(AvailabilityMode.SLOT_BASED);
-  const isQueue = isQueueMode(selMode); // نظام الدور or أسبقية الحضور
-  // Tracked only to render the live queue-capacity hint; inputs stay uncontrolled.
-  const [selStart, setSelStart] = useState("09:00");
-  const [selEnd, setSelEnd] = useState("17:00");
-  const [selEstDur, setSelEstDur] = useState(10);
-  const [selCap, setSelCap] = useState(50);
-  const capHint = isQueue ? queueCapacityHint(selStart, selEnd, selEstDur, selCap) : null;
-
-  // Live helper: the selected branch's opening window for the selected day.
-  const branchWindow = (() => {
-    const branch = branches.find((b) => b.id === selBranch);
-    if (!branch) return null;
-    const row = branch.hours.find((h) => h.dayOfWeek === selDay);
-    if (!row)
-      return { text: "لم تُحدَّد ساعات لهذا الفرع في هذا اليوم (سيُسمح بأي وقت).", ok: true };
-    if (row.isClosed) return { text: "الفرع مغلق في هذا اليوم.", ok: false };
-    if (row.openTime && row.closeTime)
-      return { text: `ساعات عمل الفرع: ${row.openTime} – ${row.closeTime}`, ok: true };
-    return { text: "ساعات هذا اليوم غير مكتملة.", ok: true };
-  })();
+  const form = useRuleForm(branches);
 
   function showSuccess(msg: string) {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), 4000);
   }
 
-  function handleAdd(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const handleAdd = form.handleSubmit((values) => {
     setError(null);
-    const formData = new FormData(e.currentTarget);
+    const formData = ruleDraftToFormData(toRuleDraft(values));
     formData.set("doctorId", doctorId);
     startTransition(async () => {
       const res = await createRuleAction(formData, clinicId);
@@ -105,12 +81,18 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
       }
       setAddOpen(false);
       showSuccess("تم إنشاء القاعدة وتوليد المواعيد");
+      form.reset(ruleFormDefaults(branches[0]?.id));
       router.refresh();
     });
-  }
+  });
 
-  function handleDelete(ruleId: string) {
-    if (!confirm("سيتم حذف هذه القاعدة والمواعيد المستقبلية غير المحجوزة. هل تريد المتابعة؟"))
+  async function handleDelete(ruleId: string) {
+    if (
+      !(await confirm({
+        title: "حذف القاعدة",
+        description: "سيتم حذف هذه القاعدة والمواعيد المستقبلية غير المحجوزة. هل تريد المتابعة؟",
+      }))
+    )
       return;
     setError(null);
     startTransition(async () => {
@@ -154,47 +136,42 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
     <div>
       <div className="mb-4 flex items-center justify-between">
         <p className="font-sans text-sm text-muted-foreground">{rules.length} قاعدة</p>
-        <button
-          onClick={() => setAddOpen(true)}
-          disabled={branches.length === 0}
-          title={branches.length === 0 ? "أضف فرعاً لهذا الطبيب أولاً" : undefined}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" />
+        <Button onClick={() => setAddOpen(true)} disabled={branches.length === 0}>
+          <Plus />
           إضافة قاعدة
-        </button>
+        </Button>
       </div>
 
       {branches.length === 0 && (
-        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 font-sans text-sm text-amber-700">
+        <Alert variant="warning" className="mb-4">
           هذا الطبيب غير معيّن لأي فرع. عيّن فرعاً له من زر «تعديل» أعلى الصفحة قبل إضافة قواعد
           التوفر.
-        </div>
+        </Alert>
       )}
 
       {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
+        <Alert variant="destructive" className="mb-4">
           {error}
-        </div>
+        </Alert>
       )}
       {successMsg && (
-        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
+        <Alert variant="success" className="mb-4">
           {successMsg}
-        </div>
+        </Alert>
       )}
 
       {rules.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="font-sans text-muted-foreground">
             لا توجد قواعد توفر. أضف قاعدة لتبدأ في استقبال المواعيد.
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="space-y-3">
           {rules.map((rule) => (
-            <div
+            <Card
               key={rule.id}
-              className="flex flex-col gap-3 rounded-2xl border border-border bg-card px-5 py-4 sm:flex-row sm:items-center"
+              className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center"
             >
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -204,39 +181,22 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
                   <span className="font-sans text-sm text-muted-foreground" dir="ltr">
                     {rule.startTime} – {rule.endTime}
                   </span>
-                  {rule.branch && (
-                    <span className="rounded-full bg-primary/10 px-2 py-0.5 font-sans text-xs text-primary">
-                      {rule.branch.name}
-                    </span>
-                  )}
+                  {rule.branch && <Badge>{rule.branch.name}</Badge>}
                   {isQueueMode(rule.mode) ? (
-                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-sans text-xs font-medium text-indigo-700">
+                    <Badge variant="indigo">
                       {MODE_BADGE_AR[rule.mode]}
                       {rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : ""}
                       {rule.estimatedDurationMin != null
                         ? ` · ~${rule.estimatedDurationMin} د/مريض`
                         : ""}
-                    </span>
+                    </Badge>
                   ) : (
-                    <span className="rounded-full bg-muted px-2 py-0.5 font-sans text-xs text-muted-foreground">
-                      {rule.slotDurationMin} دقيقة / موعد
-                    </span>
+                    <Badge variant="muted">{rule.slotDurationMin} دقيقة / موعد</Badge>
                   )}
-                  <span
-                    className={[
-                      "rounded-full px-2 py-0.5 font-sans text-xs font-medium",
-                      rule.isActive
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-gray-100 text-gray-500",
-                    ].join(" ")}
-                  >
+                  <Badge variant={rule.isActive ? "success" : "neutral"}>
                     {rule.isActive ? "نشطة" : "معطّلة"}
-                  </span>
-                  {rule.referralOnly && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 font-sans text-xs font-medium text-amber-700">
-                      تحويلات فقط
-                    </span>
-                  )}
+                  </Badge>
+                  {rule.referralOnly && <Badge variant="warning">تحويلات فقط</Badge>}
                 </div>
                 {rule.note && (
                   <p className="mb-1 font-sans text-xs text-muted-foreground">{rule.note}</p>
@@ -254,248 +214,66 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
               </div>
 
               <div className="flex flex-shrink-0 items-center gap-2">
-                <button
-                  onClick={() => handleToggleActive(rule)}
-                  disabled={isPending}
-                  title={rule.isActive ? "تعطيل" : "تفعيل"}
-                  className={[
-                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50",
-                    rule.isActive ? "bg-emerald-500" : "bg-muted-foreground/30",
-                  ].join(" ")}
-                >
-                  <span
-                    className={[
-                      "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform",
-                      rule.isActive ? "-translate-x-4" : "-translate-x-1",
-                    ].join(" ")}
+                <Hint label={rule.isActive ? "تعطيل" : "تفعيل"}>
+                  <Switch
+                    checked={rule.isActive}
+                    onCheckedChange={() => handleToggleActive(rule)}
+                    disabled={isPending}
+                    aria-label={rule.isActive ? "تعطيل القاعدة" : "تفعيل القاعدة"}
+                    className="data-[state=checked]:bg-emerald-500"
                   />
-                </button>
+                </Hint>
 
                 {/* Queue (order-based) rules need no slot generation — the day
                     is implicitly available and order numbers are handed out on
                     booking, so the generate button is slot-based only. */}
                 {!isQueueMode(rule.mode) && (
-                  <button
-                    onClick={() => handleGenerate(rule.id)}
-                    disabled={generatingId === rule.id}
-                    title="توليد مواعيد للـ 30 يوم القادمة"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50"
-                  >
-                    <Zap className="h-3.5 w-3.5" />
-                    {generatingId === rule.id ? "جارٍ التوليد..." : "توليد مواعيد"}
-                  </button>
+                  <Hint label="توليد مواعيد للـ 30 يوم القادمة">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleGenerate(rule.id)}
+                      disabled={generatingId === rule.id}
+                      className="text-muted-foreground hover:border-primary/50 hover:bg-transparent hover:text-primary [&_svg]:size-3.5"
+                    >
+                      <Zap />
+                      {generatingId === rule.id ? "جارٍ التوليد..." : "توليد مواعيد"}
+                    </Button>
+                  </Hint>
                 )}
 
-                <button
-                  onClick={() => handleDelete(rule.id)}
-                  disabled={isPending}
-                  title="حذف القاعدة"
-                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <Hint label="حذف القاعدة">
+                  <Button
+                    variant="ghost-destructive"
+                    size="icon"
+                    onClick={() => handleDelete(rule.id)}
+                    disabled={isPending}
+                    aria-label="حذف القاعدة"
+                  >
+                    <Trash2 />
+                  </Button>
+                </Hint>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="إضافة قاعدة توفر">
-        <form onSubmit={handleAdd} className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="font-sans text-sm font-medium text-foreground">الفرع *</label>
-              <select
-                name="branchId"
-                required
-                value={selBranch}
-                onChange={(e) => setSelBranch(e.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="font-sans text-sm font-medium text-foreground">يوم الأسبوع *</label>
-              <select
-                name="dayOfWeek"
-                required
-                value={selDay}
-                onChange={(e) => setSelDay(e.target.value as DayOfWeek)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {DAYS_ORDER.map((day) => (
-                  <option key={day} value={day}>
-                    {DAY_LABELS[day]}
-                  </option>
-                ))}
-              </select>
-              {branchWindow && (
-                <p
-                  className={[
-                    "mt-1 font-sans text-xs",
-                    branchWindow.ok ? "text-muted-foreground" : "text-red-600",
-                  ].join(" ")}
-                >
-                  {branchWindow.text}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">وقت البداية *</label>
-              <input
-                name="startTime"
-                type="time"
-                required
-                defaultValue="09:00"
-                onChange={(e) => setSelStart(e.target.value)}
-                dir="ltr"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="font-sans text-sm font-medium text-foreground">وقت النهاية *</label>
-              <input
-                name="endTime"
-                type="time"
-                required
-                defaultValue="17:00"
-                onChange={(e) => setSelEnd(e.target.value)}
-                dir="ltr"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="font-sans text-sm font-medium text-foreground">نظام الجدولة</label>
-              <select
-                name="mode"
-                value={selMode}
-                onChange={(e) => setSelMode(e.target.value as AvailabilityMode)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                <option value={AvailabilityMode.SLOT_BASED}>مواعيد بأوقات ثابتة</option>
-                <option value={AvailabilityMode.ORDER_BASED}>نظام الدور (طابور)</option>
-                <option value={AvailabilityMode.ARRIVAL_BASED}>أسبقية الحضور</option>
-              </select>
-              {selMode === AvailabilityMode.ARRIVAL_BASED && (
-                <p className="mt-1 font-sans text-xs text-muted-foreground">
-                  يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور
-                  (يسجّل الاستقبال وصوله).
-                </p>
-              )}
-            </div>
-
-            {isQueue ? (
-              <>
-                <div className="space-y-1.5">
-                  <label className="font-sans text-sm font-medium text-foreground">
-                    دقائق الكشف التقديرية
-                  </label>
-                  <input
-                    name="estimatedDurationMin"
-                    type="number"
-                    min={1}
-                    defaultValue={10}
-                    onChange={(e) => setSelEstDur(Number(e.target.value))}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="font-sans text-sm font-medium text-foreground">
-                    الحد الأقصى للحجوزات
-                  </label>
-                  <input
-                    name="dailyCap"
-                    type="number"
-                    min={1}
-                    defaultValue={50}
-                    onChange={(e) => setSelCap(Number(e.target.value))}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-                {capHint && (
-                  <p
-                    className={`rounded-xl px-3 py-2 font-sans text-sm sm:col-span-2 ${
-                      capHint.tone === "warn"
-                        ? "border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
-                        : "border border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
-                    }`}
-                  >
-                    {capHint.text}
-                  </p>
-                )}
-              </>
-            ) : (
-              <div className="space-y-1.5 sm:col-span-2">
-                <label className="font-sans text-sm font-medium text-foreground">مدة الموعد</label>
-                <select
-                  name="slotDurationMin"
-                  defaultValue="30"
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  {[15, 20, 30, 45, 60].map((d) => (
-                    <option key={d} value={d}>
-                      {d} دقيقة
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <label className="flex cursor-pointer items-start gap-2 sm:col-span-2">
-              <input
-                type="checkbox"
-                name="referralOnly"
-                className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
-              />
-              <span className="font-sans text-sm text-foreground">
-                تحويلات فقط
-                <span className="block text-xs text-muted-foreground">
-                  لا يحجزها المرضى مباشرةً؛ تُحجز عبر تحويل من طبيب بعد الكشف.
-                </span>
-              </span>
-            </label>
-
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="font-sans text-sm font-medium text-foreground">
-                ملاحظة (اختياري)
-              </label>
-              <input
-                name="note"
-                type="text"
-                placeholder="مثال: تحويلات حالات القلب فقط"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-          </div>
+        <form onSubmit={handleAdd} noValidate className="space-y-4">
+          <RuleFields control={form.control} branches={branches} />
 
           <p className="font-sans text-xs text-muted-foreground">
             سيتم تلقائياً توليد مواعيد الـ 30 يوم القادمة عند الحفظ.
           </p>
 
           <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-            >
+            <Button type="submit" loading={isPending} className="flex-1">
               {isPending ? "جارٍ الحفظ..." : "حفظ القاعدة"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setAddOpen(false)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
               إلغاء
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>

@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, Trash2, Eye, EyeOff, FileText } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import {
@@ -10,6 +12,14 @@ import {
   deleteClinicKnowledgeDocAction,
   toggleClinicKnowledgeDocActiveAction,
 } from "@/server/actions/platformKnowledge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Hint } from "@/components/ui/tooltip";
+import { knowledgeDocSchema, type KnowledgeDocValues } from "@/lib/validations/platform";
 
 export interface KnowledgeDocView {
   id: string;
@@ -21,22 +31,9 @@ export interface KnowledgeDocView {
   updatedAt: string;
 }
 
-const inputCls =
-  "w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30";
-const labelCls = "text-sm font-medium text-foreground font-sans";
 const hintCls = "text-xs text-muted-foreground font-sans";
 
-type Draft = {
-  id: string | null;
-  slug: string;
-  title: string;
-  summary: string;
-  content: string;
-  isActive: boolean;
-};
-
-const emptyDraft: Draft = {
-  id: null,
+const emptyDoc: KnowledgeDocValues = {
   slug: "",
   title: "",
   summary: "",
@@ -62,9 +59,24 @@ export default function KnowledgeManager({
   docs: KnowledgeDocView[];
 }) {
   const router = useRouter();
+  const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [draft, setDraft] = useState<Draft | null>(null);
+  /** The doc being edited: null = modal closed, "new" = creating. */
+  const [editing, setEditing] = useState<string | "new" | null>(null);
+
+  const form = useForm<KnowledgeDocValues>({
+    resolver: zodResolver(knowledgeDocSchema),
+    defaultValues: emptyDoc,
+    mode: "onTouched",
+  });
+  const { control } = form;
+
+  function openDoc(id: string | "new", values: KnowledgeDocValues) {
+    setError(null);
+    form.reset(values);
+    setEditing(id);
+  }
 
   function run(fn: () => Promise<{ error?: string } | void>, after?: () => void) {
     setError(null);
@@ -78,63 +90,49 @@ export default function KnowledgeManager({
     });
   }
 
-  function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    if (!draft) return;
-    const payload = {
-      clinicId,
-      slug: draft.slug.trim(),
-      title: draft.title.trim(),
-      summary: draft.summary.trim(),
-      content: draft.content,
-      isActive: draft.isActive,
-    };
-    if (draft.id) {
+  const handleSave = form.handleSubmit((values) => {
+    const payload = { clinicId, ...values };
+    const id = editing;
+    if (id && id !== "new") {
       run(
-        () => updateClinicKnowledgeDocAction({ id: draft.id!, ...payload }),
-        () => setDraft(null)
+        () => updateClinicKnowledgeDocAction({ id, ...payload }),
+        () => setEditing(null)
       );
     } else {
       run(
         () => createClinicKnowledgeDocAction(payload),
-        () => setDraft(null)
+        () => setEditing(null)
       );
     }
-  }
+  });
 
   return (
     <div className="max-w-3xl">
       {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
+        <Alert variant="destructive" className="mb-4">
           {error}
-        </div>
+        </Alert>
       )}
 
       <div className="mb-6 flex justify-end">
-        <button
-          onClick={() => {
-            setError(null);
-            setDraft({ ...emptyDraft });
-          }}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
+        <Button onClick={() => openDoc("new", emptyDoc)}>
+          <Plus />
           مستند جديد
-        </button>
+        </Button>
       </div>
 
       {docs.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <FileText className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
           <p className="font-sans text-muted-foreground">
             لا توجد مستندات بعد. أضف مستنداً (مثل سياسات التعامل مع الشركات أو قائمة الفحوصات)
             ليستعين به المساعد الذكي.
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="space-y-3">
           {docs.map((d) => (
-            <div key={d.id} className="rounded-2xl border border-border bg-card px-5 py-4">
+            <Card key={d.id} className="px-5 py-4">
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -142,11 +140,7 @@ export default function KnowledgeManager({
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
                       {d.slug}
                     </code>
-                    {!d.isActive && (
-                      <span className="rounded-full bg-muted px-2 py-0.5 font-sans text-xs text-muted-foreground">
-                        غير مفعّل
-                      </span>
-                    )}
+                    {!d.isActive && <Badge variant="muted">غير مفعّل</Badge>}
                   </div>
                   <p className="mt-1 line-clamp-2 font-sans text-sm text-muted-foreground">
                     {d.summary}
@@ -154,139 +148,125 @@ export default function KnowledgeManager({
                   <p className={hintCls + " mt-2"}>آخر تعديل: {formatDate(d.updatedAt)}</p>
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-1">
-                  <button
-                    onClick={() =>
-                      run(() =>
-                        toggleClinicKnowledgeDocActiveAction({
-                          clinicId,
-                          id: d.id,
-                          isActive: !d.isActive,
+                  <Hint label={d.isActive ? "إخفاء عن المساعد" : "تفعيل"}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        run(() =>
+                          toggleClinicKnowledgeDocActiveAction({
+                            clinicId,
+                            id: d.id,
+                            isActive: !d.isActive,
+                          })
+                        )
+                      }
+                      disabled={isPending}
+                      aria-label={d.isActive ? "إخفاء عن المساعد" : "تفعيل"}
+                    >
+                      {d.isActive ? <Eye /> : <EyeOff />}
+                    </Button>
+                  </Hint>
+                  <Hint label="تعديل">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        openDoc(d.id, {
+                          slug: d.slug,
+                          title: d.title,
+                          summary: d.summary,
+                          content: d.content,
+                          isActive: d.isActive,
                         })
-                      )
-                    }
-                    disabled={isPending}
-                    title={d.isActive ? "إخفاء عن المساعد" : "تفعيل"}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-40"
-                  >
-                    {d.isActive ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setError(null);
-                      setDraft({
-                        id: d.id,
-                        slug: d.slug,
-                        title: d.title,
-                        summary: d.summary,
-                        content: d.content,
-                        isActive: d.isActive,
-                      });
-                    }}
-                    title="تعديل"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() =>
-                      run(() => {
-                        if (!confirm(`حذف المستند «${d.title}» نهائياً؟`)) return Promise.resolve();
-                        return deleteClinicKnowledgeDocAction({ clinicId, id: d.id });
-                      })
-                    }
-                    disabled={isPending}
-                    title="حذف"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                      }
+                      aria-label="تعديل"
+                      className="hover:bg-primary/10 hover:text-primary"
+                    >
+                      <Pencil />
+                    </Button>
+                  </Hint>
+                  <Hint label="حذف">
+                    <Button
+                      variant="ghost-destructive"
+                      size="icon"
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "حذف المستند",
+                          description: `حذف المستند «${d.title}» نهائياً؟`,
+                        });
+                        if (ok) run(() => deleteClinicKnowledgeDocAction({ clinicId, id: d.id }));
+                      }}
+                      disabled={isPending}
+                      aria-label="حذف"
+                    >
+                      <Trash2 />
+                    </Button>
+                  </Hint>
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
 
       <Modal
-        open={draft !== null}
-        onClose={() => setDraft(null)}
-        title={draft?.id ? "تعديل المستند" : "مستند جديد"}
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title={editing && editing !== "new" ? "تعديل المستند" : "مستند جديد"}
         width="max-w-2xl"
       >
-        {draft && (
-          <form onSubmit={handleSave} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className={labelCls}>العنوان</label>
-              <input
-                value={draft.title}
-                onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                placeholder="مثال: تعليمات وشروط التعامل مع الجهات والشركات"
-                className={inputCls}
-                autoFocus
-              />
-            </div>
+        {editing !== null && (
+          <form onSubmit={handleSave} noValidate className="space-y-4">
+            <FormField
+              control={control}
+              name="title"
+              label="العنوان"
+              placeholder="مثال: تعليمات وشروط التعامل مع الجهات والشركات"
+              autoFocus
+            />
 
-            <div className="space-y-1.5">
-              <label className={labelCls}>المعرّف (slug)</label>
-              <input
-                value={draft.slug}
-                onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
-                placeholder="company-terms"
-                dir="ltr"
-                className={inputCls + " text-start font-mono"}
-              />
-              <p className={hintCls}>
-                معرّف إنجليزي قصير وفريد يميّز المستند (أحرف صغيرة وأرقام وشرطات). يُستخدم داخلياً
-                بواسطة المساعد.
-              </p>
-            </div>
+            <FormField
+              control={control}
+              name="slug"
+              label="المعرّف (slug)"
+              placeholder="company-terms"
+              dir="ltr"
+              controlClassName="text-start font-mono"
+              hint="معرّف إنجليزي قصير وفريد يميّز المستند (أحرف صغيرة وأرقام وشرطات). يُستخدم داخلياً بواسطة المساعد."
+            />
 
-            <div className="space-y-1.5">
-              <label className={labelCls}>وصف مختصر</label>
-              <input
-                value={draft.summary}
-                onChange={(e) => setDraft({ ...draft, summary: e.target.value })}
-                placeholder="جملة واحدة تصف محتوى المستند — يراها المساعد ليقرّر متى يفتحه."
-                className={inputCls}
-              />
-            </div>
+            <FormField
+              control={control}
+              name="summary"
+              label="وصف مختصر"
+              placeholder="جملة واحدة تصف محتوى المستند — يراها المساعد ليقرّر متى يفتحه."
+            />
 
-            <div className="space-y-1.5">
-              <label className={labelCls}>المحتوى</label>
-              <textarea
-                value={draft.content}
-                onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-                placeholder="النص الكامل للمستند (يدعم تنسيق ماركداون، بما في ذلك الجداول والقوائم)."
-                rows={14}
-                className={inputCls + " resize-y font-mono leading-relaxed"}
-              />
-            </div>
+            <FormField
+              control={control}
+              name="content"
+              type="textarea"
+              label="المحتوى"
+              placeholder="النص الكامل للمستند (يدعم تنسيق ماركداون، بما في ذلك الجداول والقوائم)."
+              rows={14}
+              controlClassName="resize-y font-mono leading-relaxed"
+            />
 
-            <label className="flex items-center gap-2 font-sans text-sm text-foreground">
-              <input
-                type="checkbox"
-                checked={draft.isActive}
-                onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
-                className="h-4 w-4 rounded border-border"
-              />
-              مفعّل (يستعين به المساعد الذكي)
-            </label>
+            <FormField
+              control={control}
+              name="isActive"
+              type="checkbox"
+              label="مفعّل (يستعين به المساعد الذكي)"
+            />
 
             <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setDraft(null)}
-                className="rounded-xl border border-border px-4 py-2 font-sans text-sm text-foreground hover:bg-muted"
-              >
+              <Button type="button" variant="outline" onClick={() => setEditing(null)}>
                 إلغاء
-              </button>
-              <button
-                type="submit"
-                disabled={isPending}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-              >
+              </Button>
+              <Button type="submit" loading={isPending}>
                 {isPending ? "جارٍ الحفظ…" : "حفظ"}
-              </button>
+              </Button>
             </div>
           </form>
         )}

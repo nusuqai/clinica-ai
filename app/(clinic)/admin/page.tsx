@@ -14,6 +14,7 @@ import { requireClinicMember } from "@/lib/auth";
 import StatCard from "@/components/admin/stat-card";
 import PageHeader from "@/components/admin/page-header";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
+import { Card } from "@/components/ui/card";
 
 export default async function AdminHomePage() {
   const { clinic } = await requireClinicMember(["ADMIN"]);
@@ -114,7 +115,7 @@ export default async function AdminHomePage() {
       </div>
 
       {/* Recent activity */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <Card className="overflow-hidden">
         <div className="border-b border-border px-6 py-4">
           <h2 className="font-heading font-semibold text-foreground">آخر النشاطات</h2>
         </div>
@@ -148,7 +149,7 @@ export default async function AdminHomePage() {
             ))}
           </ul>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

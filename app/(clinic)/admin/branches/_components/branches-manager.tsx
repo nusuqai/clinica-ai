@@ -2,8 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2, Star, MapPin, Phone, Car, Navigation, X } from "lucide-react";
+import { useForm, useWatch, type Control } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Plus, Pencil, Trash2, Star, MapPin, Phone, Car, Navigation } from "lucide-react";
 import Modal from "@/components/admin/modal";
+import { PhoneRows, phonesForSave } from "@/components/admin/phone-rows";
 import {
   createBranchAction,
   updateBranchAction,
@@ -12,6 +15,20 @@ import {
   setMainBranchAction,
 } from "@/server/actions/admin";
 import { DayOfWeek, PhoneType } from "@prisma/client";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Hint } from "@/components/ui/tooltip";
+import { toast } from "sonner";
+import {
+  branchFormSchema,
+  type BranchDayMode,
+  type BranchFormValues,
+} from "@/lib/validations/admin";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,40 +72,13 @@ const DAYS: { key: DayOfWeek; label: string }[] = [
   { key: DayOfWeek.FRI, label: "الجمعة" },
 ];
 
-const PHONE_TYPES: { value: PhoneType; label: string }[] = [
-  { value: PhoneType.LANDLINE, label: "أرضي" },
-  { value: PhoneType.MOBILE, label: "موبايل" },
-  { value: PhoneType.WHATSAPP, label: "واتساب" },
-];
-
-type DayMode = "unset" | "open" | "closed";
-interface DayState {
-  mode: DayMode;
-  openTime: string;
-  closeTime: string;
-}
-
-interface FormState {
-  name: string;
-  address: string;
-  mapsUrl: string;
-  latitude: string;
-  longitude: string;
-  hasParking: boolean;
-  parkingInfo: string;
-  nearestLandmark: string;
-  directions: string;
-  phones: BranchPhoneView[];
-  hours: Record<DayOfWeek, DayState>;
-}
-
-function emptyHours(): Record<DayOfWeek, DayState> {
-  const out = {} as Record<DayOfWeek, DayState>;
+function emptyHours(): BranchFormValues["hours"] {
+  const out = {} as BranchFormValues["hours"];
   for (const d of DAYS) out[d.key] = { mode: "unset", openTime: "09:00", closeTime: "17:00" };
   return out;
 }
 
-function formFromBranch(b?: BranchView): FormState {
+function formFromBranch(b?: BranchView): BranchFormValues {
   const hours = emptyHours();
   if (b) {
     for (const h of b.hours) {
@@ -109,14 +99,16 @@ function formFromBranch(b?: BranchView): FormState {
     parkingInfo: b?.parkingInfo ?? "",
     nearestLandmark: b?.nearestLandmark ?? "",
     directions: b?.directions ?? "",
-    phones: b?.phones.map((p) => ({ ...p })) ?? [],
+    phones: b?.phones.map((p) => ({ ...p, label: p.label ?? "" })) ?? [],
     hours,
   };
 }
 
-const inputCls =
-  "w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30";
-const labelCls = "text-sm font-medium text-foreground font-sans";
+const DAY_MODE_OPTIONS: { value: BranchDayMode; label: string }[] = [
+  { value: "unset", label: "غير محدد" },
+  { value: "open", label: "مفتوح" },
+  { value: "closed", label: "مغلق (عطلة)" },
+];
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -130,24 +122,31 @@ export default function BranchesManager({
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BranchView | null>(null);
-  const [form, setForm] = useState<FormState>(formFromBranch());
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
+
+  const form = useForm<BranchFormValues>({
+    resolver: zodResolver(branchFormSchema),
+    defaultValues: formFromBranch(),
+    mode: "onTouched",
+  });
+  const hasParking = useWatch({ control: form.control, name: "hasParking" });
 
   function openCreate() {
     setEditing(null);
-    setForm(formFromBranch());
+    form.reset(formFromBranch());
     setError(null);
     setModalOpen(true);
   }
   function openEdit(b: BranchView) {
     setEditing(b);
-    setForm(formFromBranch(b));
+    form.reset(formFromBranch(b));
     setError(null);
     setModalOpen(true);
   }
 
-  function buildPayload() {
+  function buildPayload(form: BranchFormValues) {
     const hours: BranchHoursView[] = [];
     for (const d of DAYS) {
       const s = form.hours[d.key];
@@ -172,19 +171,14 @@ export default function BranchesManager({
       parkingInfo: form.parkingInfo || null,
       nearestLandmark: form.nearestLandmark || null,
       directions: form.directions || null,
-      phones: form.phones.filter((p) => p.number.trim()),
+      phones: phonesForSave(form.phones),
       hours,
     };
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const handleSubmit = form.handleSubmit((values) => {
     setError(null);
-    if (!form.name.trim()) {
-      setError("اسم الفرع مطلوب");
-      return;
-    }
-    const payload = buildPayload();
+    const payload = buildPayload(values);
     startTransition(async () => {
       const res = editing
         ? await updateBranchAction({ branchId: editing.id, clinicId: clinicId, ...payload })
@@ -195,126 +189,102 @@ export default function BranchesManager({
         router.refresh();
       }
     });
-  }
+  });
 
-  function runAction(fn: () => Promise<{ error?: string } | void>, confirmMsg?: string) {
-    if (confirmMsg && !confirm(confirmMsg)) return;
+  async function runAction(fn: () => Promise<{ error?: string } | void>, confirmMsg?: string) {
+    if (confirmMsg && !(await confirm({ title: "حذف الفرع", description: confirmMsg }))) return;
     startTransition(async () => {
       const res = await fn();
-      if (res && "error" in res && res.error) alert(res.error);
+      if (res && "error" in res && res.error) toast.error(res.error);
       else router.refresh();
     });
-  }
-
-  // Phone row helpers
-  function addPhone() {
-    setForm((f) => ({
-      ...f,
-      phones: [
-        ...f.phones,
-        { type: PhoneType.MOBILE, number: "", label: null, isPrimary: f.phones.length === 0 },
-      ],
-    }));
-  }
-  function updatePhone(i: number, patch: Partial<BranchPhoneView>) {
-    setForm((f) => {
-      const phones = f.phones.map((p, idx) => (idx === i ? { ...p, ...patch } : p));
-      // Single primary: if this row was set primary, clear the others.
-      if (patch.isPrimary) phones.forEach((p, idx) => (p.isPrimary = idx === i));
-      return { ...f, phones };
-    });
-  }
-  function removePhone(i: number) {
-    setForm((f) => ({ ...f, phones: f.phones.filter((_, idx) => idx !== i) }));
-  }
-  function setDay(day: DayOfWeek, patch: Partial<DayState>) {
-    setForm((f) => ({ ...f, hours: { ...f.hours, [day]: { ...f.hours[day], ...patch } } }));
   }
 
   return (
     <div>
       <div className="mb-4 flex justify-end">
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
+        <Button onClick={openCreate}>
+          <Plus />
           إضافة فرع
-        </button>
+        </Button>
       </div>
 
       {branches.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="font-sans text-muted-foreground">لا توجد فروع بعد. أضف فرعاً لتبدأ.</p>
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {branches.map((b) => (
-            <div key={b.id} className="rounded-2xl border border-border bg-card p-5">
+            <Card key={b.id} className="p-5">
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-heading font-bold text-foreground">{b.name}</h3>
                     {b.isMain && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-sans text-xs font-medium text-amber-700">
+                      <Badge variant="warning">
                         <Star className="h-3 w-3" /> رئيسي
-                      </span>
+                      </Badge>
                     )}
-                    <span
-                      className={[
-                        "rounded-full px-2 py-0.5 font-sans text-xs font-medium",
-                        b.isActive
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-gray-100 text-gray-500",
-                      ].join(" ")}
-                    >
+                    <Badge variant={b.isActive ? "success" : "neutral"}>
                       {b.isActive ? "نشط" : "معطّل"}
-                    </span>
+                    </Badge>
                   </div>
                   <p className="mt-1 font-sans text-xs text-muted-foreground">
                     {b.doctorCount} طبيب
                   </p>
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-1">
-                  <button
-                    onClick={() => openEdit(b)}
-                    title="تعديل"
-                    className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                  {!b.isMain && (
-                    <button
-                      onClick={() => runAction(() => setMainBranchAction(b.id))}
-                      disabled={isPending}
-                      title="تعيين كفرع رئيسي"
-                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-amber-50 hover:text-amber-500"
+                  <Hint label="تعديل">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEdit(b)}
+                      aria-label="تعديل"
+                      className="hover:bg-primary/10 hover:text-primary"
                     >
-                      <Star className="h-4 w-4" />
-                    </button>
+                      <Pencil />
+                    </Button>
+                  </Hint>
+                  {!b.isMain && (
+                    <Hint label="تعيين كفرع رئيسي">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => runAction(() => setMainBranchAction(b.id))}
+                        disabled={isPending}
+                        aria-label="تعيين كفرع رئيسي"
+                        className="hover:bg-amber-50 hover:text-amber-500"
+                      >
+                        <Star />
+                      </Button>
+                    </Hint>
                   )}
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => runAction(() => setBranchActiveAction(b.id, !b.isActive))}
                     disabled={isPending}
-                    title={b.isActive ? "تعطيل" : "تفعيل"}
-                    className="rounded-lg p-1.5 font-sans text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     {b.isActive ? "تعطيل" : "تفعيل"}
-                  </button>
+                  </Button>
                   {!b.isMain && (
-                    <button
-                      onClick={() =>
-                        runAction(
-                          () => deleteBranchAction(b.id),
-                          "سيتم حذف هذا الفرع نهائياً. هل تريد المتابعة؟"
-                        )
-                      }
-                      disabled={isPending}
-                      title="حذف"
-                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <Hint label="حذف">
+                      <Button
+                        variant="ghost-destructive"
+                        size="icon"
+                        onClick={() =>
+                          runAction(
+                            () => deleteBranchAction(b.id),
+                            "سيتم حذف هذا الفرع نهائياً. هل تريد المتابعة؟"
+                          )
+                        }
+                        disabled={isPending}
+                        aria-label="حذف"
+                      >
+                        <Trash2 />
+                      </Button>
+                    </Hint>
                   )}
                 </div>
               </div>
@@ -348,7 +318,7 @@ export default function BranchesManager({
                   {b.hours.filter((h) => !h.isClosed).length} يوم عمل مُعرّف
                 </p>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -359,205 +329,143 @@ export default function BranchesManager({
         title={editing ? "تعديل الفرع" : "إضافة فرع"}
         width="max-w-3xl"
       >
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
-              {error}
-            </div>
-          )}
+        <form onSubmit={handleSubmit} noValidate className="space-y-5">
+          {error && <Alert variant="destructive">{error}</Alert>}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className={labelCls}>اسم الفرع *</label>
-              <input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="فرع المعادي"
-                className={inputCls}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className={labelCls}>العنوان</label>
-              <input
-                value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-                className={inputCls}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className={labelCls}>رابط خرائط جوجل</label>
-              <input
-                value={form.mapsUrl}
-                onChange={(e) => setForm({ ...form, mapsUrl: e.target.value })}
-                dir="ltr"
-                placeholder="https://maps.google.com/…"
-                className={inputCls}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className={labelCls}>أقرب معلم</label>
-              <input
-                value={form.nearestLandmark}
-                onChange={(e) => setForm({ ...form, nearestLandmark: e.target.value })}
-                className={inputCls}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className={labelCls}>كيفية الوصول</label>
-              <textarea
-                value={form.directions}
-                onChange={(e) => setForm({ ...form, directions: e.target.value })}
-                rows={2}
-                className={inputCls + " resize-none"}
-              />
-            </div>
+            <FormField
+              control={form.control}
+              name="name"
+              label="اسم الفرع *"
+              placeholder="فرع المعادي"
+              className="sm:col-span-2"
+            />
+            <FormField
+              control={form.control}
+              name="address"
+              label="العنوان"
+              className="sm:col-span-2"
+            />
+            <FormField
+              control={form.control}
+              name="mapsUrl"
+              type="url"
+              label="رابط خرائط جوجل"
+              placeholder="https://maps.google.com/…"
+              className="sm:col-span-2"
+            />
+            <FormField
+              control={form.control}
+              name="nearestLandmark"
+              label="أقرب معلم"
+              className="sm:col-span-2"
+            />
+            <FormField
+              control={form.control}
+              name="directions"
+              type="textarea"
+              label="كيفية الوصول"
+              rows={2}
+              className="sm:col-span-2"
+            />
           </div>
 
           {/* Parking */}
           <div className="space-y-3 rounded-xl border border-border p-4">
-            <label className="flex items-center gap-2 font-sans text-sm font-medium text-foreground">
-              <input
-                type="checkbox"
-                checked={form.hasParking}
-                onChange={(e) => setForm({ ...form, hasParking: e.target.checked })}
-              />
-              يوجد موقف سيارات
-            </label>
-            {form.hasParking && (
-              <input
-                value={form.parkingInfo}
-                onChange={(e) => setForm({ ...form, parkingInfo: e.target.value })}
+            <FormField
+              control={form.control}
+              name="hasParking"
+              type="checkbox"
+              label="يوجد موقف سيارات"
+            />
+            {hasParking && (
+              <FormField
+                control={form.control}
+                name="parkingInfo"
                 placeholder="وصف الموقف (مدفوع/مجاني، سعة، مكانه…)"
-                className={inputCls}
               />
             )}
           </div>
 
           {/* Phones */}
           <div className="space-y-3 rounded-xl border border-border p-4">
-            <div className="flex items-center justify-between">
-              <span className={labelCls}>أرقام هواتف الفرع</span>
-              <button
-                type="button"
-                onClick={addPhone}
-                className="inline-flex items-center gap-1 font-sans text-sm text-primary hover:underline"
-              >
-                <Plus className="h-3.5 w-3.5" /> إضافة رقم
-              </button>
-            </div>
-            {form.phones.length === 0 && (
-              <p className="font-sans text-xs text-muted-foreground">لا توجد أرقام مضافة.</p>
-            )}
-            {form.phones.map((p, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2">
-                <select
-                  value={p.type}
-                  onChange={(e) => updatePhone(i, { type: e.target.value as PhoneType })}
-                  className="rounded-xl border border-border bg-background px-2 py-2 font-sans text-sm"
-                >
-                  {PHONE_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  value={p.number}
-                  onChange={(e) => updatePhone(i, { number: e.target.value })}
-                  placeholder="الرقم"
-                  dir="ltr"
-                  className="min-w-[120px] flex-1 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
-                />
-                <input
-                  value={p.label ?? ""}
-                  onChange={(e) => updatePhone(i, { label: e.target.value || null })}
-                  placeholder="وصف (استقبال…)"
-                  className="w-28 rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm"
-                />
-                <label className="flex items-center gap-1 font-sans text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={p.isPrimary}
-                    onChange={(e) => updatePhone(i, { isPrimary: e.target.checked })}
-                  />
-                  أساسي
-                </label>
-                <button
-                  type="button"
-                  onClick={() => removePhone(i)}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
+            <PhoneRows
+              control={form.control}
+              setValue={form.setValue}
+              title="أرقام هواتف الفرع"
+              labelPlaceholder="وصف (استقبال…)"
+            />
           </div>
 
           {/* Working hours */}
           <div className="space-y-2 rounded-xl border border-border p-4">
-            <span className={labelCls}>ساعات العمل</span>
+            <Label className="font-sans text-sm font-medium text-foreground">ساعات العمل</Label>
             <p className="font-sans text-xs text-muted-foreground">
               اترك اليوم بدون تحديد إن لم ترغب في تقييده. تُستخدم هذه الساعات للتحقق من مواعيد
               الأطباء.
             </p>
             <div className="mt-2 space-y-2">
-              {DAYS.map((d) => {
-                const s = form.hours[d.key];
-                return (
-                  <div key={d.key} className="flex flex-wrap items-center gap-2">
-                    <span className="w-16 font-sans text-sm text-foreground">{d.label}</span>
-                    <select
-                      value={s.mode}
-                      onChange={(e) => setDay(d.key, { mode: e.target.value as DayMode })}
-                      className="rounded-xl border border-border bg-background px-2 py-1.5 font-sans text-sm"
-                    >
-                      <option value="unset">غير محدد</option>
-                      <option value="open">مفتوح</option>
-                      <option value="closed">مغلق (عطلة)</option>
-                    </select>
-                    {s.mode === "open" && (
-                      <>
-                        <input
-                          type="time"
-                          value={s.openTime}
-                          onChange={(e) => setDay(d.key, { openTime: e.target.value })}
-                          dir="ltr"
-                          className="rounded-xl border border-border bg-background px-2 py-1.5 font-sans text-sm"
-                        />
-                        <span className="text-sm text-muted-foreground">–</span>
-                        <input
-                          type="time"
-                          value={s.closeTime}
-                          onChange={(e) => setDay(d.key, { closeTime: e.target.value })}
-                          dir="ltr"
-                          className="rounded-xl border border-border bg-background px-2 py-1.5 font-sans text-sm"
-                        />
-                      </>
-                    )}
-                  </div>
-                );
-              })}
+              {DAYS.map((d) => (
+                <DayHoursRow key={d.key} control={form.control} day={d.key} label={d.label} />
+              ))}
             </div>
           </div>
 
           <div className="flex gap-3 pt-1">
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-            >
+            <Button type="submit" loading={isPending} className="flex-1">
               {isPending ? "جارٍ الحفظ..." : editing ? "حفظ التعديلات" : "إضافة الفرع"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
               إلغاء
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>
+    </div>
+  );
+}
+
+/** One weekday's hours. Watches only its own mode, so changing it re-renders just this row. */
+function DayHoursRow({
+  control,
+  day,
+  label,
+}: {
+  control: Control<BranchFormValues>;
+  day: DayOfWeek;
+  label: string;
+}) {
+  const mode = useWatch({ control, name: `hours.${day}.mode` });
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="w-16 font-sans text-sm text-foreground">{label}</span>
+      <FormField
+        control={control}
+        name={`hours.${day}.mode`}
+        type="select"
+        options={DAY_MODE_OPTIONS}
+        className="w-36"
+        controlClassName="h-9"
+      />
+      {mode === "open" && (
+        <>
+          <FormField
+            control={control}
+            name={`hours.${day}.openTime`}
+            type="time"
+            className="w-32"
+            controlClassName="h-9"
+          />
+          <span className="text-sm text-muted-foreground">–</span>
+          <FormField
+            control={control}
+            name={`hours.${day}.closeTime`}
+            type="time"
+            className="w-32"
+            controlClassName="h-9"
+          />
+        </>
+      )}
     </div>
   );
 }

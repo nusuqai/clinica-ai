@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
 
 export default function Loading() {
   return (
@@ -8,7 +9,7 @@ export default function Loading() {
         <Skeleton className="h-4 w-64" />
       </div>
 
-      <div className="flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-border bg-card">
+      <Card className="flex h-[calc(100vh-7rem)] overflow-hidden">
         {/* Conversation list */}
         <aside className="flex w-72 flex-shrink-0 flex-col border-e border-border">
           <div className="border-b border-border px-4 py-3">
@@ -47,7 +48,7 @@ export default function Loading() {
             <Skeleton className="h-16 w-full rounded-xl" />
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

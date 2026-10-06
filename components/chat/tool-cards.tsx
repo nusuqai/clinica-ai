@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { AppointmentStatus } from "@prisma/client";
 import type { ClientToolCall } from "./types";
+import { Alert } from "@/components/ui/alert";
 
 // ── shared layout ────────────────────────────────────────────────────────────
 
@@ -37,10 +38,13 @@ function CardShell({
 
 function ErrorCard({ message }: { message: string }) {
   return (
-    <div className="mt-1.5 flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 font-sans text-xs text-red-600">
+    <Alert
+      variant="destructive"
+      className="mt-1.5 items-center border-transparent px-3 py-2 text-xs text-red-600"
+    >
       <XCircle className="h-4 w-4 flex-shrink-0" />
       <span>{message}</span>
-    </div>
+    </Alert>
   );
 }
 

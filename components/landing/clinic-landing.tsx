@@ -15,6 +15,7 @@ import { SpecialtiesSection } from "@/components/landing/specialties-section";
 import { StatsSection } from "@/components/landing/stats-section";
 import { FAQSection } from "@/components/landing/faq-section";
 import { FooterSection } from "@/components/landing/footer-section";
+import { Button } from "@/components/ui/button";
 
 // Public per-clinic landing page — what `/` serves on a clinic's own subdomain.
 // Visitors book here and sign up scoped to this clinic.
@@ -111,12 +112,13 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
           to them. */}
       {accessRole && accessRole !== Role.PATIENT && (
         <div className="fixed left-1/2 top-20 z-40 -translate-x-1/2">
-          <Link
-            href={dashboardHref}
-            className="rounded-full bg-primary/90 px-5 py-2 text-sm font-medium text-white shadow-lg backdrop-blur transition-opacity hover:opacity-90"
+          <Button
+            asChild
+            variant="ghost"
+            className="h-auto rounded-full bg-primary/90 px-5 py-2 text-sm text-white shadow-lg backdrop-blur transition-opacity hover:bg-primary/90 hover:text-white hover:opacity-90"
           >
-            الذهاب إلى لوحة التحكم
-          </Link>
+            <Link href={dashboardHref}>الذهاب إلى لوحة التحكم</Link>
+          </Button>
         </div>
       )}
 

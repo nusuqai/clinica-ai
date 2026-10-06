@@ -2,13 +2,18 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
 import { CheckCircle, XCircle, ClipboardList, Check } from "lucide-react";
 import {
   updateAppointmentStatusAsDoctorAction,
   updateDoctorNotesAction,
 } from "@/server/actions/doctor";
 import Modal from "@/components/admin/modal";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import { AppointmentStatus } from "@prisma/client";
+import { Hint } from "@/components/ui/tooltip";
+import { CancelReasonForm } from "@/components/appointments/cancel-reason-form";
 
 interface AppointmentActionsProps {
   appointmentId: string;
@@ -25,8 +30,6 @@ export default function AppointmentActions({
   const [isPending, startTransition] = useTransition();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState("");
-  const [notes, setNotes] = useState(currentNotes ?? "");
   const [error, setError] = useState<string | null>(null);
 
   function handleStatus(status: AppointmentStatus, reason?: string) {
@@ -42,7 +45,7 @@ export default function AppointmentActions({
     });
   }
 
-  function handleSaveNotes() {
+  function handleSaveNotes(notes: string) {
     setError(null);
     startTransition(async () => {
       const res = await updateDoctorNotesAction(appointmentId, notes);
@@ -65,13 +68,15 @@ export default function AppointmentActions({
 
   if (!canConfirm && !canComplete && !canCancel) {
     return (
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => setNotesOpen(true)}
-        className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
       >
-        <ClipboardList className="h-3.5 w-3.5" />
+        <ClipboardList />
         ملاحظات
-      </button>
+      </Button>
     );
   }
 
@@ -79,55 +84,69 @@ export default function AppointmentActions({
     <>
       <div className="flex flex-wrap items-center gap-1.5">
         {canConfirm && (
-          <button
-            onClick={() => handleStatus(AppointmentStatus.CONFIRMED)}
-            disabled={isPending}
-            title="تأكيد الموعد"
-            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 font-sans text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
-          >
-            <Check className="h-3.5 w-3.5" />
-            تأكيد
-          </button>
+          <Hint label="تأكيد الموعد">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleStatus(AppointmentStatus.CONFIRMED)}
+              disabled={isPending}
+              className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 [&_svg]:size-3.5"
+            >
+              <Check />
+              تأكيد
+            </Button>
+          </Hint>
         )}
         {canComplete && (
-          <button
-            onClick={() => handleStatus(AppointmentStatus.COMPLETED)}
-            disabled={isPending}
-            title="تحديد كمكتمل"
-            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 font-sans text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
-          >
-            <CheckCircle className="h-3.5 w-3.5" />
-            مكتمل
-          </button>
+          <Hint label="تحديد كمكتمل">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleStatus(AppointmentStatus.COMPLETED)}
+              disabled={isPending}
+              className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 [&_svg]:size-3.5"
+            >
+              <CheckCircle />
+              مكتمل
+            </Button>
+          </Hint>
         )}
         {canNoShow && (
-          <button
-            onClick={() => handleStatus(AppointmentStatus.NO_SHOW)}
-            disabled={isPending}
-            title="لم يحضر"
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 font-sans text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-50"
-          >
-            لم يحضر
-          </button>
+          <Hint label="لم يحضر">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleStatus(AppointmentStatus.NO_SHOW)}
+              disabled={isPending}
+              className="border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 [&_svg]:size-3.5"
+            >
+              لم يحضر
+            </Button>
+          </Hint>
         )}
         {canCancel && (
-          <button
-            onClick={() => setCancelOpen(true)}
-            disabled={isPending}
-            title="إلغاء الموعد"
-            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 font-sans text-xs font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
-          >
-            <XCircle className="h-3.5 w-3.5" />
-            إلغاء
-          </button>
+          <Hint label="إلغاء الموعد">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCancelOpen(true)}
+              disabled={isPending}
+              className="border-red-200 bg-red-50 text-red-600 hover:bg-red-100 [&_svg]:size-3.5"
+            >
+              <XCircle />
+              إلغاء
+            </Button>
+          </Hint>
         )}
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setNotesOpen(true)}
-          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
         >
-          <ClipboardList className="h-3.5 w-3.5" />
+          <ClipboardList />
           ملاحظات
-        </button>
+        </Button>
       </div>
 
       {error && <p className="mt-1 font-sans text-xs text-red-600">{error}</p>}
@@ -139,39 +158,13 @@ export default function AppointmentActions({
         title="إلغاء الموعد"
         width="max-w-md"
       >
-        <div className="space-y-4">
-          <p className="font-sans text-sm text-muted-foreground">
-            هل أنت متأكد من إلغاء هذا الموعد؟ يمكنك إضافة سبب للإلغاء.
-          </p>
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">
-              سبب الإلغاء (اختياري)
-            </label>
-            <textarea
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.target.value)}
-              rows={3}
-              placeholder="أدخل سبب الإلغاء..."
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => handleStatus(AppointmentStatus.CANCELLED, cancelReason || undefined)}
-              disabled={isPending}
-              className="flex-1 rounded-xl bg-red-500 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-60"
-            >
-              {isPending ? "جارٍ الإلغاء..." : "تأكيد الإلغاء"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCancelOpen(false)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
-              تراجع
-            </button>
-          </div>
-        </div>
+        <CancelReasonForm
+          prompt="هل أنت متأكد من إلغاء هذا الموعد؟ يمكنك إضافة سبب للإلغاء."
+          required={false}
+          pending={isPending}
+          onConfirm={(reason) => handleStatus(AppointmentStatus.CANCELLED, reason || undefined)}
+          onBack={() => setCancelOpen(false)}
+        />
       </Modal>
 
       {/* Notes modal */}
@@ -181,36 +174,53 @@ export default function AppointmentActions({
         title="ملاحظات الطبيب"
         width="max-w-md"
       >
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="font-sans text-sm font-medium text-foreground">ملاحظات الطبيب</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={5}
-              placeholder="أضف ملاحظاتك الطبية هنا..."
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-          {error && <p className="font-sans text-sm text-red-600">{error}</p>}
-          <div className="flex gap-3">
-            <button
-              onClick={handleSaveNotes}
-              disabled={isPending}
-              className="flex-1 rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-            >
-              {isPending ? "جارٍ الحفظ..." : "حفظ الملاحظات"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setNotesOpen(false)}
-              className="rounded-xl border border-border px-4 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
-              إلغاء
-            </button>
-          </div>
-        </div>
+        <NotesForm
+          initialNotes={currentNotes ?? ""}
+          error={error}
+          pending={isPending}
+          onSave={handleSaveNotes}
+          onCancel={() => setNotesOpen(false)}
+        />
       </Modal>
     </>
+  );
+}
+
+/** The doctor's notes editor; its own small form, so typing re-renders only it. */
+function NotesForm({
+  initialNotes,
+  error,
+  pending,
+  onSave,
+  onCancel,
+}: {
+  initialNotes: string;
+  error: string | null;
+  pending: boolean;
+  onSave: (notes: string) => void;
+  onCancel: () => void;
+}) {
+  const form = useForm<{ notes: string }>({ defaultValues: { notes: initialNotes } });
+
+  return (
+    <form onSubmit={form.handleSubmit(({ notes }) => onSave(notes))} className="space-y-4">
+      <FormField
+        control={form.control}
+        name="notes"
+        type="textarea"
+        label="ملاحظات الطبيب"
+        rows={5}
+        placeholder="أضف ملاحظاتك الطبية هنا..."
+      />
+      {error && <p className="font-sans text-sm text-red-600">{error}</p>}
+      <div className="flex gap-3">
+        <Button type="submit" loading={pending} className="flex-1">
+          {pending ? "جارٍ الحفظ..." : "حفظ الملاحظات"}
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          إلغاء
+        </Button>
+      </div>
+    </form>
   );
 }
