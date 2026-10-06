@@ -51,17 +51,19 @@ export function PatientHistoryPanels({
           label="سجلي العلاجي"
           hint={recordCount === 0 ? "التشخيص والروشتات" : `${recordCount} زيارة مسجّلة`}
         />
-        <Link
-          href="#book"
-          className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 text-start transition-colors hover:border-primary/40 hover:bg-primary/5"
+        <Card
+          asChild
+          className="group flex items-center gap-3 p-4 text-start transition-colors hover:border-primary/40 hover:bg-primary/5"
         >
-          <IconTile icon={CalendarPlus} active={false} />
-          <div className="min-w-0">
-            <p className="font-sans text-sm font-medium text-foreground">احجز موعداً جديداً</p>
-            <p className="font-sans text-xs text-muted-foreground">{totalCount} موعد إجمالاً</p>
-          </div>
-          <ArrowLeft className="ms-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
-        </Link>
+          <Link href="#book">
+            <IconTile icon={CalendarPlus} active={false} />
+            <div className="min-w-0">
+              <p className="font-sans text-sm font-medium text-foreground">احجز موعداً جديداً</p>
+              <p className="font-sans text-xs text-muted-foreground">{totalCount} موعد إجمالاً</p>
+            </div>
+            <ArrowLeft className="ms-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+          </Link>
+        </Card>
       </div>
 
       {/* The open panel, directly under the toggles */}

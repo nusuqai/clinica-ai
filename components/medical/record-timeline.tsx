@@ -81,174 +81,183 @@ export default function RecordTimeline({
             className="absolute -start-[1.9rem] top-5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-card bg-primary"
           />
 
-          <article className="overflow-hidden rounded-2xl border border-border bg-card">
-            <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-muted/30 px-5 py-4">
-              <div className="min-w-0">
-                <p className="font-heading text-base font-bold text-foreground">
-                  {formatSlotDate(record.visitDate)}
-                </p>
-                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-sans text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Stethoscope className="h-3.5 w-3.5 flex-shrink-0" />
-                    د. {record.doctorName}
-                    {record.doctorSpecialty ? ` · ${record.doctorSpecialty}` : ""}
-                  </span>
-                  {record.branchName && (
+          <Card asChild className="overflow-hidden">
+            <article>
+              <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-muted/30 px-5 py-4">
+                <div className="min-w-0">
+                  <p className="font-heading text-base font-bold text-foreground">
+                    {formatSlotDate(record.visitDate)}
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-sans text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
-                      {record.branchName}
+                      <Stethoscope className="h-3.5 w-3.5 flex-shrink-0" />
+                      د. {record.doctorName}
+                      {record.doctorSpecialty ? ` · ${record.doctorSpecialty}` : ""}
                     </span>
-                  )}
-                  {record.enteredByName && (
-                    <span className="flex items-center gap-1" title="أُدخل نيابةً عن الطبيب">
-                      <UserPen className="h-3.5 w-3.5 flex-shrink-0" />
-                      أدخله {record.enteredByName}
-                    </span>
-                  )}
-                  {record.revisionCount > 0 &&
-                    (renderRevisionBadge ? (
-                      renderRevisionBadge(record)
-                    ) : (
-                      <Badge
-                        variant="warning"
-                        className="px-2 text-[length:inherit]"
-                        title={`عُدّل ${record.revisionCount} مرة`}
-                      >
-                        عُدّل {record.revisionCount === 1 ? "مرة" : `${record.revisionCount} مرات`}
+                    {record.branchName && (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                        {record.branchName}
+                      </span>
+                    )}
+                    {record.enteredByName && (
+                      <span className="flex items-center gap-1" title="أُدخل نيابةً عن الطبيب">
+                        <UserPen className="h-3.5 w-3.5 flex-shrink-0" />
+                        أدخله {record.enteredByName}
+                      </span>
+                    )}
+                    {record.revisionCount > 0 &&
+                      (renderRevisionBadge ? (
+                        renderRevisionBadge(record)
+                      ) : (
+                        <Badge
+                          variant="warning"
+                          className="px-2 text-[length:inherit]"
+                          title={`عُدّل ${record.revisionCount} مرة`}
+                        >
+                          عُدّل{" "}
+                          {record.revisionCount === 1 ? "مرة" : `${record.revisionCount} مرات`}
+                        </Badge>
+                      ))}
+                    {appointmentBasePath && record.appointmentId && (
+                      <Badge asChild className="px-2 text-[length:inherit] hover:bg-primary/20">
+                        <Link
+                          href={`${appointmentBasePath}/${record.appointmentId}`}
+                          title="فتح صفحة الموعد المرتبط بهذا السجل"
+                        >
+                          <CalendarSearch className="h-3.5 w-3.5" />
+                          الموعد المرتبط
+                        </Link>
                       </Badge>
-                    ))}
-                  {appointmentBasePath && record.appointmentId && (
-                    <Badge asChild className="px-2 text-[length:inherit] hover:bg-primary/20">
-                      <Link
-                        href={`${appointmentBasePath}/${record.appointmentId}`}
-                        title="فتح صفحة الموعد المرتبط بهذا السجل"
-                      >
-                        <CalendarSearch className="h-3.5 w-3.5" />
-                        الموعد المرتبط
-                      </Link>
-                    </Badge>
-                  )}
+                    )}
+                  </div>
                 </div>
+                {recordAction && <div className="flex-shrink-0">{recordAction(record)}</div>}
+              </header>
+
+              <div className="space-y-4 px-5 py-4">
+                {record.chiefComplaint && <Field label="الشكوى" value={record.chiefComplaint} />}
+                {record.diagnosis && <Field label="التشخيص" value={record.diagnosis} emphasis />}
+                {record.clinicalNotes && (
+                  <Field label="ملاحظات الطبيب" value={record.clinicalNotes} />
+                )}
+
+                {record.procedures.length > 0 && (
+                  <section>
+                    <SectionLabel icon={ClipboardList} text="الإجراءات" />
+                    <ul className="space-y-1.5">
+                      {record.procedures.map((p) => (
+                        <li
+                          key={p.id}
+                          className="flex flex-wrap items-baseline gap-x-2 rounded-xl bg-muted/40 px-3 py-2 font-sans text-sm"
+                        >
+                          <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                            {PROCEDURE_KIND_LABELS[p.kind]}
+                          </span>
+                          <span className="font-medium text-foreground">{p.name}</span>
+                          {p.note && (
+                            <span className="text-xs text-muted-foreground">— {p.note}</span>
+                          )}
+                          {p.cost && (
+                            <span className="ms-auto text-xs text-muted-foreground" dir="ltr">
+                              {p.cost}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+                {record.prescriptions.length > 0 && (
+                  <section>
+                    <SectionLabel icon={Pill} text="الروشتة" />
+                    <ul className="space-y-1.5">
+                      {record.prescriptions.map((p) => (
+                        <li
+                          key={p.id}
+                          className="rounded-xl bg-muted/40 px-3 py-2 font-sans text-sm"
+                        >
+                          <span className="font-medium text-foreground">{p.drugName}</span>
+                          {/* Dose line — only the parts the doctor filled in. */}
+                          {(p.dose || p.frequency || p.durationDays) && (
+                            <span className="text-muted-foreground">
+                              {" — "}
+                              {[
+                                p.dose,
+                                p.frequency,
+                                p.durationDays ? `لمدة ${p.durationDays} يوم` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          )}
+                          {p.instructions && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">{p.instructions}</p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+                {record.followUpDate && (
+                  <Alert
+                    variant="info"
+                    className="items-center gap-1.5 border-transparent px-3 py-2"
+                  >
+                    <CalendarClock className="h-4 w-4 flex-shrink-0" />
+                    موعد المتابعة المقترح: {formatSlotDate(record.followUpDate)}
+                  </Alert>
+                )}
+
+                {renderAttachments && renderAttachments(record)}
+
+                {!renderAttachments &&
+                  (() => {
+                    const files = record.appointmentId
+                      ? (attachmentsByAppointment?.[record.appointmentId] ?? [])
+                      : [];
+                    if (files.length === 0) return null;
+                    return (
+                      <section>
+                        <SectionLabel icon={Paperclip} text="المرفقات" />
+                        <ul className="flex flex-wrap gap-2">
+                          {files.map((a) => {
+                            const href = `/api/attachments/${a.id}`;
+                            return (
+                              <li key={a.id}>
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={a.fileName}
+                                  className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-sans text-xs text-foreground transition-colors hover:bg-muted"
+                                >
+                                  {a.kind === "image" ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={href}
+                                      alt={a.fileName}
+                                      className="h-6 w-6 flex-shrink-0 rounded object-cover"
+                                    />
+                                  ) : (
+                                    <FileText
+                                      className={`h-4 w-4 flex-shrink-0 ${a.kind === "pdf" ? "text-red-500" : "text-muted-foreground"}`}
+                                    />
+                                  )}
+                                  <span className="truncate">{a.fileName}</span>
+                                </a>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </section>
+                    );
+                  })()}
               </div>
-              {recordAction && <div className="flex-shrink-0">{recordAction(record)}</div>}
-            </header>
-
-            <div className="space-y-4 px-5 py-4">
-              {record.chiefComplaint && <Field label="الشكوى" value={record.chiefComplaint} />}
-              {record.diagnosis && <Field label="التشخيص" value={record.diagnosis} emphasis />}
-              {record.clinicalNotes && (
-                <Field label="ملاحظات الطبيب" value={record.clinicalNotes} />
-              )}
-
-              {record.procedures.length > 0 && (
-                <section>
-                  <SectionLabel icon={ClipboardList} text="الإجراءات" />
-                  <ul className="space-y-1.5">
-                    {record.procedures.map((p) => (
-                      <li
-                        key={p.id}
-                        className="flex flex-wrap items-baseline gap-x-2 rounded-xl bg-muted/40 px-3 py-2 font-sans text-sm"
-                      >
-                        <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
-                          {PROCEDURE_KIND_LABELS[p.kind]}
-                        </span>
-                        <span className="font-medium text-foreground">{p.name}</span>
-                        {p.note && (
-                          <span className="text-xs text-muted-foreground">— {p.note}</span>
-                        )}
-                        {p.cost && (
-                          <span className="ms-auto text-xs text-muted-foreground" dir="ltr">
-                            {p.cost}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              {record.prescriptions.length > 0 && (
-                <section>
-                  <SectionLabel icon={Pill} text="الروشتة" />
-                  <ul className="space-y-1.5">
-                    {record.prescriptions.map((p) => (
-                      <li key={p.id} className="rounded-xl bg-muted/40 px-3 py-2 font-sans text-sm">
-                        <span className="font-medium text-foreground">{p.drugName}</span>
-                        {/* Dose line — only the parts the doctor filled in. */}
-                        {(p.dose || p.frequency || p.durationDays) && (
-                          <span className="text-muted-foreground">
-                            {" — "}
-                            {[
-                              p.dose,
-                              p.frequency,
-                              p.durationDays ? `لمدة ${p.durationDays} يوم` : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </span>
-                        )}
-                        {p.instructions && (
-                          <p className="mt-0.5 text-xs text-muted-foreground">{p.instructions}</p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              {record.followUpDate && (
-                <Alert variant="info" className="items-center gap-1.5 border-transparent px-3 py-2">
-                  <CalendarClock className="h-4 w-4 flex-shrink-0" />
-                  موعد المتابعة المقترح: {formatSlotDate(record.followUpDate)}
-                </Alert>
-              )}
-
-              {renderAttachments && renderAttachments(record)}
-
-              {!renderAttachments &&
-                (() => {
-                  const files = record.appointmentId
-                    ? (attachmentsByAppointment?.[record.appointmentId] ?? [])
-                    : [];
-                  if (files.length === 0) return null;
-                  return (
-                    <section>
-                      <SectionLabel icon={Paperclip} text="المرفقات" />
-                      <ul className="flex flex-wrap gap-2">
-                        {files.map((a) => {
-                          const href = `/api/attachments/${a.id}`;
-                          return (
-                            <li key={a.id}>
-                              <a
-                                href={href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title={a.fileName}
-                                className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-sans text-xs text-foreground transition-colors hover:bg-muted"
-                              >
-                                {a.kind === "image" ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={href}
-                                    alt={a.fileName}
-                                    className="h-6 w-6 flex-shrink-0 rounded object-cover"
-                                  />
-                                ) : (
-                                  <FileText
-                                    className={`h-4 w-4 flex-shrink-0 ${a.kind === "pdf" ? "text-red-500" : "text-muted-foreground"}`}
-                                  />
-                                )}
-                                <span className="truncate">{a.fileName}</span>
-                              </a>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </section>
-                  );
-                })()}
-            </div>
-          </article>
+            </article>
+          </Card>
         </li>
       ))}
     </ol>

@@ -179,15 +179,17 @@ function QuickLink({
   icon: React.ElementType;
 }) {
   return (
-    <Link
-      href={href}
-      className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:bg-primary/5"
+    <Card
+      asChild
+      className="group flex items-center gap-3 p-4 transition-all hover:border-primary/50 hover:bg-primary/5"
     >
-      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-muted transition-colors group-hover:bg-primary/10">
-        <Icon className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
-      </div>
-      <span className="font-sans text-sm font-medium text-foreground">{label}</span>
-      <ChevronLeft className="mr-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
-    </Link>
+      <Link href={href}>
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-muted transition-colors group-hover:bg-primary/10">
+          <Icon className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+        </div>
+        <span className="font-sans text-sm font-medium text-foreground">{label}</span>
+        <ChevronLeft className="mr-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+      </Link>
+    </Card>
   );
 }

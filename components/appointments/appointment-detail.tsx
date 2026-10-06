@@ -80,94 +80,98 @@ export default function AppointmentDetail({
       </div>
 
       {/* Scheduling */}
-      <section className="overflow-hidden rounded-2xl border border-border bg-card">
-        <header className="border-b border-border bg-muted/30 px-5 py-4">
-          <h2 className="flex items-center gap-2 font-heading text-base font-bold text-foreground">
-            <Calendar className="h-4 w-4" />
-            بيانات الموعد
-          </h2>
-        </header>
-        <div className="divide-y divide-border">
-          <Row icon={Stethoscope} label="الطبيب">
-            د. {appt.doctor.fullName}
-            {appt.doctor.specialty ? ` · ${appt.doctor.specialty}` : ""}
-          </Row>
-          <Row icon={MapPin} label="الفرع">
-            {appt.branch?.name ?? "—"}
-            {appt.branch?.address ? (
-              <span className="mt-0.5 block text-xs text-muted-foreground">
-                {appt.branch.address}
-              </span>
-            ) : null}
-          </Row>
-          <Row icon={Calendar} label="التاريخ">
-            {visitDate ? formatSlotDate(visitDate) : "—"}
-          </Row>
-          {appt.slot ? (
-            <Row icon={Clock} label="الوقت">
-              <span dir="ltr">
-                {formatSlotTime(appt.slot.startTime)} – {formatSlotTime(appt.slot.endTime)}
-              </span>
+      <Card asChild className="overflow-hidden">
+        <section>
+          <header className="border-b border-border bg-muted/30 px-5 py-4">
+            <h2 className="flex items-center gap-2 font-heading text-base font-bold text-foreground">
+              <Calendar className="h-4 w-4" />
+              بيانات الموعد
+            </h2>
+          </header>
+          <div className="divide-y divide-border">
+            <Row icon={Stethoscope} label="الطبيب">
+              د. {appt.doctor.fullName}
+              {appt.doctor.specialty ? ` · ${appt.doctor.specialty}` : ""}
             </Row>
-          ) : (
-            <Row icon={ListOrdered} label={appt.arrivalBased ? "أسبقية الحضور" : "الدور"}>
-              <QueueValue appt={appt} />
+            <Row icon={MapPin} label="الفرع">
+              {appt.branch?.name ?? "—"}
+              {appt.branch?.address ? (
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {appt.branch.address}
+                </span>
+              ) : null}
             </Row>
-          )}
-          {(appt.doctor.examinationFee != null || appt.doctor.consultationFee != null) && (
-            <Row icon={Banknote} label="سعر الكشف">
-              {appt.doctor.examinationFee != null ? `${appt.doctor.examinationFee} جنيه` : "—"}
+            <Row icon={Calendar} label="التاريخ">
+              {visitDate ? formatSlotDate(visitDate) : "—"}
             </Row>
-          )}
-          {appt.patientNotes && (
-            <Row icon={StickyNote} label="ملاحظات المريض">
-              <span className="whitespace-pre-wrap">{appt.patientNotes}</span>
-            </Row>
-          )}
-          {appt.doctorNotes && (
-            <Row icon={StickyNote} label="ملاحظات الطبيب">
-              <span className="whitespace-pre-wrap">{appt.doctorNotes}</span>
-            </Row>
-          )}
-          {appt.cancellationReason && (
-            <div className="px-5 py-3">
-              <Alert variant="destructive" className="block px-3 py-2">
-                <span className="font-medium">سبب الإلغاء: </span>
-                {appt.cancellationReason}
-              </Alert>
-            </div>
-          )}
-        </div>
-      </section>
+            {appt.slot ? (
+              <Row icon={Clock} label="الوقت">
+                <span dir="ltr">
+                  {formatSlotTime(appt.slot.startTime)} – {formatSlotTime(appt.slot.endTime)}
+                </span>
+              </Row>
+            ) : (
+              <Row icon={ListOrdered} label={appt.arrivalBased ? "أسبقية الحضور" : "الدور"}>
+                <QueueValue appt={appt} />
+              </Row>
+            )}
+            {(appt.doctor.examinationFee != null || appt.doctor.consultationFee != null) && (
+              <Row icon={Banknote} label="سعر الكشف">
+                {appt.doctor.examinationFee != null ? `${appt.doctor.examinationFee} جنيه` : "—"}
+              </Row>
+            )}
+            {appt.patientNotes && (
+              <Row icon={StickyNote} label="ملاحظات المريض">
+                <span className="whitespace-pre-wrap">{appt.patientNotes}</span>
+              </Row>
+            )}
+            {appt.doctorNotes && (
+              <Row icon={StickyNote} label="ملاحظات الطبيب">
+                <span className="whitespace-pre-wrap">{appt.doctorNotes}</span>
+              </Row>
+            )}
+            {appt.cancellationReason && (
+              <div className="px-5 py-3">
+                <Alert variant="destructive" className="block px-3 py-2">
+                  <span className="font-medium">سبب الإلغاء: </span>
+                  {appt.cancellationReason}
+                </Alert>
+              </div>
+            )}
+          </div>
+        </section>
+      </Card>
 
       {/* Patient */}
-      <section className="overflow-hidden rounded-2xl border border-border bg-card">
-        <header className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-5 py-4">
-          <h2 className="flex items-center gap-2 font-heading text-base font-bold text-foreground">
-            <User className="h-4 w-4" />
-            المريض
-          </h2>
-          {isStaff && patientHistoryHref && (
-            <Link
-              href={patientHistoryHref}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-            >
-              <History className="h-3.5 w-3.5" />
-              السجل الكامل للمريض
-            </Link>
-          )}
-        </header>
-        <div className="divide-y divide-border">
-          <Row icon={User} label="الاسم">
-            {appt.patient.fullName}
-          </Row>
-          {isStaff && appt.patient.phone && (
-            <Row icon={Phone} label="الهاتف">
-              <span dir="ltr">{appt.patient.phone}</span>
+      <Card asChild className="overflow-hidden">
+        <section>
+          <header className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-5 py-4">
+            <h2 className="flex items-center gap-2 font-heading text-base font-bold text-foreground">
+              <User className="h-4 w-4" />
+              المريض
+            </h2>
+            {isStaff && patientHistoryHref && (
+              <Link
+                href={patientHistoryHref}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+              >
+                <History className="h-3.5 w-3.5" />
+                السجل الكامل للمريض
+              </Link>
+            )}
+          </header>
+          <div className="divide-y divide-border">
+            <Row icon={User} label="الاسم">
+              {appt.patient.fullName}
             </Row>
-          )}
-        </div>
-      </section>
+            {isStaff && appt.patient.phone && (
+              <Row icon={Phone} label="الهاتف">
+                <span dir="ltr">{appt.patient.phone}</span>
+              </Row>
+            )}
+          </div>
+        </section>
+      </Card>
 
       {/* Clinical record for THIS visit */}
       <section className="space-y-3">
@@ -216,38 +220,43 @@ export default function AppointmentDetail({
 
       {/* Feedback */}
       {appt.feedback && (
-        <section className="overflow-hidden rounded-2xl border border-border bg-card">
-          <header className="border-b border-border bg-muted/30 px-5 py-4">
-            <h2 className="flex items-center gap-2 font-heading text-base font-bold text-foreground">
-              <Star className="h-4 w-4" />
-              تقييم المريض
-            </h2>
-          </header>
-          <div className="space-y-2 px-5 py-4">
-            {appt.feedback.rating != null && (
-              <div className="flex items-center gap-1" aria-label={`${appt.feedback.rating} من 5`}>
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <Star
-                    key={n}
-                    className={
-                      n <= (appt.feedback!.rating ?? 0)
-                        ? "h-5 w-5 fill-amber-400 text-amber-400"
-                        : "h-5 w-5 text-muted-foreground/30"
-                    }
-                  />
-                ))}
-              </div>
-            )}
-            {appt.feedback.comment && (
-              <p className="whitespace-pre-wrap font-sans text-sm text-foreground/90">
-                {appt.feedback.comment}
+        <Card asChild className="overflow-hidden">
+          <section>
+            <header className="border-b border-border bg-muted/30 px-5 py-4">
+              <h2 className="flex items-center gap-2 font-heading text-base font-bold text-foreground">
+                <Star className="h-4 w-4" />
+                تقييم المريض
+              </h2>
+            </header>
+            <div className="space-y-2 px-5 py-4">
+              {appt.feedback.rating != null && (
+                <div
+                  className="flex items-center gap-1"
+                  aria-label={`${appt.feedback.rating} من 5`}
+                >
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Star
+                      key={n}
+                      className={
+                        n <= (appt.feedback!.rating ?? 0)
+                          ? "h-5 w-5 fill-amber-400 text-amber-400"
+                          : "h-5 w-5 text-muted-foreground/30"
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+              {appt.feedback.comment && (
+                <p className="whitespace-pre-wrap font-sans text-sm text-foreground/90">
+                  {appt.feedback.comment}
+                </p>
+              )}
+              <p className="font-sans text-xs text-muted-foreground">
+                {formatSlotDate(appt.feedback.createdAt)}
               </p>
-            )}
-            <p className="font-sans text-xs text-muted-foreground">
-              {formatSlotDate(appt.feedback.createdAt)}
-            </p>
-          </div>
-        </section>
+            </div>
+          </section>
+        </Card>
       )}
     </div>
   );

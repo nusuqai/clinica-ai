@@ -14,6 +14,7 @@ import {
 } from "@/server/actions/attachments";
 import type { AttachmentView } from "@/server/services/attachments";
 import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 
 // The visit's files (lab results, x-rays, documents). Staff (doctor/admin) can
 // upload and delete; a patient sees a read-only list. Bytes go DIRECTLY to the
@@ -155,201 +156,203 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
   }
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-5 py-4">
-        <h2 className="flex items-center gap-2 font-heading text-base font-bold text-foreground">
-          <Paperclip className="h-4 w-4" />
-          المرفقات
-          <span className="font-sans text-xs font-normal text-muted-foreground">
-            ({attachments.length})
-          </span>
-        </h2>
-        {canManage && (
-          <>
-            <input
-              ref={inputRef}
-              type="file"
-              accept={ACCEPT}
-              className="hidden"
-              onChange={onPick}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => inputRef.current?.click()}
-              loading={busy}
-              disabled={!!pending}
-              className="text-sm"
-            >
-              {!busy && <Upload />}
-              رفع ملف
-            </Button>
-          </>
-        )}
-      </header>
-
-      <div className="p-5">
-        {error && (
-          <Alert variant="destructive" className="mb-3 block border-transparent px-3 py-2">
-            {error}
-          </Alert>
-        )}
-
-        {/* Rename-before-upload: name the picked file, then confirm the upload. */}
-        {pending && (
-          <div className="mb-4 rounded-xl border border-primary/30 bg-primary/5 p-3">
-            <p className="mb-2 flex items-center gap-1.5 font-sans text-xs font-medium text-primary">
-              <Upload className="h-3.5 w-3.5" />
-              اسم الملف قبل الرفع ({formatSize(pending.file.size)})
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                type="text"
-                autoFocus
-                value={pending.name}
-                onChange={(e) => setPending((p) => (p ? { ...p, name: e.target.value } : p))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") doUpload();
-                  if (e.key === "Escape") setPending(null);
-                }}
-                disabled={busy}
-                dir="auto"
-                className="min-w-0 flex-1"
+    <Card asChild className="overflow-hidden">
+      <section>
+        <header className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-5 py-4">
+          <h2 className="flex items-center gap-2 font-heading text-base font-bold text-foreground">
+            <Paperclip className="h-4 w-4" />
+            المرفقات
+            <span className="font-sans text-xs font-normal text-muted-foreground">
+              ({attachments.length})
+            </span>
+          </h2>
+          {canManage && (
+            <>
+              <input
+                ref={inputRef}
+                type="file"
+                accept={ACCEPT}
+                className="hidden"
+                onChange={onPick}
               />
-              <Button onClick={doUpload} loading={busy} disabled={!pending.name.trim()}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => inputRef.current?.click()}
+                loading={busy}
+                disabled={!!pending}
+                className="text-sm"
+              >
                 {!busy && <Upload />}
-                رفع
+                رفع ملف
               </Button>
-              <Button variant="outline" onClick={() => setPending(null)} disabled={busy}>
-                إلغاء
-              </Button>
-            </div>
-          </div>
-        )}
+            </>
+          )}
+        </header>
 
-        {attachments.length === 0 ? (
-          <p className="py-6 text-center font-sans text-sm text-muted-foreground">
-            {canManage
-              ? "لا توجد مرفقات بعد — ارفع نتائج التحاليل أو الأشعة أو المستندات"
-              : "لا توجد مرفقات"}
-          </p>
-        ) : (
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {attachments.map((a) => {
-              const href = `/api/attachments/${a.id}`;
-              return (
-                <li
-                  key={a.id}
-                  className="flex items-center gap-3 rounded-xl border border-border bg-background p-3"
-                >
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted"
-                    title="فتح المرفق"
+        <div className="p-5">
+          {error && (
+            <Alert variant="destructive" className="mb-3 block border-transparent px-3 py-2">
+              {error}
+            </Alert>
+          )}
+
+          {/* Rename-before-upload: name the picked file, then confirm the upload. */}
+          {pending && (
+            <div className="mb-4 rounded-xl border border-primary/30 bg-primary/5 p-3">
+              <p className="mb-2 flex items-center gap-1.5 font-sans text-xs font-medium text-primary">
+                <Upload className="h-3.5 w-3.5" />
+                اسم الملف قبل الرفع ({formatSize(pending.file.size)})
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  type="text"
+                  autoFocus
+                  value={pending.name}
+                  onChange={(e) => setPending((p) => (p ? { ...p, name: e.target.value } : p))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") doUpload();
+                    if (e.key === "Escape") setPending(null);
+                  }}
+                  disabled={busy}
+                  dir="auto"
+                  className="min-w-0 flex-1"
+                />
+                <Button onClick={doUpload} loading={busy} disabled={!pending.name.trim()}>
+                  {!busy && <Upload />}
+                  رفع
+                </Button>
+                <Button variant="outline" onClick={() => setPending(null)} disabled={busy}>
+                  إلغاء
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {attachments.length === 0 ? (
+            <p className="py-6 text-center font-sans text-sm text-muted-foreground">
+              {canManage
+                ? "لا توجد مرفقات بعد — ارفع نتائج التحاليل أو الأشعة أو المستندات"
+                : "لا توجد مرفقات"}
+            </p>
+          ) : (
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {attachments.map((a) => {
+                const href = `/api/attachments/${a.id}`;
+                return (
+                  <li
+                    key={a.id}
+                    className="flex items-center gap-3 rounded-xl border border-border bg-background p-3"
                   >
-                    {a.kind === "image" ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={href} alt={a.fileName} className="h-full w-full object-cover" />
-                    ) : a.kind === "pdf" ? (
-                      <FileText className="h-6 w-6 text-red-500" />
-                    ) : (
-                      <FileText className="h-6 w-6 text-muted-foreground" />
-                    )}
-                  </a>
-                  <div className="min-w-0 flex-1">
-                    {renamingId === a.id ? (
-                      <Input
-                        type="text"
-                        autoFocus
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") onRename(a.id, a.fileName);
-                          if (e.key === "Escape") setRenamingId(null);
-                        }}
-                        disabled={savingId === a.id}
-                        dir="auto"
-                        className="h-8 rounded-lg px-2 py-1"
-                      />
-                    ) : (
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block truncate font-sans text-sm font-medium text-foreground hover:underline"
-                        title={a.fileName}
-                      >
-                        {a.fileName}
-                      </a>
-                    )}
-                    <p className="mt-0.5 font-sans text-xs text-muted-foreground">
-                      {formatSize(a.size)} · {a.uploadedByName}
-                    </p>
-                  </div>
-                  {renamingId === a.id ? (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onRename(a.id, a.fileName)}
-                        loading={savingId === a.id}
-                        className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
-                        title="حفظ الاسم"
-                      >
-                        {savingId !== a.id && <Check />}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setRenamingId(null)}
-                        disabled={savingId === a.id}
-                        title="إلغاء"
-                      >
-                        <X />
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button asChild variant="ghost" size="icon" title="تنزيل">
-                        <a href={href} target="_blank" rel="noopener noreferrer">
-                          <Download />
-                        </a>
-                      </Button>
-                      {canManage && (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setError(null);
-                              setRenamingId(a.id);
-                              setRenameValue(a.fileName);
-                            }}
-                            title="إعادة تسمية"
-                          >
-                            <Pencil />
-                          </Button>
-                          <Button
-                            variant="ghost-destructive"
-                            size="icon"
-                            onClick={() => onDelete(a.id)}
-                            loading={deletingId === a.id}
-                            title="حذف"
-                          >
-                            {deletingId !== a.id && <Trash2 />}
-                          </Button>
-                        </>
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted"
+                      title="فتح المرفق"
+                    >
+                      {a.kind === "image" ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={href} alt={a.fileName} className="h-full w-full object-cover" />
+                      ) : a.kind === "pdf" ? (
+                        <FileText className="h-6 w-6 text-red-500" />
+                      ) : (
+                        <FileText className="h-6 w-6 text-muted-foreground" />
                       )}
-                    </>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-    </section>
+                    </a>
+                    <div className="min-w-0 flex-1">
+                      {renamingId === a.id ? (
+                        <Input
+                          type="text"
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") onRename(a.id, a.fileName);
+                            if (e.key === "Escape") setRenamingId(null);
+                          }}
+                          disabled={savingId === a.id}
+                          dir="auto"
+                          className="h-8 rounded-lg px-2 py-1"
+                        />
+                      ) : (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block truncate font-sans text-sm font-medium text-foreground hover:underline"
+                          title={a.fileName}
+                        >
+                          {a.fileName}
+                        </a>
+                      )}
+                      <p className="mt-0.5 font-sans text-xs text-muted-foreground">
+                        {formatSize(a.size)} · {a.uploadedByName}
+                      </p>
+                    </div>
+                    {renamingId === a.id ? (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onRename(a.id, a.fileName)}
+                          loading={savingId === a.id}
+                          className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
+                          title="حفظ الاسم"
+                        >
+                          {savingId !== a.id && <Check />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setRenamingId(null)}
+                          disabled={savingId === a.id}
+                          title="إلغاء"
+                        >
+                          <X />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button asChild variant="ghost" size="icon" title="تنزيل">
+                          <a href={href} target="_blank" rel="noopener noreferrer">
+                            <Download />
+                          </a>
+                        </Button>
+                        {canManage && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setError(null);
+                                setRenamingId(a.id);
+                                setRenameValue(a.fileName);
+                              }}
+                              title="إعادة تسمية"
+                            >
+                              <Pencil />
+                            </Button>
+                            <Button
+                              variant="ghost-destructive"
+                              size="icon"
+                              onClick={() => onDelete(a.id)}
+                              loading={deletingId === a.id}
+                              title="حذف"
+                            >
+                              {deletingId !== a.id && <Trash2 />}
+                            </Button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </section>
+    </Card>
   );
 }
