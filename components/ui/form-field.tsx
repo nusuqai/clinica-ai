@@ -79,7 +79,7 @@ export type SelectOption = { value: string; label: React.ReactNode; disabled?: b
 
 type SelectFieldProps = FieldChrome & {
   type: "select";
-  options: SelectOption[];
+  options: readonly SelectOption[];
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;

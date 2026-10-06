@@ -1,10 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Save, KeyRound, Copy, Check } from "lucide-react";
+import { Save, KeyRound, Copy, Check } from "lucide-react";
 import { saveClinicWhatsappConfigAction } from "@/server/actions/platformWhatsapp";
 import type { WhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
-import { Field } from "./field";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+/** Compact muted label used across the WhatsApp console forms. */
+const smallLabel = "text-xs font-normal text-muted-foreground";
 
 interface Props {
   /** The clinic being configured — named explicitly, since the console runs on
@@ -71,34 +77,37 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
         بيانات الاتصال (Meta Cloud API)
       </h2>
       <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
-        <Field
+        <FormField
           label="Phone Number ID"
+          labelClassName={smallLabel}
           value={phoneNumberId}
-          onChange={setPhoneNumberId}
+          onValueChange={setPhoneNumberId}
           placeholder="مثال: 1286383577882071"
+          dir="ltr"
         />
-        <Field
+        <FormField
           label="WhatsApp Business Account ID (WABA)"
+          labelClassName={smallLabel}
           value={wabaId}
-          onChange={setWabaId}
+          onValueChange={setWabaId}
           placeholder="مثال: 2292332154910536"
+          dir="ltr"
         />
-        <div>
-          <label className="mb-1 block font-sans text-xs text-muted-foreground">
-            Access Token (System User)
-            {initialConfig?.hasToken && (
-              <span className="text-green-600"> — تم حفظ رمز، اتركه فارغًا للإبقاء عليه</span>
-            )}
-          </label>
-          <input
-            type="password"
-            value={accessToken}
-            onChange={(e) => setAccessToken(e.target.value)}
-            placeholder={initialConfig?.hasToken ? "••••••••••••" : "الصق الرمز هنا"}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-            dir="ltr"
-          />
-        </div>
+        <FormField
+          type="password"
+          label={
+            <>
+              Access Token (System User)
+              {initialConfig?.hasToken && (
+                <span className="text-green-600"> — تم حفظ رمز، اتركه فارغًا للإبقاء عليه</span>
+              )}
+            </>
+          }
+          labelClassName={smallLabel}
+          value={accessToken}
+          onValueChange={setAccessToken}
+          placeholder={initialConfig?.hasToken ? "••••••••••••" : "الصق الرمز هنا"}
+        />
 
         {message && (
           <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
@@ -106,14 +115,14 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
           </p>
         )}
 
-        <button
+        <Button
           onClick={handleSave}
-          disabled={saving || !phoneNumberId.trim() || !wabaId.trim()}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+          loading={saving}
+          disabled={!phoneNumberId.trim() || !wabaId.trim()}
         >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {!saving && <Save />}
           حفظ
-        </button>
+        </Button>
 
         {tokens && (
           <div className="mt-2 space-y-3 border-t border-border pt-4">
@@ -143,26 +152,24 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   };
   return (
     <div>
-      <label className="mb-1 block font-sans text-xs text-muted-foreground">{label}</label>
+      <Label className={`mb-1 block ${smallLabel}`}>{label}</Label>
       <div className="flex items-stretch gap-2">
-        <input
+        <Input
           readOnly
           value={value}
           onFocus={(e) => e.currentTarget.select()}
-          className="flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-xs focus:outline-none"
+          className="flex-1 bg-muted text-xs"
           dir="ltr"
         />
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={copy}
-          className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 text-xs text-muted-foreground hover:bg-muted"
+          className="h-10 shrink-0 text-muted-foreground [&_svg]:size-3.5"
         >
-          {copied ? (
-            <Check className="h-3.5 w-3.5 text-green-600" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" />
-          )}
+          {copied ? <Check className="text-green-600" /> : <Copy />}
           {copied ? "تم" : "نسخ"}
-        </button>
+        </Button>
       </div>
     </div>
   );

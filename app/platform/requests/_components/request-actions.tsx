@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { approveClinicRequest, rejectClinicRequest } from "@/server/actions/clinics";
+import { Button } from "@/components/ui/button";
 
 export default function RequestActions({ requestId }: { requestId: string }) {
   const router = useRouter();
@@ -25,20 +26,21 @@ export default function RequestActions({ requestId }: { requestId: string }) {
 
   return (
     <div className="flex items-center gap-2">
-      <button
+      <Button
+        size="sm"
         disabled={pending}
         onClick={() => run(() => approveClinicRequest(requestId))}
-        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
       >
         موافقة
-      </button>
-      <button
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
         disabled={pending}
         onClick={() => run(() => rejectClinicRequest(requestId))}
-        className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
       >
         رفض
-      </button>
+      </Button>
       {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
   );

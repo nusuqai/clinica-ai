@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -83,24 +84,28 @@ export default function PlatformNav({ email, pendingRequests }: Props) {
             {email}
           </span>
           <form action={signOut}>
-            <button
+            <Button
               type="submit"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600"
+              variant="outline"
+              size="sm"
+              className="text-sm text-muted-foreground hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600"
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut />
               تسجيل الخروج
-            </button>
+            </Button>
           </form>
         </div>
 
         {/* Mobile toggle */}
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => setOpen((v) => !v)}
-          className="rounded-lg p-2 text-muted-foreground hover:bg-muted md:hidden"
+          className="md:hidden [&_svg]:size-5"
           aria-label="القائمة"
         >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+          {open ? <X /> : <Menu />}
+        </Button>
       </div>
 
       {/* Mobile menu */}
@@ -122,13 +127,15 @@ export default function PlatformNav({ email, pendingRequests }: Props) {
               {email}
             </span>
             <form action={signOut}>
-              <button
+              <Button
                 type="submit"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600"
+                variant="outline"
+                size="sm"
+                className="text-sm text-muted-foreground hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut />
                 تسجيل الخروج
-              </button>
+              </Button>
             </form>
           </div>
         </div>

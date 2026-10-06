@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, BookOpen } from "lucide-react";
 import KnowledgeManager, { type KnowledgeDocView } from "./knowledge-manager";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   clinicId: string;
@@ -18,14 +19,16 @@ export default function ClinicKnowledge({ clinicId, docs }: Props) {
 
   return (
     <div>
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="text-sm text-muted-foreground hover:text-foreground"
       >
-        <BookOpen className="h-4 w-4" />
+        <BookOpen />
         {open ? "إخفاء المستندات" : docs.length > 0 ? "إدارة المستندات" : "إضافة أول مستند"}
-        <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
+        <ChevronDown className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </Button>
 
       {open && (
         <div className="mt-4 border-t border-border pt-4">

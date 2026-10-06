@@ -8,9 +8,8 @@ import {
   adjustClinicUnitsAction,
   setClinicLowUnitsThresholdAction,
 } from "@/server/actions/platformCredits";
-
-const inputCls =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 
 interface Props {
   clinicId: string;
@@ -61,15 +60,16 @@ export default function CreditManager({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {/* Grant units */}
         <div className="flex gap-2">
-          <input
+          <FormField
             value={unitTopUp}
-            onChange={(e) => setUnitTopUp(e.target.value)}
+            onValueChange={setUnitTopUp}
             placeholder="إضافة وحدات"
-            className={inputCls}
             dir="ltr"
             inputMode="numeric"
+            className="flex-1"
           />
-          <button
+          <Button
+            variant="success"
             disabled={pending || !unitTopUp.trim()}
             onClick={() =>
               run(
@@ -77,23 +77,24 @@ export default function CreditManager({
                 "تمت إضافة الوحدات."
               )
             }
-            className="flex-shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="shrink-0"
           >
             إضافة
-          </button>
+          </Button>
         </div>
 
         {/* Adjust units (signed) */}
         <div className="flex gap-2">
-          <input
+          <FormField
             value={unitAdjust}
-            onChange={(e) => setUnitAdjust(e.target.value)}
+            onValueChange={setUnitAdjust}
             placeholder="تعديل وحدات ±"
-            className={inputCls}
             dir="ltr"
             inputMode="numeric"
+            className="flex-1"
           />
-          <button
+          <Button
+            variant="outline"
             disabled={pending || !unitAdjust.trim()}
             onClick={() =>
               run(
@@ -101,23 +102,23 @@ export default function CreditManager({
                 "تم تعديل الوحدات."
               )
             }
-            className="flex-shrink-0 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            className="shrink-0"
           >
             تعديل
-          </button>
+          </Button>
         </div>
 
         {/* Low-units warning threshold */}
         <div className="flex gap-2">
-          <input
+          <FormField
             value={lowUnits}
-            onChange={(e) => setLowUnits(e.target.value)}
+            onValueChange={setLowUnits}
             placeholder="حد التنبيه (وحدات)"
-            className={inputCls}
             dir="ltr"
             inputMode="numeric"
+            className="flex-1"
           />
-          <button
+          <Button
             disabled={pending || !lowUnits.trim()}
             onClick={() =>
               run(
@@ -125,10 +126,10 @@ export default function CreditManager({
                 "تم تحديث حد التنبيه."
               )
             }
-            className="flex-shrink-0 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="shrink-0"
           >
             حفظ
-          </button>
+          </Button>
         </div>
       </div>
 

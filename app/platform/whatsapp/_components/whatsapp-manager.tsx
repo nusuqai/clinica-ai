@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, Settings2 } from "lucide-react";
 import type { WhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
 import ConnectionConfig from "./connection-config";
+import { Button } from "@/components/ui/button";
 import TemplatesList from "./templates-list";
 // Imported but not rendered — the template composer was already commented out on
 // the clinic page this moved from, and stays dormant here. Kept wired so it can
@@ -27,14 +28,16 @@ export default function WhatsappManager({ clinicId, config, appUrl }: Props) {
 
   return (
     <div>
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="text-sm text-muted-foreground hover:text-foreground"
       >
-        <Settings2 className="h-4 w-4" />
+        <Settings2 />
         {open ? "إخفاء الإعدادات" : config ? "إدارة الاتصال والقوالب" : "إعداد واتساب لهذه العيادة"}
-        <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
+        <ChevronDown className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </Button>
 
       {open && (
         <div className="mt-4 space-y-5 border-t border-border pt-4">

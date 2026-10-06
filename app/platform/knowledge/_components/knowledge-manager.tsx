@@ -10,6 +10,9 @@ import {
   deleteClinicKnowledgeDocAction,
   toggleClinicKnowledgeDocActiveAction,
 } from "@/server/actions/platformKnowledge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 
 export interface KnowledgeDocView {
   id: string;
@@ -21,9 +24,6 @@ export interface KnowledgeDocView {
   updatedAt: string;
 }
 
-const inputCls =
-  "w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30";
-const labelCls = "text-sm font-medium text-foreground font-sans";
 const hintCls = "text-xs text-muted-foreground font-sans";
 
 type Draft = {
@@ -111,16 +111,15 @@ export default function KnowledgeManager({
       )}
 
       <div className="mb-6 flex justify-end">
-        <button
+        <Button
           onClick={() => {
             setError(null);
             setDraft({ ...emptyDraft });
           }}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
         >
-          <Plus className="h-4 w-4" />
+          <Plus />
           مستند جديد
-        </button>
+        </Button>
       </div>
 
       {docs.length === 0 ? (
@@ -142,11 +141,7 @@ export default function KnowledgeManager({
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
                       {d.slug}
                     </code>
-                    {!d.isActive && (
-                      <span className="rounded-full bg-muted px-2 py-0.5 font-sans text-xs text-muted-foreground">
-                        غير مفعّل
-                      </span>
-                    )}
+                    {!d.isActive && <Badge variant="muted">غير مفعّل</Badge>}
                   </div>
                   <p className="mt-1 line-clamp-2 font-sans text-sm text-muted-foreground">
                     {d.summary}
@@ -154,7 +149,9 @@ export default function KnowledgeManager({
                   <p className={hintCls + " mt-2"}>آخر تعديل: {formatDate(d.updatedAt)}</p>
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-1">
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() =>
                       run(() =>
                         toggleClinicKnowledgeDocActiveAction({
@@ -166,11 +163,12 @@ export default function KnowledgeManager({
                     }
                     disabled={isPending}
                     title={d.isActive ? "إخفاء عن المساعد" : "تفعيل"}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-40"
                   >
-                    {d.isActive ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                  </button>
-                  <button
+                    {d.isActive ? <Eye /> : <EyeOff />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => {
                       setError(null);
                       setDraft({
@@ -183,11 +181,13 @@ export default function KnowledgeManager({
                       });
                     }}
                     title="تعديل"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                    className="hover:bg-primary/10 hover:text-primary"
                   >
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                  <button
+                    <Pencil />
+                  </Button>
+                  <Button
+                    variant="ghost-destructive"
+                    size="icon"
                     onClick={() =>
                       run(() => {
                         if (!confirm(`حذف المستند «${d.title}» نهائياً؟`)) return Promise.resolve();
@@ -196,10 +196,9 @@ export default function KnowledgeManager({
                     }
                     disabled={isPending}
                     title="حذف"
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                    <Trash2 />
+                  </Button>
                 </div>
               </div>
             </div>
@@ -215,78 +214,55 @@ export default function KnowledgeManager({
       >
         {draft && (
           <form onSubmit={handleSave} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className={labelCls}>العنوان</label>
-              <input
-                value={draft.title}
-                onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                placeholder="مثال: تعليمات وشروط التعامل مع الجهات والشركات"
-                className={inputCls}
-                autoFocus
-              />
-            </div>
+            <FormField
+              label="العنوان"
+              value={draft.title}
+              onValueChange={(v) => setDraft({ ...draft, title: v })}
+              placeholder="مثال: تعليمات وشروط التعامل مع الجهات والشركات"
+              autoFocus
+            />
 
-            <div className="space-y-1.5">
-              <label className={labelCls}>المعرّف (slug)</label>
-              <input
-                value={draft.slug}
-                onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
-                placeholder="company-terms"
-                dir="ltr"
-                className={inputCls + " text-start font-mono"}
-              />
-              <p className={hintCls}>
-                معرّف إنجليزي قصير وفريد يميّز المستند (أحرف صغيرة وأرقام وشرطات). يُستخدم داخلياً
-                بواسطة المساعد.
-              </p>
-            </div>
+            <FormField
+              label="المعرّف (slug)"
+              value={draft.slug}
+              onValueChange={(v) => setDraft({ ...draft, slug: v })}
+              placeholder="company-terms"
+              dir="ltr"
+              controlClassName="text-start font-mono"
+              hint="معرّف إنجليزي قصير وفريد يميّز المستند (أحرف صغيرة وأرقام وشرطات). يُستخدم داخلياً بواسطة المساعد."
+            />
 
-            <div className="space-y-1.5">
-              <label className={labelCls}>وصف مختصر</label>
-              <input
-                value={draft.summary}
-                onChange={(e) => setDraft({ ...draft, summary: e.target.value })}
-                placeholder="جملة واحدة تصف محتوى المستند — يراها المساعد ليقرّر متى يفتحه."
-                className={inputCls}
-              />
-            </div>
+            <FormField
+              label="وصف مختصر"
+              value={draft.summary}
+              onValueChange={(v) => setDraft({ ...draft, summary: v })}
+              placeholder="جملة واحدة تصف محتوى المستند — يراها المساعد ليقرّر متى يفتحه."
+            />
 
-            <div className="space-y-1.5">
-              <label className={labelCls}>المحتوى</label>
-              <textarea
-                value={draft.content}
-                onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-                placeholder="النص الكامل للمستند (يدعم تنسيق ماركداون، بما في ذلك الجداول والقوائم)."
-                rows={14}
-                className={inputCls + " resize-y font-mono leading-relaxed"}
-              />
-            </div>
+            <FormField
+              type="textarea"
+              label="المحتوى"
+              value={draft.content}
+              onValueChange={(v) => setDraft({ ...draft, content: v })}
+              placeholder="النص الكامل للمستند (يدعم تنسيق ماركداون، بما في ذلك الجداول والقوائم)."
+              rows={14}
+              controlClassName="resize-y font-mono leading-relaxed"
+            />
 
-            <label className="flex items-center gap-2 font-sans text-sm text-foreground">
-              <input
-                type="checkbox"
-                checked={draft.isActive}
-                onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
-                className="h-4 w-4 rounded border-border"
-              />
-              مفعّل (يستعين به المساعد الذكي)
-            </label>
+            <FormField
+              type="checkbox"
+              label="مفعّل (يستعين به المساعد الذكي)"
+              checked={draft.isActive}
+              onCheckedChange={(v) => setDraft({ ...draft, isActive: v })}
+            />
 
             <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setDraft(null)}
-                className="rounded-xl border border-border px-4 py-2 font-sans text-sm text-foreground hover:bg-muted"
-              >
+              <Button type="button" variant="outline" onClick={() => setDraft(null)}>
                 إلغاء
-              </button>
-              <button
-                type="submit"
-                disabled={isPending}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-              >
+              </Button>
+              <Button type="submit" loading={isPending}>
                 {isPending ? "جارٍ الحفظ…" : "حفظ"}
-              </button>
+              </Button>
             </div>
           </form>
         )}

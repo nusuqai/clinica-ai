@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { createClinicTemplateAction } from "@/server/actions/platformWhatsapp";
 import { countVariables } from "@/lib/meta/template-render";
 import type { TemplateCategory, TemplateButton, TemplateButtonType } from "@/lib/meta/whatsapp";
-import { Field } from "./field";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
 // Shared with the clinic-side reminders page and inbox picker, so these stay
 // under components/admin/whatsapp rather than moving here.
 import { LANGUAGES } from "@/components/admin/whatsapp/languages";
@@ -22,6 +24,8 @@ const BUTTON_TYPES: { value: TemplateButtonType; label: string }[] = [
   { value: "URL", label: "رابط (URL)" },
   { value: "PHONE_NUMBER", label: "اتصال" },
 ];
+
+const smallLabel = "text-xs font-normal text-muted-foreground";
 
 // Meta allows more, but a small cap keeps the builder and preview readable.
 const MAX_BUTTONS = 3;
@@ -110,151 +114,138 @@ export default function CreateTemplate({
               أدخل بيانات الاتصال أولاً لتتمكن من إنشاء القوالب.
             </p>
           )}
-          <Field
+          <FormField
             label="اسم القالب (أحرف صغيرة وأرقام وشرطة سفلية)"
+            labelClassName={smallLabel}
             value={name}
-            onChange={setName}
+            onValueChange={setName}
             placeholder="appointment_reminder"
+            dir="ltr"
           />
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block font-sans text-xs text-muted-foreground">الفئة</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as TemplateCategory)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block font-sans text-xs text-muted-foreground">اللغة</label>
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                {LANGUAGES.map((l) => (
-                  <option key={l.value} value={l.value}>
-                    {l.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <Field
-            label="العنوان (اختياري)"
-            value={headerText}
-            onChange={setHeaderText}
-            placeholder="تذكير بموعد"
-            dir="rtl"
-          />
-          <div>
-            <label className="mb-1 block font-sans text-xs text-muted-foreground">
-              نص الرسالة (استخدم {"{{1}}"}، {"{{2}}"} للمتغيرات)
-            </label>
-            <textarea
-              value={bodyText}
-              onChange={(e) => setBodyText(e.target.value)}
-              rows={3}
-              placeholder={"مرحبًا {{1}}، تذكير بموعدك يوم {{2}}."}
-              className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              dir="rtl"
+            <FormField
+              type="select"
+              label="الفئة"
+              labelClassName={smallLabel}
+              value={category}
+              onValueChange={(v) => setCategory(v as TemplateCategory)}
+              options={CATEGORIES}
+            />
+            <FormField
+              type="select"
+              label="اللغة"
+              labelClassName={smallLabel}
+              value={language}
+              onValueChange={setLanguage}
+              options={LANGUAGES}
             />
           </div>
+          <FormField
+            label="العنوان (اختياري)"
+            labelClassName={smallLabel}
+            value={headerText}
+            onValueChange={setHeaderText}
+            placeholder="تذكير بموعد"
+          />
+          <FormField
+            type="textarea"
+            label={
+              <>
+                نص الرسالة (استخدم {"{{1}}"}، {"{{2}}"} للمتغيرات)
+              </>
+            }
+            labelClassName={smallLabel}
+            value={bodyText}
+            onValueChange={setBodyText}
+            rows={3}
+            placeholder={"مرحبًا {{1}}، تذكير بموعدك يوم {{2}}."}
+          />
           {examples.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">
                 قيم توضيحية للمتغيرات (يطلبها ميتا للمراجعة، وتظهر في المعاينة)
               </p>
               {examples.map((ex, i) => (
-                <input
+                <FormField
                   key={i}
                   value={ex}
-                  onChange={(e) =>
-                    setExamples((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
+                  onValueChange={(v) =>
+                    setExamples((prev) => prev.map((x, j) => (j === i ? v : x)))
                   }
                   placeholder={`مثال للقيمة ${i + 1} ({{${i + 1}}})`}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
                 />
               ))}
             </div>
           )}
-          <Field
+          <FormField
             label="تذييل اختياري"
+            labelClassName={smallLabel}
             value={footerText}
-            onChange={setFooterText}
+            onValueChange={setFooterText}
             placeholder="عيادة النور"
-            dir="rtl"
           />
 
           {/* Buttons builder */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="font-sans text-xs text-muted-foreground">الأزرار (اختياري)</label>
-              <button
+              <Label className={smallLabel}>الأزرار (اختياري)</Label>
+              <Button
                 type="button"
+                variant="link"
+                size="sm"
                 onClick={addButton}
                 disabled={buttons.length >= MAX_BUTTONS}
-                className="inline-flex items-center gap-1 text-xs text-accent hover:underline disabled:no-underline disabled:opacity-40"
+                className="h-auto px-0 text-accent [&_svg]:size-3"
               >
-                <Plus className="h-3 w-3" />
+                <Plus />
                 إضافة زر
-              </button>
+              </Button>
             </div>
             {buttons.map((b, i) => (
               <div key={i} className="space-y-2 rounded-lg border border-border p-2.5">
                 <div className="flex items-center gap-2">
-                  <select
+                  <FormField
+                    type="select"
                     value={b.type}
-                    onChange={(e) =>
-                      updateButton(i, { type: e.target.value as TemplateButtonType })
-                    }
-                    className="rounded-lg border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent"
-                  >
-                    {BUTTON_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
+                    onValueChange={(v) => updateButton(i, { type: v as TemplateButtonType })}
+                    options={BUTTON_TYPES}
+                    className="w-32 shrink-0"
+                    controlClassName="h-9 text-xs"
+                  />
+                  <FormField
                     value={b.text}
-                    onChange={(e) => updateButton(i, { text: e.target.value })}
+                    onValueChange={(v) => updateButton(i, { text: v })}
                     placeholder="نص الزر"
                     maxLength={25}
-                    className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                    dir="rtl"
+                    className="flex-1"
+                    controlClassName="h-9"
                   />
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost-destructive"
+                    size="icon-sm"
                     onClick={() => removeButton(i)}
-                    className="flex-shrink-0 text-muted-foreground hover:text-red-600"
                     aria-label="حذف الزر"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                    <Trash2 />
+                  </Button>
                 </div>
                 {b.type === "URL" && (
-                  <input
+                  <FormField
+                    type="url"
                     value={b.url ?? ""}
-                    onChange={(e) => updateButton(i, { url: e.target.value })}
+                    onValueChange={(v) => updateButton(i, { url: v })}
                     placeholder="https://example.com"
-                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                    dir="ltr"
+                    controlClassName="h-9"
                   />
                 )}
                 {b.type === "PHONE_NUMBER" && (
-                  <input
+                  <FormField
+                    type="tel"
                     value={b.phoneNumber ?? ""}
-                    onChange={(e) => updateButton(i, { phoneNumber: e.target.value })}
+                    onValueChange={(v) => updateButton(i, { phoneNumber: v })}
                     placeholder="+201234567890"
-                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                    dir="ltr"
+                    controlClassName="h-9"
                   />
                 )}
               </div>
@@ -267,18 +258,14 @@ export default function CreateTemplate({
             </p>
           )}
 
-          <button
+          <Button
             onClick={handleSubmit}
-            disabled={disabled || submitting || !name.trim() || !bodyText.trim()}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+            loading={submitting}
+            disabled={disabled || !name.trim() || !bodyText.trim()}
           >
-            {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
+            {!submitting && <Plus />}
             إرسال للمراجعة
-          </button>
+          </Button>
         </div>
 
         {/* Live preview column */}
