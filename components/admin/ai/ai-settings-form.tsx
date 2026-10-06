@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Bot, AlertTriangle, Mic, Image as ImageIcon, Timer } from "lucide-react";
+import { Bot, AlertTriangle, Mic, Image as ImageIcon, Timer } from "lucide-react";
 import {
   toggleClinicAiAction,
   toggleClinicVoiceReplyAction,
@@ -9,6 +9,9 @@ import {
   toggleClinicImageAutoReplyAction,
   setClinicDebounceSecondsAction,
 } from "@/server/actions/ai";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Switch } from "@/components/ui/switch";
 
 const DEBOUNCE_MIN = 5;
 const DEBOUNCE_MAX = 120;
@@ -190,25 +193,12 @@ export default function AiSettingsForm({
               </p>
             </div>
           </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
-            onClick={toggle}
+          <Switch
+            checked={enabled}
+            onCheckedChange={toggle}
             disabled={saving}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-              enabled ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            {saving ? (
-              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
-            ) : (
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  enabled ? "-translate-x-6" : "-translate-x-1"
-                }`}
-              />
-            )}
-          </button>
+            className="shrink-0"
+          />
         </div>
         {message && (
           <p className={`mt-3 text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
@@ -232,25 +222,12 @@ export default function AiSettingsForm({
               </p>
             </div>
           </div>
-          <button
-            role="switch"
-            aria-checked={voiceEnabled}
-            onClick={toggleVoice}
+          <Switch
+            checked={voiceEnabled}
+            onCheckedChange={toggleVoice}
             disabled={voiceSaving || !enabled}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-              voiceEnabled ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            {voiceSaving ? (
-              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
-            ) : (
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  voiceEnabled ? "-translate-x-6" : "-translate-x-1"
-                }`}
-              />
-            )}
-          </button>
+            className="shrink-0"
+          />
         </div>
       </div>
 
@@ -269,25 +246,12 @@ export default function AiSettingsForm({
               </p>
             </div>
           </div>
-          <button
-            role="switch"
-            aria-checked={imageEnabled}
-            onClick={toggleImage}
+          <Switch
+            checked={imageEnabled}
+            onCheckedChange={toggleImage}
             disabled={imageSaving || !enabled}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-              imageEnabled ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            {imageSaving ? (
-              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
-            ) : (
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  imageEnabled ? "-translate-x-6" : "-translate-x-1"
-                }`}
-              />
-            )}
-          </button>
+            className="shrink-0"
+          />
         </div>
 
         {/* Sub-control: respond vs. extract-only. Only meaningful when analysis is on. */}
@@ -299,25 +263,12 @@ export default function AiSettingsForm({
               الروشتات صعبة القراءة) ويُحفظ لفريق الاستقبال مع تحويل المحادثة لموظف — دون رد آلي.
             </p>
           </div>
-          <button
-            role="switch"
-            aria-checked={imageAutoReply}
-            onClick={toggleImageAutoReply}
+          <Switch
+            checked={imageAutoReply}
+            onCheckedChange={toggleImageAutoReply}
             disabled={imageAutoReplySaving || !enabled || !imageEnabled}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-              imageAutoReply ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            {imageAutoReplySaving ? (
-              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
-            ) : (
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  imageAutoReply ? "-translate-x-6" : "-translate-x-1"
-                }`}
-              />
-            )}
-          </button>
+            className="shrink-0"
+          />
         </div>
       </div>
 
@@ -334,24 +285,24 @@ export default function AiSettingsForm({
               المتتابعة فيرد عليها جميعاً مرة واحدة. ({DEBOUNCE_MIN}–{DEBOUNCE_MAX} ثانية)
             </p>
             <div className="mt-3 flex items-center gap-2">
-              <input
+              <FormField
                 type="number"
                 min={DEBOUNCE_MIN}
                 max={DEBOUNCE_MAX}
                 value={debounce}
-                onChange={(e) => setDebounce(e.target.value)}
+                onValueChange={setDebounce}
                 disabled={debounceSaving}
-                className="w-24 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50"
+                className="w-24"
               />
               <span className="text-sm text-muted-foreground">ثانية</span>
-              <button
+              <Button
                 onClick={saveDebounce}
-                disabled={debounceSaving || debounce === ""}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                loading={debounceSaving}
+                disabled={debounce === ""}
+                className="font-semibold"
               >
-                {debounceSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 حفظ
-              </button>
+              </Button>
             </div>
           </div>
         </div>

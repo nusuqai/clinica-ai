@@ -7,6 +7,8 @@ import { sendWhatsappTemplate } from "@/server/actions/messages";
 import type { MessageTemplate } from "@/lib/meta/whatsapp";
 import { fillTemplate } from "@/lib/meta/template-render";
 import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 
 interface TemplatePickerProps {
   conversationId: string;
@@ -105,13 +107,15 @@ export default function WhatsappTemplatePicker({
             <FileText className="h-4 w-4 text-accent" />
             إرسال قالب معتمد
           </h3>
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onClose}
-            className="text-muted-foreground hover:text-foreground"
             aria-label="إغلاق"
+            className="[&_svg]:size-4"
           >
-            <X className="h-4 w-4" />
-          </button>
+            <X />
+          </Button>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
@@ -134,11 +138,12 @@ export default function WhatsappTemplatePicker({
               {/* Template list */}
               <div className="space-y-2">
                 {templates.map((t) => (
-                  <button
+                  <Button
                     key={t.id}
+                    variant="outline"
                     onClick={() => selectTemplate(t)}
                     className={[
-                      "w-full rounded-xl border px-3.5 py-2.5 text-start transition-colors",
+                      "block h-auto w-full whitespace-normal px-3.5 py-2.5 text-start font-normal",
                       selected?.id === t.id
                         ? "bg-accent/8 border-accent"
                         : "border-border hover:bg-muted/50",
@@ -151,7 +156,7 @@ export default function WhatsappTemplatePicker({
                       </span>
                     </div>
                     <p className="line-clamp-2 text-xs text-muted-foreground">{t.bodyText}</p>
-                  </button>
+                  </Button>
                 ))}
               </div>
 
@@ -159,18 +164,19 @@ export default function WhatsappTemplatePicker({
               {selected && (
                 <div className="space-y-3 border-t border-border pt-4">
                   {variables.map((v, i) => (
-                    <div key={i}>
-                      <label className="mb-1 block text-xs text-muted-foreground">
-                        القيمة {i + 1} ({`{{${i + 1}}}`})
-                      </label>
-                      <input
-                        value={v}
-                        onChange={(e) =>
-                          setVariables((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
-                        }
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                    </div>
+                    <FormField
+                      key={i}
+                      label={
+                        <>
+                          القيمة {i + 1} ({`{{${i + 1}}}`})
+                        </>
+                      }
+                      labelClassName="text-xs font-normal text-muted-foreground"
+                      value={v}
+                      onValueChange={(next) =>
+                        setVariables((prev) => prev.map((x, j) => (j === i ? next : x)))
+                      }
+                    />
                   ))}
                   <div>
                     <p className="mb-1 text-xs text-muted-foreground">معاينة</p>
@@ -196,18 +202,10 @@ export default function WhatsappTemplatePicker({
 
         {selected && (
           <div className="border-t border-border px-5 py-3">
-            <button
-              onClick={handleSend}
-              disabled={!allFilled || sending}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
-            >
-              {sending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
+            <Button onClick={handleSend} loading={sending} disabled={!allFilled} className="w-full">
+              {!sending && <Send />}
               إرسال القالب
-            </button>
+            </Button>
           </div>
         )}
       </div>

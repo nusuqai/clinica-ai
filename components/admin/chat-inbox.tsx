@@ -30,6 +30,9 @@ import WhatsappTemplatePicker from "@/components/admin/whatsapp-template-picker"
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
 import { escalationReasonLabel } from "@/lib/escalation-reasons";
 import { ChatImage } from "@/components/ui/chat-image";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
 import {
   sendAdminReply,
@@ -738,10 +741,11 @@ export default function ChatInbox({
           )}
           {conversations.map((conv) => (
             <li key={conv.id}>
-              <button
+              <Button
+                variant="ghost"
                 onClick={() => handleSelectConversation(conv.id)}
                 className={[
-                  "w-full px-4 py-3 text-start transition-colors hover:bg-muted/50",
+                  "block h-auto w-full whitespace-normal rounded-none px-4 py-3 text-start font-normal text-foreground hover:bg-muted/50 hover:text-foreground",
                   conv.hasUnresolvedEscalation ? "bg-red-50" : "",
                   activeId === conv.id ? "bg-accent/8 border-e-2 border-accent" : "",
                 ].join(" ")}
@@ -782,7 +786,7 @@ export default function ChatInbox({
                     })}
                   </p>
                 )}
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -863,24 +867,24 @@ export default function ChatInbox({
                     );
                   })()}
                 {selectedConversation.activeSessionId && (
-                  <button
-                    onClick={handleToggleAi}
-                    disabled={aiTogglePending}
-                    className={[
-                      "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-sans text-xs transition-colors disabled:opacity-50",
-                      selectedConversation.aiEnabled
-                        ? "bg-accent/10 text-accent"
-                        : "bg-muted text-muted-foreground",
-                    ].join(" ")}
-                    title="تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة"
+                  <Badge
+                    asChild
+                    variant={selectedConversation.aiEnabled ? "accent" : "muted"}
+                    className="cursor-pointer gap-1.5 py-1 font-normal disabled:opacity-50"
                   >
-                    {selectedConversation.aiEnabled ? (
-                      <Bot className="h-3.5 w-3.5" />
-                    ) : (
-                      <BotOff className="h-3.5 w-3.5" />
-                    )}
-                    {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
-                  </button>
+                    <button
+                      onClick={handleToggleAi}
+                      disabled={aiTogglePending}
+                      title="تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة"
+                    >
+                      {selectedConversation.aiEnabled ? (
+                        <Bot className="h-3.5 w-3.5" />
+                      ) : (
+                        <BotOff className="h-3.5 w-3.5" />
+                      )}
+                      {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
+                    </button>
+                  </Badge>
                 )}
                 {selectedConversation.channel === Channel.WHATSAPP ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 font-sans text-xs text-green-700">
@@ -1050,13 +1054,14 @@ export default function ChatInbox({
                             <span className="flex-1">
                               {escalationReasonLabel(msg.escalation.reason)}
                             </span>
-                            <button
+                            <Button
+                              size="sm"
                               onClick={() => handleResolveEscalation(msg.escalation!.id)}
-                              className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 font-medium text-white transition-colors hover:bg-amber-700"
+                              className="h-auto gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-xs hover:bg-amber-700 [&_svg]:size-3"
                             >
-                              <CheckCircle2 className="h-3 w-3" />
+                              <CheckCircle2 />
                               تحديد كمحلولة
-                            </button>
+                            </Button>
                           </div>
                         )}
                         {status === "sending" ? (
@@ -1072,13 +1077,15 @@ export default function ChatInbox({
                                 ? "تم الحفظ لكن لم تصل إلى واتساب"
                                 : "لم يتم حفظ الرسالة"}
                             </span>
-                            <button
+                            <Button
+                              variant="link"
+                              size="sm"
                               onClick={() => handleRetry(msg.pending!.clientId)}
-                              className="inline-flex items-center gap-1 font-medium underline hover:no-underline"
+                              className="h-auto gap-1 p-0 text-xs text-[inherit] underline hover:no-underline [&_svg]:size-3"
                             >
-                              <RotateCw className="h-3 w-3" />
+                              <RotateCw />
                               إعادة المحاولة
-                            </button>
+                            </Button>
                           </div>
                         ) : (
                           <p
@@ -1120,13 +1127,14 @@ export default function ChatInbox({
                       أرسل قالبًا معتمدًا من ميتا بدلاً من ذلك.
                     </span>
                   </div>
-                  <button
+                  <Button
+                    size="sm"
                     onClick={() => setShowTemplatePicker(true)}
-                    className="inline-flex items-center gap-1.5 self-start rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90"
+                    className="self-start [&_svg]:size-3.5"
                   >
-                    <FileText className="h-3.5 w-3.5" />
+                    <FileText />
                     إرسال قالب معتمد
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
@@ -1146,16 +1154,18 @@ export default function ChatInbox({
                       <span className="flex-1 truncate text-xs text-foreground">
                         {pendingFile.name}
                       </span>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={() => {
                           setPendingFile(null);
                           if (fileInputRef.current) fileInputRef.current.value = "";
                         }}
-                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                         aria-label="إلغاء المرفق"
+                        className="[&_svg]:size-4"
                       >
-                        <X className="h-4 w-4" />
-                      </button>
+                        <X />
+                      </Button>
                     </div>
                   )}
                   <div className="flex items-end gap-2">
@@ -1168,14 +1178,16 @@ export default function ChatInbox({
                         if (f) setPendingFile(f);
                       }}
                     />
-                    <button
+                    <Button
+                      variant="outline"
+                      size="icon"
                       onClick={() => fileInputRef.current?.click()}
-                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       aria-label="إرفاق ملف"
+                      className="h-10 w-10 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
                     >
-                      <Paperclip className="h-4 w-4" />
-                    </button>
-                    <textarea
+                      <Paperclip />
+                    </Button>
+                    <Textarea
                       value={reply}
                       onChange={(e) => setReply(e.target.value)}
                       onKeyDown={handleKeyDown}
@@ -1185,19 +1197,20 @@ export default function ChatInbox({
                           : "اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
                       }
                       rows={2}
-                      className="flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 font-sans text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+                      className="flex-1 px-3.5 py-2.5 leading-relaxed"
                       dir="rtl"
                     />
-                    <button
+                    <Button
+                      size="icon"
                       onClick={() => {
                         if (pendingFile) handleSendMedia(pendingFile);
                         else handleSend();
                       }}
                       disabled={!pendingFile && !reply.trim()}
-                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+                      className="h-10 w-10 shrink-0 rounded-xl"
                     >
-                      <Send className="h-4 w-4" />
-                    </button>
+                      <Send />
+                    </Button>
                   </div>
                 </div>
               )}

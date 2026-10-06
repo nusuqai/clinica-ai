@@ -14,6 +14,9 @@ import type { MessageTemplate } from "@/lib/meta/whatsapp";
 import { APPOINTMENT_TOKENS, APPOINTMENT_TOKEN_LABELS } from "@/lib/appointment-templates";
 import { languageLabel } from "./languages";
 import WhatsappPreview from "./whatsapp-preview";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Label } from "@/components/ui/label";
 
 const TOKEN_OPTIONS = APPOINTMENT_TOKENS.map((t) => ({
   value: t,
@@ -211,32 +214,32 @@ function BindingCard({
             </p>
           </div>
         </div>
-        <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-            className="accent-accent"
-          />
-          مُفعّل
-        </label>
+        <FormField
+          type="switch"
+          label="مُفعّل"
+          labelClassName="text-xs font-normal text-muted-foreground"
+          checked={enabled}
+          onCheckedChange={setEnabled}
+          className="shrink-0"
+        />
       </div>
 
       {/* Template picker */}
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-foreground">القالب المعتمد</label>
-        <select
+        <FormField
+          type="select"
+          label="القالب المعتمد"
+          labelClassName="text-xs"
           value={selected}
-          onChange={(e) => onSelectTemplate(e.target.value)}
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-        >
-          <option value="">— اختر قالباً —</option>
-          {templates.map((t) => (
-            <option key={t.id} value={templateKey(t.name, t.language)}>
-              {t.name} · {languageLabel(t.language)}
-            </option>
-          ))}
-        </select>
+          onValueChange={onSelectTemplate}
+          options={[
+            { value: "", label: "— اختر قالباً —" },
+            ...templates.map((t) => ({
+              value: templateKey(t.name, t.language),
+              label: `${t.name} · ${languageLabel(t.language)}`,
+            })),
+          ]}
+        />
         {templates.length === 0 && (
           <p className="text-[11px] text-amber-600">
             لا توجد قوالب معتمدة بعد. أنشئ قالباً واعتمده من ميتا أولاً.
@@ -253,19 +256,16 @@ function BindingCard({
           {variableMap.map((token, i) => (
             <div key={i} className="flex items-center gap-2">
               <span className="w-12 shrink-0 text-xs text-muted-foreground">{`{{${i + 1}}}`}</span>
-              <select
+              <FormField
+                type="select"
                 value={token}
-                onChange={(e) =>
-                  setVariableMap((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
+                onValueChange={(v) =>
+                  setVariableMap((prev) => prev.map((x, j) => (j === i ? v : x)))
                 }
-                className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                {TOKEN_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+                options={TOKEN_OPTIONS}
+                className="flex-1"
+                controlClassName="h-9"
+              />
             </div>
           ))}
         </div>
@@ -273,39 +273,39 @@ function BindingCard({
 
       {/* Timing */}
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-foreground">
+        <Label className="text-xs font-medium text-foreground">
           {isFollowUp
             ? "يُرسَل قبل موعد المتابعة بـ (أيام)"
             : isReminder
               ? "يُرسَل قبل الموعد بـ (ساعات)"
               : "يُرسَل بعد اكتمال الزيارة بـ (دقائق)"}
-        </label>
+        </Label>
         {isFollowUp ? (
-          <input
+          <FormField
             type="number"
             min={1}
             value={leadDays}
-            onChange={(e) => setLeadDays(Math.max(1, Number(e.target.value)))}
-            className="w-32 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-            dir="ltr"
+            onValueChange={(v) => setLeadDays(Math.max(1, Number(v)))}
+            className="w-32"
+            controlClassName="h-9"
           />
         ) : isReminder ? (
-          <input
+          <FormField
             type="number"
             min={1}
             value={leadHours}
-            onChange={(e) => setLeadHours(Math.max(0, Number(e.target.value)))}
-            className="w-32 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-            dir="ltr"
+            onValueChange={(v) => setLeadHours(Math.max(0, Number(v)))}
+            className="w-32"
+            controlClassName="h-9"
           />
         ) : (
-          <input
+          <FormField
             type="number"
             min={0}
             value={delayMinutes}
-            onChange={(e) => setDelayMinutes(Math.max(0, Number(e.target.value)))}
-            className="w-32 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-            dir="ltr"
+            onValueChange={(v) => setDelayMinutes(Math.max(0, Number(v)))}
+            className="w-32"
+            controlClassName="h-9"
           />
         )}
       </div>
@@ -324,23 +324,21 @@ function BindingCard({
       {msg && <p className={`text-xs ${msg.ok ? "text-green-600" : "text-red-600"}`}>{msg.text}</p>}
 
       <div className="flex items-center gap-2">
-        <button
-          onClick={handleSave}
-          disabled={saving || !template}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-40"
-        >
-          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+        <Button size="sm" onClick={handleSave} loading={saving} disabled={!template}>
+          {!saving && <Save />}
           حفظ
-        </button>
+        </Button>
         {initial && (
-          <button
+          <Button
+            variant="ghost-destructive"
+            size="sm"
             onClick={handleDelete}
             disabled={saving}
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-red-600"
+            className="[&_svg]:size-3"
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 />
             إلغاء الربط
-          </button>
+          </Button>
         )}
       </div>
     </div>

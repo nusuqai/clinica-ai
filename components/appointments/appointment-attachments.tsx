@@ -2,18 +2,10 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Paperclip,
-  FileText,
-  Trash2,
-  Upload,
-  Loader2,
-  Download,
-  Pencil,
-  Check,
-  X,
-} from "lucide-react";
+import { Paperclip, FileText, Trash2, Upload, Download, Pencil, Check, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   createAppointmentAttachmentUploadAction,
   confirmAppointmentAttachmentAction,
@@ -180,14 +172,17 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
               className="hidden"
               onChange={onPick}
             />
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => inputRef.current?.click()}
-              disabled={busy || !!pending}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+              loading={busy}
+              disabled={!!pending}
+              className="text-sm"
             >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {!busy && <Upload />}
               رفع ملف
-            </button>
+            </Button>
           </>
         )}
       </header>
@@ -207,7 +202,7 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
               اسم الملف قبل الرفع ({formatSize(pending.file.size)})
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <input
+              <Input
                 type="text"
                 autoFocus
                 value={pending.name}
@@ -218,27 +213,15 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
                 }}
                 disabled={busy}
                 dir="auto"
-                className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+                className="min-w-0 flex-1"
               />
-              <button
-                onClick={doUpload}
-                disabled={busy || !pending.name.trim()}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 font-sans text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
+              <Button onClick={doUpload} loading={busy} disabled={!pending.name.trim()}>
+                {!busy && <Upload />}
                 رفع
-              </button>
-              <button
-                onClick={() => setPending(null)}
-                disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
-              >
+              </Button>
+              <Button variant="outline" onClick={() => setPending(null)} disabled={busy}>
                 إلغاء
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -276,7 +259,7 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
                   </a>
                   <div className="min-w-0 flex-1">
                     {renamingId === a.id ? (
-                      <input
+                      <Input
                         type="text"
                         autoFocus
                         value={renameValue}
@@ -287,7 +270,7 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
                         }}
                         disabled={savingId === a.id}
                         dir="auto"
-                        className="w-full rounded-lg border border-border bg-background px-2 py-1 font-sans text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+                        className="h-8 rounded-lg px-2 py-1"
                       />
                     ) : (
                       <a
@@ -306,63 +289,56 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
                   </div>
                   {renamingId === a.id ? (
                     <>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => onRename(a.id, a.fileName)}
-                        disabled={savingId === a.id}
-                        className="rounded-lg p-1.5 text-emerald-600 transition-colors hover:bg-emerald-50 disabled:opacity-50"
+                        loading={savingId === a.id}
+                        className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
                         title="حفظ الاسم"
                       >
-                        {savingId === a.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Check className="h-4 w-4" />
-                        )}
-                      </button>
-                      <button
+                        {savingId !== a.id && <Check />}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => setRenamingId(null)}
                         disabled={savingId === a.id}
-                        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                         title="إلغاء"
                       >
-                        <X className="h-4 w-4" />
-                      </button>
+                        <X />
+                      </Button>
                     </>
                   ) : (
                     <>
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        title="تنزيل"
-                      >
-                        <Download className="h-4 w-4" />
-                      </a>
+                      <Button asChild variant="ghost" size="icon" title="تنزيل">
+                        <a href={href} target="_blank" rel="noopener noreferrer">
+                          <Download />
+                        </a>
+                      </Button>
                       {canManage && (
                         <>
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => {
                               setError(null);
                               setRenamingId(a.id);
                               setRenameValue(a.fileName);
                             }}
-                            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                             title="إعادة تسمية"
                           >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
+                            <Pencil />
+                          </Button>
+                          <Button
+                            variant="ghost-destructive"
+                            size="icon"
                             onClick={() => onDelete(a.id)}
-                            disabled={deletingId === a.id}
-                            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                            loading={deletingId === a.id}
                             title="حذف"
                           >
-                            {deletingId === a.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
-                            )}
-                          </button>
+                            {deletingId !== a.id && <Trash2 />}
+                          </Button>
                         </>
                       )}
                     </>

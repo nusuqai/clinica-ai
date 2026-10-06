@@ -14,6 +14,7 @@ import {
   Coins,
 } from "lucide-react";
 import { signOut } from "@/server/actions/auth";
+import { Button } from "@/components/ui/button";
 import { useEscalationAlerts } from "./escalation-provider";
 
 export interface NavItem {
@@ -100,13 +101,15 @@ export default function Sidebar({
           mobileOpen ? "translate-x-0" : "translate-x-full rtl:-translate-x-full",
         ].join(" ")}
       >
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={onMobileClose}
-          className="absolute start-4 top-4 rounded-lg p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+          className="absolute start-4 top-4 text-white/60 hover:bg-white/10 hover:text-white [&_svg]:size-5"
           aria-label="إغلاق القائمة"
         >
-          <X className="h-5 w-5" />
-        </button>
+          <X />
+        </Button>
         <SidebarContent
           navItems={navItems}
           roleLabel={roleLabel}
@@ -260,25 +263,27 @@ function SidebarContent({
 
         {/* Sign out */}
         <form action={signOut}>
-          <button
+          <Button
             type="submit"
+            variant="ghost"
             title={collapsed ? "تسجيل الخروج" : undefined}
             className={[
-              "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 font-sans text-sm text-white/60 transition-all duration-150 hover:bg-red-500/15 hover:text-red-400",
-              collapsed ? "justify-center" : "",
+              "h-auto w-full gap-3 px-3 py-2.5 font-normal text-white/60 duration-150 hover:bg-red-500/15 hover:text-red-400 [&_svg]:size-5",
+              collapsed ? "justify-center" : "justify-start",
             ].join(" ")}
           >
-            <LogOut className="h-5 w-5 flex-shrink-0" />
+            <LogOut />
             {!collapsed && <span>تسجيل الخروج</span>}
-          </button>
+          </Button>
         </form>
 
         {/* Collapse toggle (desktop only) */}
-        <button
+        <Button
+          variant="ghost"
           onClick={onToggleCollapse}
           className={[
-            "hidden w-full items-center gap-3 rounded-xl px-3 py-2 font-sans text-xs text-white/30 transition-all duration-150 hover:bg-white/5 hover:text-white/60 md:flex",
-            collapsed ? "justify-center" : "",
+            "hidden h-auto w-full gap-3 px-3 py-2 text-xs font-normal text-white/30 duration-150 hover:bg-white/5 hover:text-white/60 md:flex",
+            collapsed ? "justify-center" : "justify-start",
           ].join(" ")}
         >
           <ChevronRight
@@ -288,7 +293,7 @@ function SidebarContent({
             ].join(" ")}
           />
           {!collapsed && <span>طي القائمة</span>}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -425,14 +430,15 @@ function NavGroup({
 
   return (
     <div>
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={handleHeaderClick}
         title={collapsed ? label : undefined}
         className={[
-          "group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 font-sans text-sm transition-all duration-150",
+          "group relative h-auto w-full justify-start gap-3 px-3 py-2.5 font-normal duration-150 [&_svg]:size-auto",
           childActive
-            ? "bg-accent/15 font-medium text-accent"
+            ? "bg-accent/15 font-medium text-accent hover:bg-accent/15 hover:text-accent"
             : "hover:bg-white/8 text-white/70 hover:text-white",
         ].join(" ")}
       >
@@ -458,7 +464,7 @@ function NavGroup({
             />
           </>
         )}
-      </button>
+      </Button>
       {!collapsed && open && (
         <div className="mt-0.5 space-y-0.5">
           {children.map((child) => (
