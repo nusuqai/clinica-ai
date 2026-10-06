@@ -6,6 +6,7 @@ import { Mail, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { forgotPassword } from "@/server/actions/auth";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { Alert } from "@/components/ui/alert";
 
 export default function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null);
@@ -63,10 +64,10 @@ export default function ForgotPasswordPage() {
       </div>
 
       {error && (
-        <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-sans text-sm text-red-600">
+        <Alert variant="destructive" className="mb-6 gap-3 rounded-2xl border-red-100 text-red-600">
           <span className="mt-0.5 flex-shrink-0">⚠</span>
           <span>{error}</span>
-        </div>
+        </Alert>
       )}
 
       <form className="space-y-5" onSubmit={handleSubmit}>

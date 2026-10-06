@@ -8,6 +8,7 @@ import { getRecordRevisionsAction } from "@/server/actions/treatments";
 import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import type { ProcedureKind } from "@prisma/client";
 import type { TreatmentRecordView } from "@/server/services/treatments";
+import { Alert } from "@/components/ui/alert";
 
 // The edit history of one treatment record, opened from its "عُدّل" badge on the
 // admin timeline. Rather than just a count, it shows WHAT each edit changed:
@@ -228,7 +229,9 @@ export default function RecordRevisions({ record }: { record: TreatmentRecordVie
         )}
 
         {error && (
-          <p className="rounded-xl bg-red-50 px-3 py-2 font-sans text-sm text-red-700">{error}</p>
+          <Alert variant="destructive" className="block border-transparent px-3 py-2">
+            {error}
+          </Alert>
         )}
 
         {!loading && !error && entries.length === 0 && (

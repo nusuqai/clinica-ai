@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -363,11 +364,7 @@ export default function BranchesManager({
         width="max-w-3xl"
       >
         <form onSubmit={handleSubmit} className="space-y-5">
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
-              {error}
-            </div>
-          )}
+          {error && <Alert variant="destructive">{error}</Alert>}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField

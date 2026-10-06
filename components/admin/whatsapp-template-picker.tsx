@@ -10,6 +10,7 @@ import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Alert } from "@/components/ui/alert";
 
 interface TemplatePickerProps {
   conversationId: string;
@@ -124,10 +125,10 @@ export default function WhatsappTemplatePicker({
               جارٍ تحميل القوالب...
             </div>
           ) : error && templates.length === 0 ? (
-            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-700">
+            <Alert variant="warning" className="px-3.5 py-2.5 text-xs">
               <AlertTriangle className="h-4 w-4 flex-shrink-0" />
               <span>{error}</span>
-            </div>
+            </Alert>
           ) : templates.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               لا توجد قوالب معتمدة بعد. تواصل مع إدارة المنصّة لإنشاء القوالب واعتمادها من ميتا.

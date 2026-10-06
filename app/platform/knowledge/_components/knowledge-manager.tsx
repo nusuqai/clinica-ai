@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 export interface KnowledgeDocView {
   id: string;
@@ -106,9 +107,9 @@ export default function KnowledgeManager({
   return (
     <div className="max-w-3xl">
       {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
+        <Alert variant="destructive" className="mb-4">
           {error}
-        </div>
+        </Alert>
       )}
 
       <div className="mb-6 flex justify-end">

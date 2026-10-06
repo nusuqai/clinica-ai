@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { createDoctorAction } from "@/server/actions/admin";
 import SpecialtySelect, { type SpecialtyOption } from "./specialty-select";
 import AvailabilityRulesEditor, { type EditorBranchHours } from "./availability-rules-editor";
+import { Alert } from "@/components/ui/alert";
 
 export const DOCTOR_TITLE_OPTIONS = [
   { value: "", label: "غير محدد" },
@@ -68,11 +69,7 @@ export default function AddDoctorModal({
 
       <Modal open={open} onClose={() => setOpen(false)} title="إضافة طبيب جديد" width="max-w-2xl">
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
-              {error}
-            </div>
-          )}
+          {error && <Alert variant="destructive">{error}</Alert>}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Full name */}

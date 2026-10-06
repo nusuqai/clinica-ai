@@ -12,6 +12,7 @@ import {
   deleteSpecialtyAction,
 } from "@/server/actions/admin";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 export interface SpecialtyView {
   id: string;
@@ -51,9 +52,9 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
   return (
     <div className="max-w-2xl">
       {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
+        <Alert variant="destructive" className="mb-4">
           {error}
-        </div>
+        </Alert>
       )}
 
       {/* Add */}

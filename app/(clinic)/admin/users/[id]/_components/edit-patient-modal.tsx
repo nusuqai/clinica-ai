@@ -6,6 +6,7 @@ import Modal from "@/components/admin/modal";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { updatePatientProfileAction, changePatientEmailAction } from "@/server/actions/admin";
+import { Alert } from "@/components/ui/alert";
 
 interface Props {
   userId: string;
@@ -65,14 +66,14 @@ export default function EditPatientModal({ userId, fullName, phone, email, claim
 
       <Modal open={open} onClose={() => setOpen(false)} title="تعديل بيانات المريض">
         {error && (
-          <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 font-sans text-sm text-red-600">
+          <Alert variant="destructive" className="mb-4 border-red-100 text-red-600">
             {error}
-          </div>
+          </Alert>
         )}
         {info && (
-          <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
+          <Alert variant="success" className="mb-4 border-emerald-100">
             {info}
-          </div>
+          </Alert>
         )}
 
         {/* Profile (name + phone) */}

@@ -15,6 +15,7 @@ import type { AttachmentView } from "@/server/services/attachments";
 import { PROCEDURE_KIND_LABELS } from "@/lib/labels";
 import { formatSlotDate } from "@/lib/slot-time";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 // One patient's clinical history, newest visit first. Rendered identically for
 // the doctor, the admin and the patient — the three pages differ in what they
@@ -193,10 +194,10 @@ export default function RecordTimeline({
               )}
 
               {record.followUpDate && (
-                <p className="flex items-center gap-1.5 rounded-xl bg-blue-50 px-3 py-2 font-sans text-sm text-blue-700">
+                <Alert variant="info" className="items-center gap-1.5 border-transparent px-3 py-2">
                   <CalendarClock className="h-4 w-4 flex-shrink-0" />
                   موعد المتابعة المقترح: {formatSlotDate(record.followUpDate)}
-                </p>
+                </Alert>
               )}
 
               {renderAttachments && renderAttachments(record)}

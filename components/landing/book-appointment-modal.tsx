@@ -14,6 +14,7 @@ import {
   getOrderBookingInfoAction,
 } from "@/server/actions/patient";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Alert } from "@/components/ui/alert";
 
 interface Doctor {
   id: string;
@@ -268,10 +269,13 @@ export function BookAppointmentModal({
               )}
 
               {daysError && !daysLoading && (
-                <div className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+                <Alert
+                  variant="destructive"
+                  className="items-center border-transparent text-red-600"
+                >
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   {daysError}
-                </div>
+                </Alert>
               )}
 
               {!daysLoading && availableDays.length > 0 && (
@@ -321,10 +325,13 @@ export function BookAppointmentModal({
                             )}
 
                             {errorMsg && !loading && (
-                              <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                              <Alert
+                                variant="destructive"
+                                className="items-center rounded-lg border-transparent px-3 py-2 text-red-600"
+                              >
                                 <AlertCircle className="h-4 w-4 shrink-0" />
                                 {errorMsg}
-                              </div>
+                              </Alert>
                             )}
 
                             {/* Slot-based day */}
@@ -469,10 +476,13 @@ export function BookAppointmentModal({
               />
 
               {bookingError && (
-                <div className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+                <Alert
+                  variant="destructive"
+                  className="items-center border-transparent text-red-600"
+                >
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   {bookingError}
-                </div>
+                </Alert>
               )}
 
               <div className="flex gap-3">
@@ -569,10 +579,10 @@ function QueueBox({
 }) {
   if (!info.available) {
     return (
-      <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+      <Alert variant="warning" className="items-center rounded-lg border-transparent px-3 py-2">
         <AlertCircle className="h-4 w-4 shrink-0" />
         اكتمل عدد الحجوزات المتاحة لهذا اليوم
-      </div>
+      </Alert>
     );
   }
   // Arrival-priority: no fixed number at booking — reception assigns it on arrival.

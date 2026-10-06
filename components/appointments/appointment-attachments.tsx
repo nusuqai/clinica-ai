@@ -13,6 +13,7 @@ import {
   renameAppointmentAttachmentAction,
 } from "@/server/actions/attachments";
 import type { AttachmentView } from "@/server/services/attachments";
+import { Alert } from "@/components/ui/alert";
 
 // The visit's files (lab results, x-rays, documents). Staff (doctor/admin) can
 // upload and delete; a patient sees a read-only list. Bytes go DIRECTLY to the
@@ -189,9 +190,9 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
 
       <div className="p-5">
         {error && (
-          <p className="mb-3 rounded-xl bg-red-50 px-3 py-2 font-sans text-sm text-red-700">
+          <Alert variant="destructive" className="mb-3 block border-transparent px-3 py-2">
             {error}
-          </p>
+          </Alert>
         )}
 
         {/* Rename-before-upload: name the picked file, then confirm the upload. */}

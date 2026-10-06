@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
+import { Alert } from "@/components/ui/alert";
 
 export interface EditorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -279,9 +280,9 @@ export default function AvailabilityRulesEditor(props: Props) {
       ) : (
         <>
           {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-sans text-xs text-red-700">
+            <Alert variant="destructive" className="px-3 py-2 text-xs">
               {error}
-            </div>
+            </Alert>
           )}
 
           {/* Existing / drafted rules */}

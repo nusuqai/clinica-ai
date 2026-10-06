@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { LANGUAGES } from "@/components/admin/whatsapp/languages";
 import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 const CATEGORIES: { value: TemplateCategory; label: string }[] = [
   { value: "UTILITY", label: "خدمية (Utility)" },
@@ -111,9 +112,9 @@ export default function CreateTemplate({
         {/* Form column */}
         <div className="space-y-4">
           {disabled && (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <Alert variant="warning" className="block rounded-lg px-3 py-2 text-xs">
               أدخل بيانات الاتصال أولاً لتتمكن من إنشاء القوالب.
-            </p>
+            </Alert>
           )}
           <FormField
             label="اسم القالب (أحرف صغيرة وأرقام وشرطة سفلية)"

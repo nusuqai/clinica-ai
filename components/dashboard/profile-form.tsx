@@ -5,6 +5,7 @@ import { CheckCircle, AlertCircle, Save } from "lucide-react";
 import { updateProfileAction } from "@/server/actions/patient";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { Alert } from "@/components/ui/alert";
 
 interface Props {
   email: string;
@@ -76,16 +77,16 @@ export function ProfileForm({ email, defaultFullName, defaultPhone }: Props) {
 
       {/* Feedback */}
       {success && (
-        <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
+        <Alert variant="success" className="items-center border-transparent">
           <CheckCircle className="h-4 w-4 shrink-0" />
           تم تحديث الملف الشخصي بنجاح
-        </div>
+        </Alert>
       )}
       {error && (
-        <div className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 font-sans text-sm text-red-600">
+        <Alert variant="destructive" className="items-center border-transparent text-red-600">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
-        </div>
+        </Alert>
       )}
 
       <Button type="submit" disabled={isPending} className="h-11 self-start px-6">

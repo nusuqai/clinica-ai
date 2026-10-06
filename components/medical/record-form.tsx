@@ -9,6 +9,7 @@ import type { TreatmentRecordView } from "@/server/services/treatments";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
+import { Alert } from "@/components/ui/alert";
 
 // The clinical record form body — dates, narrative fields, procedure and
 // prescription lines. Shared by the doctor's modal (per appointment) and the
@@ -109,9 +110,12 @@ export default function RecordForm({
   return (
     <div className="space-y-6">
       {initial && (
-        <p className="rounded-xl bg-amber-50 px-3 py-2 font-sans text-xs text-amber-800">
+        <Alert
+          variant="warning"
+          className="block border-transparent px-3 py-2 text-xs text-amber-800"
+        >
           أنت تعدّل سجلاً محفوظاً. سيتم حفظ نسخة من القيم السابقة في سجل التعديلات.
-        </p>
+        </Alert>
       )}
 
       {header}

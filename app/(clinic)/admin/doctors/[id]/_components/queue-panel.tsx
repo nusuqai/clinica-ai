@@ -27,6 +27,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import type { AppointmentStatus, AvailabilityMode } from "@prisma/client";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 interface QueuePatient {
   id: string;
@@ -198,11 +199,7 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
         </Button>
       </div>
 
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <Alert variant="destructive">{error}</Alert>}
 
       {loading ? (
         <p className="font-sans text-sm text-muted-foreground">جارٍ التحميل...</p>
@@ -261,10 +258,13 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
                 {queue.trackCurrentOrder ? "التتبّع مفعّل" : "التتبّع متوقف"}
               </Button>
               {queueFinished ? (
-                <div className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 font-sans text-sm font-medium text-emerald-700">
+                <Alert
+                  variant="success"
+                  className="inline-flex items-center gap-1.5 py-2 font-medium"
+                >
                   <CheckCircle2 className="h-4 w-4" />
                   اكتمل الطابور — لا مزيد من المرضى
-                </div>
+                </Alert>
               ) : (
                 <>
                   {currentPatient && (

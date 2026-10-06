@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 export interface ClinicPhoneView {
   type: PhoneType;
@@ -85,16 +86,8 @@ export default function ClinicInfoForm({ info }: { info: ClinicInfoView }) {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-3xl space-y-6">
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      {saved && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
-          تم حفظ التغييرات
-        </div>
-      )}
+      {error && <Alert variant="destructive">{error}</Alert>}
+      {saved && <Alert variant="success">تم حفظ التغييرات</Alert>}
 
       <Card className="space-y-4 p-5">
         <FormField label="اسم العيادة" value={name} onValueChange={setName} />

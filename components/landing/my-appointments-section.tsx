@@ -17,6 +17,7 @@ import { PatientHistoryPanels } from "@/components/landing/patient-history-panel
 import { RecordsPanel } from "@/components/landing/records-panel";
 import { ShowMore } from "@/components/landing/show-more";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Alert } from "@/components/ui/alert";
 
 // The signed-in patient's area on the clinic's own home page, right under the
 // hero: upcoming bookings as cards, plus past visits and the treatment record
@@ -277,11 +278,14 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
               </p>
               {/* Live queue position — only when the clinic tracks "now serving". */}
               {appt.currentOrder != null && (
-                <p className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1 text-xs text-blue-700">
+                <Alert
+                  variant="info"
+                  className="items-center gap-1.5 rounded-lg border-transparent px-2 py-1 text-xs"
+                >
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
                   يُخدم الآن: رقم {appt.currentOrder}
                   {appt.estimatedWaitMin != null && ` · انتظار ~${appt.estimatedWaitMin} دقيقة`}
-                </p>
+                </Alert>
               )}
             </>
           ) : appt.arrivalBased ? (

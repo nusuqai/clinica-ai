@@ -3,6 +3,7 @@ import { KeyRound, Settings, Webhook, MessageSquareText, ExternalLink } from "lu
 import { requirePlatformAdmin } from "@/lib/auth";
 import PageHeader from "@/components/admin/page-header";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 export default async function WhatsAppGuidePage() {
   await requirePlatformAdmin();
@@ -93,9 +94,9 @@ export default async function WhatsAppGuidePage() {
               <span dir="ltr">Webhook fields</span>).
             </li>
           </ul>
-          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          <Alert variant="warning" className="mt-2 block rounded-lg px-3 py-2 text-xs">
             حافظ على سرية رابط الويبهوك — فمن يملكه يستطيع إرسال رسائل واردة إلى عيادتك.
-          </p>
+          </Alert>
         </Step>
 
         <Step n={5} icon={<MessageSquareText className="h-4 w-4" />} title="أنشئ قوالبك">

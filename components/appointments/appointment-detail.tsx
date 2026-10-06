@@ -26,6 +26,7 @@ import type { AppointmentDetailView } from "@/server/services/appointments";
 import type { TreatmentRecordView } from "@/server/services/treatments";
 import type { AttachmentView } from "@/server/services/attachments";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 // The full page for one appointment — shared by the doctor, admin and patient
 // routes. They differ only in `canEdit` (staff may write the clinical record +
@@ -130,10 +131,10 @@ export default function AppointmentDetail({
           )}
           {appt.cancellationReason && (
             <div className="px-5 py-3">
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-sans text-sm text-red-700">
+              <Alert variant="destructive" className="block px-3 py-2">
                 <span className="font-medium">سبب الإلغاء: </span>
                 {appt.cancellationReason}
-              </div>
+              </Alert>
             </div>
           )}
         </div>

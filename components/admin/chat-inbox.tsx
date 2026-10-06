@@ -62,6 +62,7 @@ import {
 } from "@/server/actions/conversations";
 import type { AgentMessageMetadata } from "@/agent/types";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 interface ChatInboxProps {
   conversations: ConversationSummary[];
@@ -1050,7 +1051,10 @@ export default function ChatInbox({
                           msg.content && <p>{msg.content}</p>
                         )}
                         {msg.escalation && !resolvedEscalations.has(msg.escalation.id) && (
-                          <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                          <Alert
+                            variant="warning"
+                            className="mt-1.5 items-center rounded-lg border-amber-300 px-2 py-1 text-[11px] text-amber-800"
+                          >
                             <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
                             <span className="flex-1">
                               {escalationReasonLabel(msg.escalation.reason)}
@@ -1063,7 +1067,7 @@ export default function ChatInbox({
                               <CheckCircle2 />
                               تحديد كمحلولة
                             </Button>
-                          </div>
+                          </Alert>
                         )}
                         {status === "sending" ? (
                           <p className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -1120,7 +1124,7 @@ export default function ChatInbox({
               {isOutsideWindow ? (
                 // Outside the 24-hour window WhatsApp refuses free-form text —
                 // only an approved template can reach the contact.
-                <div className="flex flex-col gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 font-sans text-xs text-amber-800">
+                <Alert variant="warning" className="flex-col gap-2.5 px-3.5 text-xs text-amber-800">
                   <div className="flex items-start gap-2">
                     <Clock className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <span>
@@ -1136,7 +1140,7 @@ export default function ChatInbox({
                     <FileText />
                     إرسال قالب معتمد
                   </Button>
-                </div>
+                </Alert>
               ) : (
                 <div className="flex flex-col gap-2">
                   {/* Staged attachment preview */}

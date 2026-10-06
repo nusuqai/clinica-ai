@@ -7,6 +7,7 @@ import { startClinicSignup } from "@/server/actions/auth";
 import { PHONE_EXAMPLE, normalizePhone, isValidPhone } from "@/lib/phone";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { Alert } from "@/components/ui/alert";
 
 interface Props {
   clinicName: string;
@@ -57,7 +58,10 @@ export function RegisterForm({ clinicName, initialPhone = "" }: Props) {
       </div>
 
       {error && (
-        <div className="mb-6 flex flex-col gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-sans text-sm text-red-600">
+        <Alert
+          variant="destructive"
+          className="mb-6 flex-col rounded-2xl border-red-100 text-red-600"
+        >
           <div className="flex items-start gap-3">
             <span className="mt-0.5 flex-shrink-0">⚠</span>
             <span>{error}</span>
@@ -70,7 +74,7 @@ export function RegisterForm({ clinicName, initialPhone = "" }: Props) {
               الذهاب إلى تسجيل الدخول ←
             </Link>
           )}
-        </div>
+        </Alert>
       )}
 
       <form className="space-y-4" onSubmit={handleSubmit}>

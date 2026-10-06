@@ -26,6 +26,7 @@ import Modal from "@/components/admin/modal";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import BoardColumn from "./board-column";
+import { Alert } from "@/components/ui/alert";
 
 interface DoctorOption {
   id: string;
@@ -324,10 +325,10 @@ export default function AppointmentBoard({
                 </DetailRow>
               )}
               {detailsAppt.cancellationReason && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <Alert variant="destructive" className="block px-3 py-2">
                   <span className="font-medium">سبب الإلغاء: </span>
                   {detailsAppt.cancellationReason}
-                </div>
+                </Alert>
               )}
             </div>
 

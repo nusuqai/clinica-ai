@@ -6,6 +6,7 @@ import { Mail, Lock, ArrowLeft, UserPlus } from "lucide-react";
 import { signIn, joinClinic } from "@/server/actions/auth";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { Alert } from "@/components/ui/alert";
 
 interface Props {
   /** The clinic this host belongs to, or null on the platform's own login. */
@@ -72,10 +73,10 @@ export function LoginForm({ clinicName }: Props) {
       </div>
 
       {error && (
-        <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-sans text-sm text-red-600">
+        <Alert variant="destructive" className="mb-6 gap-3 rounded-2xl border-red-100 text-red-600">
           <span className="mt-0.5 flex-shrink-0">⚠</span>
           <span>{error}</span>
-        </div>
+        </Alert>
       )}
 
       {needsJoin ? (

@@ -19,6 +19,7 @@ import { formatSlotDate } from "@/lib/slot-time";
 import { queueCapacityHint } from "@/lib/availability/queue-capacity";
 import { isQueueMode, MODE_BADGE_AR } from "@/lib/availability/modes";
 import { Card } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 
 export interface DoctorBranchHours {
   dayOfWeek: DayOfWeek;
@@ -166,20 +167,20 @@ export default function DoctorRulesTab({ rules, branches }: DoctorRulesTabProps)
       </div>
 
       {branches.length === 0 && (
-        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 font-sans text-sm text-amber-700">
+        <Alert variant="warning" className="mb-4">
           لم يتم تعيينك لأي فرع بعد. تواصل مع مسؤول العيادة لتعيين فرع عملك قبل إضافة قواعد التوفر.
-        </div>
+        </Alert>
       )}
 
       {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
+        <Alert variant="destructive" className="mb-4">
           {error}
-        </div>
+        </Alert>
       )}
       {successMsg && (
-        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
+        <Alert variant="success" className="mb-4">
           {successMsg}
-        </div>
+        </Alert>
       )}
 
       {rules.length === 0 ? (

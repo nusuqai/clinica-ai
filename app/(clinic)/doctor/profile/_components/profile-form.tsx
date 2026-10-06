@@ -7,6 +7,7 @@ import { FormField } from "@/components/ui/form-field";
 import SpecialtySelect, {
   type SpecialtyOption,
 } from "@/app/(clinic)/admin/doctors/_components/specialty-select";
+import { Alert } from "@/components/ui/alert";
 
 interface ProfileFormProps {
   fullName: string;
@@ -47,16 +48,8 @@ export default function ProfileForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
-          تم تحديث الملف الشخصي بنجاح
-        </div>
-      )}
+      {error && <Alert variant="destructive">{error}</Alert>}
+      {success && <Alert variant="success">تم تحديث الملف الشخصي بنجاح</Alert>}
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <FormField
