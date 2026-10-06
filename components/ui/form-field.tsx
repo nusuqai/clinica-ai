@@ -4,12 +4,13 @@ import * as React from "react";
 import { format, parse, isValid } from "date-fns";
 import { ar as arDateFns } from "date-fns/locale";
 import { ar } from "react-day-picker/locale";
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, Eye, EyeOff } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -29,6 +30,8 @@ import { Textarea } from "@/components/ui/textarea";
  *   <FormField type="select" label="النوع" options={kinds} name="kind" defaultValue="CHECKUP" />
  *   <FormField type="date" label="تاريخ الزيارة" value={date} onValueChange={setDate} />
  *   <FormField type="checkbox" label="مفعل" checked={on} onCheckedChange={setOn} />
+ *   <FormField type="password" name="password" startIcon={<Lock />} size="lg" />
+ *   <FormField type="otp" length={6} name="token" value={code} onValueChange={setCode} />
  *
  * Works controlled (`value` + `onValueChange`) or uncontrolled inside a `<form>`
  * (`name` + `defaultValue`) — every widget submits its value under `name`.
@@ -45,7 +48,16 @@ type FieldChrome = {
   /** Classes for the control itself. */
   controlClassName?: string;
   labelClassName?: string;
+  /** Rendered at the end of the label row, e.g. a "forgot password?" link. */
+  labelAction?: React.ReactNode;
+  /** "lg" is the taller, rounder control used on auth and public pages. */
+  size?: "default" | "lg";
 };
+
+const SIZE_CLASSES = {
+  default: "",
+  lg: "h-12 rounded-2xl bg-white px-4 focus:border-accent focus:ring-accent/40 focus-visible:border-accent focus-visible:ring-accent/40",
+} as const;
 
 type NativeInputProps = Omit<React.ComponentProps<"input">, "type" | "className" | "size">;
 
@@ -53,6 +65,8 @@ type TextFieldProps = FieldChrome &
   NativeInputProps & {
     type?: "text" | "email" | "password" | "tel" | "number" | "url" | "search" | "time" | "file";
     onValueChange?: (value: string) => void;
+    /** Icon shown inside the input at the start edge. */
+    startIcon?: React.ReactNode;
   };
 
 type TextareaFieldProps = FieldChrome &
@@ -93,6 +107,20 @@ type DateFieldProps = FieldChrome & {
   max?: string;
 };
 
+type OtpFieldProps = FieldChrome & {
+  type: "otp";
+  /** Number of digit boxes. */
+  length: number;
+  value?: string;
+  onValueChange?: (value: string) => void;
+  /** Fired once every box is filled. */
+  onComplete?: (value: string) => void;
+  name?: string;
+  id?: string;
+  required?: boolean;
+  disabled?: boolean;
+};
+
 type CheckFieldProps = FieldChrome & {
   type: "checkbox" | "switch";
   checked?: boolean;
@@ -107,7 +135,12 @@ type CheckFieldProps = FieldChrome & {
 };
 
 export type FormFieldProps =
-  TextFieldProps | TextareaFieldProps | SelectFieldProps | DateFieldProps | CheckFieldProps;
+  | TextFieldProps
+  | TextareaFieldProps
+  | SelectFieldProps
+  | DateFieldProps
+  | OtpFieldProps
+  | CheckFieldProps;
 
 /** Types whose content is Latin/numeric and reads better left-to-right. */
 const LTR_TYPES = new Set(["email", "tel", "number", "url", "time"]);
@@ -115,7 +148,7 @@ const LTR_TYPES = new Set(["email", "tel", "number", "url", "time"]);
 export function FormField(props: FormFieldProps) {
   const autoId = React.useId();
   const id = props.id ?? autoId;
-  const { label, hint, error, className, labelClassName } = props;
+  const { label, hint, error, className, labelClassName, labelAction } = props;
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
 
   const isInline = props.type === "checkbox" || props.type === "switch";
@@ -127,7 +160,6 @@ export function FormField(props: FormFieldProps) {
       className={cn("font-sans text-sm font-medium text-foreground", labelClassName)}
     >
       {label}
-      {"required" in props && props.required && <span className="ms-0.5 text-red-500">*</span>}
     </Label>
   ) : null;
 
@@ -140,7 +172,14 @@ export function FormField(props: FormFieldProps) {
         </div>
       ) : (
         <>
-          {labelNode}
+          {labelAction ? (
+            <div className="flex items-center justify-between gap-2">
+              {labelNode}
+              {labelAction}
+            </div>
+          ) : (
+            labelNode
+          )}
           {control}
         </>
       )}
@@ -169,6 +208,8 @@ function renderControl(props: FormFieldProps, id: string, describedBy: string | 
         error: _e,
         className: _c,
         labelClassName: _lc,
+        labelAction: _la,
+        size = "default",
         controlClassName,
         onValueChange,
         onChange,
@@ -180,7 +221,7 @@ function renderControl(props: FormFieldProps, id: string, describedBy: string | 
           id={id}
           aria-invalid={invalid}
           aria-describedby={describedBy}
-          className={controlClassName}
+          className={cn(size === "lg" && "rounded-2xl px-4", controlClassName)}
           onChange={(e) => {
             onChange?.(e);
             onValueChange?.(e.target.value);
@@ -194,6 +235,35 @@ function renderControl(props: FormFieldProps, id: string, describedBy: string | 
 
     case "date":
       return <DateControl {...props} id={id} invalid={invalid} describedBy={describedBy} />;
+
+    case "otp":
+      return (
+        // Digits always read left-to-right, even on an RTL page.
+        <div dir="ltr" className="flex justify-center">
+          <InputOTP
+            id={id}
+            name={props.name}
+            maxLength={props.length}
+            pattern="^[0-9]*$"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={props.value}
+            onChange={(v) => props.onValueChange?.(v)}
+            onComplete={props.onComplete}
+            required={props.required}
+            disabled={props.disabled}
+            aria-invalid={invalid}
+            aria-describedby={describedBy}
+            containerClassName={props.controlClassName}
+          >
+            <InputOTPGroup>
+              {Array.from({ length: props.length }, (_, i) => (
+                <InputOTPSlot key={i} index={i} />
+              ))}
+            </InputOTPGroup>
+          </InputOTP>
+        </div>
+      );
 
     case "checkbox":
     case "switch": {
@@ -215,37 +285,79 @@ function renderControl(props: FormFieldProps, id: string, describedBy: string | 
       );
     }
 
-    default: {
-      const {
-        type = "text",
-        label: _l,
-        hint: _h,
-        error: _e,
-        className: _c,
-        labelClassName: _lc,
-        controlClassName,
-        onValueChange,
-        onChange,
-        dir,
-        ...rest
-      } = props;
-      return (
-        <Input
-          {...rest}
-          type={type}
-          id={id}
-          dir={dir ?? (LTR_TYPES.has(type) ? "ltr" : undefined)}
-          aria-invalid={invalid}
-          aria-describedby={describedBy}
-          className={controlClassName}
-          onChange={(e) => {
-            onChange?.(e);
-            onValueChange?.(e.target.value);
-          }}
-        />
-      );
-    }
+    default:
+      return <TextControl {...props} id={id} invalid={invalid} describedBy={describedBy} />;
   }
+}
+
+function TextControl({
+  type = "text",
+  label: _l,
+  hint: _h,
+  error: _e,
+  className: _c,
+  labelClassName: _lc,
+  labelAction: _la,
+  size = "default",
+  controlClassName,
+  onValueChange,
+  onChange,
+  dir,
+  startIcon,
+  invalid,
+  describedBy,
+  ...rest
+}: TextFieldProps & { id: string; invalid?: boolean; describedBy?: string }) {
+  const [revealed, setRevealed] = React.useState(false);
+  const isPassword = type === "password";
+  const effectiveDir = dir ?? (LTR_TYPES.has(type) || isPassword ? "ltr" : undefined);
+
+  const input = (
+    <Input
+      {...rest}
+      type={isPassword && revealed ? "text" : type}
+      dir={effectiveDir}
+      aria-invalid={invalid}
+      aria-describedby={describedBy}
+      className={cn(
+        SIZE_CLASSES[size],
+        // Icons sit on the logical start/end of the *page* (RTL), so pad by side
+        // rather than by the input's own direction.
+        startIcon && "pr-11",
+        isPassword && "pl-11",
+        effectiveDir === "ltr" && startIcon && "text-right placeholder:text-right",
+        controlClassName
+      )}
+      onChange={(e) => {
+        onChange?.(e);
+        onValueChange?.(e.target.value);
+      }}
+    />
+  );
+
+  if (!startIcon && !isPassword) return input;
+
+  return (
+    <div className="relative">
+      {startIcon && (
+        <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-muted-foreground/70 [&_svg]:size-[18px]">
+          {startIcon}
+        </span>
+      )}
+      {input}
+      {isPassword && (
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={() => setRevealed((v) => !v)}
+          aria-label={revealed ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+          className="absolute inset-y-0 left-0 flex items-center pl-4 text-muted-foreground/70 transition-colors hover:text-primary [&_svg]:size-[18px]"
+        >
+          {revealed ? <EyeOff /> : <Eye />}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** Radix Select forbids "" as an item value; map it through a sentinel so "none" options still work. */
@@ -264,6 +376,7 @@ function SelectControl({
   required,
   disabled,
   dir,
+  size = "default",
   controlClassName,
   invalid,
   describedBy,
@@ -290,7 +403,7 @@ function SelectControl({
           id={id}
           aria-invalid={invalid}
           aria-describedby={describedBy}
-          className={controlClassName}
+          className={cn(SIZE_CLASSES[size], controlClassName)}
         >
           <SelectValue placeholder={placeholder ?? emptyOption?.label} />
         </SelectTrigger>
@@ -336,6 +449,7 @@ function DateControl({
   disabled,
   min,
   max,
+  size = "default",
   controlClassName,
   invalid,
   describedBy,
@@ -359,11 +473,12 @@ function DateControl({
           type="button"
           id={id}
           disabled={disabled}
-          aria-invalid={invalid}
+          data-invalid={invalid}
           aria-describedby={describedBy}
           className={cn(
-            "flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2 text-start font-sans text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50",
+            "flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2 text-start font-sans text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 data-[invalid=true]:border-red-400",
             !selected && "text-muted-foreground",
+            SIZE_CLASSES[size],
             controlClassName
           )}
         >

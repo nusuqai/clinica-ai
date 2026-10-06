@@ -50,6 +50,15 @@ const config: Config = {
         heading: ["var(--font-cairo)", "sans-serif"],
         serif: ["var(--font-amiri)", "serif"],
       },
+      keyframes: {
+        "caret-blink": {
+          "0%,70%,100%": { opacity: "1" },
+          "20%,50%": { opacity: "0" },
+        },
+      },
+      animation: {
+        "caret-blink": "caret-blink 1.25s ease-out infinite",
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

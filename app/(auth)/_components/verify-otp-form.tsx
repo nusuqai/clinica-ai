@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { Loader2, ArrowLeft, ShieldCheck, RotateCw } from "lucide-react";
+import { ArrowLeft, ShieldCheck, RotateCw } from "lucide-react";
 import { verifyClinicSignup, resendClinicSignupOtp } from "@/server/actions/auth";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 
 interface Props {
   clinicName: string;
@@ -96,55 +98,44 @@ export function VerifyOtpForm({ clinicName, email, initialResendIn }: Props) {
 
       <form className="space-y-5" onSubmit={handleSubmit}>
         <input type="hidden" name="email" value={email} />
-        <div className="space-y-1.5">
-          <label className="block text-center font-sans text-sm font-medium text-text/70">
-            رمز التحقق
-          </label>
-          <input
-            name="token"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            required
-            dir="ltr"
-            maxLength={8}
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-            className="block w-full rounded-2xl border border-text/10 bg-white py-4 text-center font-sans text-2xl font-bold tracking-[0.5em] text-primary transition-all placeholder:text-text/20 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
-            placeholder="••••••••"
-          />
-        </div>
+        <FormField
+          type="otp"
+          length={8}
+          name="token"
+          label="رمز التحقق"
+          labelClassName="block text-center text-text/70"
+          required
+          value={code}
+          onValueChange={setCode}
+        />
 
-        <button
+        <Button
           type="submit"
-          disabled={isPending || code.length < 8}
-          className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-primary px-4 py-3.5 font-sans text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all duration-200 hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          size="lg"
+          loading={isPending}
+          disabled={code.length < 8}
+          className="w-full rounded-2xl font-semibold shadow-lg shadow-primary/20"
         >
-          {isPending ? (
-            <Loader2 className="w-4.5 h-4.5 animate-spin" />
-          ) : (
-            <ShieldCheck className="w-4.5 h-4.5" />
-          )}
+          {!isPending && <ShieldCheck />}
           {isPending ? "جارٍ التحقق..." : "تأكيد وإنشاء الحساب"}
-        </button>
+        </Button>
       </form>
 
       <div className="mt-6 text-center">
         <p className="mb-2 font-sans text-xs text-text/40">
           لم يصلك الرمز؟ تحقّق من مجلد الرسائل غير المرغوبة.
         </p>
-        <button
+        <Button
           type="button"
+          variant="link"
           onClick={handleResend}
-          disabled={resendIn > 0 || resending}
-          className="inline-flex items-center gap-1.5 font-sans text-sm font-semibold text-accent transition-colors hover:text-accent/80 disabled:cursor-not-allowed disabled:text-text/30"
+          loading={resending}
+          disabled={resendIn > 0}
+          className="h-auto p-0 font-semibold text-accent hover:text-accent/80 hover:no-underline disabled:text-text/30 [&_svg]:size-3.5"
         >
-          {resending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <RotateCw className="h-3.5 w-3.5" />
-          )}
+          {!resending && <RotateCw />}
           {resendIn > 0 ? `إعادة إرسال الرمز خلال ${resendIn}ث` : "إعادة إرسال الرمز"}
-        </button>
+        </Button>
       </div>
 
       <div className="mt-8 text-center">

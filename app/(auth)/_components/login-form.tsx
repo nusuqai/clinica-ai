@@ -2,8 +2,10 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Mail, Lock, Loader2, Eye, EyeOff, ArrowLeft, UserPlus } from "lucide-react";
+import { Mail, Lock, ArrowLeft, UserPlus } from "lucide-react";
 import { signIn, joinClinic } from "@/server/actions/auth";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 
 interface Props {
   /** The clinic this host belongs to, or null on the platform's own login. */
@@ -11,7 +13,6 @@ interface Props {
 }
 
 export function LoginForm({ clinicName }: Props) {
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsJoin, setNeedsJoin] = useState(false);
   // Held only to re-authenticate on "create account here" — the non-member
@@ -92,100 +93,69 @@ export function LoginForm({ clinicName }: Props) {
               للمتابعة.
             </p>
           </div>
-          <button
+          <Button
+            size="lg"
             onClick={handleJoin}
-            disabled={isJoining}
-            className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-primary px-4 py-3.5 font-sans text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-60"
+            loading={isJoining}
+            className="w-full rounded-2xl font-semibold shadow-lg shadow-primary/20"
           >
-            {isJoining ? (
-              <Loader2 className="w-4.5 h-4.5 animate-spin" />
-            ) : (
-              <UserPlus className="w-4.5 h-4.5" />
-            )}
+            {!isJoining && <UserPlus />}
             {isJoining ? "جارٍ إنشاء الحساب..." : `إنشاء حسابي في ${clinicName}`}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="link"
+            size="sm"
             onClick={() => {
               setNeedsJoin(false);
               setError(null);
               setCreds(null);
             }}
-            className="font-sans text-xs text-text/40 hover:text-text/60"
+            className="text-text/40 hover:text-text/60 hover:no-underline"
           >
             تسجيل الدخول بحساب آخر
-          </button>
+          </Button>
         </div>
       ) : (
         <form className="space-y-5" onSubmit={handleSubmit}>
-          <div className="space-y-1.5">
-            <label className="block font-sans text-sm font-medium text-text/70">
-              البريد الإلكتروني
-            </label>
-            <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
-                <Mail className="h-4.5 w-4.5 text-text/30" />
-              </div>
-              <input
-                name="email"
-                type="email"
-                required
-                dir="ltr"
-                className="block w-full rounded-2xl border border-text/10 bg-white py-3.5 pl-4 pr-11 text-right font-sans text-sm transition-all placeholder:text-text/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
-                placeholder="name@example.com"
-              />
-            </div>
-          </div>
+          <FormField
+            type="email"
+            name="email"
+            label="البريد الإلكتروني"
+            labelClassName="text-text/70"
+            required
+            size="lg"
+            startIcon={<Mail />}
+            placeholder="name@example.com"
+          />
 
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="block font-sans text-sm font-medium text-text/70">
-                كلمة المرور
-              </label>
+          <FormField
+            type="password"
+            name="password"
+            label="كلمة المرور"
+            labelClassName="text-text/70"
+            labelAction={
               <Link
                 href="/forgot-password"
                 className="font-sans text-xs text-accent transition-colors hover:text-accent/70"
               >
                 نسيت كلمة المرور؟
               </Link>
-            </div>
-            <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
-                <Lock className="h-4.5 w-4.5 text-text/30" />
-              </div>
-              <input
-                name="password"
-                type={showPassword ? "text" : "password"}
-                required
-                dir="ltr"
-                className="block w-full rounded-2xl border border-text/10 bg-white py-3.5 pl-11 pr-11 font-sans text-sm transition-all placeholder:text-text/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
-                placeholder="••••••••"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute inset-y-0 left-0 flex items-center pl-4 text-text/30 transition-colors hover:text-primary"
-              >
-                {showPassword ? (
-                  <EyeOff className="h-4.5 w-4.5" />
-                ) : (
-                  <Eye className="h-4.5 w-4.5" />
-                )}
-              </button>
-            </div>
-          </div>
+            }
+            required
+            size="lg"
+            startIcon={<Lock />}
+            placeholder="••••••••"
+          />
 
-          <button
+          <Button
             type="submit"
-            disabled={isPending}
-            className="mt-2 flex w-full items-center justify-center gap-2.5 rounded-2xl bg-primary px-4 py-3.5 font-sans text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all duration-200 hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            size="lg"
+            loading={isPending}
+            className="mt-2 w-full rounded-2xl font-semibold shadow-lg shadow-primary/20"
           >
-            {isPending ? (
-              <Loader2 className="w-4.5 h-4.5 animate-spin" />
-            ) : (
-              <ArrowLeft className="w-4.5 h-4.5" />
-            )}
+            {!isPending && <ArrowLeft />}
             {isPending ? "جارٍ تسجيل الدخول..." : "تسجيل الدخول"}
-          </button>
+          </Button>
         </form>
       )}
 

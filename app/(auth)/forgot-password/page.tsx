@@ -2,8 +2,10 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Mail, Loader2, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { Mail, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { forgotPassword } from "@/server/actions/auth";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 
 export default function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null);
@@ -68,37 +70,26 @@ export default function ForgotPasswordPage() {
       )}
 
       <form className="space-y-5" onSubmit={handleSubmit}>
-        <div className="space-y-1.5">
-          <label className="block font-sans text-sm font-medium text-text/70">
-            البريد الإلكتروني
-          </label>
-          <div className="relative">
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
-              <Mail className="h-4.5 w-4.5 text-text/30" />
-            </div>
-            <input
-              name="email"
-              type="email"
-              required
-              dir="ltr"
-              className="block w-full rounded-2xl border border-text/10 bg-white py-3.5 pl-4 pr-11 text-right font-sans text-sm transition-all placeholder:text-text/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
-              placeholder="name@example.com"
-            />
-          </div>
-        </div>
+        <FormField
+          type="email"
+          name="email"
+          label="البريد الإلكتروني"
+          labelClassName="text-text/70"
+          required
+          size="lg"
+          startIcon={<Mail />}
+          placeholder="name@example.com"
+        />
 
-        <button
+        <Button
           type="submit"
-          disabled={isPending}
-          className="mt-2 flex w-full items-center justify-center gap-2.5 rounded-2xl bg-primary px-4 py-3.5 font-sans text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all duration-200 hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          size="lg"
+          loading={isPending}
+          className="mt-2 w-full rounded-2xl font-semibold shadow-lg shadow-primary/20"
         >
-          {isPending ? (
-            <Loader2 className="w-4.5 h-4.5 animate-spin" />
-          ) : (
-            <Mail className="w-4.5 h-4.5" />
-          )}
+          {!isPending && <Mail />}
           {isPending ? "جارٍ الإرسال..." : "إرسال رابط إعادة التعيين"}
-        </button>
+        </Button>
       </form>
 
       <div className="mt-8 text-center">
