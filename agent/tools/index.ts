@@ -5,8 +5,6 @@ import type { AgentContext } from "@/agent/types";
 import { commonTools } from "./common";
 import { knowledgeTools } from "./knowledge";
 import { patientTools } from "./patient";
-import { doctorTools } from "./doctor";
-import { adminTools } from "./admin";
 import { escalationTool } from "./escalation";
 import { registerInClinicTool } from "./registration";
 import { claimWebLoginTool } from "./claim";
@@ -38,14 +36,10 @@ export async function getToolsForRole(ctx: AgentContext): Promise<DynamicStructu
     return [...base, ...register, ...claim];
   }
 
-  switch (ctx.role) {
-    case "PATIENT":
-      return [...base, ...patientTools(ctx), ...claim];
-    case "DOCTOR":
-      return [...base, ...(await doctorTools(ctx))];
-    case "ADMIN":
-      return [...base, ...adminTools(ctx)];
-    default:
-      return commonTools(ctx.clinicId);
-  }
+  // Only patients act through the agent. Clinic team members (ADMIN / STAFF)
+  // and doctors work from their dashboards and have no assistant of their own —
+  // if one of them writes in (e.g. from their own phone on WhatsApp) they get
+  // the same info-only tools as an unknown contact, and nothing that acts.
+  if (ctx.role === "PATIENT") return [...base, ...patientTools(ctx), ...claim];
+  return base;
 }

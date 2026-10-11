@@ -1,4 +1,5 @@
 import "server-only";
+import type { BranchScope } from "@/lib/branch-scope";
 import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
 import {
@@ -46,6 +47,11 @@ export interface CreateBranchInput {
   directions?: string | null;
   phones?: BranchPhoneInput[];
   hours?: BranchHoursInput[];
+}
+
+/** The branches a staff scope covers, out of an already-loaded list. */
+export function branchesInScope<T extends { id: string }>(branches: T[], scope: BranchScope): T[] {
+  return scope === null ? branches : branches.filter((b) => scope.includes(b.id));
 }
 
 export interface UpdateBranchInput extends Partial<Omit<CreateBranchInput, "clinicId">> {

@@ -1,9 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { Channel, Role, SenderType, type Prisma } from "@prisma/client";
+import { Channel, SenderType, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getClinicContext } from "@/lib/auth";
+import { can, getClinicContext } from "@/lib/auth";
 import {
   sendTextMessage,
   sendTemplateMessage,
@@ -77,7 +77,7 @@ export async function sendAdminReply(
 ): Promise<SendAdminReplyResult> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
-  if (ctx.role !== Role.ADMIN) return { ok: false, reason: "forbidden" };
+  if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
 
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, clinicId: ctx.clinic.id },
@@ -113,7 +113,7 @@ export async function sendAdminReply(
     // gets turned back on afterwards.
     await prisma.escalation.updateMany({
       where: { conversationId, resolvedAt: null },
-      data: { resolvedAt: new Date() },
+      data: { resolvedAt: new Date(), resolvedById: ctx.user.id },
     });
   } catch (err) {
     // Nothing was persisted (or the reply is in an unknown state) — the inbox
@@ -174,7 +174,7 @@ export async function createStaffMediaUpload(
 ): Promise<CreateUploadResult> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
-  if (ctx.role !== Role.ADMIN) return { ok: false, reason: "forbidden" };
+  if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
 
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, clinicId: ctx.clinic.id },
@@ -219,7 +219,7 @@ export async function sendAdminMediaReply(
 ): Promise<SendAdminReplyResult> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
-  if (ctx.role !== Role.ADMIN) return { ok: false, reason: "forbidden" };
+  if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
 
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, clinicId: ctx.clinic.id },
@@ -272,7 +272,7 @@ export async function sendAdminMediaReply(
     });
     await prisma.escalation.updateMany({
       where: { conversationId, resolvedAt: null },
-      data: { resolvedAt: new Date() },
+      data: { resolvedAt: new Date(), resolvedById: ctx.user.id },
     });
   } catch (err) {
     console.error("Failed to save admin media reply:", err);
@@ -322,7 +322,7 @@ export async function sendAdminMediaReply(
  */
 export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: boolean }> {
   const ctx = await getClinicContext();
-  if (!ctx || ctx.role !== Role.ADMIN) return { ok: false };
+  if (!can(ctx, "messages")) return { ok: false };
 
   const message = await prisma.message.findUnique({
     where: { id: messageId },
@@ -402,7 +402,7 @@ export async function sendWhatsappTemplate(
 ): Promise<SendTemplateResult> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
-  if (ctx.role !== Role.ADMIN) return { ok: false, reason: "forbidden" };
+  if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
 
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, clinicId: ctx.clinic.id },
@@ -448,7 +448,7 @@ export async function sendWhatsappTemplate(
     });
     await prisma.escalation.updateMany({
       where: { conversationId, resolvedAt: null },
-      data: { resolvedAt: new Date() },
+      data: { resolvedAt: new Date(), resolvedById: ctx.user.id },
     });
     await prisma.conversation.update({
       where: { id: conversationId },
@@ -476,11 +476,11 @@ export async function sendWhatsappTemplate(
  */
 export async function resolveMessageEscalation(escalationId: string): Promise<{ ok: boolean }> {
   const ctx = await getClinicContext();
-  if (!ctx || ctx.role !== Role.ADMIN) return { ok: false };
+  if (!can(ctx, "messages")) return { ok: false };
 
   const result = await prisma.escalation.updateMany({
     where: { id: escalationId, clinicId: ctx.clinic.id, resolvedAt: null },
-    data: { resolvedAt: new Date() },
+    data: { resolvedAt: new Date(), resolvedById: ctx.user.id },
   });
   if (result.count === 0) return { ok: false };
 
@@ -491,19 +491,21 @@ export async function resolveMessageEscalation(escalationId: string): Promise<{ 
 export async function setSessionAiEnabled(sessionId: string, enabled: boolean): Promise<void> {
   const ctx = await getClinicContext();
   if (!ctx) throw new Error("Unauthorized");
-  if (ctx.role !== Role.ADMIN) throw new Error("Forbidden");
+  if (!can(ctx, "messages")) throw new Error("Forbidden");
 
-  await prisma.chatSession.update({
-    where: { id: sessionId },
-    data: { aiEnabled: enabled },
+  // Scoped to the caller's clinic, and stamped with who flipped it.
+  const updated = await prisma.chatSession.updateMany({
+    where: { id: sessionId, clinicId: ctx.clinic.id },
+    data: { aiEnabled: enabled, aiToggledById: ctx.user.id, aiToggledAt: new Date() },
   });
+  if (updated.count === 0) throw new Error("Not found");
 
   // Handing control back to the AI counts as resolving any open escalation
   // on this session.
   if (enabled) {
     await prisma.escalation.updateMany({
-      where: { sessionId, resolvedAt: null },
-      data: { resolvedAt: new Date() },
+      where: { sessionId, clinicId: ctx.clinic.id, resolvedAt: null },
+      data: { resolvedAt: new Date(), resolvedById: ctx.user.id },
     });
   }
 

@@ -1,36 +1,7 @@
-import { Role } from "@prisma/client";
-import { requireClinicMember } from "@/lib/auth";
-import PageHeader from "@/components/admin/page-header";
-import { FilterBar } from "@/components/ui/filter-bar";
-import { ROLE_LABELS } from "@/lib/labels";
-import { usersPageAction } from "@/server/actions/admin";
-import UsersTable from "./_components/users-table";
+import { redirect } from "next/navigation";
 
-interface PageProps {
-  searchParams: Promise<{ q?: string; role?: string }>;
-}
-
-export default async function AdminUsersPage({ searchParams }: PageProps) {
-  await requireClinicMember(["ADMIN"]);
-  const { q, role } = await searchParams;
-  const filters = { query: q, role };
-  const users = await usersPageAction(filters, 1);
-
-  return (
-    <div>
-      <PageHeader title="المستخدمون" subtitle={`${users.total} مستخدم مسجّل`} />
-      <FilterBar
-        fields={[
-          { type: "search", param: "q", placeholder: "بحث بالاسم أو رقم الهاتف..." },
-          {
-            type: "select",
-            param: "role",
-            allLabel: "كل الأدوار",
-            options: Object.values(Role).map((r) => ({ value: r, label: ROLE_LABELS[r] })),
-          },
-        ]}
-      />
-      <UsersTable initial={users} filters={filters} />
-    </div>
-  );
+// The mixed "users" list was split in two: patients (/admin/patients) and the
+// clinic's team (/admin/team). Old links and bookmarks land on patients.
+export default function AdminUsersRedirect() {
+  redirect("/admin/patients");
 }

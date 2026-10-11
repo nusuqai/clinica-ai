@@ -1,5 +1,5 @@
-import { requireClinicMember } from "@/lib/auth";
-import { listBranches } from "@/server/services/branches";
+import { requirePermission } from "@/lib/auth";
+import { branchesInScope, listBranches } from "@/server/services/branches";
 import { listSpecialtyOptions } from "@/server/services/specialties";
 import { doctorsPageAction } from "@/server/actions/admin";
 import PageHeader from "@/components/admin/page-header";
@@ -12,13 +12,13 @@ interface PageProps {
 }
 
 export default async function AdminDoctorsPage({ searchParams }: PageProps) {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic, branchIds: scope } = await requirePermission("doctors");
   const { q, specialty, branch, status } = await searchParams;
   const filters = { query: q, specialtyId: specialty, branchId: branch, status };
 
   const [doctors, branchRows, specialties] = await Promise.all([
     doctorsPageAction(filters, 1),
-    listBranches(clinic.id, { activeOnly: true }),
+    listBranches(clinic.id, { activeOnly: true }).then((rows) => branchesInScope(rows, scope)),
     listSpecialtyOptions(clinic.id),
   ]);
   const branches = branchRows.map((b) => ({

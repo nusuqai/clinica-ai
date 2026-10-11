@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { Role } from "@prisma/client";
-import { requireClinicMember } from "@/lib/auth";
+import { can, requirePermission } from "@/lib/auth";
 import { authorizeAppointmentView } from "@/server/services/appointmentAccess";
 import { getAppointmentForDetail } from "@/server/services/appointments";
 import { getRecordForAppointment } from "@/server/services/treatments";
@@ -13,7 +13,7 @@ interface PageProps {
 
 export default async function AdminAppointmentDetailPage({ params }: PageProps) {
   const { id } = await params;
-  await requireClinicMember(["ADMIN"]);
+  const ctx = await requirePermission(["appointments", "medical_records"]);
 
   const access = await authorizeAppointmentView(id);
   if (!access.ok) notFound();
@@ -21,10 +21,14 @@ export default async function AdminAppointmentDetailPage({ params }: PageProps) 
   const appt = await getAppointmentForDetail(id, access.clinicId);
   if (!appt) notFound();
 
-  const [record, attachments] = await Promise.all([
-    getRecordForAppointment(id, access.clinicId),
-    listAppointmentAttachments(id, access.clinicId),
-  ]);
+  // The clinical side (record + visit files) needs "medical_records"; a member
+  // who only manages appointments sees the booking details alone.
+  const [record, attachments] = access.canViewRecords
+    ? await Promise.all([
+        getRecordForAppointment(id, access.clinicId),
+        listAppointmentAttachments(id, access.clinicId),
+      ])
+    : [null, []];
 
   return (
     <AppointmentDetail
@@ -33,9 +37,10 @@ export default async function AdminAppointmentDetailPage({ params }: PageProps) 
       attachments={attachments}
       viewerRole={Role.ADMIN}
       canEdit={access.canEdit}
-      backHref="/admin/appointments"
-      backLabel="المواعيد"
-      patientHistoryHref={`/admin/users/${appt.patient.id}`}
+      showRecords={access.canViewRecords}
+      backHref={can(ctx, "appointments") ? "/admin/appointments" : "/admin"}
+      backLabel={can(ctx, "appointments") ? "المواعيد" : "الرئيسية"}
+      patientHistoryHref={can(ctx, "patients") ? `/admin/patients/${appt.patient.id}` : undefined}
     />
   );
 }

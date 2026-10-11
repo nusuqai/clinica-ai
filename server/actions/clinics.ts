@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { findAuthUserIdByEmail } from "@/lib/supabase/auth-users";
 import { paginate, pageRequest } from "@/lib/pagination";
 import { ensureClinicAiCredit } from "@/server/services/aiCredit";
+import { seedDefaultClinicRoles } from "@/server/services/team";
 import { registerClinicDomain } from "@/lib/vercel/domains";
 import { sendClinicApprovedInvite, sendClinicCreatedInvite } from "@/lib/email/send-auth-email";
 import { sendRequestReceived, sendClinicRejected } from "@/lib/email/send-transactional";
@@ -286,6 +287,7 @@ export async function approveClinicRequest(requestId: string) {
     });
 
     await ensureClinicAiCredit(clinic.id);
+    await seedDefaultClinicRoles(clinic.id);
 
     const domain = await provisionClinicDomain(clinic.slug);
 
@@ -296,6 +298,9 @@ export async function approveClinicRequest(requestId: string) {
       email: request.requesterEmail,
       name: request.requesterName,
       clinicName: clinic.name,
+      // Open on the clinic's own host — but only once its domain is live;
+      // until then the root domain is the one that is guaranteed to resolve.
+      clinicSlug: domain.ok ? clinic.slug : null,
     }).catch((e) => ({
       ok: false as const,
       error: e instanceof Error ? e.message : "email failed",
@@ -392,6 +397,7 @@ export async function createClinic(formData: FormData) {
     });
 
     await ensureClinicAiCredit(clinic.id);
+    await seedDefaultClinicRoles(clinic.id);
 
     const domain = await provisionClinicDomain(clinic.slug);
 
@@ -400,6 +406,9 @@ export async function createClinic(formData: FormData) {
       email: adminEmail,
       name: adminName,
       clinicName: clinic.name,
+      // Open on the clinic's own host — but only once its domain is live;
+      // until then the root domain is the one that is guaranteed to resolve.
+      clinicSlug: domain.ok ? clinic.slug : null,
     }).catch((e) => ({
       ok: false as const,
       error: e instanceof Error ? e.message : "email failed",

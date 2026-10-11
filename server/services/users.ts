@@ -133,11 +133,13 @@ export async function updatePatientProfile(
   clinicId: string,
   input: { fullName?: string; phone?: string | null }
 ): Promise<Result<void>> {
-  const member = await prisma.clinicMember.findUnique({
-    where: { userId_clinicId: { userId, clinicId } },
+  // PATIENT members only: this is reachable with the "patients" permission, and
+  // must never become a way to edit a colleague's (or an admin's) account.
+  const member = await prisma.clinicMember.findFirst({
+    where: { userId, clinicId, role: Role.PATIENT },
     select: { userId: true },
   });
-  if (!member) return err("المستخدم ليس عضواً في هذه العيادة");
+  if (!member) return err("المريض غير موجود في هذه العيادة");
 
   const data: { fullName?: string; phone?: string | null } = {};
   if (input.fullName !== undefined) {
@@ -175,11 +177,13 @@ export async function changePatientEmail(
   clinicId: string,
   newEmailRaw: string
 ): Promise<Result<void>> {
-  const member = await prisma.clinicMember.findUnique({
-    where: { userId_clinicId: { userId, clinicId } },
-    select: { user: { select: { fullName: true } } },
+  // PATIENT members only — changing a login email is an account takeover vector
+  // if it could ever be pointed at a team member (see updatePatientProfile).
+  const member = await prisma.clinicMember.findFirst({
+    where: { userId, clinicId, role: Role.PATIENT },
+    select: { user: { select: { fullName: true } }, clinic: { select: { slug: true } } },
   });
-  if (!member) return err("المستخدم ليس عضواً في هذه العيادة");
+  if (!member) return err("المريض غير موجود في هذه العيادة");
 
   const newEmail = newEmailRaw.trim().toLowerCase();
   if (!newEmail) return err("البريد الإلكتروني مطلوب");
@@ -201,6 +205,8 @@ export async function changePatientEmail(
       currentEmail,
       newEmail,
       name: member.user.fullName,
+      // The patient confirms on their own clinic's host.
+      clinicSlug: member.clinic.slug,
     });
     return ok(undefined);
   } catch (e) {
@@ -216,7 +222,8 @@ export async function updateUserRole(
   try {
     await prisma.clinicMember.upsert({
       where: { userId_clinicId: { userId, clinicId } },
-      update: { role },
+      // Leaving STAFF drops the custom role with it.
+      update: { role, clinicRoleId: null },
       create: { userId, clinicId, role },
     });
     return ok(undefined);

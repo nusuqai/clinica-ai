@@ -1,4 +1,4 @@
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { knowledgePageAction } from "@/server/actions/admin";
 import PageHeader from "@/components/admin/page-header";
 import { FilterBar } from "@/components/ui/filter-bar";
@@ -19,7 +19,7 @@ interface PageProps {
  * need when a patient gets an answer that looks wrong.
  */
 export default async function AdminKnowledgePage({ searchParams }: PageProps) {
-  await requireClinicMember(["ADMIN"]);
+  await requirePermission("agent");
   const { q, status } = await searchParams;
   const filters = { query: q, status };
   const docs = await knowledgePageAction(filters, 1);

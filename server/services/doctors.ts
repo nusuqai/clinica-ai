@@ -1,4 +1,5 @@
 import "server-only";
+import { branchIdFilter, doctorBranchFilter, type BranchScope } from "@/lib/branch-scope";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authEmailsByIds } from "@/lib/supabase/auth-users";
@@ -161,7 +162,8 @@ export async function listActiveDoctors(clinicId: string): Promise<DoctorWithPro
 
 export async function getAvailableSlotsForBooking(
   doctorId: string,
-  date: Date
+  date: Date,
+  branchScope?: BranchScope
 ): Promise<
   {
     id: string;
@@ -185,6 +187,7 @@ export async function getAvailableSlotsForBooking(
       appointment: null,
       date: { gte: dayStart, lte: dayEnd },
       startTime: { gt: now },
+      ...branchIdFilter(branchScope),
     },
     select: {
       id: true,
@@ -257,7 +260,8 @@ export interface AvailableDay {
  */
 export async function getAvailableDaysForBooking(
   doctorId: string,
-  daysAhead = 60
+  daysAhead = 60,
+  branchScope?: BranchScope
 ): Promise<AvailableDay[]> {
   const now = new Date();
   const until = new Date(now);
@@ -272,6 +276,7 @@ export async function getAvailableDaysForBooking(
       appointment: null,
       startTime: { gt: now },
       date: { lte: until },
+      ...branchIdFilter(branchScope),
     },
     select: { date: true },
     distinct: ["date"],
@@ -289,7 +294,8 @@ export async function getAvailableDaysForBooking(
       isActive: true,
       mode: { in: QUEUE_MODES },
       referralOnly: false, // referral-only rules aren't directly bookable
-      branchId: { not: null }, // queue booking requires a concrete branch
+      // queue booking requires a concrete branch (inside the staff scope, if any)
+      branchId: branchScope == null ? { not: null } : { in: [...branchScope] },
     },
     select: { dayOfWeek: true, dailyCap: true, branchId: true, endTime: true, mode: true },
   });
@@ -354,6 +360,9 @@ export interface DoctorFilters {
   /** "active" | "inactive"; anything else = both. */
   status?: string;
   acceptsChildren?: boolean;
+  /** Branch scope of the acting staff member (null/undefined = every branch):
+   *  only doctors who work at one of those branches. Set server-side. */
+  branchScope?: BranchScope;
 }
 
 // The WHERE every doctor list runs in the database — before LIMIT/OFFSET and in
@@ -370,7 +379,14 @@ function doctorWhere(clinicId: string, f: DoctorFilters): Prisma.DoctorWhereInpu
       specialty: { name: { contains: specialtyName, mode: "insensitive" as const } },
     }),
     ...(typeof f.acceptsChildren === "boolean" && { acceptsChildren: f.acceptsChildren }),
-    ...(f.branchId && UUID_RE.test(f.branchId) && { branches: { some: { branchId: f.branchId } } }),
+    // The picked branch and the staff scope are separate conditions on the same
+    // relation, so they are ANDed — the picker can only narrow the scope.
+    AND: [
+      ...(f.branchId && UUID_RE.test(f.branchId)
+        ? [{ branches: { some: { branchId: f.branchId } } }]
+        : []),
+      doctorBranchFilter(f.branchScope),
+    ],
     ...(f.status === "active" && { isActive: true }),
     ...(f.status === "inactive" && { isActive: false }),
   };
@@ -450,9 +466,12 @@ export async function activeDoctorStats(
   };
 }
 
-export async function listDoctors(clinicId: string): Promise<DoctorWithProfile[]> {
+export async function listDoctors(
+  clinicId: string,
+  branchScope?: BranchScope
+): Promise<DoctorWithProfile[]> {
   const doctors = await prisma.doctor.findMany({
-    where: { clinicId },
+    where: { clinicId, ...doctorBranchFilter(branchScope) },
     include: linkedProfileSelect,
     orderBy: { fullName: "asc" },
   });
@@ -464,10 +483,15 @@ export async function listDoctors(clinicId: string): Promise<DoctorWithProfile[]
 
 export async function getDoctor(
   doctorId: string,
-  clinicId?: string
+  clinicId?: string,
+  branchScope?: BranchScope
 ): Promise<DoctorWithProfile | null> {
   const doctor = await prisma.doctor.findFirst({
-    where: { id: doctorId, ...(clinicId ? { clinicId } : {}) },
+    where: {
+      id: doctorId,
+      ...(clinicId ? { clinicId } : {}),
+      ...doctorBranchFilter(branchScope),
+    },
     include: linkedProfileSelect,
   });
   if (!doctor) return null;
@@ -767,9 +791,14 @@ export async function deleteDoctor(doctorId: string): Promise<Result<void>> {
 
 // ─── Availability Rules ───────────────────────────────────────────────────────
 
-export async function listDoctorRules(doctorId: string, clinicId?: string) {
+export async function listDoctorRules(
+  doctorId: string,
+  clinicId?: string,
+  branchScope?: BranchScope
+) {
   return prisma.availabilityRule.findMany({
-    where: { doctorId, ...(clinicId ? { clinicId } : {}) }, // #38: optional clinic scope
+    // #38: optional clinic scope; #52: optional staff branch scope
+    where: { doctorId, ...(clinicId ? { clinicId } : {}), ...branchIdFilter(branchScope) },
     include: { branch: { select: { id: true, name: true } } },
     orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
   });
@@ -1006,7 +1035,7 @@ export async function generateSlotsForRule(
 
 export async function listDoctorSlots(
   doctorId: string,
-  options?: { from?: Date; to?: Date; clinicId?: string }
+  options?: { from?: Date; to?: Date; clinicId?: string; branchScope?: BranchScope }
 ): Promise<DoctorSlot[]> {
   const from =
     options?.from ??
@@ -1027,6 +1056,7 @@ export async function listDoctorSlots(
     where: {
       doctorId,
       ...(options?.clinicId ? { clinicId: options.clinicId } : {}), // #38: optional clinic scope
+      ...branchIdFilter(options?.branchScope),
       date: { gte: from, lte: to },
     },
     include: {
@@ -1061,8 +1091,10 @@ export interface ScheduleDaySummary {
  */
 export async function getDoctorScheduleDays(
   doctorId: string,
-  daysAhead = 30
+  daysAhead = 30,
+  branchScope?: BranchScope
 ): Promise<ScheduleDaySummary[]> {
+  const scope = branchIdFilter(branchScope);
   const from = new Date();
   from.setUTCHours(0, 0, 0, 0);
   const to = new Date(from);
@@ -1072,7 +1104,7 @@ export async function getDoctorScheduleDays(
 
   // Slot-based days — one lightweight row per slot (no patient payload).
   const slots = await prisma.slot.findMany({
-    where: { doctorId, date: { gte: from, lte: to } },
+    where: { doctorId, date: { gte: from, lte: to }, ...scope },
     select: { date: true, isBlocked: true, appointment: { select: { id: true } } },
   });
   for (const s of slots) {
@@ -1095,7 +1127,7 @@ export async function getDoctorScheduleDays(
   // one booking). The mode comes from the queue's rule so arrival days render
   // with their own controls; fall back to ORDER_BASED if the rule was deleted.
   const queues = await prisma.doctorDayQueue.findMany({
-    where: { doctorId, date: { gte: from, lte: to } },
+    where: { doctorId, date: { gte: from, lte: to }, ...scope },
     select: { date: true, nextOrder: true, dailyCap: true, rule: { select: { mode: true } } },
   });
   for (const q of queues) {

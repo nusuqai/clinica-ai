@@ -25,7 +25,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!att) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const access = await authorizeAppointmentView(att.appointmentId);
-  if (!access.ok) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!access.ok || !access.canViewRecords)
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const url = await getPatientMediaSignedUrl(att.storagePath);
   if (!url) return NextResponse.json({ error: "media_unavailable" }, { status: 502 });

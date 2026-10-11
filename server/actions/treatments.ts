@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { AppointmentStatus, Role, type ProcedureKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getClinicContext } from "@/lib/auth";
+import { can, getClinicContext } from "@/lib/auth";
 import * as TreatmentService from "@/server/services/treatments";
 import { authorizePatientHistory } from "@/server/services/treatmentAccess";
 
@@ -164,12 +164,12 @@ async function requireAdmin(): Promise<
   { ok: true; userId: string; clinicId: string } | { ok: false; error: string }
 > {
   const ctx = await getClinicContext();
-  if (!ctx || ctx.role !== Role.ADMIN) return { ok: false, error: "غير مصرح" };
+  if (!can(ctx, "medical_records")) return { ok: false, error: "غير مصرح" };
   return { ok: true, userId: ctx.user.id, clinicId: ctx.clinic.id };
 }
 
 function revalidateAdminPatient(patientId: string) {
-  revalidatePath(`/admin/users/${patientId}`, "page");
+  revalidatePath(`/admin/patients/${patientId}`, "page");
   revalidatePath("/doctor/appointments", "page");
   revalidatePath("/doctor/patients", "page");
 }

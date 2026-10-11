@@ -1,4 +1,5 @@
 import "server-only";
+import { branchIdFilter, type BranchScope } from "@/lib/branch-scope";
 import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
 import { AppointmentStatus, AvailabilityMode } from "@prisma/client";
@@ -240,6 +241,9 @@ export interface AppointmentFilters {
   date?: string;
   /** Only open (pending/confirmed) appointments that haven't happened yet. */
   upcoming?: boolean;
+  /** Branch scope of the acting staff member (null/undefined = every branch).
+   *  Set server-side from the caller's context — never taken from the client. */
+  branchScope?: BranchScope;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -266,14 +270,23 @@ function filterWhere(f: Omit<AppointmentFilters, "doctorId">): Prisma.Appointmen
   };
 }
 
+function asArray<T>(v: T | T[] | undefined): T[] {
+  return v === undefined ? [] : Array.isArray(v) ? v : [v];
+}
+
 function appointmentWhere(
   clinicId: string,
   f: AppointmentFilters = {}
 ): Prisma.AppointmentWhereInput {
+  // ANDed with (not spread over) the user's own branch filter, so picking a
+  // branch in the UI can only narrow the scope, never escape it.
+  const base = filterWhere(f);
+  const scope = branchIdFilter(f.branchScope);
   return {
     clinicId,
     ...(f.doctorId && UUID_RE.test(f.doctorId) && { doctorId: f.doctorId }),
-    ...filterWhere(f),
+    ...base,
+    ...(scope.branchId && { AND: [...asArray(base.AND), scope] }),
   };
 }
 

@@ -4,8 +4,8 @@ import { useState } from "react";
 import { ShieldAlert } from "lucide-react";
 import Sidebar, { type AiUnitsBadge } from "./sidebar";
 import Topbar from "./topbar";
-import { navConfig, roleMeta } from "./nav-config";
-import ChatBubble from "@/components/chat/chat-bubble";
+import { navConfig, roleMeta, visibleAdminNav } from "./nav-config";
+import type { Permission } from "@/lib/permissions";
 import EscalationProvider from "./escalation-provider";
 
 export type DashboardRole = "doctor" | "admin";
@@ -28,6 +28,13 @@ interface DashboardShellProps {
       not a member of. Surfaced as a banner so destructive edits to someone
       else's clinic are never made unknowingly. */
   viaPlatformAdmin?: boolean;
+  /** Admin dashboard only — true for the clinic ADMIN (sees every section);
+      false for STAFF, whose sidebar is cut down to `permissions`. */
+  isClinicAdmin?: boolean;
+  /** Admin dashboard only — what a STAFF member may manage. */
+  permissions?: Permission[];
+  /** Overrides the sidebar's role badge — a STAFF member's custom role name. */
+  roleLabel?: string | null;
 }
 
 export default function DashboardShell({
@@ -40,6 +47,9 @@ export default function DashboardShell({
   clinicLogoUrl = null,
   aiUnits = null,
   viaPlatformAdmin = false,
+  isClinicAdmin = true,
+  permissions = [],
+  roleLabel: roleLabelOverride = null,
   initialUnresolvedEscalationConversationIds = [],
 }: DashboardShellProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -48,8 +58,11 @@ export default function DashboardShell({
   // Each clinic is served from its own subdomain, so the nav config's hrefs
   // ("/admin", "/dashboard", "/" …) are already correct as-is — no clinic
   // prefix to apply.
-  const navItems = navConfig[role];
-  const { label: roleLabel, pageTitle } = roleMeta[role];
+  const navItems = role === "admin" ? visibleAdminNav(permissions, isClinicAdmin) : navConfig[role];
+  const { label: defaultRoleLabel, pageTitle } = roleMeta[role];
+  const roleLabel = roleLabelOverride || defaultRoleLabel;
+  // Escalation alerts (bell, toast, sound) belong to whoever handles the inbox.
+  const escalationAlerts = role === "admin" && (isClinicAdmin || permissions.includes("messages"));
 
   const shell = (
     <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -94,14 +107,10 @@ export default function DashboardShell({
         <Topbar title={pageTitle} clinicName={clinicName} onMenuClick={() => setMobileOpen(true)} />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
-
-      {/* AI assistant — for patients & doctors only; hidden on the admin side
-          (admins manage conversations from the Messages inbox instead). */}
-      {role !== "admin" && <ChatBubble />}
     </div>
   );
 
-  if (role !== "admin") return shell;
+  if (!escalationAlerts) return shell;
 
   return (
     <EscalationProvider
