@@ -29,10 +29,14 @@ AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content> & {
+    /** Alert dialogs ignore outside clicks by default; pass this to make the
+        overlay dismiss (e.g. call the cancel path). */
+    onOverlayClick?: () => void;
+  }
+>(({ className, onOverlayClick, ...props }, ref) => (
   <AlertDialogPortal>
-    <AlertDialogOverlay />
+    <AlertDialogOverlay onClick={onOverlayClick} />
     <AlertDialogPrimitive.Content
       ref={ref}
       className={cn(

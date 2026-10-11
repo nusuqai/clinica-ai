@@ -10,10 +10,16 @@ import { Hint } from "@/components/ui/tooltip";
 
 interface DoctorRowActionsProps {
   doctorId: string;
+  /** Named in the delete confirmation. */
+  doctorName: string;
   isActive: boolean;
 }
 
-export default function DoctorRowActions({ doctorId, isActive }: DoctorRowActionsProps) {
+export default function DoctorRowActions({
+  doctorId,
+  doctorName,
+  isActive,
+}: DoctorRowActionsProps) {
   const [active, setActive] = useState(isActive);
   const [isPending, startTransition] = useTransition();
   const confirm = useConfirm();
@@ -31,14 +37,12 @@ export default function DoctorRowActions({ doctorId, isActive }: DoctorRowAction
   }
 
   async function handleDelete() {
-    const ok = await confirm({
+    setError(null);
+    await confirm({
       title: "حذف الطبيب",
-      description: "هل أنت متأكد من حذف هذا الطبيب وحسابه كاملاً؟",
-    });
-    if (!ok) return;
-    startTransition(async () => {
-      const res = await deleteDoctorAction(doctorId);
-      if (res?.error) setError(res.error);
+      description: <>هل تريد حذف الطبيب «د. {doctorName}»؟</>,
+      warning: "سيتم حذف حسابه بالكامل وقواعد توفّره، ولا يمكن التراجع.",
+      onConfirm: () => deleteDoctorAction(doctorId),
     });
   }
 

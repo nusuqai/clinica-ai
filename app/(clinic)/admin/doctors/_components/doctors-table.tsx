@@ -114,7 +114,11 @@ export default function DoctorsTable({
                       branches={branches}
                       specialties={specialties}
                     />
-                    <DoctorRowActions doctorId={doctor.id} isActive={doctor.isActive} />
+                    <DoctorRowActions
+                      doctorId={doctor.id}
+                      doctorName={doctor.profile.fullName}
+                      isActive={doctor.isActive}
+                    />
                   </div>
                 </TableCell>
               </TableRow>

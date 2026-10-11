@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Role } from "@prisma/client";
 import Modal from "@/components/admin/modal";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   PERMISSIONS,
   PERMISSION_META,
@@ -230,6 +231,7 @@ function MembersTab({ members, roles, branches, currentUserId }: TeamManagerProp
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   function changeRole(userId: string, assignment: string) {
     setError(null);
@@ -251,16 +253,17 @@ function MembersTab({ members, roles, branches, currentUserId }: TeamManagerProp
     });
   }
 
-  function remove(member: TeamMemberView) {
-    if (!confirm(`إزالة «${member.fullName}» من فريق العيادة؟ سيفقد الوصول إلى لوحة التحكم.`))
-      return;
+  async function remove(member: TeamMemberView) {
     setError(null);
     setNotice(null);
-    startTransition(async () => {
-      const res = await removeTeamMemberAction(member.id);
-      if (!res.ok) setError(res.error);
-      router.refresh();
+    const removed = await confirm({
+      title: "إزالة عضو من الفريق",
+      description: <>هل تريد إزالة «{member.fullName}» من فريق العيادة؟</>,
+      warning: "سيفقد الوصول إلى لوحة التحكم فوراً.",
+      confirmText: "إزالة",
+      onConfirm: () => removeTeamMemberAction(member.id),
     });
+    if (removed) startTransition(() => router.refresh());
   }
 
   return (
@@ -605,15 +608,20 @@ function RolesTab({ roles }: { roles: TeamRoleView[] }) {
   const [editing, setEditing] = useState<TeamRoleView | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
-  function remove(role: TeamRoleView) {
-    if (!confirm(`حذف الدور «${role.name}»؟`)) return;
+  async function remove(role: TeamRoleView) {
     setError(null);
-    startTransition(async () => {
-      const res = await deleteRoleAction(role.id);
-      if (!res.ok) setError(res.error);
-      router.refresh();
+    const deleted = await confirm({
+      title: "حذف الدور",
+      description: <>هل تريد حذف الدور «{role.name}»؟</>,
+      warning:
+        role.memberCount > 0
+          ? `هذا الدور مُسنَد إلى ${role.memberCount} عضو. لا يمكن التراجع عن الحذف.`
+          : "لا يمكن التراجع عن الحذف.",
+      onConfirm: () => deleteRoleAction(role.id),
     });
+    if (deleted) startTransition(() => router.refresh());
   }
 
   return (

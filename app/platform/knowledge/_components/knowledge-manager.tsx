@@ -191,11 +191,15 @@ export default function KnowledgeManager({
                       variant="ghost-destructive"
                       size="icon"
                       onClick={async () => {
-                        const ok = await confirm({
+                        setError(null);
+                        const deleted = await confirm({
                           title: "حذف المستند",
-                          description: `حذف المستند «${d.title}» نهائياً؟`,
+                          description: <>هل تريد حذف المستند «{d.title}»؟</>,
+                          warning:
+                            "لن يعود المساعد الذكي قادراً على الرجوع إليه، ولا يمكن التراجع.",
+                          onConfirm: () => deleteClinicKnowledgeDocAction({ clinicId, id: d.id }),
                         });
-                        if (ok) run(() => deleteClinicKnowledgeDocAction({ clinicId, id: d.id }));
+                        if (deleted) router.refresh();
                       }}
                       disabled={isPending}
                       aria-label="حذف"

@@ -16,6 +16,7 @@ import type { AttachmentView } from "@/server/services/attachments";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { Hint } from "@/components/ui/tooltip";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 // The visit's files (lab results, x-rays, documents). Staff (doctor/admin) can
 // upload and delete; a patient sees a read-only list. Bytes go DIRECTLY to the
@@ -62,6 +63,7 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const confirm = useConfirm();
   // A picked file awaiting a name before it uploads — lets staff rename it first.
   const [pending, setPending] = useState<{ file: File; name: string } | null>(null);
   // Inline rename of an already-uploaded attachment.
@@ -144,16 +146,26 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
     }
   }
 
-  async function onDelete(id: string) {
-    setDeletingId(id);
+  async function onDelete(attachment: AttachmentView) {
     setError(null);
-    try {
-      const res = await deleteAppointmentAttachmentAction(id);
-      if (!res.ok) setError(res.error);
-      else router.refresh();
-    } finally {
-      setDeletingId(null);
-    }
+    const deleted = await confirm({
+      title: "حذف المرفق",
+      description: (
+        <>
+          هل تريد حذف المرفق «<span dir="ltr">{attachment.fileName}</span>»؟
+        </>
+      ),
+      warning: "سيُحذف الملف نهائياً ولا يمكن التراجع.",
+      onConfirm: async () => {
+        setDeletingId(attachment.id);
+        try {
+          return await deleteAppointmentAttachmentAction(attachment.id);
+        } finally {
+          setDeletingId(null);
+        }
+      },
+    });
+    if (deleted) router.refresh();
   }
 
   return (
@@ -347,7 +359,7 @@ export default function AppointmentAttachments({ appointmentId, attachments, can
                               <Button
                                 variant="ghost-destructive"
                                 size="icon"
-                                onClick={() => onDelete(a.id)}
+                                onClick={() => onDelete(a)}
                                 loading={deletingId === a.id}
                               >
                                 {deletingId !== a.id && <Trash2 />}

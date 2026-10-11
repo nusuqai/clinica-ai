@@ -86,23 +86,23 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
     });
   });
 
-  async function handleDelete(ruleId: string) {
-    if (
-      !(await confirm({
-        title: "حذف القاعدة",
-        description: "سيتم حذف هذه القاعدة والمواعيد المستقبلية غير المحجوزة. هل تريد المتابعة؟",
-      }))
-    )
-      return;
+  async function handleDelete(rule: AvailabilityRule) {
     setError(null);
-    startTransition(async () => {
-      const res = await deleteRuleAction(ruleId, doctorId);
-      if (res?.error) {
-        setError(res.error);
-        return;
-      }
-      router.refresh();
+    const deleted = await confirm({
+      title: "حذف القاعدة",
+      description: (
+        <>
+          هل تريد حذف قاعدة «{DAY_LABELS[rule.dayOfWeek]}{" "}
+          <span dir="ltr">
+            {rule.startTime} – {rule.endTime}
+          </span>
+          »؟
+        </>
+      ),
+      warning: "سيتم حذف المواعيد المستقبلية غير المحجوزة التابعة لها، ولا يمكن التراجع.",
+      onConfirm: () => deleteRuleAction(rule.id, doctorId),
     });
+    if (deleted) startTransition(() => router.refresh());
   }
 
   function handleToggleActive(rule: AvailabilityRule) {
@@ -246,7 +246,7 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
                   <Button
                     variant="ghost-destructive"
                     size="icon"
-                    onClick={() => handleDelete(rule.id)}
+                    onClick={() => handleDelete(rule)}
                     disabled={isPending}
                     aria-label="حذف القاعدة"
                   >

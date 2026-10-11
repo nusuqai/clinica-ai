@@ -118,23 +118,23 @@ export default function AvailabilityRulesEditor(props: Props) {
       setLiveRows((rs) => rs.filter((_, i) => i !== idx));
       return;
     }
-    if (
-      !(await confirm({
-        title: "حذف القاعدة",
-        description: "سيتم حذف هذه القاعدة والمواعيد المستقبلية غير المحجوزة. هل تريد المتابعة؟",
-      }))
-    )
-      return;
     const ruleId = row.id;
     setError(null);
-    startTransition(async () => {
-      const res = await deleteRuleAction(ruleId, props.doctorId);
-      if (res?.error) {
-        setError(res.error);
-        return;
-      }
-      setLiveRows((rs) => rs.filter((r) => r.id !== ruleId));
+    const deleted = await confirm({
+      title: "حذف القاعدة",
+      description: (
+        <>
+          هل تريد حذف قاعدة «{DAY_LABELS[row.dayOfWeek]}{" "}
+          <span dir="ltr">
+            {row.startTime} – {row.endTime}
+          </span>
+          »؟
+        </>
+      ),
+      warning: "سيتم حذف المواعيد المستقبلية غير المحجوزة التابعة لها، ولا يمكن التراجع.",
+      onConfirm: () => deleteRuleAction(ruleId, props.doctorId),
     });
+    if (deleted) setLiveRows((rs) => rs.filter((r) => r.id !== ruleId));
   }
 
   const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? "فرع غير محدد";

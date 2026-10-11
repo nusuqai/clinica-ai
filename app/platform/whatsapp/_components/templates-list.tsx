@@ -24,6 +24,7 @@ import type { MessageTemplate } from "@/lib/meta/whatsapp";
 import { languageLabel } from "@/components/admin/whatsapp/languages";
 import WhatsappPreview from "@/components/admin/whatsapp/whatsapp-preview";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { FormField } from "@/components/ui/form-field";
 import { Card } from "@/components/ui/card";
 import { sendTemplateSchema, type SendTemplateValues } from "@/lib/validations/platform";
@@ -95,9 +96,28 @@ export default function TemplatesList({
     void load();
   }, [load]);
 
+  const confirm = useConfirm();
   const handleDelete = async (name: string) => {
-    const res = await deleteClinicTemplateAction({ clinicId, name });
-    if (res.ok) void load();
+    const deleted = await confirm({
+      title: "حذف القالب",
+      description: (
+        <>
+          هل تريد حذف القالب «<span dir="ltr">{name}</span>» من حساب واتساب للأعمال؟
+        </>
+      ),
+      warning: "سيُحذف من ميتا بكل لغاته، ولن يمكن إرساله بعد الآن. لا يمكن التراجع.",
+      onConfirm: async () => {
+        const res = await deleteClinicTemplateAction({ clinicId, name });
+        if (res.ok) return;
+        return {
+          error:
+            res.reason === "not_configured"
+              ? "واتساب غير مُعدّ لهذه العيادة."
+              : ("message" in res && res.message) || "تعذّر حذف القالب.",
+        };
+      },
+    });
+    if (deleted) void load();
   };
 
   // Option sets derived from what actually loaded.

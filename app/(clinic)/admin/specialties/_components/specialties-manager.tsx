@@ -117,14 +117,16 @@ export default function SpecialtiesManager({ specialties }: { specialties: Speci
                       variant="ghost-destructive"
                       size="icon"
                       onClick={async () => {
-                        const ok = await confirm({
+                        const deleted = await confirm({
                           title: "حذف التخصص",
-                          description:
+                          description: <>هل تريد حذف التخصص «{s.name}»؟</>,
+                          warning:
                             s.doctorCount > 0
-                              ? `هذا التخصص مرتبط بـ ${s.doctorCount} طبيب. سيُزال تخصصهم عند الحذف. متابعة؟`
-                              : "حذف هذا التخصص؟",
+                              ? `هذا التخصص مرتبط بـ ${s.doctorCount} طبيب، وسيُزال عنهم عند الحذف. لا يمكن التراجع.`
+                              : "لا يمكن التراجع عن الحذف.",
+                          onConfirm: () => deleteSpecialtyAction(s.id),
                         });
-                        if (ok) run(() => deleteSpecialtyAction(s.id));
+                        if (deleted) router.refresh();
                       }}
                       disabled={isPending}
                       aria-label="حذف"

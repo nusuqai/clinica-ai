@@ -195,13 +195,25 @@ export default function BranchesManager({
     });
   });
 
-  async function runAction(fn: () => Promise<{ error?: string } | void>, confirmMsg?: string) {
-    if (confirmMsg && !(await confirm({ title: "حذف الفرع", description: confirmMsg }))) return;
+  function runAction(fn: () => Promise<{ error?: string } | void>) {
     startTransition(async () => {
       const res = await fn();
       if (res && "error" in res && res.error) toast.error(res.error);
       else router.refresh();
     });
+  }
+
+  async function handleDelete(b: BranchView) {
+    const deleted = await confirm({
+      title: "حذف الفرع",
+      description: <>هل تريد حذف الفرع «{b.name}»؟</>,
+      warning:
+        b.doctorCount > 0
+          ? `يعمل في هذا الفرع ${b.doctorCount} طبيب. سيتم حذف الفرع نهائياً ولا يمكن التراجع.`
+          : "سيتم حذف الفرع نهائياً ولا يمكن التراجع.",
+      onConfirm: () => deleteBranchAction(b.id),
+    });
+    if (deleted) startTransition(() => router.refresh());
   }
 
   return (
@@ -281,12 +293,7 @@ export default function BranchesManager({
                       <Button
                         variant="ghost-destructive"
                         size="icon"
-                        onClick={() =>
-                          runAction(
-                            () => deleteBranchAction(b.id),
-                            "سيتم حذف هذا الفرع نهائياً. هل تريد المتابعة؟"
-                          )
-                        }
+                        onClick={() => handleDelete(b)}
                         disabled={isPending}
                         aria-label="حذف"
                       >

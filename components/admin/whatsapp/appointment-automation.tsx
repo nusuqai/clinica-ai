@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const TOKEN_OPTIONS = APPOINTMENT_TOKENS.map((t) => ({
   value: t,
@@ -153,6 +154,7 @@ function BindingCard({
   const isReminder = meta.purpose === "CONFIRM_REMINDER";
   const isFollowUp = meta.purpose === "FOLLOWUP_REMINDER";
   const [deleting, setDeleting] = useState(false);
+  const confirm = useConfirm();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Confirm reminder is edited in hours before the visit; follow-up in DAYS
@@ -224,9 +226,23 @@ function BindingCard({
   );
 
   const handleDelete = async () => {
-    setDeleting(true);
-    await deleteAppointmentTemplateBindingAction(meta.purpose);
-    setDeleting(false);
+    const unbound = await confirm({
+      title: "إلغاء ربط القالب",
+      description: <>هل تريد إيقاف «{meta.title}» وإلغاء ربط القالب الخاص به؟</>,
+      warning: "لن تُرسل هذه الرسائل للمرضى حتى تربط قالباً من جديد.",
+      confirmText: "إلغاء الربط",
+      cancelText: "تراجع",
+      onConfirm: async () => {
+        setDeleting(true);
+        try {
+          const res = await deleteAppointmentTemplateBindingAction(meta.purpose);
+          if (!res.ok) return { error: res.message || "تعذّر إلغاء الربط." };
+        } finally {
+          setDeleting(false);
+        }
+      },
+    });
+    if (!unbound) return;
     form.reset(empty);
     setMsg(null);
     onSaved();
