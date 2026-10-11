@@ -69,6 +69,8 @@ interface ChatInboxProps {
   currentUserName: string;
   /** Team member id → name, to label a colleague's reply arriving over realtime. */
   staffNames: Record<string, string>;
+  /** id → name of the clinic's AI employees, to label live AGENT replies. */
+  agentNames: Record<string, string>;
   /** Holds "patients": show the link to the contact's patient profile. Without
    *  it the inbox still shows the contact's name and phone, just not the link. */
   canOpenPatientProfile: boolean;
@@ -153,6 +155,8 @@ interface RenderedMessage {
   senderType: MessageItem["senderType"];
   /** Who sent a manual reply — shown above the bubble. */
   senderName?: string | null;
+  /** The AI employee behind an AGENT reply — shown above the bubble. */
+  agentName?: string | null;
   sessionId: string | null;
   createdAt: Date;
   pending?: PendingMessage;
@@ -172,6 +176,7 @@ export default function ChatInbox({
   clinicId,
   currentUserName,
   staffNames,
+  agentNames,
   canOpenPatientProfile,
 }: ChatInboxProps) {
   const router = useRouter();
@@ -242,6 +247,7 @@ export default function ChatInbox({
           content: m.content,
           senderType: m.senderType,
           senderName: m.senderName,
+          agentName: m.agentName,
           sessionId: m.sessionId,
           createdAt: m.createdAt,
           voice: m.voice,
@@ -337,6 +343,7 @@ export default function ChatInbox({
                     row.senderType === SenderType.ADMIN && row.senderId
                       ? (staffNames[row.senderId] ?? null)
                       : null,
+                  agentName: row.aiAgentId ? (agentNames[row.aiAgentId] ?? null) : null,
                   sessionId: row.sessionId,
                   createdAt: new Date(row.createdAt),
                   isRead: row.isRead,
@@ -403,7 +410,7 @@ export default function ChatInbox({
         return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
       });
     },
-    [activeId, refreshConversations, staffNames]
+    [activeId, refreshConversations, staffNames, agentNames]
   );
 
   // A message row changed after insert — a TTS agent reply gets its metadata.voice
@@ -1018,7 +1025,7 @@ export default function ChatInbox({
                       >
                         {isAgent && (
                           <p className="mb-0.5 text-[10px] font-medium text-accent">
-                            🤖 المساعد الذكي
+                            🤖 {msg.agentName ?? "المساعد الذكي"}
                           </p>
                         )}
                         {/* Who on the team answered the client. */}

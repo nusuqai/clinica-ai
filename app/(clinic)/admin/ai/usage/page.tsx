@@ -116,6 +116,19 @@ export default async function AiUsagePage() {
             )}
           </div>
 
+          {report.byAgent.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card p-6">
+              <h2 className="mb-6 font-heading font-semibold text-foreground">حسب الموظف الآلي</h2>
+              <BarList
+                items={report.byAgent.map((a) => ({
+                  label: a.label,
+                  sublabel: "وحدة",
+                  value: a.value,
+                }))}
+              />
+            </div>
+          )}
+
           {report.busiestDay && (
             <div className="rounded-2xl border border-border bg-card p-6">
               <h2 className="mb-3 font-heading font-semibold text-foreground">
@@ -138,6 +151,10 @@ export default async function AiUsagePage() {
               <li>• ردود فريق العيادة اليدوية لا تُخصم منها أي وحدة.</li>
               <li>• الرسائل الصوتية تُحتسب كأي رد عادي: وحدة واحدة للرد.</li>
               <li>• عند نفاد الوحدات يتوقف الرد الآلي وتُحوَّل المحادثات إلى فريق العيادة.</li>
+              <li>
+                • قد يكون للموظف الآلي حد يومي من الردود، إجمالاً ولكل عميل؛ عند بلوغه تُحوَّل
+                المحادثة إلى فريق العيادة.
+              </li>
             </ul>
           </div>
         </div>

@@ -28,6 +28,18 @@ export interface AgentContext {
   sessionId: string;
   /** Display name used to greet the contact. */
   actorName: string;
+  /** The AI employee on shift for this reply (name + persona), set by
+   *  `generateAgentReply` — which never runs the agent without one. */
+  agent?: AgentPersona | null;
+}
+
+/** The identity an AI employee speaks with — see AiAgent in the schema. */
+export interface AgentPersona {
+  id: string;
+  name: string;
+  jobTitle: string | null;
+  /** Clinic-written tone/style instructions; may be empty. */
+  persona: string;
 }
 
 /**

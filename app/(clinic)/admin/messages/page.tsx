@@ -9,6 +9,7 @@ import {
   markConversationRead,
 } from "@/server/services/messages";
 import { listTeamMembers } from "@/server/services/team";
+import { aiAgentNames } from "@/server/services/aiAgents";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -24,10 +25,11 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
 
   const ctx = await requirePermission("messages");
   const { clinic, user } = ctx;
-  const [conversations, selectedConversation, team] = await Promise.all([
+  const [conversations, selectedConversation, team, agentNames] = await Promise.all([
     getConversations(clinic.id, { query: q, channel, show }),
     id ? getConversationDetail(id, clinic.id) : Promise.resolve(null),
     listTeamMembers(clinic.id),
+    aiAgentNames(clinic.id),
   ]);
   // Only read the thread once the conversation is confirmed to be this clinic's.
   const messages = selectedConversation ? await getMessages(selectedConversation.id) : [];
@@ -52,6 +54,7 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
           clinicId={clinic.id}
           currentUserName={user.profile.fullName}
           staffNames={staffNames}
+          agentNames={agentNames}
           canOpenPatientProfile={can(ctx, "patients")}
         />
       </Suspense>
