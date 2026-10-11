@@ -36,6 +36,23 @@ export async function authEmailsByIds(ids: string[]): Promise<Map<string, string
 }
 
 /**
+ * Email + whether the account has ever signed in, for a known set of user ids.
+ * `last_sign_in_at` is null until the first successful login — which is how the
+ * team page tells a still-pending invite from an active member.
+ */
+export async function authAccountsByIds(
+  ids: string[]
+): Promise<Map<string, { email: string; hasSignedIn: boolean }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await prisma.$queryRaw<{ id: string; email: string | null; signed_in: boolean }[]>`
+    SELECT id::text AS id, email, (last_sign_in_at IS NOT NULL) AS signed_in
+    FROM auth.users
+    WHERE id = ANY(${ids}::uuid[])
+  `;
+  return new Map(rows.map((r) => [r.id, { email: r.email ?? "", hasSignedIn: r.signed_in }]));
+}
+
+/**
  * Email addresses of every platform admin. Identity lives in `auth.users` while
  * the `isPlatformAdmin` flag lives on `public.profiles`, so this joins the two
  * in one query rather than paging the admin API.

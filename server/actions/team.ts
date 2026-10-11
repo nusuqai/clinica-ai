@@ -121,6 +121,15 @@ export async function changeTeamMemberRoleAction(
   return { ok: true };
 }
 
+/** Re-sends the invite email to a member who hasn't signed in yet. */
+export async function resendTeamInviteAction(userId: string): Promise<ActionResult> {
+  const ctx = await requireClinicAdmin();
+  if (!ctx) return FORBIDDEN;
+  const res = await TeamService.resendTeamInvite({ clinic: ctx.clinic, userId });
+  if (!res.ok) return res;
+  return { ok: true, notice: "أُعيد إرسال الدعوة إلى بريده الإلكتروني" };
+}
+
 /** Sets which branches a staff member works in (or all of them). */
 export async function setTeamMemberBranchesAction(
   userId: string,

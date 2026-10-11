@@ -361,7 +361,10 @@ export async function forgotPassword(formData: FormData) {
   try {
     // generateLink no-ops harmlessly for unknown emails; we ignore the result
     // either way so the response can't be used to enumerate accounts.
-    await sendPasswordReset({ email, name: null });
+    // The reset link opens on the host the request came from: the clinic's own
+    // subdomain when asked for there, the root domain otherwise.
+    const clinic = await getHostClinic();
+    await sendPasswordReset({ email, name: null, clinicSlug: clinic?.slug });
   } catch {
     // Swallow — never reveal whether the email exists.
   }

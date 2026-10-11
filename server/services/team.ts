@@ -2,9 +2,12 @@ import "server-only";
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { authEmailsByIds, findAuthUserIdByEmail } from "@/lib/supabase/auth-users";
+import {
+  authAccountsByIds,
+  authEmailsByIds,
+  findAuthUserIdByEmail,
+} from "@/lib/supabase/auth-users";
 import { sendTeamInvite } from "@/lib/email/send-auth-email";
-import { clinicUrl } from "@/lib/clinic-url";
 import { sanitizePermissions, type Permission } from "@/lib/permissions";
 import { isSyntheticEmail } from "@/server/services/patients";
 import { ok, err, type Result } from "./_result";
@@ -37,6 +40,9 @@ export interface TeamMember {
       `allBranches` false + `branchIds` = the only branches they may work in. */
   allBranches: boolean;
   branchIds: string[];
+  /** False until their first login — the invite is still pending, and can be
+      re-sent from the team page. */
+  hasSignedIn: boolean;
   joinedAt: Date;
 }
 
@@ -186,12 +192,14 @@ export async function listTeamMembers(clinicId: string): Promise<TeamMember[]> {
       user: { select: { id: true, fullName: true, phone: true } },
     },
   });
-  const emails = await authEmailsByIds(members.map((m) => m.user.id));
+  const accounts = await authAccountsByIds(members.map((m) => m.user.id));
 
   return members.map((m) => ({
     id: m.user.id,
     fullName: m.user.fullName,
-    email: emails.get(m.user.id) ?? "",
+    email: accounts.get(m.user.id)?.email ?? "",
+    // Unknown account → treat as active, so no invite is offered blindly.
+    hasSignedIn: accounts.get(m.user.id)?.hasSignedIn ?? true,
     phone: m.user.phone,
     role: m.role,
     clinicRoleId: m.role === Role.STAFF ? (m.clinicRole?.id ?? null) : null,
@@ -364,7 +372,7 @@ export async function inviteTeamMember(args: {
         clinicName: args.clinic.name,
         roleName: target.data.label,
         isNewAccount,
-        loginUrl: clinicUrl(args.clinic.slug, "/login"),
+        clinicSlug: args.clinic.slug,
       });
       emailSent = sent.ok;
     } catch (e) {
@@ -374,6 +382,49 @@ export async function inviteTeamMember(args: {
   } catch (e) {
     console.error("Failed to invite team member:", e);
     return err("تعذّرت إضافة العضو");
+  }
+}
+
+/**
+ * Re-sends the invite to a team member who has not signed in yet — typically
+ * because the first email was lost or its set-password link expired. A fresh
+ * set-password link is minted each time. Refused once they have logged in: from
+ * then on "forgot password" is theirs to use, not the admin's to trigger.
+ */
+export async function resendTeamInvite(args: {
+  clinic: { id: string; slug: string; name: string };
+  userId: string;
+}): Promise<Result<void>> {
+  const member = await prisma.clinicMember.findUnique({
+    where: { userId_clinicId: { userId: args.userId, clinicId: args.clinic.id } },
+    select: {
+      role: true,
+      clinicRole: { select: { name: true } },
+      user: { select: { fullName: true } },
+    },
+  });
+  if (!member || (member.role !== Role.ADMIN && member.role !== Role.STAFF)) {
+    return err("العضو غير موجود في فريق العيادة");
+  }
+
+  const account = (await authAccountsByIds([args.userId])).get(args.userId);
+  if (!account?.email) return err("لا يوجد بريد إلكتروني لهذا العضو");
+  if (account.hasSignedIn) return err("هذا العضو سجّل الدخول بالفعل ولا يحتاج إلى دعوة");
+
+  try {
+    const sent = await sendTeamInvite({
+      email: account.email,
+      name: member.user.fullName || null,
+      clinicName: args.clinic.name,
+      roleName: member.role === Role.ADMIN ? ADMIN_ROLE_LABEL : (member.clinicRole?.name ?? "موظف"),
+      // Never signed in → they still need to choose a password.
+      isNewAccount: true,
+      clinicSlug: args.clinic.slug,
+    });
+    return sent.ok ? ok(undefined) : err("تعذّر إرسال بريد الدعوة");
+  } catch (e) {
+    console.error("Failed to resend team invite:", e);
+    return err("تعذّر إرسال بريد الدعوة");
   }
 }
 

@@ -2,7 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, MapPin, Pencil, Plus, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
+import {
+  Check,
+  MapPin,
+  Pencil,
+  Plus,
+  Send,
+  ShieldCheck,
+  Trash2,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { Role } from "@prisma/client";
 import Modal from "@/components/admin/modal";
 import {
@@ -17,6 +27,7 @@ import {
   deleteRoleAction,
   inviteTeamMemberAction,
   removeTeamMemberAction,
+  resendTeamInviteAction,
   setTeamMemberBranchesAction,
   updateRoleAction,
 } from "@/server/actions/team";
@@ -33,6 +44,7 @@ export interface TeamMemberView {
   clinicRoleName: string | null;
   allBranches: boolean;
   branchIds: string[];
+  hasSignedIn: boolean;
   joinedAt: string;
 }
 
@@ -229,6 +241,16 @@ function MembersTab({ members, roles, branches, currentUserId }: TeamManagerProp
     });
   }
 
+  function resendInvite(member: TeamMemberView) {
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const res = await resendTeamInviteAction(member.id);
+      if (!res.ok) setError(res.error);
+      else setNotice(res.notice ?? "أُعيد إرسال الدعوة");
+    });
+  }
+
   function remove(member: TeamMemberView) {
     if (!confirm(`إزالة «${member.fullName}» من فريق العيادة؟ سيفقد الوصول إلى لوحة التحكم.`))
       return;
@@ -290,6 +312,11 @@ function MembersTab({ members, roles, branches, currentUserId }: TeamManagerProp
                           أنت
                         </span>
                       )}
+                      {!m.hasSignedIn && (
+                        <span className="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                          لم يسجّل الدخول بعد
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground" dir="ltr">
                       {m.email || "—"}
@@ -335,6 +362,18 @@ function MembersTab({ members, roles, branches, currentUserId }: TeamManagerProp
                       {new Date(m.joinedAt).toLocaleDateString("ar-EG")}
                     </td>
                     <td className="px-4 py-3 text-end">
+                      {/* Only while the invite is still pending. */}
+                      {!m.hasSignedIn && !isSelf && (
+                        <button
+                          onClick={() => resendInvite(m)}
+                          disabled={isPending}
+                          title="إرسال بريد الدعوة مرة أخرى برابط جديد لتعيين كلمة المرور"
+                          className="me-2 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 font-sans text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                          إعادة إرسال الدعوة
+                        </button>
+                      )}
                       <button
                         onClick={() => remove(m)}
                         disabled={isSelf || isPending}

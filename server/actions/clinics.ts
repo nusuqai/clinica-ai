@@ -298,6 +298,9 @@ export async function approveClinicRequest(requestId: string) {
       email: request.requesterEmail,
       name: request.requesterName,
       clinicName: clinic.name,
+      // Open on the clinic's own host — but only once its domain is live;
+      // until then the root domain is the one that is guaranteed to resolve.
+      clinicSlug: domain.ok ? clinic.slug : null,
     }).catch((e) => ({
       ok: false as const,
       error: e instanceof Error ? e.message : "email failed",
@@ -403,6 +406,9 @@ export async function createClinic(formData: FormData) {
       email: adminEmail,
       name: adminName,
       clinicName: clinic.name,
+      // Open on the clinic's own host — but only once its domain is live;
+      // until then the root domain is the one that is guaranteed to resolve.
+      clinicSlug: domain.ok ? clinic.slug : null,
     }).catch((e) => ({
       ok: false as const,
       error: e instanceof Error ? e.message : "email failed",

@@ -181,7 +181,7 @@ export async function changePatientEmail(
   // if it could ever be pointed at a team member (see updatePatientProfile).
   const member = await prisma.clinicMember.findFirst({
     where: { userId, clinicId, role: Role.PATIENT },
-    select: { user: { select: { fullName: true } } },
+    select: { user: { select: { fullName: true } }, clinic: { select: { slug: true } } },
   });
   if (!member) return err("المريض غير موجود في هذه العيادة");
 
@@ -205,6 +205,8 @@ export async function changePatientEmail(
       currentEmail,
       newEmail,
       name: member.user.fullName,
+      // The patient confirms on their own clinic's host.
+      clinicSlug: member.clinic.slug,
     });
     return ok(undefined);
   } catch (e) {
