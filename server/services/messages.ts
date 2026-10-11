@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, Role, SenderType, type Prisma } from "@prisma/client";
+import { personSearch, phoneDigits } from "./_search";
 import type {
   AgentMessageMetadata,
   VoiceMessageMetadata,
@@ -121,12 +122,46 @@ async function customerConversationWhere(clinicId: string): Promise<Prisma.Conve
   return { clinicId, OR: [{ userId: null }, { userId: { notIn: staffIds } }] };
 }
 
-export async function getConversations(clinicId: string): Promise<ConversationSummary[]> {
+export interface ConversationFilters {
+  /** Contact name or phone — the linked patient's, or the WhatsApp profile's. */
+  query?: string;
+  channel?: string;
+  /** "unread" (unread patient messages) | "escalated" (an open escalation). */
+  show?: string;
+}
+
+// The inbox filters as conditions on the conversation, run in the database.
+// Combined with AND so they never collide with the base OR (customer vs staff).
+function conversationFilterWhere(f: ConversationFilters): Prisma.ConversationWhereInput[] {
+  const where: Prisma.ConversationWhereInput[] = [];
+  const q = f.query?.trim();
+  if (q) {
+    const phone = phoneDigits(q);
+    const user = personSearch(q);
+    where.push({
+      OR: [
+        ...(user ? [{ user }] : []),
+        { whatsappName: { contains: q, mode: "insensitive" } },
+        ...(phone ? [{ whatsappPhone: { contains: phone } }] : []),
+      ],
+    });
+  }
+  if (f.channel && f.channel in Channel) where.push({ channel: f.channel as Channel });
+  if (f.show === "unread") {
+    where.push({ messages: { some: { isRead: false, senderType: SenderType.USER } } });
+  }
+  if (f.show === "escalated") where.push({ escalations: { some: { resolvedAt: null } } });
+  return where;
+}
+
+export async function getConversations(
+  clinicId: string,
+  filters: ConversationFilters = {}
+): Promise<ConversationSummary[]> {
   const baseWhere = await customerConversationWhere(clinicId);
   const conversations = await prisma.conversation.findMany({
     where: {
-      ...baseWhere,
-      messages: { some: {} },
+      AND: [baseWhere, { messages: { some: {} } }, ...conversationFilterWhere(filters)],
     },
     orderBy: { updatedAt: "desc" },
     include: {

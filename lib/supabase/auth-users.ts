@@ -21,7 +21,10 @@ export async function findAuthUserIdByEmail(email: string): Promise<string | nul
   return rows[0]?.id ?? null;
 }
 
-/** Emails for a known set of user ids, in one query (id → email). */
+/**
+ * Login emails for a set of user ids, as an id → email map. One query on
+ * `auth.users` instead of paging the admin API (which silently capped at 1000).
+ */
 export async function authEmailsByIds(ids: string[]): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
   const rows = await prisma.$queryRaw<{ id: string; email: string | null }[]>`

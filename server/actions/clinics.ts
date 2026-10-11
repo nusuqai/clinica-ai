@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { ClinicRequestStatus, Role } from "@prisma/client";
+import { ClinicRequestStatus, Role, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { findAuthUserIdByEmail } from "@/lib/supabase/auth-users";
+import { paginate, pageRequest } from "@/lib/pagination";
 import { ensureClinicAiCredit } from "@/server/services/aiCredit";
 import { seedDefaultClinicRoles } from "@/server/services/team";
 import { registerClinicDomain } from "@/lib/vercel/domains";
@@ -17,6 +19,65 @@ async function requirePlatform() {
   const u = await getCurrentUser();
   if (!u || !u.profile.isPlatformAdmin) throw new Error("غير مصرح");
   return u;
+}
+
+// ─── Paged lists (infinite scroll) ─────────────────────────────────────────────
+
+/** A page of clinics (searched by name/slug, optionally by state), newest first. */
+export async function clinicsPageAction(
+  filters: { query?: string; active?: string },
+  page: number
+) {
+  await requirePlatform();
+  const q = filters.query?.trim();
+  const where: Prisma.ClinicWhereInput = {
+    ...(q && {
+      OR: [{ name: { contains: q, mode: "insensitive" } }, { slug: { contains: q.toLowerCase() } }],
+    }),
+    ...(filters.active === "active" && { isActive: true }),
+    ...(filters.active === "inactive" && { isActive: false }),
+  };
+  return paginate(
+    pageRequest(page),
+    (args) =>
+      prisma.clinic.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logoUrl: true,
+          primaryColor: true,
+          accentColor: true,
+          isActive: true,
+          _count: { select: { members: true, doctors: true } },
+        },
+        ...args,
+      }),
+    () => prisma.clinic.count({ where })
+  );
+}
+
+/** A page of clinic requests (optionally one status), pending first, then newest. */
+export async function requestsPageAction(filters: { status?: string }, page: number) {
+  await requirePlatform();
+  const status =
+    filters.status && filters.status in ClinicRequestStatus
+      ? (filters.status as ClinicRequestStatus)
+      : undefined;
+  const where: Prisma.ClinicRequestWhereInput = status ? { status } : {};
+  return paginate(
+    pageRequest(page),
+    (args) =>
+      prisma.clinicRequest.findMany({
+        where,
+        orderBy: [{ status: "asc" }, { createdAt: "desc" }, { id: "desc" }],
+        include: { createdClinic: { select: { slug: true } } },
+        ...args,
+      }),
+    () => prisma.clinicRequest.count({ where })
+  );
 }
 
 /**
@@ -157,9 +218,8 @@ async function getOrCreateAuthUser(
   if (!error && data.user) return data.user.id;
 
   // Email already registered — reuse that account.
-  const { data: list } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  const found = list?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
-  if (found) return found.id;
+  const found = await findAuthUserIdByEmail(email);
+  if (found) return found;
 
   throw new Error(error?.message ?? "تعذّر إنشاء حساب المستخدم");
 }

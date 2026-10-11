@@ -2,17 +2,21 @@
 import { getPermittedContext, requirePermission } from "@/lib/auth";
 import { getConversations, getConversationDetail, getMessages } from "@/server/services/messages";
 import type {
+  ConversationFilters,
   ConversationSummary,
   ConversationDetail,
   MessageItem,
 } from "@/server/services/messages";
 
-// `clinicId` is kept for the caller's signature but never trusted: the clinic
-// always comes from the request host, and the caller must manage messages there.
-export async function fetchConversations(_clinicId?: string): Promise<ConversationSummary[]> {
+/** The inbox list for the caller's own clinic, with the current filters. */
+export async function fetchConversations(
+  filters: ConversationFilters
+): Promise<ConversationSummary[]> {
+  // Clinic from the request host — never from the caller — and the caller must
+  // manage messages there.
   const ctx = await getPermittedContext("messages");
   if (!ctx) return [];
-  return getConversations(ctx.clinic.id);
+  return getConversations(ctx.clinic.id, filters);
 }
 
 export async function fetchConversationDetail(

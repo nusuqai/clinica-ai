@@ -13,7 +13,11 @@ import * as BranchService from "@/server/services/branches";
 import * as ClinicInfoService from "@/server/services/clinicInfo";
 import * as SpecialtyService from "@/server/services/specialties";
 import * as QueueService from "@/server/services/queue";
+import * as KnowledgeService from "@/server/services/knowledge";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
+import { getOrCreatePatientByPhone } from "@/server/services/patients";
+import { normalizePhone, isValidPhone } from "@/lib/phone";
+import { pageRequest, offsetRequest } from "@/lib/pagination";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -254,8 +258,135 @@ export async function updateAppointmentStatusAction(
     cancellationReason
   );
   if (!result.ok) return { error: result.error };
-  revalidatePath("/admin/appointments", "page");
+  // No revalidatePath: the board already moved the card optimistically, and a
+  // re-render would reset its scrolled-in pages back to the first ones.
   return { success: true };
+}
+
+// ─── Paged lists (infinite scroll) ─────────────────────────────────────────────
+
+/** A page of the clinic's appointments — the board columns and the doctor tab. */
+export async function appointmentsPageAction(
+  filters: AppointmentService.AppointmentFilters,
+  page: number
+) {
+  const clinicId = await requirePerm("appointments", "doctors");
+  return AppointmentService.listAppointments(clinicId, filters, pageRequest(page));
+}
+
+/** A page of the clinic's doctors matching the filters (DB-side), by name. */
+export async function doctorsPageAction(filters: DoctorService.DoctorFilters, page: number) {
+  const clinicId = await requirePerm("doctors");
+  return DoctorService.listDoctorsPage(clinicId, filters, pageRequest(page), { withEmail: true });
+}
+
+/** A page of the clinic's knowledge docs matching the filters (DB-side). */
+export async function knowledgePageAction(
+  filters: { query?: string; status?: string },
+  page: number
+) {
+  const clinicId = await requirePerm("agent");
+  return KnowledgeService.listKnowledgeDocsPage(clinicId, filters, pageRequest(page));
+}
+
+/** A board column's next cards: the rows after the first `offset` it already shows. */
+export async function appointmentsAfterAction(
+  filters: AppointmentService.AppointmentFilters,
+  offset: number
+) {
+  const clinicId = await requirePerm("appointments", "doctors");
+  return AppointmentService.listAppointments(clinicId, filters, offsetRequest(offset));
+}
+
+/** A page of the clinic's members, searched by name/phone and/or one role. */
+export async function usersPageAction(filters: { query?: string; role?: string }, page: number) {
+  const clinicId = await requireAdmin();
+  const role = filters.role && filters.role in Role ? (filters.role as Role) : undefined;
+  return UserService.listUsers(clinicId, { query: filters.query, role }, pageRequest(page));
+}
+
+// Patient picker for the admin booking modal (name or phone, this clinic only).
+export async function searchPatientsAction(query: string) {
+  const clinicId = await requirePerm("appointments");
+  if (!query.trim()) return [];
+  const page = await UserService.listUsers(
+    clinicId,
+    { query, role: Role.PATIENT },
+    pageRequest(1, 8)
+  );
+  return page.items;
+}
+
+/**
+ * Book on a patient's behalf (phone call / walk-in). The patient is either an
+ * existing member of this clinic or a new one created by phone, exactly like a
+ * WhatsApp contact. Bookings made by the clinic itself skip the approval step
+ * and land as CONFIRMED.
+ */
+export async function adminBookAppointmentAction(input: {
+  patient: { id: string } | { fullName: string; phone: string };
+  doctorId: string;
+  /** Slot-based day: the slot to book. Order/arrival day: omit and pass `date`. */
+  slotId?: string;
+  date?: string;
+  notes?: string;
+}): Promise<{
+  ok: boolean;
+  error?: string;
+  mode?: "order" | "arrival";
+  orderNumber?: number | null;
+}> {
+  const clinicId = await requirePerm("appointments");
+
+  let patientId: string;
+  if ("id" in input.patient) {
+    if (!(await UserService.isClinicPatient(input.patient.id, clinicId)))
+      return { ok: false, error: "المريض غير موجود في هذه العيادة" };
+    patientId = input.patient.id;
+  } else {
+    const fullName = input.patient.fullName.trim();
+    const phone = normalizePhone(input.patient.phone);
+    if (!fullName) return { ok: false, error: "اسم المريض مطلوب" };
+    if (!isValidPhone(phone)) return { ok: false, error: "رقم الهاتف غير صالح" };
+    try {
+      ({ profileId: patientId } = await getOrCreatePatientByPhone({
+        clinicId,
+        phone,
+        name: fullName,
+      }));
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "تعذّر إنشاء حساب المريض" };
+    }
+  }
+
+  let appointmentId: string;
+  let mode: "order" | "arrival" | undefined;
+  let orderNumber: number | null | undefined;
+  if (input.slotId) {
+    const res = await AppointmentService.createAppointment(patientId, input.slotId, input.notes, {
+      clinicId,
+    });
+    if (!res.ok) return { ok: false, error: res.error };
+    appointmentId = res.data.id;
+  } else if (input.date) {
+    const res = await QueueService.bookOrderAppointment(
+      patientId,
+      input.doctorId,
+      new Date(input.date),
+      { notes: input.notes, clinicId }
+    );
+    if (!res.ok) return { ok: false, error: res.error };
+    appointmentId = res.data.id;
+    mode = res.data.mode === "ARRIVAL_BASED" ? "arrival" : "order";
+    orderNumber = res.data.orderNumber;
+  } else {
+    return { ok: false, error: "يرجى اختيار موعد" };
+  }
+
+  await AppointmentService.updateAppointmentStatus(appointmentId, AppointmentStatus.CONFIRMED);
+
+  revalidatePath("/admin/appointments", "page");
+  return { ok: true, mode, orderNumber };
 }
 
 // ─── Availability Rule actions ────────────────────────────────────────────────

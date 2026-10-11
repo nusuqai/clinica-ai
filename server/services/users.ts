@@ -2,11 +2,13 @@ import "server-only";
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { findAuthUserIdByEmail } from "@/lib/supabase/auth-users";
+import { findAuthUserIdByEmail, authEmailsByIds } from "@/lib/supabase/auth-users";
+import { paginate, mapPage, type PageRequest, type Paginated } from "@/lib/pagination";
 import { isSyntheticEmail } from "@/server/services/patients";
 import { sendEmailChange } from "@/lib/email/send-auth-email";
 import { normalizePhone, isValidPhone } from "@/lib/phone";
 import { ok, err, type Result } from "./_result";
+import { personSearch } from "./_search";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,34 +36,46 @@ export interface ClinicUserDetail {
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
 /**
- * Lists the members of a clinic with their per-clinic role, merged with email
- * from auth.users via the service-role client.
+ * One page of a clinic's members with their per-clinic role, newest first.
+ * `query` matches name or phone. Emails come from auth.users for just this page
+ * (blank while the account is an unclaimed WhatsApp placeholder).
  */
-export async function listUsers(clinicId: string): Promise<AdminUser[]> {
-  const [members, { data: authList }] = await Promise.all([
-    prisma.clinicMember.findMany({
-      where: { clinicId },
-      select: {
-        role: true,
-        createdAt: true,
-        user: { select: { id: true, fullName: true, phone: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    createAdminClient().auth.admin.listUsers({ perPage: 1000 }),
-  ]);
-
-  const emailMap = new Map<string, string>(
-    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""])
+export async function listUsers(
+  clinicId: string,
+  filters: { query?: string; role?: Role },
+  req: PageRequest
+): Promise<Paginated<AdminUser>> {
+  const user = personSearch(filters.query);
+  const role = filters.role && filters.role in Role ? filters.role : undefined;
+  const where: Prisma.ClinicMemberWhereInput = {
+    clinicId,
+    ...(role && { role }),
+    ...(user && { user }),
+  };
+  const page = await paginate(
+    req,
+    (args) =>
+      prisma.clinicMember.findMany({
+        where,
+        select: {
+          role: true,
+          createdAt: true,
+          user: { select: { id: true, fullName: true, phone: true } },
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        ...args,
+      }),
+    () => prisma.clinicMember.count({ where })
   );
-
-  return members.map((m) => ({
+  const emailMap = await authEmailsByIds(page.items.map((m) => m.user.id));
+  return mapPage(page, (m) => ({
     id: m.user.id,
     fullName: m.user.fullName,
     phone: m.user.phone,
     role: m.role,
     createdAt: m.createdAt,
-    email: emailMap.get(m.user.id) ?? "",
+    // Unclaimed WhatsApp accounts carry a placeholder login — not an email to show.
+    email: isSyntheticEmail(emailMap.get(m.user.id)) ? "" : (emailMap.get(m.user.id) ?? ""),
   }));
 }
 
@@ -100,6 +114,15 @@ export async function getClinicUser(
     appointmentCount,
     claimed: !isSyntheticEmail(email),
   };
+}
+
+/** True if the user is a PATIENT member of the clinic. */
+export async function isClinicPatient(userId: string, clinicId: string): Promise<boolean> {
+  const member = await prisma.clinicMember.findUnique({
+    where: { userId_clinicId: { userId, clinicId } },
+    select: { role: true },
+  });
+  return member?.role === "PATIENT";
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────

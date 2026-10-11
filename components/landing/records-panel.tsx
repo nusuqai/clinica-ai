@@ -1,42 +1,49 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown } from "lucide-react";
 import RecordTimeline from "@/components/medical/record-timeline";
 import type { TreatmentRecordView } from "@/server/services/treatments";
+import type { Paginated } from "@/lib/pagination";
+import { myRecordsPageAction } from "@/server/actions/patient";
+import { useLoadMore } from "@/hooks/use-load-more";
+import { HistoryFilters, useHistoryFilters } from "./history-filters";
+import { InfiniteScroll } from "@/components/ui/infinite-scroll";
 
-// The patient's treatment record on the landing page: the first `initial` visits,
-// with the rest revealed in place — so the full clinical history lives here
-// instead of on a removed dashboard page. Records are plain-serializable
-// (Decimal → string, Dates), so they cross to the client as data.
+// The patient's treatment record on the landing page, filtered in the database
+// by text, doctor and date range: the first page is server-rendered and the
+// rest load as the patient scrolls — so the full
+// clinical history lives here instead of on a removed dashboard page. Records
+// are plain-serializable (Decimal → string, Dates), so they cross as data.
 export function RecordsPanel({
-  records,
-  initial = 10,
+  initial,
+  doctors,
 }: {
-  records: TreatmentRecordView[];
-  initial?: number;
+  initial: Paginated<TreatmentRecordView>;
+  /** Doctors this patient has seen — the doctor filter's options. */
+  doctors: { id: string; name: string }[];
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const remaining = records.length - initial;
-  const shown = expanded ? records : records.slice(0, initial);
+  const filters = useHistoryFilters();
+  const { items, hasMore, loading, error, loadMore } = useLoadMore(
+    initial,
+    (page) => myRecordsPageAction(filters.applied, page),
+    filters.key
+  );
 
   return (
     <div>
+      {/* Filters only once there's a record to filter. */}
+      {initial.total > 0 && (
+        <HistoryFilters
+          filters={filters}
+          doctors={doctors}
+          searchPlaceholder="بحث في الشكوى أو التشخيص أو الدواء..."
+        />
+      )}
       <RecordTimeline
-        records={shown}
-        emptyMessage="لا يوجد سجل علاجي بعد"
+        records={items}
+        emptyMessage={filters.active ? "لا توجد سجلات مطابقة للفلاتر" : "لا يوجد سجل علاجي بعد"}
         appointmentBasePath="/appointments"
       />
-      {remaining > 0 && !expanded && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="mt-4 inline-flex items-center gap-1 font-sans text-sm font-medium text-primary hover:underline"
-        >
-          عرض المزيد ({remaining})
-          <ChevronDown className="h-4 w-4" />
-        </button>
-      )}
+      <InfiniteScroll onLoadMore={loadMore} hasMore={hasMore} loading={loading} error={error} />
     </div>
   );
 }
