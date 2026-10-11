@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { listDoctors } from "@/server/services/doctors";
 import { listBranches } from "@/server/services/branches";
 import { listSpecialtyOptions } from "@/server/services/specialties";
@@ -10,7 +10,7 @@ import EditDoctorModal from "./_components/edit-doctor-modal";
 import DoctorRowActions from "./_components/doctor-row-actions";
 
 export default async function AdminDoctorsPage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("doctors");
   const [doctors, branchRows, specialties] = await Promise.all([
     listDoctors(clinic.id),
     listBranches(clinic.id, { activeOnly: true }),

@@ -12,10 +12,15 @@ datasource db {
 
 // Clinic-scoped roles. A user's role now lives on ClinicMember (per clinic), not
 // on Profile — one account can be a PATIENT at one clinic and a DOCTOR at another.
+//
+// ADMIN holds every permission implicitly. STAFF is a clinic employee whose
+// access comes from the custom ClinicRole it is assigned (ClinicMember.clinicRoleId)
+// — see lib/permissions.ts for the permission catalog.
 enum Role {
   PATIENT
   DOCTOR
   ADMIN
+  STAFF
 }
 
 enum DayOfWeek {
@@ -161,6 +166,7 @@ model Clinic {
   messages               Message[]
   escalations            Escalation[]
   members                ClinicMember[]
+  roles                  ClinicRole[]
   branches               Branch[]
   phones                 ClinicPhone[]
   socials                ClinicSocial[]
@@ -360,14 +366,38 @@ model ClinicMember {
   userId    String   @db.Uuid
   clinicId  String   @db.Uuid
   role      Role
+  // The custom role a STAFF member holds; null for every other role (and for a
+  // STAFF member whose role was removed — they then have no permissions).
+  clinicRoleId String?  @db.Uuid
   createdAt DateTime @default(now())
 
-  user   Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clinic Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  user       Profile     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinic     Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  clinicRole ClinicRole? @relation(fields: [clinicRoleId], references: [id], onDelete: SetNull)
 
   @@unique([userId, clinicId])
   @@index([clinicId])
+  @@index([clinicRoleId])
   @@map("clinic_members")
+}
+
+// A custom role a clinic ADMIN defines for its staff: a name plus the set of
+// permission keys it grants. Keys are validated against lib/permissions.ts on
+// write and filtered against it on read, so an unknown key is simply ignored.
+model ClinicRole {
+  id          String   @id @default(uuid()) @db.Uuid
+  clinicId    String   @db.Uuid
+  name        String
+  description String?
+  permissions String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic  Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  members ClinicMember[]
+
+  @@unique([clinicId, name])
+  @@map("clinic_roles")
 }
 
 // A request (from the public landing page) to create a new clinic. The platform
@@ -413,6 +443,8 @@ model Profile {
   appointments        Appointment[]
   conversations       Conversation[]
   sentMessages        Message[]                 @relation("SenderProfile")
+  resolvedEscalations Escalation[]              @relation("EscalationResolver")
+  aiToggledSessions   ChatSession[]             @relation("SessionAiToggler")
   clinicMemberships   ClinicMember[]
   reviewedRequests    ClinicRequest[]           @relation("RequestReviewer")
   appointmentFeedback AppointmentFeedback[]
@@ -757,9 +789,14 @@ model ChatSession {
   // admin can pause it, or the escalate_to_human tool turns it off when the
   // user asks for a human. Does not carry over to the next session.
   aiEnabled      Boolean  @default(true)
+  // The staff member who last paused / resumed the AI by hand, and when. Null
+  // when the flag was never toggled manually (default, or the escalation tool).
+  aiToggledById  String?  @db.Uuid
+  aiToggledAt    DateTime?
 
   clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  aiToggledBy  Profile?     @relation("SessionAiToggler", fields: [aiToggledById], references: [id], onDelete: SetNull)
   messages     Message[]
   escalations  Escalation[]
   aiUsage      AiUsageLog[]
@@ -786,10 +823,15 @@ model Escalation {
   // Set when an admin re-enables the AI for the session or sends a manual
   // reply in the conversation — whichever happens first. Null = still open.
   resolvedAt     DateTime?
+  // The staff member whose action resolved it (reply / resolve button / AI
+  // re-enable). Null while open, and for escalations resolved before this
+  // column existed.
+  resolvedById   String?      @db.Uuid
   clinic         Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session        ChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   message        Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  resolvedBy     Profile?     @relation("EscalationResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
 
   @@index([conversationId])
   @@index([sessionId])

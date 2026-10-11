@@ -36,7 +36,7 @@ export interface RecentActivity {
 // not customer contacts and are excluded from customer-facing activity/inbox.
 async function staffUserIds(clinicId: string): Promise<string[]> {
   const rows = await prisma.clinicMember.findMany({
-    where: { clinicId, role: { in: [Role.DOCTOR, Role.ADMIN] } },
+    where: { clinicId, role: { in: [Role.DOCTOR, Role.ADMIN, Role.STAFF] } },
     select: { userId: true },
   });
   return rows.map((r) => r.userId);

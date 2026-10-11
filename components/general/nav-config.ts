@@ -14,8 +14,11 @@ import {
   Building2,
   Tags,
   BellRing,
+  ShieldCheck,
+  HeartPulse,
 } from "lucide-react";
 import type { NavItem } from "./sidebar";
+import type { Permission } from "@/lib/permissions";
 
 // Patients have no dashboard shell: their home is the clinic landing page (see
 // the removal of app/(clinic)/dashboard). Only staff (doctor/admin) use the
@@ -29,19 +32,29 @@ export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
     { href: "/doctor/profile", label: "الملف الشخصي", icon: UserCircle },
   ],
   admin: [
-    { href: "/admin", label: "الرئيسية", icon: LayoutDashboard },
-    { href: "/admin/users", label: "المستخدمون", icon: Users },
-    { href: "/admin/doctors", label: "الأطباء", icon: Stethoscope },
-    { href: "/admin/specialties", label: "التخصصات", icon: Tags },
-    { href: "/admin/branches", label: "الفروع", icon: MapPin },
-    { href: "/admin/settings", label: "معلومات العيادة", icon: Building2 },
-    { href: "/admin/knowledge", label: "قاعدة المعرفة", icon: BookOpen },
-    { href: "/admin/appointments", label: "المواعيد", icon: CalendarDays },
-    { href: "/admin/messages", label: "الرسائل", icon: MessageSquare },
+    // Each item names the permission that opens it (see lib/permissions.ts);
+    // the shell drops what the signed-in member can't manage. `adminOnly`
+    // items are for the clinic ADMIN alone.
+    { href: "/admin", label: "الرئيسية", icon: LayoutDashboard, permission: "reports" },
+    { href: "/admin/team", label: "فريق العمل", icon: ShieldCheck, adminOnly: true },
+    { href: "/admin/patients", label: "المرضى", icon: HeartPulse, permission: "patients" },
+    { href: "/admin/doctors", label: "الأطباء", icon: Stethoscope, permission: "doctors" },
+    { href: "/admin/specialties", label: "التخصصات", icon: Tags, permission: "doctors" },
+    { href: "/admin/branches", label: "الفروع", icon: MapPin, permission: "clinic" },
+    { href: "/admin/settings", label: "معلومات العيادة", icon: Building2, permission: "clinic" },
+    { href: "/admin/knowledge", label: "قاعدة المعرفة", icon: BookOpen, permission: "agent" },
+    {
+      href: "/admin/appointments",
+      label: "المواعيد",
+      icon: CalendarDays,
+      permission: "appointments",
+    },
+    { href: "/admin/messages", label: "الرسائل", icon: MessageSquare, permission: "messages" },
     {
       href: "/admin/whatsapp",
       label: "واتساب",
       icon: Smartphone,
+      permission: "whatsapp",
       // Connecting the clinic to Meta (credentials, templates, setup guide) is
       // platform-admin work and lives at /platform/whatsapp.
       children: [
@@ -66,7 +79,7 @@ export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
     //     { href: "/admin/ai/usage", label: "تقرير التكاليف", icon: BarChart3 },
     //   ],
     // },
-    { href: "/admin/reports", label: "التقارير", icon: BarChart3 },
+    { href: "/admin/reports", label: "التقارير", icon: BarChart3, permission: "reports" },
   ],
 };
 
@@ -74,3 +87,12 @@ export const roleMeta: Record<"doctor" | "admin", { label: string; pageTitle: st
   doctor: { label: "طبيب", pageTitle: "لوحة تحكم الطبيب" },
   admin: { label: "مشرف", pageTitle: "لوحة تحكم المسؤول" },
 };
+
+/** The admin-dashboard items a member may see: everything for the clinic ADMIN,
+    otherwise only what their role's permissions open. */
+export function visibleAdminNav(permissions: readonly Permission[], isClinicAdmin: boolean) {
+  if (isClinicAdmin) return navConfig.admin;
+  return navConfig.admin.filter(
+    (item) => !item.adminOnly && (!item.permission || permissions.includes(item.permission))
+  );
+}

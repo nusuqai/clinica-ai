@@ -64,6 +64,10 @@ interface ChatInboxProps {
   selectedConversation: ConversationDetail | null;
   messages: MessageItem[];
   clinicId: string;
+  /** The signed-in team member's name — labels their own optimistic replies. */
+  currentUserName: string;
+  /** Team member id → name, to label a colleague's reply arriving over realtime. */
+  staffNames: Record<string, string>;
 }
 
 /**
@@ -143,6 +147,8 @@ interface RenderedMessage {
   id?: string;
   content: string;
   senderType: MessageItem["senderType"];
+  /** Who sent a manual reply — shown above the bubble. */
+  senderName?: string | null;
   sessionId: string | null;
   createdAt: Date;
   pending?: PendingMessage;
@@ -160,6 +166,8 @@ export default function ChatInbox({
   selectedConversation: initialConversation,
   messages: initialMessages,
   clinicId,
+  currentUserName,
+  staffNames,
 }: ChatInboxProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -223,6 +231,7 @@ export default function ChatInbox({
           id: m.id,
           content: m.content,
           senderType: m.senderType,
+          senderName: m.senderName,
           sessionId: m.sessionId,
           createdAt: m.createdAt,
           voice: m.voice,
@@ -236,6 +245,7 @@ export default function ChatInbox({
         key: p.clientId,
         content: p.content,
         senderType: SenderType.ADMIN,
+        senderName: currentUserName,
         // No session, so the "new session" divider never splits on these.
         sessionId: null,
         createdAt: p.createdAt,
@@ -255,7 +265,7 @@ export default function ChatInbox({
           : {}),
       })),
     ];
-  }, [messages, pending, activeId]);
+  }, [messages, pending, activeId, currentUserName]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -308,6 +318,11 @@ export default function ChatInbox({
                   id: row.id,
                   content: row.content,
                   senderType: row.senderType,
+                  senderId: row.senderType === SenderType.ADMIN ? row.senderId : null,
+                  senderName:
+                    row.senderType === SenderType.ADMIN && row.senderId
+                      ? (staffNames[row.senderId] ?? null)
+                      : null,
                   sessionId: row.sessionId,
                   createdAt: new Date(row.createdAt),
                   isRead: row.isRead,
@@ -374,7 +389,7 @@ export default function ChatInbox({
         return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
       });
     },
-    [activeId, refreshConversations]
+    [activeId, refreshConversations, staffNames]
   );
 
   // A message row changed after insert — a TTS agent reply gets its metadata.voice
@@ -821,7 +836,7 @@ export default function ChatInbox({
               <div className="ms-auto flex items-center gap-2">
                 {selectedConversation.userId ? (
                   <a
-                    href={`/admin/users/${selectedConversation.userId}`}
+                    href={`/admin/patients/${selectedConversation.userId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 font-sans text-xs text-primary transition-colors hover:bg-primary/20"
@@ -853,12 +868,20 @@ export default function ChatInbox({
                           "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[10px]",
                           isUnresolved ? "bg-red-100 text-red-700" : "text-muted-foreground",
                         ].join(" ")}
-                        title={shown.map((e) => escalationReasonLabel(e.reason)).join(" · ")}
+                        title={shown
+                          .map((e) =>
+                            e.resolvedByName
+                              ? `${escalationReasonLabel(e.reason)} — عالجه: ${e.resolvedByName}`
+                              : escalationReasonLabel(e.reason)
+                          )
+                          .join(" · ")}
                       >
                         {isUnresolved && <AlertTriangle className="h-3 w-3" />}
                         {isUnresolved
                           ? `${unresolved.length} طلب تصعيد بانتظار الرد`
-                          : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد)`}
+                          : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد${
+                              shown[0]?.resolvedByName ? ` — ${shown[0].resolvedByName}` : ""
+                            })`}
                       </span>
                     );
                   })()}
@@ -872,7 +895,11 @@ export default function ChatInbox({
                         ? "bg-accent/10 text-accent"
                         : "bg-muted text-muted-foreground",
                     ].join(" ")}
-                    title="تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة"
+                    title={
+                      selectedConversation.aiToggledByName
+                        ? `${selectedConversation.aiEnabled ? "فعّله" : "أوقفه"}: ${selectedConversation.aiToggledByName}`
+                        : "تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة"
+                    }
                   >
                     {selectedConversation.aiEnabled ? (
                       <Bot className="h-3.5 w-3.5" />
@@ -880,6 +907,9 @@ export default function ChatInbox({
                       <BotOff className="h-3.5 w-3.5" />
                     )}
                     {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
+                    {!selectedConversation.aiEnabled && selectedConversation.aiToggledByName && (
+                      <span className="opacity-70">· {selectedConversation.aiToggledByName}</span>
+                    )}
                   </button>
                 )}
                 {selectedConversation.channel === Channel.WHATSAPP ? (
@@ -945,6 +975,13 @@ export default function ChatInbox({
                         {isAgent && (
                           <p className="mb-0.5 text-[10px] font-medium text-accent">
                             🤖 المساعد الذكي
+                          </p>
+                        )}
+                        {/* Who on the team answered the client. */}
+                        {msg.senderType === SenderType.ADMIN && msg.senderName && (
+                          <p className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-primary">
+                            <UserRound className="h-3 w-3" />
+                            {msg.senderName}
                           </p>
                         )}
                         {msg.voice && (

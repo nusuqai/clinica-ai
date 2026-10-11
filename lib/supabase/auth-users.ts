@@ -21,6 +21,17 @@ export async function findAuthUserIdByEmail(email: string): Promise<string | nul
   return rows[0]?.id ?? null;
 }
 
+/** Emails for a known set of user ids, in one query (id → email). */
+export async function authEmailsByIds(ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await prisma.$queryRaw<{ id: string; email: string | null }[]>`
+    SELECT id::text AS id, email
+    FROM auth.users
+    WHERE id = ANY(${ids}::uuid[])
+  `;
+  return new Map(rows.map((r) => [r.id, r.email ?? ""]));
+}
+
 /**
  * Email addresses of every platform admin. Identity lives in `auth.users` while
  * the `isPlatformAdmin` flag lives on `public.profiles`, so this joins the two

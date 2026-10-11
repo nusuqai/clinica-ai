@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { getDashboardStats, getDoctorLoad } from "@/server/services/reports";
 import { getClinicAiUsage } from "@/server/services/aiReports";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import StatCard from "@/components/admin/stat-card";
 import BarList from "@/components/admin/bar-list";
 import PageHeader from "@/components/admin/page-header";
@@ -23,7 +23,7 @@ const decimal = (n: number) =>
   n.toLocaleString("ar-EG", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export default async function AdminReportsPage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("reports");
   const [stats, doctorLoad, ai] = await Promise.all([
     getDashboardStats(clinic.id),
     getDoctorLoad(clinic.id),

@@ -10,17 +10,45 @@ import {
 } from "lucide-react";
 import { getDashboardStats, getRecentActivity } from "@/server/services/reports";
 import { getClinicUnitSummary } from "@/server/services/aiCredit";
-import { requireClinicMember } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { can, firstPermittedHref, requireClinicMember } from "@/lib/auth";
 import StatCard from "@/components/admin/stat-card";
 import PageHeader from "@/components/admin/page-header";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 
+// A staff member whose role opens no section of its own (e.g. medical records
+// only, or a role that was deleted) — nothing to redirect to.
+function NoSectionsNotice({ roleName }: { roleName: string | null }) {
+  return (
+    <div className="mx-auto mt-16 max-w-md rounded-2xl border border-border bg-card p-8 text-center">
+      <h1 className="font-heading text-xl font-bold text-foreground">مرحباً بك</h1>
+      <p className="mt-2 font-sans text-sm leading-relaxed text-muted-foreground">
+        {roleName
+          ? `دورك الحالي «${roleName}» لا يتضمن أقساماً يمكن فتحها من هنا.`
+          : "لم يُسند إليك دور في هذه العيادة بعد."}{" "}
+        تواصل مع مدير العيادة لتعديل صلاحياتك.
+      </p>
+    </div>
+  );
+}
+
 export default async function AdminHomePage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  // The layout already admitted this member (ADMIN or STAFF). The stats are
+  // the "reports" section; staff without it are forwarded to the first section
+  // their role opens, or shown a plain notice when it opens none.
+  const ctx = await requireClinicMember();
+  if (!can(ctx, "reports")) {
+    const home = firstPermittedHref(ctx);
+    if (home && home !== "/admin") redirect(home);
+    return <NoSectionsNotice roleName={ctx.roleName} />;
+  }
+
+  const { clinic } = ctx;
+  const showUnits = can(ctx, "agent");
   const [stats, activity, units] = await Promise.all([
     getDashboardStats(clinic.id),
     getRecentActivity(clinic.id, 8),
-    getClinicUnitSummary(clinic.id),
+    showUnits ? getClinicUnitSummary(clinic.id) : null,
   ]);
 
   return (
@@ -29,47 +57,51 @@ export default async function AdminHomePage() {
 
       {/* AI units — first, and its own row: when this hits zero the assistant
           stops answering customers, so it should not be one tile among eight. */}
-      <Link href="/admin/ai/usage" className="mb-4 block">
-        <div
-          className={`flex items-center justify-between gap-4 rounded-2xl border p-5 transition-colors hover:bg-muted/40 ${
-            !units.unitsSufficient
-              ? "border-red-500/30 bg-red-500/10"
-              : units.lowUnits
-                ? "border-amber-500/30 bg-amber-500/10"
-                : "border-border bg-card"
-          }`}
-        >
-          <div className="flex items-center gap-4">
-            <div
-              className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl ${
-                !units.unitsSufficient
-                  ? "bg-red-500/10 text-red-600"
-                  : units.lowUnits
-                    ? "bg-amber-500/10 text-amber-600"
-                    : "bg-primary/10 text-primary"
-              }`}
-            >
-              <Coins className="h-6 w-6" />
+      {units && (
+        <Link href="/admin/ai/usage" className="mb-4 block">
+          <div
+            className={`flex items-center justify-between gap-4 rounded-2xl border p-5 transition-colors hover:bg-muted/40 ${
+              !units.unitsSufficient
+                ? "border-red-500/30 bg-red-500/10"
+                : units.lowUnits
+                  ? "border-amber-500/30 bg-amber-500/10"
+                  : "border-border bg-card"
+            }`}
+          >
+            <div className="flex items-center gap-4">
+              <div
+                className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl ${
+                  !units.unitsSufficient
+                    ? "bg-red-500/10 text-red-600"
+                    : units.lowUnits
+                      ? "bg-amber-500/10 text-amber-600"
+                      : "bg-primary/10 text-primary"
+                }`}
+              >
+                <Coins className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="font-heading text-2xl font-bold text-foreground">
+                  {units.unitBalance.toLocaleString("ar-EG")}{" "}
+                  <span className="font-sans text-base font-normal text-muted-foreground">
+                    وحدة
+                  </span>
+                </p>
+                <p className="font-sans text-sm text-muted-foreground">
+                  {!units.unitsSufficient
+                    ? "نفدت وحدات المساعد الذكي — توقّف الرد الآلي على العملاء"
+                    : units.lowUnits
+                      ? "وحدات المساعد الذكي على وشك النفاد"
+                      : "رصيد وحدات المساعد الذكي — وحدة لكل رد آلي"}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="font-heading text-2xl font-bold text-foreground">
-                {units.unitBalance.toLocaleString("ar-EG")}{" "}
-                <span className="font-sans text-base font-normal text-muted-foreground">وحدة</span>
-              </p>
-              <p className="font-sans text-sm text-muted-foreground">
-                {!units.unitsSufficient
-                  ? "نفدت وحدات المساعد الذكي — توقّف الرد الآلي على العملاء"
-                  : units.lowUnits
-                    ? "وحدات المساعد الذكي على وشك النفاد"
-                    : "رصيد وحدات المساعد الذكي — وحدة لكل رد آلي"}
-              </p>
-            </div>
+            <span className="flex-shrink-0 font-sans text-sm text-primary hover:underline">
+              تقرير الاستهلاك
+            </span>
           </div>
-          <span className="flex-shrink-0 font-sans text-sm text-primary hover:underline">
-            تقرير الاستهلاك
-          </span>
-        </div>
-      </Link>
+        </Link>
+      )}
 
       {/* KPI grid */}
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">

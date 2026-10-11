@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureClinicAiCredit } from "@/server/services/aiCredit";
+import { seedDefaultClinicRoles } from "@/server/services/team";
 import { registerClinicDomain } from "@/lib/vercel/domains";
 import { sendClinicApprovedInvite, sendClinicCreatedInvite } from "@/lib/email/send-auth-email";
 import { sendRequestReceived, sendClinicRejected } from "@/lib/email/send-transactional";
@@ -226,6 +227,7 @@ export async function approveClinicRequest(requestId: string) {
     });
 
     await ensureClinicAiCredit(clinic.id);
+    await seedDefaultClinicRoles(clinic.id);
 
     const domain = await provisionClinicDomain(clinic.slug);
 
@@ -332,6 +334,7 @@ export async function createClinic(formData: FormData) {
     });
 
     await ensureClinicAiCredit(clinic.id);
+    await seedDefaultClinicRoles(clinic.id);
 
     const domain = await provisionClinicDomain(clinic.slug);
 

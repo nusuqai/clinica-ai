@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { clinicUrl } from "@/lib/clinic-url";
 import { getTenantSlug } from "@/lib/tenant";
 import { Role } from "@prisma/client";
+import { PERMISSIONS, PERMISSION_HOME, permissionsFor, type Permission } from "@/lib/permissions";
 
 // Centralized auth/tenancy helpers. Identity lives on Profile; the per-clinic
 // role lives on ClinicMember.
@@ -38,6 +39,11 @@ export type ClinicContext = {
   user: CurrentUser;
   clinic: ClinicSummary;
   role: Role;
+  /** What this user may manage here: everything for ADMIN, the assigned custom
+      role's keys for STAFF, nothing for DOCTOR / PATIENT. Check with `can`. */
+  permissions: Permission[];
+  /** Name of the custom role a STAFF member holds; null for every other role. */
+  roleName: string | null;
   /** True when access comes from being a platform admin rather than from an
       actual membership in this clinic. Surfaced as a banner in the dashboard
       shell, so edits to someone else's clinic are never made unknowingly. */
@@ -117,9 +123,18 @@ export async function getClinicContext(): Promise<ClinicContext | null> {
 
   const membership = await prisma.clinicMember.findUnique({
     where: { userId_clinicId: { userId: user.id, clinicId: clinic.id } },
-    select: { role: true },
+    select: { role: true, clinicRole: { select: { name: true, permissions: true } } },
   });
-  if (membership) return { user, clinic, role: membership.role, viaPlatformAdmin: false };
+  if (membership) {
+    return {
+      user,
+      clinic,
+      role: membership.role,
+      permissions: permissionsFor(membership.role, membership.clinicRole?.permissions),
+      roleName: membership.role === Role.STAFF ? (membership.clinicRole?.name ?? null) : null,
+      viaPlatformAdmin: false,
+    };
+  }
 
   // A platform admin is a member of no clinic but may act as ADMIN inside any
   // one of them. Granting that here — rather than only in requireClinicMember —
@@ -130,7 +145,14 @@ export async function getClinicContext(): Promise<ClinicContext | null> {
   // No host check needed: the clinic comes from the subdomain, so anywhere off a
   // clinic host getHostClinic() already returned null and we never reached here.
   if (user.profile.isPlatformAdmin) {
-    return { user, clinic, role: Role.ADMIN, viaPlatformAdmin: true };
+    return {
+      user,
+      clinic,
+      role: Role.ADMIN,
+      permissions: [...PERMISSIONS],
+      roleName: null,
+      viaPlatformAdmin: true,
+    };
   }
 
   return null;
@@ -150,6 +172,56 @@ export async function requireClinicMember(roles?: Role[]): Promise<ClinicContext
   return ctx;
 }
 
+// ─── Permissions ──────────────────────────────────────────────────────────────
+
+/** Does this context hold `permission`? Null-safe so actions can pass the raw
+    result of getClinicContext(). */
+export function can(ctx: ClinicContext, permission: Permission): boolean;
+export function can(ctx: ClinicContext | null, permission: Permission): ctx is ClinicContext;
+export function can(ctx: ClinicContext | null, permission: Permission): boolean {
+  return !!ctx && ctx.permissions.includes(permission);
+}
+
+/** Holds at least one of `permissions`. */
+export function canAny(ctx: ClinicContext, permissions: readonly Permission[]): boolean;
+export function canAny(
+  ctx: ClinicContext | null,
+  permissions: readonly Permission[]
+): ctx is ClinicContext;
+export function canAny(ctx: ClinicContext | null, permissions: readonly Permission[]): boolean {
+  return !!ctx && permissions.some((p) => ctx.permissions.includes(p));
+}
+
+/**
+ * Page guard: the caller must hold `permission` (any one of them, when given a
+ * list) in this host's clinic. Redirects like requireClinicMember — a member
+ * without it goes back to their own home, which for staff is the first section
+ * they can open.
+ */
+export async function requirePermission(
+  permission: Permission | readonly Permission[]
+): Promise<ClinicContext> {
+  const ctx = await requireClinicMember();
+  const wanted = typeof permission === "string" ? [permission] : permission;
+  if (!wanted.some((p) => ctx.permissions.includes(p))) redirect(roleHome(ctx.role));
+  return ctx;
+}
+
+/** Non-redirecting twin for server actions: the context, or null if not allowed. */
+export async function getPermittedContext(
+  permission: Permission | readonly Permission[]
+): Promise<ClinicContext | null> {
+  const ctx = await getClinicContext();
+  const wanted = typeof permission === "string" ? [permission] : permission;
+  return canAny(ctx, wanted) ? ctx : null;
+}
+
+/** The first dashboard section this context can open, or null when it holds
+    nothing that has a page of its own. */
+export function firstPermittedHref(ctx: ClinicContext): string | null {
+  return PERMISSION_HOME.find((h) => ctx.permissions.includes(h.permission))?.href ?? null;
+}
+
 export async function requirePlatformAdmin(): Promise<CurrentUser> {
   const user = await requireUser();
   if (!user.profile.isPlatformAdmin) redirect("/login");
@@ -164,7 +236,9 @@ export async function requirePlatformAdmin(): Promise<CurrentUser> {
  * use clinicUrl(slug, roleHome(role)) when the redirect crosses hosts.
  */
 export function roleHome(role: Role): string {
-  if (role === Role.ADMIN) return "/admin";
+  // Staff share the admin dashboard; /admin itself forwards them to the first
+  // section their role can open.
+  if (role === Role.ADMIN || role === Role.STAFF) return "/admin";
   if (role === Role.DOCTOR) return "/doctor";
   // Patients have no dashboard: their home is the clinic's landing page, which
   // shows their appointments, history and records inline and carries the chat

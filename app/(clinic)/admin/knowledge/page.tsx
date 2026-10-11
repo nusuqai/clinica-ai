@@ -1,5 +1,5 @@
 import { BookOpen, Eye, EyeOff } from "lucide-react";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { listKnowledgeDocsForAdmin } from "@/server/services/knowledge";
 import PageHeader from "@/components/admin/page-header";
 
@@ -14,7 +14,7 @@ import PageHeader from "@/components/admin/page-header";
  * need when a patient gets an answer that looks wrong.
  */
 export default async function AdminKnowledgePage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("agent");
   const docs = await listKnowledgeDocsForAdmin(clinic.id);
 
   return (

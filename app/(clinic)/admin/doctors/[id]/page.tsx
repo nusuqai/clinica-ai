@@ -9,7 +9,7 @@ import {
   Stethoscope,
   ListOrdered,
 } from "lucide-react";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { getDoctor, listDoctorRules, getDoctorScheduleDays } from "@/server/services/doctors";
 import { listBranches } from "@/server/services/branches";
 import { listSpecialtyOptions } from "@/server/services/specialties";
@@ -43,7 +43,7 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
     ? (tab as Tab)
     : "appointments";
 
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("doctors");
   const doctor = await getDoctor(id, clinic.id);
   if (!doctor) notFound();
 
@@ -216,7 +216,7 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
 // ─── Per-tab server components ────────────────────────────────────────────────
 
 async function AppointmentsContent({ doctorId }: { doctorId: string }) {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("doctors");
   const appointments = await listAppointments(clinic.id, { doctorId });
 
   return (

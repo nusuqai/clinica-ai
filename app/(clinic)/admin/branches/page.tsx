@@ -1,10 +1,10 @@
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { listBranches } from "@/server/services/branches";
 import PageHeader from "@/components/admin/page-header";
 import BranchesManager, { type BranchView } from "./_components/branches-manager";
 
 export default async function AdminBranchesPage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("clinic");
   const branches = await listBranches(clinic.id);
 
   // Serialize Prisma Decimals to plain numbers for the client component.

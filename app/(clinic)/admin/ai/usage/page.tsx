@@ -1,5 +1,5 @@
 import { Coins, MessageSquare, CalendarClock, MessagesSquare } from "lucide-react";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import PageHeader from "@/components/admin/page-header";
 import StatCard from "@/components/admin/stat-card";
 import BarList from "@/components/admin/bar-list";
@@ -14,7 +14,7 @@ const decimal = (n: number) =>
   n.toLocaleString("ar-EG", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export default async function AiUsagePage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("agent");
   const report = await getClinicAiUsage(clinic.id);
 
   const spentNothing = report.unitsUsed === 0;

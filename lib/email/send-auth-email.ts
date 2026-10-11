@@ -5,6 +5,7 @@ import {
   clinicApprovedInviteEmail,
   clinicCreatedInviteEmail,
   accountInviteEmail,
+  teamInviteEmail,
   passwordResetEmail,
   emailChangeEmail,
   signupOtpEmail,
@@ -128,6 +129,32 @@ export async function sendAccountInvite(args: {
     name: args.name,
     clinicName: args.clinicName,
     actionUrl: url,
+  });
+  return sendEmail({ to: args.email, subject, html });
+}
+
+/**
+ * Team invite: a clinic admin added someone to the clinic's team. A brand-new
+ * account gets the recovery→/set-password bridge; an account that already has a
+ * password is simply pointed at the clinic's login (`loginUrl`).
+ */
+export async function sendTeamInvite(args: {
+  email: string;
+  name: string | null;
+  clinicName: string;
+  roleName: string;
+  isNewAccount: boolean;
+  loginUrl: string;
+}): Promise<SendEmailResult> {
+  const url = args.isNewAccount
+    ? await generateActionUrl({ type: "recovery", email: args.email, next: "/set-password" })
+    : args.loginUrl;
+  const { subject, html } = teamInviteEmail({
+    name: args.name,
+    clinicName: args.clinicName,
+    roleName: args.roleName,
+    actionUrl: url,
+    isNewAccount: args.isNewAccount,
   });
   return sendEmail({ to: args.email, subject, html });
 }

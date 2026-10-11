@@ -167,12 +167,12 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
         registerHref={registerHref}
       />
 
-      {/* AI assistant — on the clinic's public home page for everyone. A signed-in
-          member chats with their clinic's agent; an anonymous visitor chats as a
-          guest (info only, told to sign in / register before booking). Hidden for
-          a platform admin browsing a clinic they aren't a member of — they have
-          no membership to scope the chat and manage conversations from the inbox. */}
-      {!ctx?.viaPlatformAdmin && <ChatBubble guest={!isAuthenticated} />}
+      {/* AI assistant — for patients and visitors only. A signed-in patient chats
+          with their clinic's agent; an anonymous visitor chats as a guest (info
+          only, told to sign in / register before booking). Hidden for the clinic's
+          team (admins, staff, doctors) and for a platform admin: the assistant
+          has nothing to do for them — they work from the dashboard and the inbox. */}
+      {(!ctx || isPatient) && <ChatBubble guest={!isAuthenticated} />}
     </div>
   );
 }

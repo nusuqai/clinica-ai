@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { BarChart3 } from "lucide-react";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import PageHeader from "@/components/admin/page-header";
 import AiSettingsForm from "@/components/admin/ai/ai-settings-form";
 import { getClinicAiStatus } from "@/server/services/aiCredit";
 
 export default async function AiSettingsPage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("agent");
   const status = await getClinicAiStatus(clinic.id);
   const settings = await prisma.clinic.findUnique({
     where: { id: clinic.id },

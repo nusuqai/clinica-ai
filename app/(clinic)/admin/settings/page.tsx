@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { getClinicInfo } from "@/server/services/clinicInfo";
 import PageHeader from "@/components/admin/page-header";
 import ClinicInfoForm, { type ClinicInfoView } from "./_components/clinic-info-form";
 
 export default async function AdminSettingsPage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("clinic");
   const info = await getClinicInfo(clinic.id);
   if (!info) notFound();
 

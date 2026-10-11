@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { AppointmentStatus, AvailabilityMode, DoctorTitle, Role } from "@prisma/client";
 import { parseMode } from "@/lib/availability/modes";
 
-import { getClinicContext } from "@/lib/auth";
+import { getClinicContext, getPermittedContext } from "@/lib/auth";
+import type { Permission } from "@/lib/permissions";
 import * as DoctorService from "@/server/services/doctors";
 import * as UserService from "@/server/services/users";
 import * as AppointmentService from "@/server/services/appointments";
@@ -17,9 +18,18 @@ import { expectedOrderTime } from "@/lib/availability/queue-time";
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
 // Returns the admin's clinic id (throws if the caller is not a clinic ADMIN).
+// Only for what staff can never be granted — see lib/permissions.ts.
 async function requireAdmin(): Promise<string> {
   const ctx = await getClinicContext();
   if (!ctx || ctx.role !== Role.ADMIN) throw new Error("غير مصرح");
+  return ctx.clinic.id;
+}
+
+// Returns the caller's clinic id (throws unless they hold one of `permissions`
+// there). A clinic ADMIN holds every permission.
+async function requirePerm(...permissions: Permission[]): Promise<string> {
+  const ctx = await getPermittedContext(permissions);
+  if (!ctx) throw new Error("غير مصرح");
   return ctx.clinic.id;
 }
 
@@ -46,7 +56,7 @@ function parseDoctorAttributes(formData: FormData) {
 }
 
 export async function createDoctorAction(formData: FormData) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("doctors");
 
   const specialtyRes = await SpecialtyService.resolveSpecialtyId(clinicId, {
     specialtyId: (formData.get("specialtyId") as string) || null,
@@ -141,7 +151,7 @@ async function createDraftRules(
 }
 
 export async function linkDoctorAccountAction(formData: FormData) {
-  await requireAdmin();
+  await requirePerm("doctors");
 
   const result = await DoctorService.linkDoctorAccount(formData.get("doctorId") as string, {
     email: formData.get("email") as string,
@@ -154,7 +164,7 @@ export async function linkDoctorAccountAction(formData: FormData) {
 }
 
 export async function updateDoctorAction(formData: FormData) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("doctors");
 
   const specialtyRes = await SpecialtyService.resolveSpecialtyId(clinicId, {
     specialtyId: (formData.get("specialtyId") as string) || null,
@@ -189,7 +199,7 @@ export async function updateDoctorAction(formData: FormData) {
 }
 
 export async function setDoctorActiveAction(doctorId: string, isActive: boolean) {
-  await requireAdmin();
+  await requirePerm("doctors");
   const result = await DoctorService.setDoctorActive(doctorId, isActive);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors", "page");
@@ -197,46 +207,30 @@ export async function setDoctorActiveAction(doctorId: string, isActive: boolean)
 }
 
 export async function deleteDoctorAction(doctorId: string) {
-  await requireAdmin();
+  await requirePerm("doctors");
   const result = await DoctorService.deleteDoctor(doctorId);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors", "page");
-  revalidatePath("/admin/users", "page");
+  revalidatePath("/admin/patients", "page");
   return { success: true };
 }
 
-// ─── User actions ─────────────────────────────────────────────────────────────
-
-export async function updateUserRoleAction(userId: string, role: Role) {
-  const clinicId = await requireAdmin();
-  const result = await UserService.updateUserRole(userId, clinicId, role);
-  if (!result.ok) return { error: result.error };
-  revalidatePath("/admin/users", "page");
-  return { success: true };
-}
-
-export async function deleteUserAction(userId: string) {
-  await requireAdmin();
-  const result = await UserService.deleteUser(userId);
-  if (!result.ok) return { error: result.error };
-  revalidatePath("/admin/users", "page");
-  return { success: true };
-}
+// ─── Patient actions ─────────────────────────────────────────────────────────────
 
 export async function updatePatientProfileAction(userId: string, formData: FormData) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("patients");
   const result = await UserService.updatePatientProfile(userId, clinicId, {
     fullName: (formData.get("fullName") as string) ?? undefined,
     phone: formData.has("phone") ? (formData.get("phone") as string) : undefined,
   });
   if (!result.ok) return { error: result.error };
-  revalidatePath("/admin/users/[id]", "page");
-  revalidatePath("/admin/users", "page");
+  revalidatePath("/admin/patients/[id]", "page");
+  revalidatePath("/admin/patients", "page");
   return { success: true as const };
 }
 
 export async function changePatientEmailAction(userId: string, formData: FormData) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("patients");
   const result = await UserService.changePatientEmail(
     userId,
     clinicId,
@@ -253,7 +247,7 @@ export async function updateAppointmentStatusAction(
   status: AppointmentStatus,
   cancellationReason?: string
 ) {
-  await requireAdmin();
+  await requirePerm("appointments");
   const result = await AppointmentService.updateAppointmentStatus(
     appointmentId,
     status,
@@ -269,7 +263,7 @@ export async function updateAppointmentStatusAction(
 // Loads a doctor's availability rules for the inline editor in the edit modal.
 // Scoped to the admin's clinic so a doctorId from another clinic can't be read.
 export async function getDoctorRulesAction(doctorId: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("doctors");
   const doctor = await DoctorService.getDoctor(doctorId, clinicId);
   if (!doctor) return { error: "الطبيب غير موجود" };
   const rules = await DoctorService.listDoctorRules(doctorId);
@@ -291,7 +285,7 @@ export async function getDoctorRulesAction(doctorId: string) {
 }
 
 export async function createRuleAction(formData: FormData, clinicId: string) {
-  await requireAdmin();
+  await requirePerm("doctors");
   const doctorId = formData.get("doctorId") as string;
   const branchId = (formData.get("branchId") as string) || "";
 
@@ -318,7 +312,7 @@ export async function createRuleAction(formData: FormData, clinicId: string) {
 }
 
 export async function deleteRuleAction(ruleId: string, doctorId: string) {
-  await requireAdmin();
+  await requirePerm("doctors");
   const result = await DoctorService.deleteRule(ruleId);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -326,7 +320,7 @@ export async function deleteRuleAction(ruleId: string, doctorId: string) {
 }
 
 export async function toggleRuleActiveAction(ruleId: string, isActive: boolean, doctorId: string) {
-  await requireAdmin();
+  await requirePerm("doctors");
   const result = await DoctorService.toggleRuleActive(ruleId, isActive);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -334,7 +328,7 @@ export async function toggleRuleActiveAction(ruleId: string, isActive: boolean, 
 }
 
 export async function generateSlotsAction(ruleId: string, doctorId: string) {
-  await requireAdmin();
+  await requirePerm("doctors");
   const result = await DoctorService.generateSlotsForRule(ruleId, 30);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -344,13 +338,13 @@ export async function generateSlotsAction(ruleId: string, doctorId: string) {
 // Day index for the "available" tab — slot-based + queue days with cheap header
 // tallies. Per-day content is loaded lazily via the actions below.
 export async function getDoctorScheduleDaysAction(doctorId: string) {
-  await requireAdmin();
+  await requirePerm("doctors");
   return DoctorService.getDoctorScheduleDays(doctorId);
 }
 
 // Loads one slot-based day's slots (with booking + block state) on demand.
 export async function getDoctorDaySlotsAction(doctorId: string, date: string) {
-  await requireAdmin();
+  await requirePerm("doctors");
   const from = new Date(`${date}T00:00:00.000Z`);
   const to = new Date(`${date}T23:59:59.999Z`);
   const slots = await DoctorService.listDoctorSlots(doctorId, { from, to });
@@ -372,7 +366,7 @@ export async function getDoctorDaySlotsAction(doctorId: string, date: string) {
 
 // Returns the day queue for (doctor, date) scoped to the admin's clinic.
 export async function getDayQueueAction(doctorId: string, date: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("appointments", "doctors");
   const queue = await QueueService.getDayQueue(doctorId, new Date(date));
   if (!queue || queue.clinicId !== clinicId) return { queue: null };
   const sessionStart = queue.rule?.startTime ?? null;
@@ -411,7 +405,7 @@ export async function getDayQueueAction(doctorId: string, date: string) {
 // Arrival-priority: check a reserved patient in at the clinic, handing out their
 // arrival/serving order number. Scoped to the admin's clinic.
 export async function markArrivedAction(appointmentId: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("appointments", "doctors");
   if (!(await requireAppointmentInClinic(appointmentId, clinicId)))
     return { error: "الحجز غير موجود" };
   const res = await QueueService.markArrived(appointmentId);
@@ -430,7 +424,7 @@ async function requireQueueInClinic(queueId: string, clinicId: string) {
 }
 
 export async function advanceQueueAction(queueId: string, to: number | null) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("appointments", "doctors");
   if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.setCurrentOrder(queueId, to);
   if (!res.ok) return { error: res.error };
@@ -440,7 +434,7 @@ export async function advanceQueueAction(queueId: string, to: number | null) {
 
 // "Next patient": complete the current patient and advance the queue.
 export async function completeCurrentAndAdvanceAction(queueId: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("appointments", "doctors");
   if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.completeCurrentAndAdvance(queueId);
   if (!res.ok) return { error: res.error };
@@ -449,7 +443,7 @@ export async function completeCurrentAndAdvanceAction(queueId: string) {
 }
 
 export async function toggleQueueTrackingAction(queueId: string, track: boolean) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("appointments", "doctors");
   if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.toggleQueueTracking(queueId, track);
   if (!res.ok) return { error: res.error };
@@ -458,7 +452,7 @@ export async function toggleQueueTrackingAction(queueId: string, track: boolean)
 }
 
 export async function setQueueCapAction(queueId: string, cap: number | null) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("appointments", "doctors");
   if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
   const res = await QueueService.setQueueCap(queueId, cap);
   if (!res.ok) return { error: res.error };
@@ -477,7 +471,7 @@ async function requireAppointmentInClinic(appointmentId: string, clinicId: strin
 
 // Temporarily skip an order (patient not present); keeps it PENDING.
 export async function skipOrderAction(appointmentId: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("appointments", "doctors");
   if (!(await requireAppointmentInClinic(appointmentId, clinicId)))
     return { error: "الحجز غير موجود" };
   const res = await QueueService.skipOrder(appointmentId);
@@ -488,7 +482,7 @@ export async function skipOrderAction(appointmentId: string) {
 
 // Recall a skipped patient who arrived — serve them next.
 export async function recallOrderAction(appointmentId: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("appointments", "doctors");
   if (!(await requireAppointmentInClinic(appointmentId, clinicId)))
     return { error: "الحجز غير موجود" };
   const res = await QueueService.recallOrder(appointmentId);
@@ -500,7 +494,7 @@ export async function recallOrderAction(appointmentId: string) {
 // ─── Slot actions ─────────────────────────────────────────────────────────────
 
 export async function toggleSlotBlockedAction(slotId: string, doctorId: string) {
-  await requireAdmin();
+  await requirePerm("doctors");
   const result = await DoctorService.toggleSlotBlocked(slotId);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -510,7 +504,7 @@ export async function toggleSlotBlockedAction(slotId: string, doctorId: string) 
 // ─── Branch actions ───────────────────────────────────────────────────────────
 
 export async function createBranchAction(input: Omit<BranchService.CreateBranchInput, "clinicId">) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("clinic");
   const result = await BranchService.createBranch({ ...input, clinicId });
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/branches", "page");
@@ -518,7 +512,7 @@ export async function createBranchAction(input: Omit<BranchService.CreateBranchI
 }
 
 export async function updateBranchAction(input: BranchService.UpdateBranchInput) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("clinic");
   // Ownership check: the branch must belong to the admin's clinic.
   const branch = await BranchService.getBranch(input.branchId, clinicId);
   if (!branch) return { error: "الفرع غير موجود" };
@@ -529,7 +523,7 @@ export async function updateBranchAction(input: BranchService.UpdateBranchInput)
 }
 
 export async function setBranchActiveAction(branchId: string, isActive: boolean) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("clinic");
   const branch = await BranchService.getBranch(branchId, clinicId);
   if (!branch) return { error: "الفرع غير موجود" };
   const result = await BranchService.setBranchActive(branchId, isActive);
@@ -539,7 +533,7 @@ export async function setBranchActiveAction(branchId: string, isActive: boolean)
 }
 
 export async function setMainBranchAction(branchId: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("clinic");
   const branch = await BranchService.getBranch(branchId, clinicId);
   if (!branch) return { error: "الفرع غير موجود" };
   const result = await BranchService.setMainBranch(clinicId, branchId);
@@ -549,7 +543,7 @@ export async function setMainBranchAction(branchId: string) {
 }
 
 export async function deleteBranchAction(branchId: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("clinic");
   const branch = await BranchService.getBranch(branchId, clinicId);
   if (!branch) return { error: "الفرع غير موجود" };
   const result = await BranchService.deleteBranch(branchId);
@@ -563,7 +557,7 @@ export async function deleteBranchAction(branchId: string) {
 export async function updateClinicInfoAction(
   input: Omit<ClinicInfoService.UpdateClinicInfoInput, "clinicId">
 ) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("clinic");
   const result = await ClinicInfoService.updateClinicInfo({ ...input, clinicId });
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/settings", "page");
@@ -573,7 +567,7 @@ export async function updateClinicInfoAction(
 // ─── Specialty actions ────────────────────────────────────────────────────────
 
 export async function createSpecialtyAction(name: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("doctors");
   const result = await SpecialtyService.createSpecialty(clinicId, name);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/specialties", "page");
@@ -582,7 +576,7 @@ export async function createSpecialtyAction(name: string) {
 }
 
 export async function renameSpecialtyAction(specialtyId: string, name: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("doctors");
   const result = await SpecialtyService.renameSpecialty(clinicId, specialtyId, name);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/specialties", "page");
@@ -591,7 +585,7 @@ export async function renameSpecialtyAction(specialtyId: string, name: string) {
 }
 
 export async function deleteSpecialtyAction(specialtyId: string) {
-  const clinicId = await requireAdmin();
+  const clinicId = await requirePerm("doctors");
   // Ownership check.
   const specialties = await SpecialtyService.listSpecialties(clinicId);
   if (!specialties.some((s) => s.id === specialtyId)) {

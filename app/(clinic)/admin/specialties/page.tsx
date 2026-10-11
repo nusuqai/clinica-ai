@@ -1,10 +1,10 @@
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { listSpecialties } from "@/server/services/specialties";
 import PageHeader from "@/components/admin/page-header";
 import SpecialtiesManager, { type SpecialtyView } from "./_components/specialties-manager";
 
 export default async function AdminSpecialtiesPage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("doctors");
   const specialties = await listSpecialties(clinic.id);
   const views: SpecialtyView[] = specialties.map((s) => ({
     id: s.id,

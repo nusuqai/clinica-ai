@@ -1,11 +1,11 @@
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { listAppointments } from "@/server/services/appointments";
 import { listDoctors } from "@/server/services/doctors";
 import PageHeader from "@/components/admin/page-header";
 import AppointmentBoard from "./_components/appointment-board";
 
 export default async function AdminAppointmentsPage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("appointments");
   const [appointments, doctors] = await Promise.all([
     listAppointments(clinic.id),
     listDoctors(clinic.id),

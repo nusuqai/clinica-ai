@@ -27,12 +27,14 @@ const roleColors: Record<Role, string> = {
   [Role.PATIENT]: "bg-sky-100 text-sky-700",
   [Role.DOCTOR]: "bg-violet-100 text-violet-700",
   [Role.ADMIN]: "bg-rose-100 text-rose-700",
+  [Role.STAFF]: "bg-amber-100 text-amber-700",
 };
 
 const roleLabels: Record<Role, string> = {
   [Role.PATIENT]: "مريض",
   [Role.DOCTOR]: "طبيب",
   [Role.ADMIN]: "مسؤول",
+  [Role.STAFF]: "موظف",
 };
 
 export function RoleBadge({ role }: { role: Role }) {
