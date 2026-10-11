@@ -18,48 +18,73 @@ export const PERMISSIONS = [
   "agent",
   "whatsapp",
   "clinic",
+  "branches",
   "reports",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
 
-export const PERMISSION_META: Record<Permission, { label: string; description: string }> = {
+// Where a permission applies once a staff member is limited to some branches:
+//   "branch" — only inside their branches (the data carries a branch).
+//   "clinic" — across the whole clinic regardless (the data has no branch, or
+//              is deliberately shared: a patient may visit any branch).
+export type PermissionScope = "branch" | "clinic";
+
+export const PERMISSION_META: Record<
+  Permission,
+  { label: string; description: string; scope: PermissionScope }
+> = {
   messages: {
     label: "إدارة الرسائل",
     description:
       "صندوق الرسائل: قراءة المحادثات، الرد على العملاء، وإيقاف أو تشغيل المساعد الذكي للمحادثة",
+    scope: "clinic",
   },
   appointments: {
     label: "إدارة المواعيد",
     description: "عرض المواعيد وتغيير حالتها، تسجيل الحضور وإدارة قائمة الانتظار",
+    scope: "branch",
   },
   doctors: {
     label: "إدارة الأطباء",
-    description: "إضافة وتعديل الأطباء والتخصصات، وضبط مواعيد العمل والفترات المتاحة",
+    description: "إضافة وتعديل الأطباء، وضبط مواعيد العمل والفترات المتاحة",
+    scope: "branch",
   },
   patients: {
     label: "إدارة المرضى",
     description: "عرض قائمة المرضى وتعديل بياناتهم",
+    scope: "clinic",
   },
   medical_records: {
     label: "إدارة السجلات الطبية",
     description: "الاطلاع على التاريخ المرضي وسجلات العلاج والمرفقات وتعديلها",
+    scope: "clinic",
   },
   agent: {
     label: "إدارة تعلّم المساعد الذكي",
     description: "قاعدة المعرفة التي يتعلم منها المساعد، وإعداداته وتقرير استخدامه",
+    scope: "clinic",
   },
   whatsapp: {
     label: "إدارة واتساب",
     description: "التذكيرات ورسائل التقييم التلقائية وحالة الاتصال",
+    scope: "clinic",
   },
   clinic: {
     label: "إدارة بيانات العيادة",
-    description: "معلومات العيادة والفروع وساعات العمل",
+    description: "معلومات العيادة والتخصصات، وإضافة الفروع وحذفها",
+    scope: "clinic",
+  },
+  branches: {
+    label: "إدارة بيانات الفروع",
+    description: "تعديل عنوان الفرع وأرقامه وساعات عمله",
+    scope: "branch",
   },
   reports: {
     label: "التقارير والإحصائيات",
-    description: "لوحة الإحصائيات الرئيسية وصفحة التقارير",
+    description:
+      "لوحة الإحصائيات الرئيسية وصفحة التقارير (أرقام المواعيد فقط لمن يعمل في فروع محددة)",
+    scope: "branch",
   },
 };
 
@@ -96,4 +121,10 @@ export const PERMISSION_HOME: { permission: Permission; href: string }[] = [
   { permission: "agent", href: "/admin/knowledge" },
   { permission: "whatsapp", href: "/admin/whatsapp/automation" },
   { permission: "clinic", href: "/admin/settings" },
+  { permission: "branches", href: "/admin/branches" },
 ];
+
+export const PERMISSION_SCOPE_LABEL: Record<PermissionScope, string> = {
+  branch: "حسب الفرع",
+  clinic: "كل العيادة",
+};

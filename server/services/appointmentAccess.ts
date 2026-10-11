@@ -3,6 +3,7 @@ import { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { can, canAny, getClinicContext } from "@/lib/auth";
 import { isDashboardRole } from "@/lib/permissions";
+import { inBranchScope } from "@/lib/branch-scope";
 
 // THE access rules for a single appointment's detail page, in one place so the
 // doctor, admin and patient routes cannot drift apart. Kept out of any
@@ -30,9 +31,9 @@ export type AppointmentViewAccess =
  * Authorizes a READ of one appointment's full page.
  *
  *   ADMIN   — any appointment in their clinic; may edit (file/attach).
- *   STAFF   — any appointment, given the "appointments" or "medical_records"
- *             permission; the clinical side (record + attachments) only with
- *             "medical_records".
+ *   STAFF   — given "medical_records": any appointment, with the clinical side
+ *             (record + attachments). Given only "appointments": appointments
+ *             in their own branches, booking details only.
  *   DOCTOR  — only their own appointments here; may edit.
  *   PATIENT — only their own appointments; read-only (canEdit = false).
  */
@@ -44,13 +45,27 @@ export async function authorizeAppointmentView(
 
   const appt = await prisma.appointment.findFirst({
     where: { id: appointmentId, clinicId: ctx.clinic.id },
-    select: { id: true, patientId: true, doctor: { select: { profileId: true } } },
+    select: {
+      id: true,
+      patientId: true,
+      branchId: true,
+      doctor: { select: { profileId: true } },
+    },
   });
   if (!appt) return { ok: false, error: "الموعد غير موجود" };
 
   if (isDashboardRole(ctx.role)) {
-    if (!canAny(ctx, ["appointments", "medical_records"])) return { ok: false, error: "غير مصرح" };
+    // "medical_records" is clinic-wide (a patient's full history, any branch),
+    // so it opens any visit. "appointments" alone is held to the member's
+    // branches — same "not found" as a missing row, so nothing is revealed.
     const records = can(ctx, "medical_records");
+    const viaAppointments = can(ctx, "appointments") && inBranchScope(ctx.branchIds, appt.branchId);
+    if (!records && !viaAppointments) {
+      return {
+        ok: false,
+        error: canAny(ctx, ["appointments", "medical_records"]) ? "الموعد غير موجود" : "غير مصرح",
+      };
+    }
     return {
       ok: true,
       clinicId: ctx.clinic.id,

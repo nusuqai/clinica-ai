@@ -1,5 +1,5 @@
--- Dynamic roles & permissions for clinic staff, plus "who did it" attribution
--- in the inbox.
+-- Dynamic roles & permissions for clinic staff (with an optional per-branch
+-- scope), plus "who did it" attribution in the inbox.
 --
 -- Applied with `prisma migrate deploy` (hand-written: `migrate dev` breaks on
 -- this project's cross-schema FK shadow DB). Everything here is additive +
@@ -43,6 +43,35 @@ DO $$ BEGIN
   ALTER TABLE "clinic_members"
     ADD CONSTRAINT "clinic_members_clinicRoleId_fkey"
     FOREIGN KEY ("clinicRoleId") REFERENCES "clinic_roles"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- ── Branch scope for staff (GitHub #52) ──────────────────────────────────────
+-- allBranches = true → the member works across every branch (the default, so
+-- nothing changes for existing members). false → only the branches listed in
+-- clinic_member_branches. An explicit flag, not "empty list = all": deleting a
+-- member's last branch must leave them with none, never widen them to all.
+ALTER TABLE "clinic_members"
+  ADD COLUMN IF NOT EXISTS "allBranches" BOOLEAN NOT NULL DEFAULT true;
+
+CREATE TABLE IF NOT EXISTS "clinic_member_branches" (
+  "memberId" UUID NOT NULL,
+  "branchId" UUID NOT NULL,
+  CONSTRAINT "clinic_member_branches_pkey" PRIMARY KEY ("memberId", "branchId")
+);
+
+CREATE INDEX IF NOT EXISTS "clinic_member_branches_branchId_idx"
+  ON "clinic_member_branches"("branchId");
+
+DO $$ BEGIN
+  ALTER TABLE "clinic_member_branches"
+    ADD CONSTRAINT "clinic_member_branches_memberId_fkey"
+    FOREIGN KEY ("memberId") REFERENCES "clinic_members"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "clinic_member_branches"
+    ADD CONSTRAINT "clinic_member_branches_branchId_fkey"
+    FOREIGN KEY ("branchId") REFERENCES "branches"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ── Escalation: who resolved it ──────────────────────────────────────────────

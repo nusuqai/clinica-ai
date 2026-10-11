@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Role } from "@prisma/client";
 import { getClinicContext, type ClinicContext } from "@/lib/auth";
 import * as TeamService from "@/server/services/team";
-import type { TeamAssignment } from "@/server/services/team";
+import type { BranchSelection, TeamAssignment } from "@/server/services/team";
 
 // Team & role management. ADMIN-only by design — there is no permission key for
 // it (see lib/permissions.ts), so staff can never grant themselves access.
@@ -19,6 +19,19 @@ async function requireClinicAdmin(): Promise<ClinicContext | null> {
 }
 
 const FORBIDDEN: ActionResult = { ok: false, error: "غير مصرح" };
+
+export interface BranchSelectionInput {
+  allBranches: boolean;
+  branchIds: string[];
+}
+
+function parseBranches(input: BranchSelectionInput | undefined): BranchSelection {
+  if (!input || input.allBranches) return { all: true };
+  return {
+    all: false,
+    branchIds: Array.isArray(input.branchIds) ? input.branchIds.map(String) : [],
+  };
+}
 
 /** "admin" → another clinic admin; anything else is a custom role id. */
 function parseAssignment(value: string): TeamAssignment {
@@ -70,6 +83,7 @@ export async function inviteTeamMemberAction(input: {
   email: string;
   fullName: string;
   assignment: string;
+  branches?: BranchSelectionInput;
 }): Promise<ActionResult> {
   const ctx = await requireClinicAdmin();
   if (!ctx) return FORBIDDEN;
@@ -78,6 +92,7 @@ export async function inviteTeamMemberAction(input: {
     email: input.email,
     fullName: input.fullName,
     assignment: parseAssignment(input.assignment),
+    branches: parseBranches(input.branches),
   });
   if (!res.ok) return res;
   revalidatePath(TEAM_PATH, "page");
@@ -103,6 +118,24 @@ export async function changeTeamMemberRoleAction(
   });
   if (!res.ok) return res;
   revalidatePath(TEAM_PATH, "page");
+  return { ok: true };
+}
+
+/** Sets which branches a staff member works in (or all of them). */
+export async function setTeamMemberBranchesAction(
+  userId: string,
+  branches: BranchSelectionInput
+): Promise<ActionResult> {
+  const ctx = await requireClinicAdmin();
+  if (!ctx) return FORBIDDEN;
+  const res = await TeamService.setTeamMemberBranches({
+    clinicId: ctx.clinic.id,
+    userId,
+    selection: parseBranches(branches),
+  });
+  if (!res.ok) return res;
+  // Their scope shapes every page they open.
+  revalidatePath("/admin", "layout");
   return { ok: true };
 }
 

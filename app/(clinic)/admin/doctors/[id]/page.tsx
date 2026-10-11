@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
 import { getDoctor, listDoctorRules, getDoctorScheduleDays } from "@/server/services/doctors";
-import { listBranches } from "@/server/services/branches";
+import { branchesInScope, listBranches } from "@/server/services/branches";
+import type { BranchScope } from "@/lib/branch-scope";
 import { listSpecialtyOptions } from "@/server/services/specialties";
 import { appointmentsPageAction } from "@/server/actions/admin";
 import type { DoctorBranchOption } from "./_components/rules-tab";
@@ -45,12 +46,14 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
     ? (tab as Tab)
     : "appointments";
 
-  const { clinic } = await requirePermission("doctors");
-  const doctor = await getDoctor(id, clinic.id);
+  const { clinic, branchIds: scope } = await requirePermission("doctors");
+  // A branch-limited member only reaches doctors who work at their branches,
+  // and everything below (branch options, rules, days) is cut to those branches.
+  const doctor = await getDoctor(id, clinic.id, scope);
   if (!doctor) notFound();
 
   const [branchRows, specialties] = await Promise.all([
-    listBranches(clinic.id, { activeOnly: true }),
+    listBranches(clinic.id, { activeOnly: true }).then((rows) => branchesInScope(rows, scope)),
     listSpecialtyOptions(clinic.id),
   ]);
   const branchHours = (b: (typeof branchRows)[number]) =>
@@ -212,9 +215,9 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
         />
       )}
       {activeTab === "rules" && (
-        <RulesContent doctorId={id} branches={doctorBranches} clinicId={clinic.id} />
+        <RulesContent doctorId={id} branches={doctorBranches} clinicId={clinic.id} scope={scope} />
       )}
-      {activeTab === "slots" && <SlotsContent doctorId={id} />}
+      {activeTab === "slots" && <SlotsContent doctorId={id} scope={scope} />}
       {activeTab === "queue" && <QueuePanel doctorId={id} />}
     </div>
   );
@@ -255,16 +258,18 @@ async function RulesContent({
   doctorId,
   branches,
   clinicId,
+  scope,
 }: {
   doctorId: string;
   branches: DoctorBranchOption[];
   clinicId: string;
+  scope: BranchScope;
 }) {
-  const rules = await listDoctorRules(doctorId);
+  const rules = await listDoctorRules(doctorId, clinicId, scope);
   return <RulesTab doctorId={doctorId} rules={rules} branches={branches} clinicId={clinicId} />;
 }
 
-async function SlotsContent({ doctorId }: { doctorId: string }) {
-  const days = await getDoctorScheduleDays(doctorId);
+async function SlotsContent({ doctorId, scope }: { doctorId: string; scope: BranchScope }) {
+  const days = await getDoctorScheduleDays(doctorId, 30, scope);
   return <SlotsTab doctorId={doctorId} days={days} />;
 }

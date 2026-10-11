@@ -33,8 +33,15 @@ export interface TeamMember {
       whose role was removed — they have no access until given a new one). */
   clinicRoleId: string | null;
   clinicRoleName: string | null;
+  /** Branch scope (STAFF only — an ADMIN always works across every branch).
+      `allBranches` false + `branchIds` = the only branches they may work in. */
+  allBranches: boolean;
+  branchIds: string[];
   joinedAt: Date;
 }
+
+/** Where a staff member works: everywhere, or only in the listed branches. */
+export type BranchSelection = { all: true } | { all: false; branchIds: string[] };
 
 /** Who a member becomes: another admin, or staff under one custom role. */
 export type TeamAssignment = { kind: "admin" } | { kind: "role"; roleId: string };
@@ -173,6 +180,8 @@ export async function listTeamMembers(clinicId: string): Promise<TeamMember[]> {
     select: {
       role: true,
       createdAt: true,
+      allBranches: true,
+      branches: { select: { branchId: true } },
       clinicRole: { select: { id: true, name: true } },
       user: { select: { id: true, fullName: true, phone: true } },
     },
@@ -187,6 +196,8 @@ export async function listTeamMembers(clinicId: string): Promise<TeamMember[]> {
     role: m.role,
     clinicRoleId: m.role === Role.STAFF ? (m.clinicRole?.id ?? null) : null,
     clinicRoleName: m.role === Role.STAFF ? (m.clinicRole?.name ?? null) : null,
+    allBranches: m.role === Role.ADMIN || m.allBranches,
+    branchIds: m.role === Role.STAFF && !m.allBranches ? m.branches.map((b) => b.branchId) : [],
     joinedAt: m.createdAt,
   }));
 }
@@ -207,6 +218,59 @@ async function resolveAssignment(
   return ok({ role: Role.STAFF, clinicRoleId: role.id, label: role.name });
 }
 
+// ─── Branch scope ─────────────────────────────────────────────────────────────
+
+/** Validates a selection against the clinic: real branches, and at least one
+    when limited (a limited member with no branch could open nothing). */
+async function cleanBranchSelection(
+  clinicId: string,
+  selection: BranchSelection
+): Promise<Result<BranchSelection>> {
+  if (selection.all) return ok({ all: true });
+  const ids = [...new Set(selection.branchIds)];
+  if (ids.length === 0) return err("اختر فرعاً واحداً على الأقل، أو «كل الفروع»");
+  const found = await prisma.branch.count({ where: { clinicId, id: { in: ids } } });
+  if (found !== ids.length) return err("أحد الفروع المحددة غير موجود");
+  return ok({ all: false, branchIds: ids });
+}
+
+/** Replaces a membership's branch scope. `selection` must already be clean. */
+async function writeBranchSelection(
+  tx: Prisma.TransactionClient,
+  memberId: string,
+  selection: BranchSelection
+): Promise<void> {
+  await tx.clinicMemberBranch.deleteMany({ where: { memberId } });
+  await tx.clinicMember.update({ where: { id: memberId }, data: { allBranches: selection.all } });
+  if (!selection.all) {
+    await tx.clinicMemberBranch.createMany({
+      data: selection.branchIds.map((branchId) => ({ memberId, branchId })),
+    });
+  }
+}
+
+/** Sets where a STAFF member works. An ADMIN is always clinic-wide. */
+export async function setTeamMemberBranches(args: {
+  clinicId: string;
+  userId: string;
+  selection: BranchSelection;
+}): Promise<Result<void>> {
+  const member = await prisma.clinicMember.findUnique({
+    where: { userId_clinicId: { userId: args.userId, clinicId: args.clinicId } },
+    select: { id: true, role: true },
+  });
+  if (!member || (member.role !== Role.ADMIN && member.role !== Role.STAFF)) {
+    return err("العضو غير موجود في فريق العيادة");
+  }
+  if (member.role === Role.ADMIN) return err("مدير العيادة يعمل على كل الفروع دائماً");
+
+  const selection = await cleanBranchSelection(args.clinicId, args.selection);
+  if (!selection.ok) return selection;
+
+  await prisma.$transaction((tx) => writeBranchSelection(tx, member.id, selection.data));
+  return ok(undefined);
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
@@ -220,6 +284,8 @@ export async function inviteTeamMember(args: {
   email: string;
   fullName: string;
   assignment: TeamAssignment;
+  /** Branch scope for a staff invite; ignored for an admin. Default: all. */
+  branches?: BranchSelection;
 }): Promise<Result<{ emailSent: boolean }>> {
   const email = args.email.trim().toLowerCase();
   const fullName = args.fullName.trim();
@@ -227,6 +293,13 @@ export async function inviteTeamMember(args: {
 
   const target = await resolveAssignment(args.clinic.id, args.assignment);
   if (!target.ok) return target;
+
+  // Checked before any account is created, so a bad pick leaves nothing behind.
+  const branches = await cleanBranchSelection(
+    args.clinic.id,
+    target.data.role === Role.STAFF ? (args.branches ?? { all: true }) : { all: true }
+  );
+  if (!branches.ok) return branches;
 
   try {
     let userId = await findAuthUserIdByEmail(email);
@@ -265,15 +338,20 @@ export async function inviteTeamMember(args: {
       return err("هذا الحساب مسجّل كطبيب في العيادة ولا يمكن إضافته كموظف");
     }
 
-    await prisma.clinicMember.upsert({
-      where: { userId_clinicId: { userId, clinicId: args.clinic.id } },
-      update: { role: target.data.role, clinicRoleId: target.data.clinicRoleId },
-      create: {
-        userId,
-        clinicId: args.clinic.id,
-        role: target.data.role,
-        clinicRoleId: target.data.clinicRoleId,
-      },
+    const memberWhere = { userId_clinicId: { userId, clinicId: args.clinic.id } };
+    await prisma.$transaction(async (tx) => {
+      const member = await tx.clinicMember.upsert({
+        where: memberWhere,
+        update: { role: target.data.role, clinicRoleId: target.data.clinicRoleId },
+        create: {
+          userId,
+          clinicId: args.clinic.id,
+          role: target.data.role,
+          clinicRoleId: target.data.clinicRoleId,
+        },
+        select: { id: true },
+      });
+      await writeBranchSelection(tx, member.id, branches.data);
     });
 
     // Best-effort: the membership stands even if the email fails — the admin is
@@ -341,9 +419,15 @@ export async function changeTeamMemberRole(args: {
     return err("يجب أن يبقى للعيادة مدير واحد على الأقل");
   }
 
-  await prisma.clinicMember.update({
-    where: { userId_clinicId: { userId: args.userId, clinicId: args.clinicId } },
-    data: { role: target.data.role, clinicRoleId: target.data.clinicRoleId },
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.clinicMember.update({
+      where: { userId_clinicId: { userId: args.userId, clinicId: args.clinicId } },
+      data: { role: target.data.role, clinicRoleId: target.data.clinicRoleId },
+      select: { id: true },
+    });
+    // An admin is clinic-wide: drop any branch limit so it can't linger and
+    // re-apply by surprise if they are later made staff again.
+    if (target.data.role === Role.ADMIN) await writeBranchSelection(tx, updated.id, { all: true });
   });
   return ok(undefined);
 }
@@ -373,9 +457,13 @@ export async function removeTeamMember(args: {
     select: { id: true },
   });
   if (hasPatientHistory) {
-    await prisma.clinicMember.update({
-      where,
-      data: { role: Role.PATIENT, clinicRoleId: null },
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.clinicMember.update({
+        where,
+        data: { role: Role.PATIENT, clinicRoleId: null },
+        select: { id: true },
+      });
+      await writeBranchSelection(tx, updated.id, { all: true });
     });
   } else {
     await prisma.clinicMember.delete({ where });

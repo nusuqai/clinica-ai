@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Role } from "@prisma/client";
 import { requireClinicMember, roleHome } from "@/lib/auth";
 import { listRoles, listTeamMembers } from "@/server/services/team";
+import { listBranches } from "@/server/services/branches";
 import PageHeader from "@/components/admin/page-header";
 import TeamManager from "./_components/team-manager";
 
@@ -11,9 +12,10 @@ export default async function AdminTeamPage() {
   const ctx = await requireClinicMember();
   if (ctx.role !== Role.ADMIN) redirect(roleHome(ctx.role));
 
-  const [members, roles] = await Promise.all([
+  const [members, roles, branches] = await Promise.all([
     listTeamMembers(ctx.clinic.id),
     listRoles(ctx.clinic.id),
+    listBranches(ctx.clinic.id),
   ]);
 
   return (
@@ -25,6 +27,7 @@ export default async function AdminTeamPage() {
       <TeamManager
         members={members.map((m) => ({ ...m, joinedAt: m.joinedAt.toISOString() }))}
         roles={roles}
+        branches={branches.map((b) => ({ id: b.id, name: b.name }))}
         currentUserId={ctx.user.id}
       />
     </div>

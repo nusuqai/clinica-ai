@@ -4,7 +4,7 @@ import PageHeader from "@/components/admin/page-header";
 import SpecialtiesManager, { type SpecialtyView } from "./_components/specialties-manager";
 
 export default async function AdminSpecialtiesPage() {
-  const { clinic } = await requirePermission("doctors");
+  const { clinic } = await requirePermission("clinic");
   const specialties = await listSpecialties(clinic.id);
   const views: SpecialtyView[] = specialties.map((s) => ({
     id: s.id,

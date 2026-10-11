@@ -1,5 +1,6 @@
 import "server-only";
 import { AppointmentStatus, Channel, Role, SenderType } from "@prisma/client";
+import { branchIdFilter, doctorBranchFilter, type BranchScope } from "@/lib/branch-scope";
 import { prisma } from "@/lib/prisma";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -44,15 +45,24 @@ async function staffUserIds(clinicId: string): Promise<string[]> {
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export async function getDashboardStats(clinicId: string): Promise<DashboardStats> {
+/**
+ * Headline numbers. With a limited `branchScope` only the branch-carrying ones
+ * are narrowed — doctors (who work at those branches) and appointments. Members,
+ * patients and conversations have no branch, so they stay clinic-wide totals;
+ * the pages leave those tiles out for a branch-limited member.
+ */
+export async function getDashboardStats(
+  clinicId: string,
+  branchScope: BranchScope = null
+): Promise<DashboardStats> {
   const [totalUsers, totalDoctors, totalPatients, appointmentCounts, totalConversations] =
     await Promise.all([
       prisma.clinicMember.count({ where: { clinicId } }),
-      prisma.doctor.count({ where: { clinicId } }),
+      prisma.doctor.count({ where: { clinicId, ...doctorBranchFilter(branchScope) } }),
       prisma.clinicMember.count({ where: { clinicId, role: Role.PATIENT } }),
       prisma.appointment.groupBy({
         by: ["status"],
-        where: { clinicId },
+        where: { clinicId, ...branchIdFilter(branchScope) },
         _count: { status: true },
       }),
       prisma.conversation.count({ where: { clinicId } }),
@@ -75,14 +85,18 @@ export async function getDashboardStats(clinicId: string): Promise<DashboardStat
   };
 }
 
-export async function getDoctorLoad(clinicId: string): Promise<DoctorLoad[]> {
+export async function getDoctorLoad(
+  clinicId: string,
+  branchScope: BranchScope = null
+): Promise<DoctorLoad[]> {
   const doctors = await prisma.doctor.findMany({
-    where: { clinicId },
+    where: { clinicId, ...doctorBranchFilter(branchScope) },
     select: {
       id: true,
       fullName: true,
       specialty: { select: { name: true } },
-      _count: { select: { appointments: true } },
+      // Counted (and so ranked) within the scope's branches only.
+      _count: { select: { appointments: { where: branchIdFilter(branchScope) } } },
     },
     orderBy: { appointments: { _count: "desc" } },
     take: 10,
@@ -96,12 +110,21 @@ export async function getDoctorLoad(clinicId: string): Promise<DoctorLoad[]> {
   }));
 }
 
-export async function getRecentActivity(clinicId: string, limit = 10): Promise<RecentActivity[]> {
-  const staffIds = await staffUserIds(clinicId);
+export async function getRecentActivity(
+  clinicId: string,
+  limit = 10,
+  opts: {
+    branchScope?: BranchScope;
+    /** Messages have no branch; pass false to leave them out. */
+    includeMessages?: boolean;
+  } = {}
+): Promise<RecentActivity[]> {
+  const includeMessages = opts.includeMessages ?? true;
+  const staffIds = includeMessages ? await staffUserIds(clinicId) : [];
 
   const [recentAppointments, recentMessages] = await Promise.all([
     prisma.appointment.findMany({
-      where: { clinicId },
+      where: { clinicId, ...branchIdFilter(opts.branchScope) },
       take: limit,
       orderBy: { createdAt: "desc" },
       include: {
@@ -110,7 +133,7 @@ export async function getRecentActivity(clinicId: string, limit = 10): Promise<R
       },
     }),
     prisma.message.findMany({
-      take: limit,
+      take: includeMessages ? limit : 0,
       orderBy: { createdAt: "desc" },
       include: {
         conversation: {

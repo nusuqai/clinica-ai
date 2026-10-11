@@ -254,6 +254,7 @@ model Branch {
   appointments      Appointment[]
   dayQueues         DoctorDayQueue[]
   treatmentRecords  TreatmentRecord[]
+  staffMembers      ClinicMemberBranch[]
 
   @@index([clinicId])
   @@map("branches")
@@ -369,16 +370,37 @@ model ClinicMember {
   // The custom role a STAFF member holds; null for every other role (and for a
   // STAFF member whose role was removed — they then have no permissions).
   clinicRoleId String?  @db.Uuid
+  // Branch scope for STAFF (GitHub #52). true = every branch of the clinic;
+  // false = only the branches listed in `branches`. Deliberately an explicit
+  // flag rather than "empty list means all": deleting a member's last branch
+  // must leave them with NO branch, never silently widen them to all of them.
+  // Ignored for ADMIN (always all), DOCTOR and PATIENT.
+  allBranches Boolean @default(true)
   createdAt DateTime @default(now())
 
   user       Profile     @relation(fields: [userId], references: [id], onDelete: Cascade)
   clinic     Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   clinicRole ClinicRole? @relation(fields: [clinicRoleId], references: [id], onDelete: SetNull)
+  branches   ClinicMemberBranch[]
 
   @@unique([userId, clinicId])
   @@index([clinicId])
   @@index([clinicRoleId])
   @@map("clinic_members")
+}
+
+// The branches a STAFF member is limited to (when ClinicMember.allBranches is
+// false). The role says WHAT they may manage; these rows say WHERE.
+model ClinicMemberBranch {
+  memberId String @db.Uuid
+  branchId String @db.Uuid
+
+  member ClinicMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([memberId, branchId])
+  @@index([branchId])
+  @@map("clinic_member_branches")
 }
 
 // A custom role a clinic ADMIN defines for its staff: a name plus the set of

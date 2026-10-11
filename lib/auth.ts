@@ -44,6 +44,10 @@ export type ClinicContext = {
   permissions: Permission[];
   /** Name of the custom role a STAFF member holds; null for every other role. */
   roleName: string | null;
+  /** The branches this member is limited to, or null for "every branch". Only
+      STAFF can be limited; ADMIN / DOCTOR / PATIENT are always null. An empty
+      array is a real state — limited, with no branch left. See branchScope. */
+  branchIds: string[] | null;
   /** True when access comes from being a platform admin rather than from an
       actual membership in this clinic. Surfaced as a banner in the dashboard
       shell, so edits to someone else's clinic are never made unknowingly. */
@@ -123,7 +127,12 @@ export async function getClinicContext(): Promise<ClinicContext | null> {
 
   const membership = await prisma.clinicMember.findUnique({
     where: { userId_clinicId: { userId: user.id, clinicId: clinic.id } },
-    select: { role: true, clinicRole: { select: { name: true, permissions: true } } },
+    select: {
+      role: true,
+      allBranches: true,
+      branches: { select: { branchId: true } },
+      clinicRole: { select: { name: true, permissions: true } },
+    },
   });
   if (membership) {
     return {
@@ -132,6 +141,10 @@ export async function getClinicContext(): Promise<ClinicContext | null> {
       role: membership.role,
       permissions: permissionsFor(membership.role, membership.clinicRole?.permissions),
       roleName: membership.role === Role.STAFF ? (membership.clinicRole?.name ?? null) : null,
+      branchIds:
+        membership.role === Role.STAFF && !membership.allBranches
+          ? membership.branches.map((b) => b.branchId)
+          : null,
       viaPlatformAdmin: false,
     };
   }
@@ -151,6 +164,7 @@ export async function getClinicContext(): Promise<ClinicContext | null> {
       role: Role.ADMIN,
       permissions: [...PERMISSIONS],
       roleName: null,
+      branchIds: null,
       viaPlatformAdmin: true,
     };
   }

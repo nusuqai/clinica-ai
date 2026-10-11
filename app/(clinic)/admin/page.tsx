@@ -43,11 +43,17 @@ export default async function AdminHomePage() {
     return <NoSectionsNotice roleName={ctx.roleName} />;
   }
 
-  const { clinic } = ctx;
+  const { clinic, branchIds: scope } = ctx;
+  // Branch-limited members see only the branch-carrying numbers — see the
+  // reports page. Recent messages are clinic-wide, so they need "messages".
+  const limited = scope !== null;
   const showUnits = can(ctx, "agent");
   const [stats, activity, units] = await Promise.all([
-    getDashboardStats(clinic.id),
-    getRecentActivity(clinic.id, 8),
+    getDashboardStats(clinic.id, scope),
+    getRecentActivity(clinic.id, 8, {
+      branchScope: scope,
+      includeMessages: !limited || can(ctx, "messages"),
+    }),
     showUnits ? getClinicUnitSummary(clinic.id) : null,
   ]);
 
@@ -105,7 +111,14 @@ export default async function AdminHomePage() {
 
       {/* KPI grid */}
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
-        <StatCard label="إجمالي المستخدمين" value={stats.totalUsers} icon={Users} color="primary" />
+        {!limited && (
+          <StatCard
+            label="إجمالي المستخدمين"
+            value={stats.totalUsers}
+            icon={Users}
+            color="primary"
+          />
+        )}
         <StatCard label="الأطباء" value={stats.totalDoctors} icon={Stethoscope} color="accent" />
         <StatCard
           label="المواعيد الكلية"
@@ -113,12 +126,14 @@ export default async function AdminHomePage() {
           icon={CalendarDays}
           color="primary"
         />
-        <StatCard
-          label="المحادثات"
-          value={stats.totalConversations}
-          icon={MessageCircle}
-          color="accent"
-        />
+        {!limited && (
+          <StatCard
+            label="المحادثات"
+            value={stats.totalConversations}
+            icon={MessageCircle}
+            color="accent"
+          />
+        )}
         <StatCard
           label="قيد الانتظار"
           value={stats.pendingAppointments}

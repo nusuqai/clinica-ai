@@ -23,11 +23,15 @@ const decimal = (n: number) =>
   n.toLocaleString("ar-EG", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export default async function AdminReportsPage() {
-  const { clinic } = await requirePermission("reports");
+  const { clinic, branchIds: scope } = await requirePermission("reports");
+  // A branch-limited member gets the branch-carrying numbers only (appointments
+  // and doctors, cut to their branches). Members, conversations and AI usage
+  // have no branch — showing clinic-wide totals there would leak other branches.
+  const limited = scope !== null;
   const [stats, doctorLoad, ai] = await Promise.all([
-    getDashboardStats(clinic.id),
-    getDoctorLoad(clinic.id),
-    getClinicAiUsage(clinic.id),
+    getDashboardStats(clinic.id, scope),
+    getDoctorLoad(clinic.id, scope),
+    limited ? null : getClinicAiUsage(clinic.id),
   ]);
 
   const totalAppts = stats.totalAppointments || 1;
@@ -51,7 +55,14 @@ export default async function AdminReportsPage() {
 
       {/* KPI overview */}
       <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard label="إجمالي المستخدمين" value={stats.totalUsers} icon={Users} color="primary" />
+        {!limited && (
+          <StatCard
+            label="إجمالي المستخدمين"
+            value={stats.totalUsers}
+            icon={Users}
+            color="primary"
+          />
+        )}
         <StatCard label="الأطباء" value={stats.totalDoctors} icon={Stethoscope} color="accent" />
         <StatCard
           label="إجمالي المواعيد"
@@ -59,12 +70,14 @@ export default async function AdminReportsPage() {
           icon={CalendarDays}
           color="primary"
         />
-        <StatCard
-          label="المحادثات"
-          value={stats.totalConversations}
-          icon={MessageCircle}
-          color="accent"
-        />
+        {!limited && (
+          <StatCard
+            label="المحادثات"
+            value={stats.totalConversations}
+            icon={MessageCircle}
+            color="accent"
+          />
+        )}
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -123,84 +136,92 @@ export default async function AdminReportsPage() {
         </div>
 
         {/* User breakdown */}
-        <div className="rounded-2xl border border-border bg-card p-6">
-          <h2 className="mb-6 font-heading font-semibold text-foreground">توزيع المستخدمين</h2>
+        {!limited && (
+          <div className="rounded-2xl border border-border bg-card p-6">
+            <h2 className="mb-6 font-heading font-semibold text-foreground">توزيع المستخدمين</h2>
 
-          <div className="mb-6 flex items-center justify-center gap-8">
-            {userBreakdown.map(({ label, value }) => (
-              <div key={label} className="text-center">
-                <p className="font-heading text-2xl font-bold text-foreground">{value}</p>
-                <p className="font-sans text-sm text-muted-foreground">{label}</p>
-              </div>
-            ))}
+            <div className="mb-6 flex items-center justify-center gap-8">
+              {userBreakdown.map(({ label, value }) => (
+                <div key={label} className="text-center">
+                  <p className="font-heading text-2xl font-bold text-foreground">{value}</p>
+                  <p className="font-sans text-sm text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            <BarList items={userBreakdown} max={stats.totalUsers || 1} color="bg-accent" />
           </div>
-
-          <BarList items={userBreakdown} max={stats.totalUsers || 1} color="bg-accent" />
-        </div>
+        )}
       </div>
 
       {/* AI assistant — the unit meter, summarized. The full breakdown (daily,
           per channel, runway) lives on /admin/ai/usage; this is the at-a-glance
           version so the clinic's overall report includes its AI spend. */}
-      <div className="mb-6 rounded-2xl border border-border bg-card p-6">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 font-heading font-semibold text-foreground">
-            <Bot className="h-5 w-5 text-primary" />
-            المساعد الذكي — وحدات آخر {ai.windowDays} يوماً
-          </h2>
-          <Link href="/admin/ai/usage" className="font-sans text-sm text-primary hover:underline">
-            التقرير التفصيلي
-          </Link>
+      {ai && (
+        <div className="mb-6 rounded-2xl border border-border bg-card p-6">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 font-heading font-semibold text-foreground">
+              <Bot className="h-5 w-5 text-primary" />
+              المساعد الذكي — وحدات آخر {ai.windowDays} يوماً
+            </h2>
+            <Link href="/admin/ai/usage" className="font-sans text-sm text-primary hover:underline">
+              التقرير التفصيلي
+            </Link>
+          </div>
+
+          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+            <StatCard
+              label="الوحدات المتبقية"
+              value={units(ai.unitBalance)}
+              icon={Coins}
+              color={!ai.unitsSufficient ? "red" : ai.lowUnits ? "amber" : "primary"}
+            />
+            <StatCard
+              label="الوحدات المستهلكة"
+              value={units(ai.unitsUsed)}
+              icon={MessageCircle}
+              color="accent"
+            />
+            <StatCard
+              label="متوسط يومي"
+              value={decimal(ai.avgUnitsPerDay)}
+              icon={Clock}
+              color="accent"
+            />
+            <StatCard
+              label="وحدات لكل محادثة"
+              value={ai.sessions > 0 ? decimal(ai.unitsPerSession) : "—"}
+              icon={Users}
+              color="accent"
+            />
+          </div>
+
+          {ai.byChannel.length > 0 ? (
+            <BarList
+              items={ai.byChannel.map((c) => ({
+                label: c.label,
+                sublabel: "وحدة",
+                value: c.value,
+              }))}
+              color="bg-accent"
+            />
+          ) : (
+            <p className="font-sans text-sm text-muted-foreground">
+              لم يستهلك المساعد الذكي أي وحدات خلال هذه الفترة.
+            </p>
+          )}
+
+          {ai.projectedDaysLeft !== null && (
+            <p className="mt-4 border-t border-border pt-4 text-center font-sans text-xs text-muted-foreground">
+              بمعدل الاستهلاك الحالي تكفي الوحدات المتبقية نحو{" "}
+              <span className="font-semibold text-foreground">
+                {decimal(ai.projectedDaysLeft)} يوماً
+              </span>
+              .
+            </p>
+          )}
         </div>
-
-        <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <StatCard
-            label="الوحدات المتبقية"
-            value={units(ai.unitBalance)}
-            icon={Coins}
-            color={!ai.unitsSufficient ? "red" : ai.lowUnits ? "amber" : "primary"}
-          />
-          <StatCard
-            label="الوحدات المستهلكة"
-            value={units(ai.unitsUsed)}
-            icon={MessageCircle}
-            color="accent"
-          />
-          <StatCard
-            label="متوسط يومي"
-            value={decimal(ai.avgUnitsPerDay)}
-            icon={Clock}
-            color="accent"
-          />
-          <StatCard
-            label="وحدات لكل محادثة"
-            value={ai.sessions > 0 ? decimal(ai.unitsPerSession) : "—"}
-            icon={Users}
-            color="accent"
-          />
-        </div>
-
-        {ai.byChannel.length > 0 ? (
-          <BarList
-            items={ai.byChannel.map((c) => ({ label: c.label, sublabel: "وحدة", value: c.value }))}
-            color="bg-accent"
-          />
-        ) : (
-          <p className="font-sans text-sm text-muted-foreground">
-            لم يستهلك المساعد الذكي أي وحدات خلال هذه الفترة.
-          </p>
-        )}
-
-        {ai.projectedDaysLeft !== null && (
-          <p className="mt-4 border-t border-border pt-4 text-center font-sans text-xs text-muted-foreground">
-            بمعدل الاستهلاك الحالي تكفي الوحدات المتبقية نحو{" "}
-            <span className="font-semibold text-foreground">
-              {decimal(ai.projectedDaysLeft)} يوماً
-            </span>
-            .
-          </p>
-        )}
-      </div>
+      )}
 
       {/* Doctor load */}
       {doctorLoad.length > 0 && (

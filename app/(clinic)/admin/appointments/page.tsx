@@ -2,7 +2,7 @@ import { AppointmentStatus } from "@prisma/client";
 import { requirePermission } from "@/lib/auth";
 import { appointmentsPageAction } from "@/server/actions/admin";
 import { listDoctors } from "@/server/services/doctors";
-import { listBranches } from "@/server/services/branches";
+import { branchesInScope, listBranches } from "@/server/services/branches";
 import { FilterBar, type FilterField } from "@/components/ui/filter-bar";
 import PageHeader from "@/components/admin/page-header";
 import AppointmentBoard from "./_components/appointment-board";
@@ -15,15 +15,16 @@ interface PageProps {
 }
 
 export default async function AdminAppointmentsPage({ searchParams }: PageProps) {
-  const { clinic } = await requirePermission("appointments");
+  const { clinic, branchIds: scope } = await requirePermission("appointments");
   const { doctor, branch, q, date } = await searchParams;
   const filters = { doctorId: doctor, branchId: branch, patientQuery: q, date };
 
   // First page of every column; each column then loads more on scroll.
   const [pages, doctors, branches] = await Promise.all([
     Promise.all(STATUSES.map((status) => appointmentsPageAction({ ...filters, status }, 1))),
-    listDoctors(clinic.id),
-    listBranches(clinic.id),
+    // The doctor / branch pickers offer only what this member's branches cover.
+    listDoctors(clinic.id, scope),
+    listBranches(clinic.id).then((rows) => branchesInScope(rows, scope)),
   ]);
   const columns = Object.fromEntries(STATUSES.map((s, i) => [s, pages[i]])) as Record<
     AppointmentStatus,

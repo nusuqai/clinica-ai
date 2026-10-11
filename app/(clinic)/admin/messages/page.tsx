@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { requirePermission } from "@/lib/auth";
+import { can, requirePermission } from "@/lib/auth";
 import PageHeader from "@/components/admin/page-header";
 import ChatInbox from "@/components/admin/chat-inbox";
 import {
@@ -22,7 +22,8 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
   // links) — never pass it to Prisma unvalidated.
   const id = rawId && UUID_RE.test(rawId) ? rawId : undefined;
 
-  const { clinic, user } = await requirePermission("messages");
+  const ctx = await requirePermission("messages");
+  const { clinic, user } = ctx;
   const [conversations, selectedConversation, team] = await Promise.all([
     getConversations(clinic.id, { query: q, channel, show }),
     id ? getConversationDetail(id, clinic.id) : Promise.resolve(null),
@@ -51,6 +52,7 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
           clinicId={clinic.id}
           currentUserName={user.profile.fullName}
           staffNames={staffNames}
+          canOpenPatientProfile={can(ctx, "patients")}
         />
       </Suspense>
     </div>

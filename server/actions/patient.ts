@@ -5,6 +5,7 @@ import { AppointmentStatus, Role } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getClinicContext, getHostClinic } from "@/lib/auth";
+import type { BranchScope } from "@/lib/branch-scope";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
@@ -160,10 +161,18 @@ export async function publicDoctorsPageAction(
   }));
 }
 
+// These availability reads also power the admin "book for a patient" modal. A
+// branch-limited staff member is then only offered days / slots / queues in
+// their own branches (the booking action enforces the same). Patients, guests
+// and all-branch members have no scope → null → everything.
+async function callerBranchScope(): Promise<BranchScope> {
+  return (await getClinicContext())?.branchIds ?? null;
+}
+
 export async function getAvailableDaysAction(
   doctorId: string
 ): Promise<DoctorService.AvailableDay[]> {
-  return DoctorService.getAvailableDaysForBooking(doctorId);
+  return DoctorService.getAvailableDaysForBooking(doctorId, 60, await callerBranchScope());
 }
 
 export async function getAvailableSlotsAction(
@@ -171,7 +180,11 @@ export async function getAvailableSlotsAction(
   dateStr: string
 ): Promise<{ id: string; startTime: string; endTime: string }[]> {
   const date = new Date(dateStr);
-  const slots = await DoctorService.getAvailableSlotsForBooking(doctorId, date);
+  const slots = await DoctorService.getAvailableSlotsForBooking(
+    doctorId,
+    date,
+    await callerBranchScope()
+  );
   return slots.map((s) => ({
     id: s.id,
     startTime: s.startTime.toISOString(),
@@ -195,7 +208,12 @@ export async function getOrderBookingInfoAction(
   estimatedDurationMin: number | null;
   expectedTime: string | null;
 } | null> {
-  const info = await QueueService.getOrderBookingInfo(doctorId, new Date(dateStr));
+  const info = await QueueService.getOrderBookingInfo(
+    doctorId,
+    new Date(dateStr),
+    null,
+    await callerBranchScope()
+  );
   if (!info) return null;
   const arrival = info.mode === "ARRIVAL_BASED";
   const nextOrderNumber = info.booked + 1;

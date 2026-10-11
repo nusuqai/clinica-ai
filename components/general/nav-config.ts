@@ -39,8 +39,13 @@ export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
     { href: "/admin/team", label: "فريق العمل", icon: ShieldCheck, adminOnly: true },
     { href: "/admin/patients", label: "المرضى", icon: HeartPulse, permission: "patients" },
     { href: "/admin/doctors", label: "الأطباء", icon: Stethoscope, permission: "doctors" },
-    { href: "/admin/specialties", label: "التخصصات", icon: Tags, permission: "doctors" },
-    { href: "/admin/branches", label: "الفروع", icon: MapPin, permission: "clinic" },
+    { href: "/admin/specialties", label: "التخصصات", icon: Tags, permission: "clinic" },
+    {
+      href: "/admin/branches",
+      label: "الفروع",
+      icon: MapPin,
+      permission: ["clinic", "branches"],
+    },
     { href: "/admin/settings", label: "معلومات العيادة", icon: Building2, permission: "clinic" },
     { href: "/admin/knowledge", label: "قاعدة المعرفة", icon: BookOpen, permission: "agent" },
     {
@@ -92,7 +97,10 @@ export const roleMeta: Record<"doctor" | "admin", { label: string; pageTitle: st
     otherwise only what their role's permissions open. */
 export function visibleAdminNav(permissions: readonly Permission[], isClinicAdmin: boolean) {
   if (isClinicAdmin) return navConfig.admin;
-  return navConfig.admin.filter(
-    (item) => !item.adminOnly && (!item.permission || permissions.includes(item.permission))
-  );
+  return navConfig.admin.filter((item) => {
+    if (item.adminOnly) return false;
+    if (!item.permission) return true;
+    const needed = Array.isArray(item.permission) ? item.permission : [item.permission];
+    return needed.some((p) => permissions.includes(p));
+  });
 }

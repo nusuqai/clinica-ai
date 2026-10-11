@@ -1,11 +1,18 @@
-import { requirePermission } from "@/lib/auth";
-import { listBranches } from "@/server/services/branches";
+import { can, requirePermission } from "@/lib/auth";
+import { branchesInScope, listBranches } from "@/server/services/branches";
 import PageHeader from "@/components/admin/page-header";
 import BranchesManager, { type BranchView } from "./_components/branches-manager";
 
 export default async function AdminBranchesPage() {
-  const { clinic } = await requirePermission("clinic");
-  const branches = await listBranches(clinic.id);
+  // "clinic" manages every branch and the list itself; "branches" alone edits
+  // the details of the member's own branches and nothing else.
+  const ctx = await requirePermission(["clinic", "branches"]);
+  const { clinic } = ctx;
+  const canManageStructure = can(ctx, "clinic");
+  const branches = branchesInScope(
+    await listBranches(clinic.id),
+    canManageStructure ? null : ctx.branchIds
+  );
 
   // Serialize Prisma Decimals to plain numbers for the client component.
   const views: BranchView[] = branches.map((b) => ({
@@ -39,7 +46,11 @@ export default async function AdminBranchesPage() {
   return (
     <div>
       <PageHeader title="الفروع" subtitle={`${branches.length} فرع`} />
-      <BranchesManager branches={views} clinicId={clinic.id} />
+      <BranchesManager
+        branches={views}
+        clinicId={clinic.id}
+        canManageStructure={canManageStructure}
+      />
     </div>
   );
 }

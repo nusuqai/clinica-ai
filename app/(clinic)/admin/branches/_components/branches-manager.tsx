@@ -123,9 +123,13 @@ const labelCls = "text-sm font-medium text-foreground font-sans";
 export default function BranchesManager({
   branches,
   clinicId,
+  canManageStructure,
 }: {
   branches: BranchView[];
   clinicId: string;
+  /** Holds "clinic": may add / delete / (de)activate branches and pick the main
+      one. Without it ("branches" only) the member just edits branch details. */
+  canManageStructure: boolean;
 }) {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
@@ -233,15 +237,17 @@ export default function BranchesManager({
 
   return (
     <div>
-      <div className="mb-4 flex justify-end">
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          إضافة فرع
-        </button>
-      </div>
+      {canManageStructure && (
+        <div className="mb-4 flex justify-end">
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" />
+            إضافة فرع
+          </button>
+        </div>
+      )}
 
       {branches.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card py-16 text-center">
@@ -283,7 +289,7 @@ export default function BranchesManager({
                   >
                     <Pencil className="h-4 w-4" />
                   </button>
-                  {!b.isMain && (
+                  {canManageStructure && !b.isMain && (
                     <button
                       onClick={() => runAction(() => setMainBranchAction(b.id))}
                       disabled={isPending}
@@ -293,15 +299,17 @@ export default function BranchesManager({
                       <Star className="h-4 w-4" />
                     </button>
                   )}
-                  <button
-                    onClick={() => runAction(() => setBranchActiveAction(b.id, !b.isActive))}
-                    disabled={isPending}
-                    title={b.isActive ? "تعطيل" : "تفعيل"}
-                    className="rounded-lg p-1.5 font-sans text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    {b.isActive ? "تعطيل" : "تفعيل"}
-                  </button>
-                  {!b.isMain && (
+                  {canManageStructure && (
+                    <button
+                      onClick={() => runAction(() => setBranchActiveAction(b.id, !b.isActive))}
+                      disabled={isPending}
+                      title={b.isActive ? "تعطيل" : "تفعيل"}
+                      className="rounded-lg p-1.5 font-sans text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      {b.isActive ? "تعطيل" : "تفعيل"}
+                    </button>
+                  )}
+                  {canManageStructure && !b.isMain && (
                     <button
                       onClick={() =>
                         runAction(

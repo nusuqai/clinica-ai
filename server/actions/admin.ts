@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { AppointmentStatus, AvailabilityMode, DoctorTitle, Role } from "@prisma/client";
 import { parseMode } from "@/lib/availability/modes";
 
-import { getClinicContext, getPermittedContext } from "@/lib/auth";
+import { can, getClinicContext, getPermittedContext } from "@/lib/auth";
 import type { Permission } from "@/lib/permissions";
 import * as DoctorService from "@/server/services/doctors";
 import * as UserService from "@/server/services/users";
@@ -18,6 +18,8 @@ import { expectedOrderTime } from "@/lib/availability/queue-time";
 import { getOrCreatePatientByPhone } from "@/server/services/patients";
 import { normalizePhone, isValidPhone } from "@/lib/phone";
 import { pageRequest, offsetRequest } from "@/lib/pagination";
+import type { BranchScope } from "@/lib/branch-scope";
+import * as Scope from "@/server/services/branchScope";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,19 @@ async function requirePerm(...permissions: Permission[]): Promise<string> {
   if (!ctx) throw new Error("غير مصرح");
   return ctx.clinic.id;
 }
+
+// Same, plus the caller's branch scope (null = every branch). For anything that
+// touches branch-carrying data — appointments, queues, doctors, schedules — so
+// a staff member limited to some branches can't reach another branch's rows.
+async function requireScoped(
+  ...permissions: Permission[]
+): Promise<{ clinicId: string; scope: BranchScope }> {
+  const ctx = await getPermittedContext(permissions);
+  if (!ctx) throw new Error("غير مصرح");
+  return { clinicId: ctx.clinic.id, scope: ctx.branchIds };
+}
+
+const DOCTOR_NOT_FOUND = "الطبيب غير موجود";
 
 // ─── Doctor actions ───────────────────────────────────────────────────────────
 
@@ -60,7 +75,7 @@ function parseDoctorAttributes(formData: FormData) {
 }
 
 export async function createDoctorAction(formData: FormData) {
-  const clinicId = await requirePerm("doctors");
+  const { clinicId, scope } = await requireScoped("doctors");
 
   const specialtyRes = await SpecialtyService.resolveSpecialtyId(clinicId, {
     specialtyId: (formData.get("specialtyId") as string) || null,
@@ -79,6 +94,11 @@ export async function createDoctorAction(formData: FormData) {
     bio: (formData.get("bio") as string) || undefined,
     ...parseDoctorAttributes(formData),
   };
+  // A branch-limited member can only place the doctor in their own branches —
+  // and must pick one, or they'd create a doctor they can't see afterwards.
+  base.branchIds = await Scope.mergeDoctorBranches(null, base.branchIds, scope);
+  if (scope !== null && base.branchIds.length === 0)
+    return { error: "اختر فرعاً واحداً على الأقل من الفروع المسندة إليك" };
 
   const result = withAccount
     ? await DoctorService.createDoctorAccount({
@@ -155,7 +175,9 @@ async function createDraftRules(
 }
 
 export async function linkDoctorAccountAction(formData: FormData) {
-  await requirePerm("doctors");
+  const { clinicId, scope } = await requireScoped("doctors");
+  if (!(await Scope.doctorInScope(formData.get("doctorId") as string, clinicId, scope)))
+    return { error: DOCTOR_NOT_FOUND };
 
   const result = await DoctorService.linkDoctorAccount(formData.get("doctorId") as string, {
     email: formData.get("email") as string,
@@ -168,7 +190,10 @@ export async function linkDoctorAccountAction(formData: FormData) {
 }
 
 export async function updateDoctorAction(formData: FormData) {
-  const clinicId = await requirePerm("doctors");
+  const { clinicId, scope } = await requireScoped("doctors");
+  const targetDoctorId = formData.get("doctorId") as string;
+  if (!(await Scope.doctorInScope(targetDoctorId, clinicId, scope)))
+    return { error: DOCTOR_NOT_FOUND };
 
   const specialtyRes = await SpecialtyService.resolveSpecialtyId(clinicId, {
     specialtyId: (formData.get("specialtyId") as string) || null,
@@ -192,7 +217,8 @@ export async function updateDoctorAction(formData: FormData) {
     consultationFee: attrs.consultationFee ?? null,
     requiresAdvanceBooking: attrs.requiresAdvanceBooking,
     acceptsChildren: attrs.acceptsChildren,
-    branchIds: attrs.branchIds,
+    // Keeps the doctor's branches outside the member's scope untouched.
+    branchIds: await Scope.mergeDoctorBranches(targetDoctorId, attrs.branchIds, scope),
     clinicId: clinicId,
   });
 
@@ -203,7 +229,11 @@ export async function updateDoctorAction(formData: FormData) {
 }
 
 export async function setDoctorActiveAction(doctorId: string, isActive: boolean) {
-  await requirePerm("doctors");
+  const { clinicId, scope } = await requireScoped("doctors");
+  if (!(await Scope.doctorInScope(doctorId, clinicId, scope))) return { error: DOCTOR_NOT_FOUND };
+  // Deactivating hides the doctor in EVERY branch — not a branch-limited call.
+  if (!(await Scope.doctorOnlyInScope(doctorId, scope)))
+    return { error: "هذا الطبيب يعمل في فروع أخرى — يستطيع مدير العيادة فقط إيقافه" };
   const result = await DoctorService.setDoctorActive(doctorId, isActive);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors", "page");
@@ -211,7 +241,10 @@ export async function setDoctorActiveAction(doctorId: string, isActive: boolean)
 }
 
 export async function deleteDoctorAction(doctorId: string) {
-  await requirePerm("doctors");
+  const { clinicId, scope } = await requireScoped("doctors");
+  if (!(await Scope.doctorInScope(doctorId, clinicId, scope))) return { error: DOCTOR_NOT_FOUND };
+  if (!(await Scope.doctorOnlyInScope(doctorId, scope)))
+    return { error: "هذا الطبيب يعمل في فروع أخرى — يستطيع مدير العيادة فقط حذفه" };
   const result = await DoctorService.deleteDoctor(doctorId);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors", "page");
@@ -251,7 +284,9 @@ export async function updateAppointmentStatusAction(
   status: AppointmentStatus,
   cancellationReason?: string
 ) {
-  await requirePerm("appointments");
+  const { clinicId, scope } = await requireScoped("appointments");
+  if (!(await Scope.appointmentInScope(appointmentId, clinicId, scope)))
+    return { error: "الموعد غير موجود" };
   const result = await AppointmentService.updateAppointmentStatus(
     appointmentId,
     status,
@@ -270,14 +305,24 @@ export async function appointmentsPageAction(
   filters: AppointmentService.AppointmentFilters,
   page: number
 ) {
-  const clinicId = await requirePerm("appointments", "doctors");
-  return AppointmentService.listAppointments(clinicId, filters, pageRequest(page));
+  const { clinicId, scope } = await requireScoped("appointments", "doctors");
+  // `filters` comes from the client: the scope is always overwritten here.
+  return AppointmentService.listAppointments(
+    clinicId,
+    { ...filters, branchScope: scope },
+    pageRequest(page)
+  );
 }
 
 /** A page of the clinic's doctors matching the filters (DB-side), by name. */
 export async function doctorsPageAction(filters: DoctorService.DoctorFilters, page: number) {
-  const clinicId = await requirePerm("doctors");
-  return DoctorService.listDoctorsPage(clinicId, filters, pageRequest(page), { withEmail: true });
+  const { clinicId, scope } = await requireScoped("doctors");
+  return DoctorService.listDoctorsPage(
+    clinicId,
+    { ...filters, branchScope: scope },
+    pageRequest(page),
+    { withEmail: true }
+  );
 }
 
 /** A page of the clinic's knowledge docs matching the filters (DB-side). */
@@ -294,8 +339,12 @@ export async function appointmentsAfterAction(
   filters: AppointmentService.AppointmentFilters,
   offset: number
 ) {
-  const clinicId = await requirePerm("appointments", "doctors");
-  return AppointmentService.listAppointments(clinicId, filters, offsetRequest(offset));
+  const { clinicId, scope } = await requireScoped("appointments", "doctors");
+  return AppointmentService.listAppointments(
+    clinicId,
+    { ...filters, branchScope: scope },
+    offsetRequest(offset)
+  );
 }
 
 /** A page of the clinic's members, searched by name/phone and/or one role. */
@@ -336,7 +385,12 @@ export async function adminBookAppointmentAction(input: {
   mode?: "order" | "arrival";
   orderNumber?: number | null;
 }> {
-  const clinicId = await requirePerm("appointments");
+  const { clinicId, scope } = await requireScoped("appointments");
+  // Staff book only with doctors — and into slots / queues — of their branches.
+  if (!(await Scope.doctorInScope(input.doctorId, clinicId, scope)))
+    return { ok: false, error: DOCTOR_NOT_FOUND };
+  if (input.slotId && !(await Scope.slotInScope(input.slotId, clinicId, scope)))
+    return { ok: false, error: "الموعد غير موجود" };
 
   let patientId: string;
   if ("id" in input.patient) {
@@ -373,7 +427,7 @@ export async function adminBookAppointmentAction(input: {
       patientId,
       input.doctorId,
       new Date(input.date),
-      { notes: input.notes, clinicId }
+      { notes: input.notes, clinicId, branchScope: scope }
     );
     if (!res.ok) return { ok: false, error: res.error };
     appointmentId = res.data.id;
@@ -394,10 +448,9 @@ export async function adminBookAppointmentAction(input: {
 // Loads a doctor's availability rules for the inline editor in the edit modal.
 // Scoped to the admin's clinic so a doctorId from another clinic can't be read.
 export async function getDoctorRulesAction(doctorId: string) {
-  const clinicId = await requirePerm("doctors");
-  const doctor = await DoctorService.getDoctor(doctorId, clinicId);
-  if (!doctor) return { error: "الطبيب غير موجود" };
-  const rules = await DoctorService.listDoctorRules(doctorId);
+  const { clinicId, scope } = await requireScoped("doctors");
+  if (!(await Scope.doctorInScope(doctorId, clinicId, scope))) return { error: DOCTOR_NOT_FOUND };
+  const rules = await DoctorService.listDoctorRules(doctorId, clinicId, scope);
   return {
     rules: rules.map((r) => ({
       id: r.id,
@@ -415,12 +468,16 @@ export async function getDoctorRulesAction(doctorId: string) {
   };
 }
 
-export async function createRuleAction(formData: FormData, clinicId: string) {
-  await requirePerm("doctors");
+// `_clientClinicId` is kept for the callers' signature but never trusted: the
+// clinic always comes from the request host.
+export async function createRuleAction(formData: FormData, _clientClinicId?: string) {
+  const { clinicId, scope } = await requireScoped("doctors");
   const doctorId = formData.get("doctorId") as string;
   const branchId = (formData.get("branchId") as string) || "";
 
   if (!branchId) return { error: "اختر الفرع لهذه القاعدة." };
+  if (!(await Scope.doctorInScope(doctorId, clinicId, scope))) return { error: DOCTOR_NOT_FOUND };
+  if (!(await Scope.branchInScope(branchId, clinicId, scope))) return { error: "الفرع غير موجود" };
   const result = await DoctorService.createRule({
     doctorId,
     branchId,
@@ -443,7 +500,8 @@ export async function createRuleAction(formData: FormData, clinicId: string) {
 }
 
 export async function deleteRuleAction(ruleId: string, doctorId: string) {
-  await requirePerm("doctors");
+  const { clinicId, scope } = await requireScoped("doctors");
+  if (!(await Scope.ruleInScope(ruleId, clinicId, scope))) return { error: "القاعدة غير موجودة" };
   const result = await DoctorService.deleteRule(ruleId);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -451,7 +509,8 @@ export async function deleteRuleAction(ruleId: string, doctorId: string) {
 }
 
 export async function toggleRuleActiveAction(ruleId: string, isActive: boolean, doctorId: string) {
-  await requirePerm("doctors");
+  const { clinicId, scope } = await requireScoped("doctors");
+  if (!(await Scope.ruleInScope(ruleId, clinicId, scope))) return { error: "القاعدة غير موجودة" };
   const result = await DoctorService.toggleRuleActive(ruleId, isActive);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -459,7 +518,8 @@ export async function toggleRuleActiveAction(ruleId: string, isActive: boolean, 
 }
 
 export async function generateSlotsAction(ruleId: string, doctorId: string) {
-  await requirePerm("doctors");
+  const { clinicId, scope } = await requireScoped("doctors");
+  if (!(await Scope.ruleInScope(ruleId, clinicId, scope))) return { error: "القاعدة غير موجودة" };
   const result = await DoctorService.generateSlotsForRule(ruleId, 30);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -469,16 +529,22 @@ export async function generateSlotsAction(ruleId: string, doctorId: string) {
 // Day index for the "available" tab — slot-based + queue days with cheap header
 // tallies. Per-day content is loaded lazily via the actions below.
 export async function getDoctorScheduleDaysAction(doctorId: string) {
-  await requirePerm("doctors");
-  return DoctorService.getDoctorScheduleDays(doctorId);
+  const { clinicId, scope } = await requireScoped("doctors");
+  if (!(await Scope.doctorInScope(doctorId, clinicId, scope))) return [];
+  return DoctorService.getDoctorScheduleDays(doctorId, 30, scope);
 }
 
 // Loads one slot-based day's slots (with booking + block state) on demand.
 export async function getDoctorDaySlotsAction(doctorId: string, date: string) {
-  await requirePerm("doctors");
+  const { clinicId, scope } = await requireScoped("doctors");
   const from = new Date(`${date}T00:00:00.000Z`);
   const to = new Date(`${date}T23:59:59.999Z`);
-  const slots = await DoctorService.listDoctorSlots(doctorId, { from, to });
+  const slots = await DoctorService.listDoctorSlots(doctorId, {
+    from,
+    to,
+    clinicId,
+    branchScope: scope,
+  });
   return slots.map((s) => ({
     id: s.id,
     startTime: s.startTime.toISOString(),
@@ -497,8 +563,8 @@ export async function getDoctorDaySlotsAction(doctorId: string, date: string) {
 
 // Returns the day queue for (doctor, date) scoped to the admin's clinic.
 export async function getDayQueueAction(doctorId: string, date: string) {
-  const clinicId = await requirePerm("appointments", "doctors");
-  const queue = await QueueService.getDayQueue(doctorId, new Date(date));
+  const { clinicId, scope } = await requireScoped("appointments", "doctors");
+  const queue = await QueueService.getDayQueue(doctorId, new Date(date), null, scope);
   if (!queue || queue.clinicId !== clinicId) return { queue: null };
   const sessionStart = queue.rule?.startTime ?? null;
   return {
@@ -536,8 +602,8 @@ export async function getDayQueueAction(doctorId: string, date: string) {
 // Arrival-priority: check a reserved patient in at the clinic, handing out their
 // arrival/serving order number. Scoped to the admin's clinic.
 export async function markArrivedAction(appointmentId: string) {
-  const clinicId = await requirePerm("appointments", "doctors");
-  if (!(await requireAppointmentInClinic(appointmentId, clinicId)))
+  const { clinicId, scope } = await requireScoped("appointments", "doctors");
+  if (!(await Scope.appointmentInScope(appointmentId, clinicId, scope)))
     return { error: "الحجز غير موجود" };
   const res = await QueueService.markArrived(appointmentId);
   if (!res.ok) return { error: res.error };
@@ -545,18 +611,9 @@ export async function markArrivedAction(appointmentId: string) {
   return { success: true, orderNumber: res.data.orderNumber };
 }
 
-async function requireQueueInClinic(queueId: string, clinicId: string) {
-  const { prisma } = await import("@/lib/prisma");
-  const q = await prisma.doctorDayQueue.findUnique({
-    where: { id: queueId },
-    select: { clinicId: true },
-  });
-  return !!q && q.clinicId === clinicId;
-}
-
 export async function advanceQueueAction(queueId: string, to: number | null) {
-  const clinicId = await requirePerm("appointments", "doctors");
-  if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
+  const { clinicId, scope } = await requireScoped("appointments", "doctors");
+  if (!(await Scope.queueInScope(queueId, clinicId, scope))) return { error: "الطابور غير موجود" };
   const res = await QueueService.setCurrentOrder(queueId, to);
   if (!res.ok) return { error: res.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -565,8 +622,8 @@ export async function advanceQueueAction(queueId: string, to: number | null) {
 
 // "Next patient": complete the current patient and advance the queue.
 export async function completeCurrentAndAdvanceAction(queueId: string) {
-  const clinicId = await requirePerm("appointments", "doctors");
-  if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
+  const { clinicId, scope } = await requireScoped("appointments", "doctors");
+  if (!(await Scope.queueInScope(queueId, clinicId, scope))) return { error: "الطابور غير موجود" };
   const res = await QueueService.completeCurrentAndAdvance(queueId);
   if (!res.ok) return { error: res.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -574,8 +631,8 @@ export async function completeCurrentAndAdvanceAction(queueId: string) {
 }
 
 export async function toggleQueueTrackingAction(queueId: string, track: boolean) {
-  const clinicId = await requirePerm("appointments", "doctors");
-  if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
+  const { clinicId, scope } = await requireScoped("appointments", "doctors");
+  if (!(await Scope.queueInScope(queueId, clinicId, scope))) return { error: "الطابور غير موجود" };
   const res = await QueueService.toggleQueueTracking(queueId, track);
   if (!res.ok) return { error: res.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -583,27 +640,18 @@ export async function toggleQueueTrackingAction(queueId: string, track: boolean)
 }
 
 export async function setQueueCapAction(queueId: string, cap: number | null) {
-  const clinicId = await requirePerm("appointments", "doctors");
-  if (!(await requireQueueInClinic(queueId, clinicId))) return { error: "الطابور غير موجود" };
+  const { clinicId, scope } = await requireScoped("appointments", "doctors");
+  if (!(await Scope.queueInScope(queueId, clinicId, scope))) return { error: "الطابور غير موجود" };
   const res = await QueueService.setQueueCap(queueId, cap);
   if (!res.ok) return { error: res.error };
   revalidatePath("/admin/doctors/[id]", "page");
   return { success: true };
 }
 
-async function requireAppointmentInClinic(appointmentId: string, clinicId: string) {
-  const { prisma } = await import("@/lib/prisma");
-  const a = await prisma.appointment.findUnique({
-    where: { id: appointmentId },
-    select: { clinicId: true },
-  });
-  return !!a && a.clinicId === clinicId;
-}
-
 // Temporarily skip an order (patient not present); keeps it PENDING.
 export async function skipOrderAction(appointmentId: string) {
-  const clinicId = await requirePerm("appointments", "doctors");
-  if (!(await requireAppointmentInClinic(appointmentId, clinicId)))
+  const { clinicId, scope } = await requireScoped("appointments", "doctors");
+  if (!(await Scope.appointmentInScope(appointmentId, clinicId, scope)))
     return { error: "الحجز غير موجود" };
   const res = await QueueService.skipOrder(appointmentId);
   if (!res.ok) return { error: res.error };
@@ -613,8 +661,8 @@ export async function skipOrderAction(appointmentId: string) {
 
 // Recall a skipped patient who arrived — serve them next.
 export async function recallOrderAction(appointmentId: string) {
-  const clinicId = await requirePerm("appointments", "doctors");
-  if (!(await requireAppointmentInClinic(appointmentId, clinicId)))
+  const { clinicId, scope } = await requireScoped("appointments", "doctors");
+  if (!(await Scope.appointmentInScope(appointmentId, clinicId, scope)))
     return { error: "الحجز غير موجود" };
   const res = await QueueService.recallOrder(appointmentId);
   if (!res.ok) return { error: res.error };
@@ -625,7 +673,8 @@ export async function recallOrderAction(appointmentId: string) {
 // ─── Slot actions ─────────────────────────────────────────────────────────────
 
 export async function toggleSlotBlockedAction(slotId: string, doctorId: string) {
-  await requirePerm("doctors");
+  const { clinicId, scope } = await requireScoped("doctors");
+  if (!(await Scope.slotInScope(slotId, clinicId, scope))) return { error: "الموعد غير موجود" };
   const result = await DoctorService.toggleSlotBlocked(slotId);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/doctors/[id]", "page");
@@ -642,11 +691,20 @@ export async function createBranchAction(input: Omit<BranchService.CreateBranchI
   return { success: true, branchId: result.data.id };
 }
 
+// Editing a branch's own details: "clinic" (any branch) or "branches" (only the
+// member's own). Creating, deleting, activating and choosing the main branch
+// change the clinic's structure and stay under "clinic".
 export async function updateBranchAction(input: BranchService.UpdateBranchInput) {
-  const clinicId = await requirePerm("clinic");
-  // Ownership check: the branch must belong to the admin's clinic.
-  const branch = await BranchService.getBranch(input.branchId, clinicId);
-  if (!branch) return { error: "الفرع غير موجود" };
+  const ctx = await getPermittedContext(["clinic", "branches"]);
+  if (!ctx) throw new Error("غير مصرح");
+  const clinicId = ctx.clinic.id;
+  // "clinic" covers every branch; "branches" alone is held to the member's scope.
+  const scope = can(ctx, "clinic") ? null : ctx.branchIds;
+  if (!(await Scope.branchInScope(input.branchId, clinicId, scope)))
+    return { error: "الفرع غير موجود" };
+  // The clinic id never comes from the client, and which branch is the main
+  // one is structural — not something "branches" alone may change.
+  input = { ...input, clinicId, ...(can(ctx, "clinic") ? {} : { isMain: undefined }) };
   const result = await BranchService.updateBranch(input);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/branches", "page");
@@ -698,7 +756,7 @@ export async function updateClinicInfoAction(
 // ─── Specialty actions ────────────────────────────────────────────────────────
 
 export async function createSpecialtyAction(name: string) {
-  const clinicId = await requirePerm("doctors");
+  const clinicId = await requirePerm("clinic");
   const result = await SpecialtyService.createSpecialty(clinicId, name);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/specialties", "page");
@@ -707,7 +765,7 @@ export async function createSpecialtyAction(name: string) {
 }
 
 export async function renameSpecialtyAction(specialtyId: string, name: string) {
-  const clinicId = await requirePerm("doctors");
+  const clinicId = await requirePerm("clinic");
   const result = await SpecialtyService.renameSpecialty(clinicId, specialtyId, name);
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/specialties", "page");
@@ -716,7 +774,7 @@ export async function renameSpecialtyAction(specialtyId: string, name: string) {
 }
 
 export async function deleteSpecialtyAction(specialtyId: string) {
-  const clinicId = await requirePerm("doctors");
+  const clinicId = await requirePerm("clinic");
   // Ownership check.
   const specialties = await SpecialtyService.listSpecialties(clinicId);
   if (!specialties.some((s) => s.id === specialtyId)) {

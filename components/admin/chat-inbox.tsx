@@ -69,6 +69,9 @@ interface ChatInboxProps {
   currentUserName: string;
   /** Team member id → name, to label a colleague's reply arriving over realtime. */
   staffNames: Record<string, string>;
+  /** Holds "patients": show the link to the contact's patient profile. Without
+   *  it the inbox still shows the contact's name and phone, just not the link. */
+  canOpenPatientProfile: boolean;
 }
 
 /**
@@ -169,6 +172,7 @@ export default function ChatInbox({
   clinicId,
   currentUserName,
   staffNames,
+  canOpenPatientProfile,
 }: ChatInboxProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -874,7 +878,7 @@ export default function ChatInbox({
                 )}
               </div>
               <div className="ms-auto flex items-center gap-2">
-                {selectedConversation.userId ? (
+                {!canOpenPatientProfile ? null : selectedConversation.userId ? (
                   <a
                     href={`/admin/patients/${selectedConversation.userId}`}
                     target="_blank"

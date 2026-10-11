@@ -1,4 +1,5 @@
 import "server-only";
+import { branchIdFilter, type BranchScope } from "@/lib/branch-scope";
 import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
 import { AppointmentStatus, AvailabilityMode, DayOfWeek, type Prisma } from "@prisma/client";
@@ -28,7 +29,12 @@ export function toDateOnly(date: Date): Date {
  * match; otherwise the first queue rule for that weekday is used. The returned
  * rule carries its `mode`, which callers branch on (arrival vs order booking).
  */
-export async function getOrderRuleForDate(doctorId: string, date: Date, branchId?: string | null) {
+export async function getOrderRuleForDate(
+  doctorId: string,
+  date: Date,
+  branchId?: string | null,
+  branchScope?: BranchScope
+) {
   const dayOfWeek = DAY_BY_INDEX[toDateOnly(date).getUTCDay()];
   return prisma.availabilityRule.findFirst({
     where: {
@@ -36,7 +42,7 @@ export async function getOrderRuleForDate(doctorId: string, date: Date, branchId
       dayOfWeek,
       isActive: true,
       mode: { in: QUEUE_MODES },
-      ...(branchId ? { branchId } : {}),
+      AND: [branchId ? { branchId } : {}, branchIdFilter(branchScope)],
     },
     orderBy: { startTime: "asc" },
   });
@@ -110,7 +116,13 @@ export async function bookOrderAppointment(
   patientId: string,
   doctorId: string,
   date: Date,
-  opts?: { branchId?: string | null; notes?: string; clinicId?: string }
+  opts?: {
+    branchId?: string | null;
+    notes?: string;
+    clinicId?: string;
+    /** Staff booking on a patient's behalf: only a queue in their branches. */
+    branchScope?: BranchScope;
+  }
 ): Promise<Result<OrderBookingResult>> {
   try {
     const day = toDateOnly(date);
@@ -142,7 +154,7 @@ export async function bookOrderAppointment(
         "لديك حجز قائم مع هذا الطبيب لم يكتمل بعد. يرجى إتمامه أو إلغاؤه قبل حجز موعد جديد."
       );
 
-    const rule = await getOrderRuleForDate(doctorId, day, opts?.branchId);
+    const rule = await getOrderRuleForDate(doctorId, day, opts?.branchId, opts?.branchScope);
     if (!rule) return err("هذا الطبيب لا يعمل بنظام الدور أو أسبقية الحضور في هذا اليوم");
     if (!rule.branchId) return err("قاعدة الدور بدون فرع محدد");
     const orderRule = { ...rule, branchId: rule.branchId };
@@ -245,10 +257,11 @@ export interface OrderBookingInfo {
 export async function getOrderBookingInfo(
   doctorId: string,
   date: Date,
-  branchId?: string | null
+  branchId?: string | null,
+  branchScope?: BranchScope
 ): Promise<OrderBookingInfo | null> {
   const day = toDateOnly(date);
-  const rule = await getOrderRuleForDate(doctorId, day, branchId);
+  const rule = await getOrderRuleForDate(doctorId, day, branchId, branchScope);
   if (!rule || !rule.branchId) return null;
 
   const queue = await prisma.doctorDayQueue.findUnique({
@@ -275,10 +288,19 @@ export async function getOrderBookingInfo(
 
 // ─── Queue management (clinic/doctor controls) ────────────────────────────────
 
-export async function getDayQueue(doctorId: string, date: Date, branchId?: string | null) {
+export async function getDayQueue(
+  doctorId: string,
+  date: Date,
+  branchId?: string | null,
+  branchScope?: BranchScope
+) {
   const day = toDateOnly(date);
   const queue = await prisma.doctorDayQueue.findFirst({
-    where: { doctorId, date: day, ...(branchId ? { branchId } : {}) },
+    where: {
+      doctorId,
+      date: day,
+      AND: [branchId ? { branchId } : {}, branchIdFilter(branchScope)],
+    },
     include: {
       branch: { select: { id: true, name: true } },
       rule: { select: { startTime: true, mode: true } }, // session start + mode (arrival vs order)
