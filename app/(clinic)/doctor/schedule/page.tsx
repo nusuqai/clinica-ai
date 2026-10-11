@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import LinkTabs from "@/components/general/link-tabs";
 import { Activity, CalendarClock } from "lucide-react";
@@ -6,6 +7,7 @@ import { listDoctorRules, listDoctorSlots, getDoctorByProfileId } from "@/server
 import { listBranches } from "@/server/services/branches";
 import DoctorRulesTab, { type DoctorBranchOption } from "./_components/doctor-rules-tab";
 import DoctorSlotsTab from "./_components/doctor-slots-tab";
+import { CardGridSkeleton } from "@/components/ui/skeleton";
 
 const TABS = [
   { key: "rules", label: "قواعد التوفر", icon: Activity },
@@ -46,15 +48,23 @@ export default async function DoctorSchedulePage({ searchParams }: PageProps) {
           href: `/doctor/schedule?tab=${key}`,
           icon: <Icon />,
         }))}
+        skeletons={{ rules: <CardGridSkeleton count={6} />, slots: <CardGridSkeleton count={6} /> }}
       >
+        {/* Each panel behind its own Suspense: the header and tabs stay put. */}
         {activeTab === "rules" && (
-          <RulesContent
-            doctorId={doctor.id}
-            clinicId={ctx.clinic.id}
-            branchIds={doctor.branchIds}
-          />
+          <Suspense key="rules" fallback={<CardGridSkeleton count={6} />}>
+            <RulesContent
+              doctorId={doctor.id}
+              clinicId={ctx.clinic.id}
+              branchIds={doctor.branchIds}
+            />
+          </Suspense>
         )}
-        {activeTab === "slots" && <SlotsContent doctorId={doctor.id} />}
+        {activeTab === "slots" && (
+          <Suspense key="slots" fallback={<CardGridSkeleton count={6} />}>
+            <SlotsContent doctorId={doctor.id} />
+          </Suspense>
+        )}
       </LinkTabs>
     </div>
   );

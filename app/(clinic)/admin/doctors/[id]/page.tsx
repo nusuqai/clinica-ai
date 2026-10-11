@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import LinkTabs from "@/components/general/link-tabs";
@@ -28,6 +29,8 @@ import EditDoctorModal from "../_components/edit-doctor-modal";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ListCardSkeleton, TableSkeleton } from "@/components/ui/skeleton";
+import { PendingNavigationProvider, PendingSwap } from "@/components/general/pending-navigation";
 
 const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
@@ -197,23 +200,61 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
           href: `/admin/doctors/${id}?tab=${key}`,
           icon: <Icon />,
         }))}
+        skeletons={{
+          appointments: <TableSkeleton columns={5} rows={6} />,
+          rules: <ListCardSkeleton rows={4} />,
+          slots: <ListCardSkeleton rows={5} />,
+          queue: <ListCardSkeleton rows={4} />,
+        }}
       >
-        {/* Tab content — each fetches only what it needs */}
+        {/* Tab content — each fetches only what it needs, behind its own
+            Suspense boundary: the header and tabs stay put and only the panel
+            falls back to a skeleton. Keys include the filters so a filter change
+            (same route, new search params) shows the fallback too. */}
         {activeTab === "appointments" && (
-          <AppointmentsContent
-            doctorId={id}
-            filters={{ status: status as AppointmentStatus | undefined, date }}
-          />
+          <PendingNavigationProvider>
+            <FilterBar
+              fields={[
+                {
+                  type: "select",
+                  param: "status",
+                  allLabel: "كل الحالات",
+                  options: Object.values(AppointmentStatus).map((s) => ({
+                    value: s,
+                    label: APPOINTMENT_STATUS_LABELS[s],
+                  })),
+                },
+                { type: "date", param: "date" },
+              ]}
+            />
+            <PendingSwap fallback={<TableSkeleton columns={5} rows={6} />}>
+              <Suspense
+                key={`appointments:${status ?? ""}:${date ?? ""}`}
+                fallback={<TableSkeleton columns={5} rows={6} />}
+              >
+                <AppointmentsContent
+                  doctorId={id}
+                  filters={{ status: status as AppointmentStatus | undefined, date }}
+                />
+              </Suspense>
+            </PendingSwap>
+          </PendingNavigationProvider>
         )}
         {activeTab === "rules" && (
-          <RulesContent
-            doctorId={id}
-            branches={doctorBranches}
-            clinicId={clinic.id}
-            scope={scope}
-          />
+          <Suspense key="rules" fallback={<ListCardSkeleton rows={4} />}>
+            <RulesContent
+              doctorId={id}
+              branches={doctorBranches}
+              clinicId={clinic.id}
+              scope={scope}
+            />
+          </Suspense>
         )}
-        {activeTab === "slots" && <SlotsContent doctorId={id} scope={scope} />}
+        {activeTab === "slots" && (
+          <Suspense key="slots" fallback={<ListCardSkeleton rows={5} />}>
+            <SlotsContent doctorId={id} scope={scope} />
+          </Suspense>
+        )}
         {activeTab === "queue" && <QueuePanel doctorId={id} />}
       </LinkTabs>
     </div>
@@ -230,25 +271,7 @@ async function AppointmentsContent({
   filters: { status?: AppointmentStatus; date?: string };
 }) {
   const initial = await appointmentsPageAction({ ...filters, doctorId }, 1);
-  return (
-    <>
-      <FilterBar
-        fields={[
-          {
-            type: "select",
-            param: "status",
-            allLabel: "كل الحالات",
-            options: Object.values(AppointmentStatus).map((s) => ({
-              value: s,
-              label: APPOINTMENT_STATUS_LABELS[s],
-            })),
-          },
-          { type: "date", param: "date" },
-        ]}
-      />
-      <DoctorAppointmentsTab doctorId={doctorId} filters={filters} initial={initial} />
-    </>
-  );
+  return <DoctorAppointmentsTab doctorId={doctorId} filters={filters} initial={initial} />;
 }
 
 async function RulesContent({

@@ -2,14 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePendingNavigation } from "@/components/general/pending-navigation";
 
 /**
  * A filter value kept in the URL (`?key=value`), so the server renders the
  * matching first page of a paginated list. The input updates immediately; the
  * URL follows after `debounceMs` (for typing). Empty clears the param.
+ *
+ * Inside a <PendingNavigationProvider> the URL update runs as a tracked
+ * transition, so the page's <PendingSwap> skeletons show while it loads.
  */
 export function useQueryParam(key: string, debounceMs = 0): [string, (value: string) => void] {
   const router = useRouter();
+  const nav = usePendingNavigation();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const urlValue = searchParams.get(key) ?? "";
@@ -28,7 +33,9 @@ export function useQueryParam(key: string, debounceMs = 0): [string, (value: str
       if (next.trim()) params.set(key, next.trim());
       else params.delete(key);
       const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      const href = qs ? `${pathname}?${qs}` : pathname;
+      if (nav) nav.navigate(href, { replace: true });
+      else router.replace(href, { scroll: false });
     };
     if (debounceMs > 0) timer.current = setTimeout(push, debounceMs);
     else push();

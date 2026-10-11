@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { useQueryParam } from "@/hooks/use-query-param";
+import { usePendingNavigation } from "@/components/general/pending-navigation";
 
 // The filter controls above a paginated list. Every field lives in the URL, so
 // the server renders the matching first page and infinite scroll continues
@@ -33,6 +34,7 @@ export function FilterBar({
   stacked?: boolean;
 }) {
   const router = useRouter();
+  const nav = usePendingNavigation();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const active = fields.some((f) => searchParams.get(f.param));
@@ -41,7 +43,9 @@ export function FilterBar({
     const params = new URLSearchParams(searchParams.toString());
     for (const f of fields) params.delete(f.param);
     const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    const href = qs ? `${pathname}?${qs}` : pathname;
+    if (nav) nav.navigate(href, { replace: true });
+    else router.replace(href, { scroll: false });
   }
 
   return (

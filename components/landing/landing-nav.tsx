@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Menu, UserRound } from "lucide-react";
+import { LogOut, Menu, UserRound } from "lucide-react";
+import { signOut } from "@/server/actions/auth";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -118,8 +119,27 @@ export function LandingNav({
         <div className="hidden items-center gap-3 md:flex">
           {isAuthenticated && isPatient ? (
             // A patient's home is this landing page, so there's no separate
-            // dashboard to link to — just their profile.
-            <ProfileAvatar name={userName} />
+            // dashboard to link to — just their profile, and signing out.
+            <>
+              <ProfileAvatar name={userName} />
+              <form action={signOut}>
+                <Hint
+                  label="تسجيل الخروج"
+                  side="bottom"
+                  className="bg-white text-primary shadow-md"
+                >
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="تسجيل الخروج"
+                    className="rounded-full text-white/80 hover:bg-white/10 hover:text-accent"
+                  >
+                    <LogOut />
+                  </Button>
+                </Hint>
+              </form>
+            </>
           ) : isAuthenticated ? (
             <Button
               asChild
@@ -190,6 +210,17 @@ export function LandingNav({
                     الملف الشخصي
                   </Link>
                 </SheetClose>
+              ) : null}
+              {isAuthenticated && isPatient ? (
+                <form action={signOut} className="mt-4 border-t border-white/10 pt-4">
+                  <button
+                    type="submit"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 font-sans text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-accent"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    تسجيل الخروج
+                  </button>
+                </form>
               ) : !isAuthenticated ? (
                 <div className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-4">
                   <Button
