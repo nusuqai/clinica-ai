@@ -1,42 +1,29 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
-  Search,
-  X,
-  Calendar,
-  Clock,
-  Stethoscope,
-  MapPin,
-  Phone,
-  User,
-  StickyNote,
-} from "lucide-react";
+  DndContext,
+  DragOverlay,
+  type DragEndEvent,
+  type DragStartEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { Calendar, Clock, Stethoscope, MapPin, Phone, User, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { AppointmentStatus } from "@prisma/client";
-import { updateAppointmentStatusAction } from "@/server/actions/admin";
+import { appointmentsAfterAction, updateAppointmentStatusAction } from "@/server/actions/admin";
 import type { AdminAppointment } from "@/server/services/appointments";
+import { upsertById, type Paginated } from "@/lib/pagination";
 import { canTransition } from "@/lib/appointment-transitions";
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import Modal from "@/components/admin/modal";
 import BoardColumn from "./board-column";
-
-interface DoctorOption {
-  id: string;
-  fullName: string;
-  specialty: string;
-}
-
-function toDateInputValue(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
+import { AppointmentCardOverlay } from "./appointment-card";
 
 const STATUS_ORDER: AppointmentStatus[] = [
   AppointmentStatus.PENDING,
@@ -46,60 +33,85 @@ const STATUS_ORDER: AppointmentStatus[] = [
   AppointmentStatus.NO_SHOW,
 ];
 
+type ByStatus<T> = Record<AppointmentStatus, T>;
+
+function byStatus<T>(fn: (status: AppointmentStatus) => T): ByStatus<T> {
+  return Object.fromEntries(STATUS_ORDER.map((s) => [s, fn(s)])) as ByStatus<T>;
+}
+
+export interface BoardFilters {
+  doctorId?: string;
+  branchId?: string;
+  patientQuery?: string;
+  date?: string;
+}
+
 interface AppointmentBoardProps {
-  appointments: AdminAppointment[];
-  doctors: DoctorOption[];
+  /** First page of each column, already filtered on the server. */
+  columns: ByStatus<Paginated<AdminAppointment>>;
+  /** The filters those pages were rendered with (they live in the URL). */
+  filters: BoardFilters;
 }
 
 export default function AppointmentBoard({
-  appointments: initial,
-  doctors,
+  columns: initialColumns,
+  filters,
 }: AppointmentBoardProps) {
-  const [appointments, setAppointments] = useState(initial);
+  // Every loaded card, across columns; a card's column is its status.
+  const [appointments, setAppointments] = useState(() =>
+    STATUS_ORDER.flatMap((s) => initialColumns[s].items)
+  );
+  const [totals, setTotals] = useState(() => byStatus((s) => initialColumns[s].total));
+  const [hasMore, setHasMore] = useState(() => byStatus((s) => initialColumns[s].hasMore));
+  const [loading, setLoading] = useState(() => byStatus(() => false));
+  const [loadError, setLoadError] = useState(() => byStatus(() => false));
+  // Adopt fresh server data (new filters, or a booking made from the header).
+  useEffect(() => {
+    setAppointments(STATUS_ORDER.flatMap((s) => initialColumns[s].items));
+    setTotals(byStatus((s) => initialColumns[s].total));
+    setHasMore(byStatus((s) => initialColumns[s].hasMore));
+    setLoadError(byStatus(() => false));
+  }, [initialColumns]);
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [detailsAppt, setDetailsAppt] = useState<AdminAppointment | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
-
-  const [doctorFilter, setDoctorFilter] = useState("");
-  const [patientQuery, setPatientQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("");
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
-  const hasActiveFilters = doctorFilter !== "" || patientQuery.trim() !== "" || dateFilter !== "";
+  const columns = useMemo(() => {
+    const grouped = byStatus<AdminAppointment[]>(() => []);
+    for (const appt of appointments) grouped[appt.status].push(appt);
+    return grouped;
+  }, [appointments]);
 
-  function clearFilters() {
-    setDoctorFilter("");
-    setPatientQuery("");
-    setDateFilter("");
+  // Next cards of one column: the rows after the ones it shows now. An offset
+  // (not a page number) stays right while cards are dragged in and out.
+  async function loadMore(status: AppointmentStatus) {
+    if (loading[status] || !hasMore[status]) return;
+    setLoading((m) => ({ ...m, [status]: true }));
+    setLoadError((m) => ({ ...m, [status]: false }));
+    try {
+      const next = await appointmentsAfterAction({ ...filters, status }, columns[status].length);
+      setAppointments((prev) => upsertById(prev, next.items));
+      setTotals((m) => ({ ...m, [status]: next.total }));
+      setHasMore((m) => ({ ...m, [status]: next.hasMore }));
+    } catch {
+      setLoadError((m) => ({ ...m, [status]: true }));
+    } finally {
+      setLoading((m) => ({ ...m, [status]: false }));
+    }
   }
 
-  const filteredAppointments = useMemo(() => {
-    const query = patientQuery.trim().toLowerCase();
-    return appointments.filter((appt) => {
-      if (doctorFilter && appt.doctorId !== doctorFilter) return false;
-      if (query && !appt.patient.fullName.toLowerCase().includes(query)) return false;
-      const apptDate = appt.slot?.date ?? appt.bookingDate;
-      if (dateFilter && (!apptDate || toDateInputValue(new Date(apptDate)) !== dateFilter))
-        return false;
-      return true;
-    });
-  }, [appointments, doctorFilter, patientQuery, dateFilter]);
-
-  const columns = useMemo(() => {
-    const grouped: Record<AppointmentStatus, AdminAppointment[]> = {
-      [AppointmentStatus.PENDING]: [],
-      [AppointmentStatus.CONFIRMED]: [],
-      [AppointmentStatus.COMPLETED]: [],
-      [AppointmentStatus.CANCELLED]: [],
-      [AppointmentStatus.NO_SHOW]: [],
-    };
-    for (const appt of filteredAppointments) grouped[appt.status].push(appt);
-    return grouped;
-  }, [filteredAppointments]);
-
-  function applyStatus(id: string, status: AppointmentStatus, cancellationReason?: string) {
+  function applyStatus(
+    id: string,
+    from: AppointmentStatus,
+    status: AppointmentStatus,
+    cancellationReason?: string
+  ) {
+    // Column counts are server totals; keep them in step with the move.
+    setTotals((m) => ({ ...m, [from]: m[from] - 1, [status]: m[status] + 1 }));
     setAppointments((prev) =>
       prev.map((a) =>
         a.id === id
@@ -126,13 +138,18 @@ export default function AppointmentBoard({
       const res = await updateAppointmentStatusAction(id, status, reason);
       if (res?.error) {
         // Revert the optimistic move and surface the validation error.
-        applyStatus(id, previousStatus);
+        applyStatus(id, status, previousStatus);
         toast.error(res.error);
       }
     });
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    setDraggingId(String(event.active.id));
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setDraggingId(null);
     const { active, over } = event;
     if (!over) return;
 
@@ -155,7 +172,7 @@ export default function AppointmentBoard({
     }
 
     const previousStatus = appointment.status;
-    applyStatus(appointment.id, newStatus);
+    applyStatus(appointment.id, previousStatus, newStatus);
     commitStatus(appointment.id, previousStatus, newStatus);
   }
 
@@ -165,59 +182,22 @@ export default function AppointmentBoard({
     if (!appointment) return;
 
     const previousStatus = appointment.status;
-    applyStatus(appointment.id, AppointmentStatus.CANCELLED, cancelReason.trim());
+    applyStatus(appointment.id, previousStatus, AppointmentStatus.CANCELLED, cancelReason.trim());
     commitStatus(appointment.id, previousStatus, AppointmentStatus.CANCELLED, cancelReason.trim());
     setPendingCancelId(null);
     setCancelReason("");
   }
 
+  const draggingCard = draggingId ? appointments.find((a) => a.id === draggingId) : null;
+
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={patientQuery}
-            onChange={(e) => setPatientQuery(e.target.value)}
-            placeholder="بحث باسم المريض..."
-            className="w-56 rounded-xl border border-border bg-background py-2 pl-3 pr-9 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
-
-        <select
-          value={doctorFilter}
-          onChange={(e) => setDoctorFilter(e.target.value)}
-          className="rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-        >
-          <option value="">كل الأطباء</option>
-          {doctors.map((doc) => (
-            <option key={doc.id} value={doc.id}>
-              {doc.fullName} · {doc.specialty}
-            </option>
-          ))}
-        </select>
-
-        <input
-          type="date"
-          value={dateFilter}
-          onChange={(e) => setDateFilter(e.target.value)}
-          className="rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="inline-flex items-center gap-1 px-3 py-2 font-sans text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-            مسح الفلاتر
-          </button>
-        )}
-      </div>
-
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setDraggingId(null)}
+      >
         <div className="flex gap-4 overflow-x-auto pb-4">
           {STATUS_ORDER.map((status) => (
             <BoardColumn
@@ -225,10 +205,18 @@ export default function AppointmentBoard({
               status={status}
               label={APPOINTMENT_STATUS_LABELS[status]}
               appointments={columns[status]}
+              total={totals[status]}
+              hasMore={hasMore[status]}
+              loading={loading[status]}
+              error={loadError[status]}
+              onLoadMore={() => loadMore(status)}
               onOpenDetails={setDetailsAppt}
             />
           ))}
         </div>
+        <DragOverlay>
+          {draggingCard && <AppointmentCardOverlay appointment={draggingCard} />}
+        </DragOverlay>
       </DndContext>
 
       <Modal

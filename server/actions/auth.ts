@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getHostClinic, redirectToUserClinic, roleHome } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { findAuthUserIdByEmail } from "@/lib/supabase/auth-users";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/secret-box";
 import { sendPasswordReset, sendClinicSignupOtp } from "@/lib/email/send-auth-email";
 import { otpCooldownRemaining, recordOtpSent } from "@/server/services/otpThrottle";
@@ -67,12 +68,13 @@ async function clearSignupPassword(): Promise<void> {
   }
 }
 
-// Find an existing auth user by email (case-insensitive). Supabase has no
-// direct getUserByEmail on this client version, so we scan — fine at our scale.
+// Find an existing auth user by email (case-insensitive): an indexed lookup on
+// auth.users for the id, then the full user (confirmation state, metadata).
 async function findAuthUserByEmail(email: string) {
-  const admin = createAdminClient();
-  const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  return data?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase()) ?? null;
+  const id = await findAuthUserIdByEmail(email);
+  if (!id) return null;
+  const { data } = await createAdminClient().auth.admin.getUserById(id);
+  return data?.user ?? null;
 }
 
 // ─── Shared auth ──────────────────────────────────────────────────────────────

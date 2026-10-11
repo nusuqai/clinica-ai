@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import { AppointmentStatus, Role } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getClinicContext } from "@/lib/auth";
+import { getClinicContext, getHostClinic } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
+import * as TreatmentService from "@/server/services/treatments";
+import { pageRequest, mapPage } from "@/lib/pagination";
 
 // ─── Profile mutations ────────────────────────────────────────────────────────
 
@@ -79,7 +81,84 @@ export async function cancelAppointmentAction(
   return { ok: true };
 }
 
+// ─── My history (infinite scroll on the clinic home page) ────────────────────
+
+async function requirePatient() {
+  const ctx = await getClinicContext();
+  if (!ctx || ctx.role !== Role.PATIENT) throw new Error("غير مصرح");
+  return { patientId: ctx.user.id, clinicId: ctx.clinic.id };
+}
+
+/** Shared by both history panels: by doctor and visit day. */
+export interface HistoryFilters {
+  doctorId?: string;
+  /** "YYYY-MM-DD": only visits on that day. */
+  date?: string;
+}
+
+/** A page of my completed visits here (filtered in the DB), flagged if a record exists. */
+export async function myPastVisitsPageAction(filters: HistoryFilters, page: number) {
+  const { patientId, clinicId } = await requirePatient();
+  const result = await AppointmentService.getPatientAppointmentsPage(
+    patientId,
+    clinicId,
+    AppointmentStatus.COMPLETED,
+    { doctorId: filters.doctorId, date: filters.date },
+    pageRequest(page, 10)
+  );
+  const records = await TreatmentService.mapRecordsByAppointment(
+    result.items.map((a) => a.id),
+    clinicId
+  );
+  return mapPage(result, (a) => ({ ...a, hasRecord: records.has(a.id) }));
+}
+
+/** A page of my treatment record here (filtered in the DB), newest visit first. */
+export async function myRecordsPageAction(
+  filters: HistoryFilters & { query?: string },
+  page: number
+) {
+  const { patientId, clinicId } = await requirePatient();
+  return TreatmentService.listPatientRecordsPage(
+    { clinicId, patientId },
+    { query: filters.query, doctorId: filters.doctorId, date: filters.date },
+    pageRequest(page, 10)
+  );
+}
+
+/** Doctors I've seen here — the options of the history panels' doctor filter. */
+export async function myHistoryDoctorsAction() {
+  const { patientId, clinicId } = await requirePatient();
+  return DoctorService.listPatientHistoryDoctors(clinicId, patientId);
+}
+
 // ─── Public queries (no auth required) ───────────────────────────────────────
+
+/**
+ * A page of this clinic's active doctors for the landing page, filtered in the
+ * database by name and/or specialty. Scoped to the host's clinic, never to an
+ * id from the client.
+ */
+export async function publicDoctorsPageAction(
+  filters: { query?: string; specialtyId?: string },
+  page: number
+) {
+  const clinic = await getHostClinic();
+  if (!clinic) throw new Error("العيادة غير موجودة");
+  const result = await DoctorService.listDoctorsPage(
+    clinic.id,
+    { query: filters.query, specialtyId: filters.specialtyId, status: "active" },
+    pageRequest(page, 12)
+  );
+  // Only what the public cards show.
+  return mapPage(result, (d) => ({
+    id: d.id,
+    specialty: d.specialty,
+    consultationFee: d.consultationFee,
+    profile: { fullName: d.profile.fullName, phone: d.profile.phone },
+    _count: { appointments: d._count.appointments },
+  }));
+}
 
 export async function getAvailableDaysAction(
   doctorId: string

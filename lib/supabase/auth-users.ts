@@ -22,6 +22,20 @@ export async function findAuthUserIdByEmail(email: string): Promise<string | nul
 }
 
 /**
+ * Login emails for a set of user ids, as an id → email map. One query on
+ * `auth.users` instead of paging the admin API (which silently capped at 1000).
+ */
+export async function authEmailsByIds(ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await prisma.$queryRaw<{ id: string; email: string | null }[]>`
+    SELECT id::text AS id, email
+    FROM auth.users
+    WHERE id = ANY(${ids}::uuid[])
+  `;
+  return new Map(rows.map((r) => [r.id, r.email ?? ""]));
+}
+
+/**
  * Email addresses of every platform admin. Identity lives in `auth.users` while
  * the `isPlatformAdmin` flag lives on `public.profiles`, so this joins the two
  * in one query rather than paging the admin API.

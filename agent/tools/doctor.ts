@@ -10,7 +10,18 @@ import * as QueueService from "@/server/services/queue";
 import { listDoctorBranchIds } from "@/server/services/branches";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import type { AgentContext } from "@/agent/types";
-import { jsonTool, dateStr, timeStr } from "./shared";
+import { pageRequest } from "@/lib/pagination";
+import {
+  jsonTool,
+  dateStr,
+  timeStr,
+  LIST_HINT,
+  pageField,
+  pageInfo,
+  showAllField,
+  shouldAskForFilter,
+  askForFilter,
+} from "./shared";
 
 async function assertOwnedAppointment(doctorId: string, appointmentId: string) {
   const appt = await prisma.appointment.findUnique({
@@ -80,15 +91,52 @@ export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredT
     jsonTool(
       {
         name: "list_my_appointments",
-        description: "اعرض مواعيد الطبيب الحالي (القادمة أو كلها).",
-        schema: z.object({ upcoming: z.boolean().nullable() }),
+        description: `اعرض مواعيد الطبيب الحالي (٣٠ في الصفحة؛ القادمة الأقرب أولاً، والباقي الأحدث أولاً). صفِّ بالقادمة فقط (upcoming) و/أو الحالة و/أو اليوم (YYYY-MM-DD) و/أو اسم المريض أو هاتفه (patientQuery) — يمكن الجمع بينها. ${LIST_HINT}`,
+        schema: z.object({
+          upcoming: z.boolean().nullable(),
+          status: z.nativeEnum(AppointmentStatus).nullable(),
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD")
+            .nullable(),
+          patientQuery: z.string().nullable().describe("اسم المريض أو رقم هاتفه (اختياري)"),
+          showAll: showAllField,
+          page: pageField,
+        }),
       },
-      async ({ upcoming }) => {
-        const appts = await AppointmentService.getDoctorAppointments(doctorId, {
-          upcoming: upcoming ?? false,
-        });
+      async (input) => {
+        const { upcoming, status, date, patientQuery, page } = input;
+        const fetchPage = (
+          f: AppointmentService.AppointmentFilters,
+          size: number,
+        ) => AppointmentService.getDoctorAppointmentsPage(doctorId, f, pageRequest(page ?? 1, size));
+        const appts = await fetchPage(
+          {
+            upcoming: upcoming ?? false,
+            status: status ?? undefined,
+            date: date ?? undefined,
+            patientQuery: patientQuery ?? undefined,
+          },
+          30,
+        );
+        const filtered = !!(upcoming || status || date || patientQuery?.trim());
+        if (shouldAskForFilter(filtered, input, appts.total)) {
+          const today = dateStr(new Date());
+          // Size-1 pages: only their totals are read.
+          const [todays, next, pending] = await Promise.all([
+            fetchPage({ date: today }, 1),
+            fetchPage({ upcoming: true }, 1),
+            fetchPage({ status: AppointmentStatus.PENDING }, 1),
+          ]);
+          return askForFilter(appts.total, "أي مواعيد تريد أن تراها؟ أو اذكر اسم مريض أو يوماً معيّناً.", [
+            { label: "مواعيد اليوم", args: { date: today }, count: todays.total },
+            { label: "القادمة", args: { upcoming: true }, count: next.total },
+            { label: "بانتظار التأكيد", args: { status: AppointmentStatus.PENDING }, count: pending.total },
+          ]);
+        }
         return {
-          appointments: appts.map((a) => ({
+          ...pageInfo(appts),
+          appointments: appts.items.map((a) => ({
             id: a.id,
             status: a.status,
             patientName: a.patient.fullName,
@@ -129,13 +177,28 @@ export async function doctorTools(ctx: AgentContext): Promise<DynamicStructuredT
     jsonTool(
       {
         name: "list_my_patients",
-        description: "اعرض قائمة مرضى الطبيب الحالي.",
-        schema: z.object({}),
+        description: `اعرض مرضى الطبيب الحالي (الأحدث زيارةً أولاً، ٣٠ في الصفحة). ابحث بالاسم أو الهاتف عبر query. ${LIST_HINT}`,
+        schema: z.object({
+          query: z.string().nullable().describe("بحث بالاسم أو رقم الهاتف (اختياري)"),
+          showAll: showAllField,
+          page: pageField,
+        }),
       },
-      async () => {
-        const patients = await DoctorService.getDoctorPatients(doctorId);
+      async (input) => {
+        const { query, page } = input;
+        const patients = await DoctorService.getDoctorPatients(
+          doctorId,
+          pageRequest(page ?? 1, 30),
+          query ?? undefined,
+        );
+        if (shouldAskForFilter(!!query?.trim(), input, patients.total)) {
+          return askForFilter(patients.total, "ما اسم المريض أو رقم هاتفه؟", [
+            { label: "آخر المرضى زيارةً", args: { showAll: true } },
+          ]);
+        }
         return {
-          patients: patients.map((p) => ({
+          ...pageInfo(patients),
+          patients: patients.items.map((p) => ({
             name: p.fullName,
             phone: p.phone,
             totalAppointments: p.totalAppointments,

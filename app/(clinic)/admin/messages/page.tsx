@@ -12,18 +12,18 @@ import {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface PageProps {
-  searchParams: Promise<{ id?: string }>;
+  searchParams: Promise<{ id?: string; q?: string; channel?: string; show?: string }>;
 }
 
 export default async function AdminMessagesPage({ searchParams }: PageProps) {
-  const { id: rawId } = await searchParams;
+  const { id: rawId, q, channel, show } = await searchParams;
   // The `id` query param is user-controlled (URL bar, bookmarks, stale
   // links) — never pass it to Prisma unvalidated.
   const id = rawId && UUID_RE.test(rawId) ? rawId : undefined;
 
   const { clinic } = await requireClinicMember(["ADMIN"]);
   const [conversations, selectedConversation, messages] = await Promise.all([
-    getConversations(clinic.id),
+    getConversations(clinic.id, { query: q, channel, show }),
     id ? getConversationDetail(id, clinic.id) : Promise.resolve(null),
     id ? getMessages(id) : Promise.resolve([]),
   ]);

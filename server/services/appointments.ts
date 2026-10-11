@@ -5,6 +5,9 @@ import { AppointmentStatus, AvailabilityMode } from "@prisma/client";
 import { advanceQueueOnComplete, estimateWaitMinutes } from "./queue";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import { isQueueMode } from "@/lib/availability/modes";
+import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
+import { personSearch } from "./_search";
+import type { Prisma } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -133,6 +136,50 @@ const reshapeDoctor = <
 // `clinicId` scopes a patient's appointments to one clinic. A Profile can be a
 // patient at several clinics, so every patient-facing page passes the host's
 // clinic — otherwise demo's dashboard would list another clinic's bookings too.
+// Patient-history ordering for a paged list: newest visit first, stable on ties.
+const pastOrder: Prisma.AppointmentOrderByWithRelationInput[] = [
+  { slot: { startTime: "desc" } },
+  { bookingDate: "desc" },
+  { createdAt: "desc" },
+  { id: "desc" },
+];
+// Upcoming lists read the other way: the soonest visit first.
+const upcomingOrder: Prisma.AppointmentOrderByWithRelationInput[] = [
+  { slot: { startTime: "asc" } },
+  { bookingDate: "asc" },
+  { createdAt: "asc" },
+  { id: "asc" },
+];
+
+/** One page of a patient's appointments in a clinic (any status when `status` is undefined). */
+export async function getPatientAppointmentsPage(
+  patientId: string,
+  clinicId: string,
+  status: AppointmentStatus | undefined,
+  filters: Pick<AppointmentFilters, "doctorId" | "date" | "upcoming">,
+  req: PageRequest
+): Promise<Paginated<PatientAppointment>> {
+  const where = appointmentWhere(clinicId, { ...filters, patientId, status });
+  return paginate(
+    req,
+    async (args) => {
+      const rows = await prisma.appointment.findMany({
+        where,
+        include: {
+          slot: { select: { date: true, startTime: true, endTime: true } },
+          branch: { select: { name: true } },
+          doctor: doctorNameSelect,
+          ...queueInfoInclude,
+        },
+        orderBy: filters.upcoming ? upcomingOrder : pastOrder,
+        ...args,
+      });
+      return rows.map((row) => ({ ...reshapeDoctor(row), ...queueView(row) }));
+    },
+    () => prisma.appointment.count({ where })
+  );
+}
+
 export async function getPatientAppointments(
   patientId: string,
   options?: {
@@ -182,41 +229,105 @@ export async function getPatientStats(patientId: string, clinicId?: string) {
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
+export interface AppointmentFilters {
+  status?: AppointmentStatus;
+  doctorId?: string;
+  patientId?: string;
+  branchId?: string;
+  /** Patient name, or phone digits (see personSearch). */
+  patientQuery?: string;
+  /** "YYYY-MM-DD": the visit day — slot date, or booking date for queue bookings. */
+  date?: string;
+  /** Only open (pending/confirmed) appointments that haven't happened yet. */
+  upcoming?: boolean;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Filters arrive from the URL and from client actions: ignore malformed values
+// rather than let Prisma throw on a non-UUID or an unknown status.
+function filterWhere(f: Omit<AppointmentFilters, "doctorId">): Prisma.AppointmentWhereInput {
+  const day = f.date && /^\d{4}-\d{2}-\d{2}$/.test(f.date) ? new Date(f.date) : null;
+  const status = f.status && f.status in AppointmentStatus ? f.status : undefined;
+  const patient = personSearch(f.patientQuery);
+  // Both the day and "upcoming" are OR conditions, so they're ANDed rather than
+  // spread — spreading would let one overwrite the other's OR.
+  const and: Prisma.AppointmentWhereInput[] = [
+    // The visit day: the slot's date, or the booking date for queue bookings.
+    ...(day ? [{ OR: [{ slot: { date: day } }, { bookingDate: day }] }] : []),
+    ...(f.upcoming ? [upcomingAppointmentWhere()] : []),
+  ];
+  return {
+    ...(status && { status }),
+    ...(f.patientId && UUID_RE.test(f.patientId) && { patientId: f.patientId }),
+    ...(f.branchId && UUID_RE.test(f.branchId) && { branchId: f.branchId }),
+    ...(patient && { patient }),
+    ...(and.length > 0 && { AND: and }),
+  };
+}
+
+function appointmentWhere(
+  clinicId: string,
+  f: AppointmentFilters = {}
+): Prisma.AppointmentWhereInput {
+  return {
+    clinicId,
+    ...(f.doctorId && UUID_RE.test(f.doctorId) && { doctorId: f.doctorId }),
+    ...filterWhere(f),
+  };
+}
+
+/** One page of a clinic's appointments, newest visit first. */
 export async function listAppointments(
   clinicId: string,
-  filters?: {
-    status?: AppointmentStatus;
-    doctorId?: string;
-    patientId?: string;
-  }
-): Promise<AdminAppointment[]> {
-  const rows = await prisma.appointment.findMany({
-    where: {
-      clinicId,
-      ...(filters?.status && { status: filters.status }),
-      ...(filters?.doctorId && { doctorId: filters.doctorId }),
-      ...(filters?.patientId && { patientId: filters.patientId }),
+  filters: AppointmentFilters,
+  req: PageRequest
+): Promise<Paginated<AdminAppointment>> {
+  const where = appointmentWhere(clinicId, filters);
+  return paginate(
+    req,
+    async (args) => {
+      const rows = await prisma.appointment.findMany({
+        where,
+        include: {
+          slot: { select: { date: true, startTime: true, endTime: true } },
+          branch: { select: { name: true } },
+          patient: { select: { fullName: true, phone: true } },
+          doctor: doctorNameSelect,
+          ...queueInfoInclude,
+        },
+        orderBy: filters.upcoming
+          ? upcomingOrder
+          : [
+              { slot: { date: "desc" } },
+              { bookingDate: "desc" },
+              { createdAt: "desc" },
+              { id: "desc" },
+            ],
+        ...args,
+      });
+      return rows.map((row) => {
+        const q = queueView(row);
+        return {
+          ...reshapeDoctor(row),
+          orderNumber: q.orderNumber,
+          bookingDate: q.bookingDate,
+          isOrderBased: q.isOrderBased,
+          arrivalBased: q.arrivalBased,
+          arrived: q.arrived,
+        };
+      });
     },
-    include: {
-      slot: { select: { date: true, startTime: true, endTime: true } },
-      branch: { select: { name: true } },
-      patient: { select: { fullName: true, phone: true } },
-      doctor: doctorNameSelect,
-      ...queueInfoInclude,
-    },
-    orderBy: [{ slot: { date: "desc" } }, { bookingDate: "desc" }],
-  });
-  return rows.map((row) => {
-    const q = queueView(row);
-    return {
-      ...reshapeDoctor(row),
-      orderNumber: q.orderNumber,
-      bookingDate: q.bookingDate,
-      isOrderBased: q.isOrderBased,
-      arrivalBased: q.arrivalBased,
-      arrived: q.arrived,
-    };
-  });
+    () => prisma.appointment.count({ where })
+  );
+}
+
+/** How many of a clinic's appointments match — for stats that only need a number. */
+export async function countAppointments(
+  clinicId: string,
+  filters?: AppointmentFilters
+): Promise<number> {
+  return prisma.appointment.count({ where: appointmentWhere(clinicId, filters) });
 }
 
 /**
@@ -368,16 +479,14 @@ export interface DoctorAppointmentView {
 
 export async function getDoctorAppointments(
   doctorId: string,
-  options?: { status?: AppointmentStatus; upcoming?: boolean; limit?: number }
+  options?: { status?: AppointmentStatus; date?: string; upcoming?: boolean; limit?: number }
 ): Promise<DoctorAppointmentView[]> {
   const rows = await prisma.appointment.findMany({
     where: {
       doctorId,
       ...(options?.upcoming
         ? upcomingAppointmentWhere()
-        : options?.status
-          ? { status: options.status }
-          : {}),
+        : filterWhere({ status: options?.status, date: options?.date })),
     },
     include: {
       slot: { select: { date: true, startTime: true, endTime: true } },
@@ -391,6 +500,32 @@ export async function getDoctorAppointments(
     ...(options?.limit ? { take: options.limit } : {}),
   });
   return rows.map((row) => ({ ...row, ...queueView(row) }));
+}
+
+/** One page of a doctor's appointments, filtered like the admin board, newest first. */
+export async function getDoctorAppointmentsPage(
+  doctorId: string,
+  filters: Omit<AppointmentFilters, "doctorId">,
+  req: PageRequest
+): Promise<Paginated<DoctorAppointmentView>> {
+  const where = { doctorId, ...filterWhere(filters) };
+  return paginate(
+    req,
+    async (args) => {
+      const rows = await prisma.appointment.findMany({
+        where,
+        include: {
+          slot: { select: { date: true, startTime: true, endTime: true } },
+          patient: { select: { fullName: true, phone: true } },
+          ...queueInfoInclude,
+        },
+        orderBy: filters.upcoming ? upcomingOrder : pastOrder,
+        ...args,
+      });
+      return rows.map((row) => ({ ...row, ...queueView(row) }));
+    },
+    () => prisma.appointment.count({ where })
+  );
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────

@@ -1,20 +1,16 @@
-import { prisma } from "@/lib/prisma";
-import { CreateClinicForm, ClinicCard } from "./_components/clinic-forms";
+import { clinicsPageAction } from "@/server/actions/clinics";
+import { CreateClinicForm } from "./_components/clinic-forms";
+import ClinicList from "./_components/clinic-list";
+import { FilterBar } from "@/components/ui/filter-bar";
 
-export default async function PlatformClinicsPage() {
-  const clinics = await prisma.clinic.findMany({
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      logoUrl: true,
-      primaryColor: true,
-      accentColor: true,
-      isActive: true,
-      _count: { select: { members: true, doctors: true } },
-    },
-  });
+interface PageProps {
+  searchParams: Promise<{ q?: string; active?: string }>;
+}
+
+export default async function PlatformClinicsPage({ searchParams }: PageProps) {
+  const { q, active } = await searchParams;
+  const filters = { query: q, active };
+  const clinics = await clinicsPageAction(filters, 1);
 
   return (
     <div>
@@ -25,11 +21,21 @@ export default async function PlatformClinicsPage() {
         <CreateClinicForm />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {clinics.map((c) => (
-          <ClinicCard key={c.id} clinic={c} />
-        ))}
-      </div>
+      <FilterBar
+        fields={[
+          { type: "search", param: "q", placeholder: "بحث باسم العيادة أو النطاق..." },
+          {
+            type: "select",
+            param: "active",
+            allLabel: "كل العيادات",
+            options: [
+              { value: "active", label: "مفعّلة" },
+              { value: "inactive", label: "معطّلة" },
+            ],
+          },
+        ]}
+      />
+      <ClinicList initial={clinics} filters={filters} />
     </div>
   );
 }

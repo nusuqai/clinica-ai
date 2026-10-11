@@ -1,23 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { Phone, DollarSign, Calendar } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Phone, DollarSign, Calendar, Search } from "lucide-react";
+import type { Paginated } from "@/lib/pagination";
+import { publicDoctorsPageAction } from "@/server/actions/patient";
+import { useLoadMore } from "@/hooks/use-load-more";
+import { InfiniteScroll } from "@/components/ui/infinite-scroll";
 import { BookAppointmentModal } from "./book-appointment-modal";
 
-interface Doctor {
-  id: string;
-  specialty: string;
-  consultationFee: number | null;
-  isActive: boolean;
-  profile: {
-    fullName: string;
-    phone: string | null;
-  };
-  _count: { appointments: number };
-}
+export type PublicDoctor = Awaited<ReturnType<typeof publicDoctorsPageAction>>["items"][number];
 
 interface Props {
-  doctors: Doctor[];
+  /** First page of the clinic's active doctors (no filters). */
+  initial: Paginated<PublicDoctor>;
+  /** Specialties that have active doctors — the filter pills. */
+  specialties: { id: string; name: string }[];
   isAuthenticated: boolean;
   isPatient: boolean;
   /** Patient's appointments URL, threaded to the booking modal's success link. */
@@ -60,18 +57,58 @@ interface BookTarget {
 }
 
 export function DoctorsClient({
-  doctors,
+  initial,
+  specialties,
   isAuthenticated,
   isPatient,
   appointmentsHref,
   loginHref,
   registerHref,
 }: Props) {
-  const specialties = ["الكل", ...Array.from(new Set(doctors.map((d) => d.specialty)))];
-  const [filter, setFilter] = useState("الكل");
   const [bookTarget, setBookTarget] = useState<BookTarget | null>(null);
 
-  const filtered = filter === "الكل" ? doctors : doctors.filter((d) => d.specialty === filter);
+  // Filters are local state (not the URL — that would re-render the whole
+  // landing page); the database applies them and pages the result.
+  const [specialtyId, setSpecialtyId] = useState("");
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // A specialty card elsewhere on the page links to #specialty=<id>: select that
+  // specialty and bring the booking block into view. The hash is then reset to
+  // #book so clicking the same card again still fires hashchange.
+  useEffect(() => {
+    const applyHash = () => {
+      const match = window.location.hash.match(/^#specialty=([0-9a-f-]{36})$/i);
+      if (!match) return;
+      const id = match[1];
+      if (!specialties.some((s) => s.id === id)) return;
+      setSpecialtyId(id);
+      setSearch("");
+      history.replaceState(null, "", "#book");
+      document.getElementById("book")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    applyHash(); // a shared link that already carries the hash
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, [specialties]);
+
+  const filters = { query: query || undefined, specialtyId: specialtyId || undefined };
+  const {
+    items: doctors,
+    hasMore,
+    loading,
+    error,
+    loadMore,
+  } = useLoadMore(
+    initial,
+    (page) => publicDoctorsPageAction(filters, page),
+    JSON.stringify(filters)
+  );
+  const pills = [{ id: "", name: "الكل" }, ...specialties];
 
   return (
     <div id="doctors" className="scroll-mt-25">
@@ -88,33 +125,47 @@ export function DoctorsClient({
           <p className="mt-3 font-sans text-base text-text/60">اختر التخصص ثم الطبيب لحجز موعدك</p>
         </div>
 
-        {/* Specialty filter pills */}
+        {/* Name search + specialty pills — applied in the database */}
+        <div className="mx-auto mb-4 max-w-sm">
+          <div className="relative">
+            <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text/40" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="ابحث باسم الطبيب..."
+              className="w-full rounded-full border border-border bg-white py-2.5 pl-4 pr-10 font-sans text-sm text-text placeholder:text-text/40 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+            />
+          </div>
+        </div>
         <div className="mb-8 flex flex-wrap justify-center gap-2">
-          {specialties.map((spec) => (
+          {pills.map((spec) => (
             <button
-              key={spec}
-              onClick={() => setFilter(spec)}
+              key={spec.id}
+              onClick={() => setSpecialtyId(spec.id)}
               className={`inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 font-sans text-sm font-medium transition-all ${
-                filter === spec
+                specialtyId === spec.id
                   ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
                   : "border-border bg-white text-text/70 hover:border-accent/40 hover:text-accent"
               }`}
             >
-              {spec}
+              {spec.name}
             </button>
           ))}
         </div>
 
         {/* Empty state */}
-        {filtered.length === 0 && (
+        {doctors.length === 0 && !loading && (
           <div className="flex flex-col items-center gap-3 py-16 text-center">
-            <p className="font-sans text-text/40">لا يوجد أطباء في هذا التخصص حالياً</p>
+            <p className="font-sans text-text/40">
+              {query ? "لا يوجد طبيب بهذا الاسم" : "لا يوجد أطباء في هذا التخصص حالياً"}
+            </p>
           </div>
         )}
 
         {/* Cards grid */}
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((doctor) => {
+          {doctors.map((doctor) => {
             const color = getColor(doctor.profile.fullName);
             const initials = getInitials(doctor.profile.fullName);
             return (
@@ -182,6 +233,7 @@ export function DoctorsClient({
             );
           })}
         </div>
+        <InfiniteScroll onLoadMore={loadMore} hasMore={hasMore} loading={loading} error={error} />
       </div>
 
       {/* Booking modal */}

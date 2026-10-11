@@ -1,7 +1,10 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { authEmailsByIds } from "@/lib/supabase/auth-users";
+import { personSearch, personSearchSql } from "./_search";
 import { ok, err, type Result } from "./_result";
+import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
 import { QUEUE_MODES, isQueueMode } from "@/lib/availability/modes";
 import {
@@ -11,6 +14,7 @@ import {
   type Doctor,
   type DayOfWeek,
   type DoctorTitle,
+  type Prisma,
 } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -338,20 +342,123 @@ export async function getAvailableDaysForBooking(
     .map(([date, mode]) => ({ date, mode }));
 }
 
-export async function listDoctors(clinicId: string): Promise<DoctorWithProfile[]> {
-  const [doctors, { data: authList }] = await Promise.all([
-    prisma.doctor.findMany({
-      where: { clinicId },
-      include: linkedProfileSelect,
-      orderBy: { fullName: "asc" },
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface DoctorFilters {
+  /** Name or phone (see personSearch). */
+  query?: string;
+  specialtyId?: string;
+  /** Part of the specialty's name, case-insensitive — when the id isn't known. */
+  specialtyName?: string;
+  branchId?: string;
+  /** "active" | "inactive"; anything else = both. */
+  status?: string;
+  acceptsChildren?: boolean;
+}
+
+// The WHERE every doctor list runs in the database — before LIMIT/OFFSET and in
+// the count. Filters arrive from the URL and client actions: malformed values
+// are ignored rather than let Prisma throw.
+function doctorWhere(clinicId: string, f: DoctorFilters): Prisma.DoctorWhereInput {
+  const search = personSearch(f.query);
+  const specialtyName = f.specialtyName?.trim();
+  return {
+    clinicId,
+    ...(search ?? {}),
+    ...(f.specialtyId && UUID_RE.test(f.specialtyId) && { specialtyId: f.specialtyId }),
+    ...(specialtyName && {
+      specialty: { name: { contains: specialtyName, mode: "insensitive" as const } },
     }),
-    createAdminClient().auth.admin.listUsers({ perPage: 1000 }),
-  ]);
+    ...(typeof f.acceptsChildren === "boolean" && { acceptsChildren: f.acceptsChildren }),
+    ...(f.branchId && UUID_RE.test(f.branchId) && { branches: { some: { branchId: f.branchId } } }),
+    ...(f.status === "active" && { isActive: true }),
+    ...(f.status === "inactive" && { isActive: false }),
+  };
+}
 
-  const emailMap = new Map<string, string>(
-    (authList?.users ?? []).map((u) => [u.id, u.email ?? ""])
+/** One page of a clinic's doctors matching `filters`, by name. */
+export async function listDoctorsPage(
+  clinicId: string,
+  filters: DoctorFilters,
+  req: PageRequest,
+  opts?: { withEmail?: boolean }
+): Promise<Paginated<DoctorWithProfile>> {
+  const where = doctorWhere(clinicId, filters);
+  return paginate(
+    req,
+    async (args) => {
+      const doctors = await prisma.doctor.findMany({
+        where,
+        include: linkedProfileSelect,
+        orderBy: [{ fullName: "asc" }, { id: "asc" }],
+        ...args,
+      });
+      if (!opts?.withEmail) return doctors.map((d) => toView(d));
+      // Emails for this page only.
+      const emailMap = await authEmailsByIds(
+        doctors.flatMap((d) => (d.profileId ? [d.profileId] : []))
+      );
+      return doctors.map((d) => toView(d, d.profileId ? (emailMap.get(d.profileId) ?? "") : ""));
+    },
+    () => prisma.doctor.count({ where })
   );
+}
 
+/** Doctors a patient has a completed visit or a record with here — history filter options. */
+export async function listPatientHistoryDoctors(
+  clinicId: string,
+  patientId: string
+): Promise<{ id: string; name: string }[]> {
+  const doctors = await prisma.doctor.findMany({
+    where: {
+      clinicId,
+      OR: [
+        { appointments: { some: { patientId, status: AppointmentStatus.COMPLETED } } },
+        { treatmentRecords: { some: { patientId } } },
+      ],
+    },
+    select: { id: true, fullName: true },
+    orderBy: { fullName: "asc" },
+  });
+  return doctors.map((d) => ({ id: d.id, name: d.fullName }));
+}
+
+/** Active-doctor count + per-specialty counts — the landing page's numbers. */
+export async function activeDoctorStats(
+  clinicId: string
+): Promise<{ count: number; bySpecialty: { id: string; name: string; count: number }[] }> {
+  const groups = await prisma.doctor.groupBy({
+    by: ["specialtyId"],
+    where: { clinicId, isActive: true },
+    _count: { _all: true },
+  });
+  const ids = groups.flatMap((g) => (g.specialtyId ? [g.specialtyId] : []));
+  const specialties = await prisma.specialty.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true },
+  });
+  const names = new Map(specialties.map((sp) => [sp.id, sp.name]));
+  return {
+    count: groups.reduce((sum, g) => sum + g._count._all, 0),
+    bySpecialty: groups
+      .flatMap((g) =>
+        g.specialtyId && names.has(g.specialtyId)
+          ? [{ id: g.specialtyId, name: names.get(g.specialtyId)!, count: g._count._all }]
+          : []
+      )
+      .sort((a, b) => a.name.localeCompare(b.name, "ar")),
+  };
+}
+
+export async function listDoctors(clinicId: string): Promise<DoctorWithProfile[]> {
+  const doctors = await prisma.doctor.findMany({
+    where: { clinicId },
+    include: linkedProfileSelect,
+    orderBy: { fullName: "asc" },
+  });
+  const emailMap = await authEmailsByIds(
+    doctors.flatMap((d) => (d.profileId ? [d.profileId] : []))
+  );
   return doctors.map((d) => toView(d, d.profileId ? (emailMap.get(d.profileId) ?? "") : ""));
 }
 
@@ -1021,11 +1128,7 @@ export async function getDoctorStats(doctorId: string) {
     }),
     prisma.appointment.count({ where: { doctorId, status: AppointmentStatus.COMPLETED } }),
     prisma.appointment.count({ where: { doctorId } }),
-    prisma.appointment.findMany({
-      where: { doctorId },
-      select: { patientId: true },
-      distinct: ["patientId"],
-    }),
+    countDoctorPatients(doctorId),
   ]);
 
   return {
@@ -1033,7 +1136,7 @@ export async function getDoctorStats(doctorId: string) {
     pendingCount,
     completedCount,
     totalCount,
-    uniquePatientsCount: uniquePatients.length,
+    uniquePatientsCount: uniquePatients,
   };
 }
 
@@ -1046,34 +1149,73 @@ export type DoctorPatient = {
   totalAppointments: number;
 };
 
-export async function getDoctorPatients(doctorId: string): Promise<DoctorPatient[]> {
-  const appointments = await prisma.appointment.findMany({
-    where: { doctorId },
-    include: {
-      patient: { select: { fullName: true, phone: true } },
-      slot: { select: { date: true } },
+/**
+ * One page of the patients a doctor has seen, most recent visit first. Grouped
+ * in SQL (one row per patient) so a doctor with years of history doesn't load
+ * every appointment to build one page.
+ */
+export async function getDoctorPatients(
+  doctorId: string,
+  req: PageRequest,
+  query?: string
+): Promise<Paginated<DoctorPatient & { id: string }>> {
+  return paginate(
+    req,
+    async ({ skip, take }) => {
+      const rows = await prisma.$queryRaw<
+        {
+          patientId: string;
+          fullName: string;
+          phone: string | null;
+          lastDate: Date | null;
+          lastStatus: AppointmentStatus;
+          total: number;
+        }[]
+      >`
+        WITH v AS (
+          SELECT a."patientId", a.status, a."createdAt",
+                 COALESCE(s.date, a."bookingDate") AS d
+          FROM appointments a
+          LEFT JOIN slots s ON s.id = a."slotId"
+          WHERE a."doctorId" = ${doctorId}::uuid
+        ),
+        agg AS (
+          SELECT "patientId", COUNT(*)::int AS total FROM v GROUP BY "patientId"
+        ),
+        last AS (
+          SELECT DISTINCT ON ("patientId") "patientId", status, d
+          FROM v
+          ORDER BY "patientId", d DESC NULLS LAST, "createdAt" DESC
+        )
+        SELECT last."patientId"::text AS "patientId", p."fullName", p.phone,
+               last.d AS "lastDate", last.status::text AS "lastStatus", agg.total
+        FROM last
+        JOIN agg USING ("patientId")
+        JOIN profiles p ON p.id = last."patientId"
+        WHERE ${personSearchSql(query, "p")}
+        ORDER BY last.d DESC NULLS LAST, last."patientId"
+        LIMIT ${take} OFFSET ${skip}
+      `;
+      return rows.map((r) => ({
+        id: r.patientId,
+        patientId: r.patientId,
+        fullName: r.fullName,
+        phone: r.phone,
+        lastAppointmentDate: r.lastDate,
+        lastStatus: r.lastStatus,
+        totalAppointments: r.total,
+      }));
     },
-    orderBy: [{ slot: { date: "desc" } }, { bookingDate: "desc" }],
+    () => countDoctorPatients(doctorId, query)
+  );
+}
+
+/** Distinct patients a doctor has had an appointment with (optionally searched). */
+export function countDoctorPatients(doctorId: string, query?: string): Promise<number> {
+  const search = personSearch(query);
+  return prisma.profile.count({
+    where: { appointments: { some: { doctorId } }, ...(search ?? {}) },
   });
-
-  const patientMap = new Map<string, DoctorPatient>();
-  for (const appt of appointments) {
-    if (!patientMap.has(appt.patientId)) {
-      patientMap.set(appt.patientId, {
-        patientId: appt.patientId,
-        fullName: appt.patient.fullName,
-        phone: appt.patient.phone,
-        // slot-based → slot date; order-based → booking date.
-        lastAppointmentDate: appt.slot?.date ?? appt.bookingDate,
-        lastStatus: appt.status,
-        totalAppointments: 1,
-      });
-    } else {
-      patientMap.get(appt.patientId)!.totalAppointments++;
-    }
-  }
-
-  return Array.from(patientMap.values());
 }
 
 // ─── Slots ────────────────────────────────────────────────────────────────────
