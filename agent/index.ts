@@ -49,6 +49,10 @@ export type AgentStreamEvent =
  *  so billing can label a usage row it had to synthesize (see agentRunner). */
 export const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
 
+// LangGraph's default (25 steps ≈ 12 tool rounds) is tight once the agent pages
+// through lists itself (up to 3 pages per question, see LIST_RULES in prompts).
+const RECURSION_LIMIT = 40;
+
 async function buildAgent(ctx: AgentContext) {
   return createReactAgent({
     llm: createModel(),
@@ -157,7 +161,7 @@ export async function* runAgentStream(
 
   const stream = agent.streamEvents(
     { messages },
-    { version: "v2", configurable: { thread_id: ctx.sessionId } },
+    { version: "v2", recursionLimit: RECURSION_LIMIT, configurable: { thread_id: ctx.sessionId } },
   );
 
   for await (const ev of stream) {
@@ -246,7 +250,7 @@ export async function runAgentToText(
 
   const result = (await agent.invoke(
     { messages },
-    { configurable: { thread_id: ctx.sessionId } },
+    { recursionLimit: RECURSION_LIMIT, configurable: { thread_id: ctx.sessionId } },
   )) as { messages?: BaseMessage[] };
   const out = result.messages ?? [];
 

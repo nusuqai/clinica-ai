@@ -1,38 +1,41 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { Users, Phone, Calendar, FileText } from "lucide-react";
+import { Users } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
-import { getDoctorPatients, getDoctorByProfileId } from "@/server/services/doctors";
-import { AppointmentStatusBadge } from "@/components/admin/status-badge";
-import { formatSlotDate } from "@/lib/slot-time";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { getDoctorByProfileId } from "@/server/services/doctors";
+import { myPatientsPageAction } from "@/server/actions/doctor";
+import PatientsTable from "./_components/patients-table";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
-export default async function DoctorPatientsPage() {
+interface PageProps {
+  searchParams: Promise<{ q?: string }>;
+}
+
+export default async function DoctorPatientsPage({ searchParams }: PageProps) {
   const ctx = await requireClinicMember(["DOCTOR"]);
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
   if (!doctor) redirect(`/doctor`);
 
-  const patients = await getDoctorPatients(doctor.id);
+  const { q = "" } = await searchParams;
+  const patients = await myPatientsPageAction(q, 1);
 
   return (
     <div>
       {/* Header */}
       <div className="mb-6">
         <h1 className="font-heading text-2xl font-bold text-foreground">المرضى</h1>
-        <p className="mt-1 font-sans text-sm text-muted-foreground">{patients.length} مريض</p>
+        <p className="mt-1 font-sans text-sm text-muted-foreground">{patients.total} مريض</p>
       </div>
 
-      {patients.length === 0 ? (
+      <FilterBar
+        fields={[{ type: "search", param: "q", placeholder: "بحث بالاسم أو رقم الهاتف..." }]}
+      />
+
+      {patients.total === 0 && q ? (
+        <Card className="py-16 text-center">
+          <p className="font-sans text-sm text-muted-foreground">لا يوجد مريض مطابق للبحث</p>
+        </Card>
+      ) : patients.total === 0 ? (
         <Card className="py-20 text-center">
           <Users className="mx-auto mb-4 h-12 w-12 text-muted-foreground/30" />
           <p className="font-sans font-medium text-muted-foreground">لا توجد مرضى بعد</p>
@@ -41,93 +44,7 @@ export default async function DoctorPatientsPage() {
           </p>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <Table className="w-full font-sans text-sm">
-              <TableHeader>
-                <TableRow className="border-b border-border bg-muted/40">
-                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                    المريض
-                  </TableHead>
-                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                    رقم الهاتف
-                  </TableHead>
-                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                    آخر موعد
-                  </TableHead>
-                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                    حالة آخر موعد
-                  </TableHead>
-                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                    إجمالي المواعيد
-                  </TableHead>
-                  <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                    السجل العلاجي
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody className="divide-y divide-border">
-                {patients.map((patient) => {
-                  return (
-                    <TableRow
-                      key={patient.patientId}
-                      className="transition-colors hover:bg-muted/30"
-                    >
-                      <TableCell className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-9 w-9 rounded-xl">
-                            <AvatarFallback className="rounded-xl bg-accent/10 text-sm font-bold text-accent">
-                              {patient.fullName.charAt(0)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <p className="font-medium text-foreground">{patient.fullName}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-4 py-3 text-muted-foreground">
-                        {patient.phone ? (
-                          <span className="flex items-center gap-1.5" dir="ltr">
-                            <Phone className="h-3.5 w-3.5 flex-shrink-0" />
-                            {patient.phone}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground/50">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="px-4 py-3 text-muted-foreground">
-                        <span className="flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
-                          {patient.lastAppointmentDate
-                            ? formatSlotDate(patient.lastAppointmentDate)
-                            : "—"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="px-4 py-3">
-                        <AppointmentStatusBadge status={patient.lastStatus} />
-                      </TableCell>
-                      <TableCell className="px-4 py-3">
-                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-muted font-sans text-xs font-semibold text-muted-foreground">
-                          {patient.totalAppointments}
-                        </span>
-                      </TableCell>
-                      <TableCell className="px-4 py-3">
-                        <Button
-                          asChild
-                          variant="outline"
-                          className="h-auto gap-1.5 rounded-lg bg-transparent px-2.5 py-1.5 text-xs text-muted-foreground hover:border-foreground/30 hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
-                        >
-                          <Link href={`/doctor/patients/${patient.patientId}`}>
-                            <FileText className="h-3.5 w-3.5" />
-                            عرض السجل
-                          </Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
+        <PatientsTable initial={patients} query={q} />
       )}
     </div>
   );

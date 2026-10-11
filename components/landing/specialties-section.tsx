@@ -16,7 +16,7 @@ function iconFor(specialty: string) {
 }
 
 interface Props {
-  specialties: { name: string; count: number }[];
+  specialties: { id: string; name: string; count: number }[];
 }
 
 export function SpecialtiesSection({ specialties }: Props) {
@@ -38,9 +38,11 @@ export function SpecialtiesSection({ specialties }: Props) {
           {specialties.map((spec) => {
             const Icon = iconFor(spec.name);
             return (
+              // Opens the booking block below with this specialty selected
+              // (DoctorsClient reads the #specialty=… hash).
               <a
-                key={spec.name}
-                href="#doctors"
+                key={spec.id}
+                href={`#specialty=${spec.id}`}
                 className="group flex flex-col items-center gap-3 rounded-2xl border border-border bg-white p-6 text-center transition-all hover:-translate-y-1 hover:border-accent/40 hover:shadow-md"
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary transition-colors group-hover:bg-accent">

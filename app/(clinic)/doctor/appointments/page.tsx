@@ -1,31 +1,15 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { getDoctorByProfileId } from "@/server/services/doctors";
-import { getDoctorAppointments } from "@/server/services/appointments";
-import { mapRecordsByAppointment } from "@/server/services/treatments";
-import { AppointmentStatusBadge } from "@/components/admin/status-badge";
-import RecordFormModal from "@/components/medical/record-form-modal";
-import AppointmentActions from "./_components/appointment-actions";
 import type { AppointmentStatus } from "@prisma/client";
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
-import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Card } from "@/components/ui/card";
+import { myAppointmentsPageAction } from "@/server/actions/doctor";
+import AppointmentsTable from "./_components/appointments-table";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Hint } from "@/components/ui/tooltip";
 
 interface PageProps {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; date?: string }>;
 }
 
 export default async function DoctorAppointmentsPage({ searchParams }: PageProps) {
@@ -33,21 +17,23 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
   if (!doctor) redirect(`/`);
 
-  const { status } = await searchParams;
+  const { status, q, date } = await searchParams;
   const filterStatus = Object.keys(APPOINTMENT_STATUS_LABELS).includes(status ?? "")
     ? (status as AppointmentStatus)
     : undefined;
 
-  const appointments = await getDoctorAppointments(doctor.id, {
-    status: filterStatus,
-  });
+  const filters = { status: filterStatus, patientQuery: q, date };
+  const appointments = await myAppointmentsPageAction(filters, 1);
 
-  // Which of these visits already have a clinical record — one query for the
-  // whole page rather than one per row.
-  const recordsByAppointment = await mapRecordsByAppointment(
-    appointments.map((a) => a.id),
-    ctx.clinic.id
-  );
+  // Status pills are links; keep the search + date when switching status.
+  const pillHref = (s?: string) => {
+    const params = new URLSearchParams();
+    if (s) params.set("status", s);
+    if (q) params.set("q", q);
+    if (date) params.set("date", date);
+    const qs = params.toString();
+    return qs ? `/doctor/appointments?${qs}` : "/doctor/appointments";
+  };
 
   return (
     <div>
@@ -55,18 +41,18 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">المواعيد</h1>
-          <p className="mt-1 font-sans text-sm text-muted-foreground">{appointments.length} موعد</p>
+          <p className="mt-1 font-sans text-sm text-muted-foreground">{appointments.total} موعد</p>
         </div>
       </div>
 
       {/* Status filter pills */}
-      <div className="mb-6 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap gap-2">
         <Button
           asChild
           variant={!filterStatus ? "default" : "secondary"}
           className="h-auto rounded-full px-3 py-1.5"
         >
-          <a href={`/doctor/appointments`}>الكل</a>
+          <a href={pillHref()}>الكل</a>
         </Button>
         {(Object.entries(APPOINTMENT_STATUS_LABELS) as [AppointmentStatus, string][]).map(
           ([val, label]) => (
@@ -76,140 +62,20 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
               variant={filterStatus === val ? "default" : "secondary"}
               className="h-auto rounded-full px-3 py-1.5"
             >
-              <a href={`/doctor/appointments?status=${val}`}>{label}</a>
+              <a href={pillHref(val)}>{label}</a>
             </Button>
           )
         )}
       </div>
 
-      {/* Table */}
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table className="w-full font-sans text-sm">
-            <TableHeader>
-              <TableRow className="border-b border-border bg-muted/40">
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  المريض
-                </TableHead>
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  التاريخ
-                </TableHead>
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  الوقت
-                </TableHead>
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  الحالة
-                </TableHead>
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  ملاحظات المريض
-                </TableHead>
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  الإجراءات
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody className="divide-y divide-border">
-              {appointments.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-16 text-center text-muted-foreground">
-                    لا توجد مواعيد
-                  </TableCell>
-                </TableRow>
-              )}
-              {appointments.map((appt) => {
-                return (
-                  <TableRow key={appt.id} className="align-top transition-colors hover:bg-muted/30">
-                    <TableCell className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <Avatar className="h-8 w-8 rounded-lg">
-                          <AvatarFallback className="rounded-lg bg-primary/10 text-xs font-bold text-primary">
-                            {appt.patient.fullName.charAt(0)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium text-foreground">{appt.patient.fullName}</p>
-                          {appt.patient.phone && (
-                            <p className="text-xs text-muted-foreground" dir="ltr">
-                              {appt.patient.phone}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-muted-foreground">
-                      {appt.slot
-                        ? formatSlotDate(appt.slot.date)
-                        : appt.bookingDate
-                          ? formatSlotDate(appt.bookingDate)
-                          : "—"}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-muted-foreground" dir="ltr">
-                      {appt.slot ? (
-                        <>
-                          {formatSlotTime(appt.slot.startTime)}
-                          {" – "}
-                          {formatSlotTime(appt.slot.endTime)}
-                        </>
-                      ) : appt.orderNumber != null ? (
-                        <span dir="rtl">دور رقم {appt.orderNumber}</span>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <AppointmentStatusBadge status={appt.status} />
-                      {appt.cancellationReason && (
-                        <Hint label={appt.cancellationReason}>
-                          <p className="mt-1 max-w-[120px] truncate text-xs text-muted-foreground">
-                            {appt.cancellationReason}
-                          </p>
-                        </Hint>
-                      )}
-                    </TableCell>
-                    <TableCell className="max-w-[160px] px-4 py-3 text-muted-foreground">
-                      <Hint label={appt.patientNotes ?? ""}>
-                        <p className="truncate text-xs">{appt.patientNotes || "—"}</p>
-                      </Hint>
-                      {appt.doctorNotes && (
-                        <Hint label={appt.doctorNotes}>
-                          <p className="mt-0.5 truncate text-xs text-primary">
-                            ✍ {appt.doctorNotes}
-                          </p>
-                        </Hint>
-                      )}
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <div className="space-y-1.5">
-                        <AppointmentActions
-                          appointmentId={appt.id}
-                          currentStatus={appt.status}
-                          currentNotes={appt.doctorNotes}
-                        />
-                        <RecordFormModal
-                          appointmentId={appt.id}
-                          patientName={appt.patient.fullName}
-                          defaultVisitDate={appt.slot?.date ?? appt.bookingDate}
-                          hasRecord={recordsByAppointment.has(appt.id)}
-                        />
-                        <Button
-                          asChild
-                          variant="outline"
-                          className="h-auto gap-1 rounded-lg bg-transparent px-2.5 py-1.5 text-xs text-muted-foreground hover:border-foreground/30 hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
-                        >
-                          <Link href={`/doctor/appointments/${appt.id}`}>
-                            <ArrowLeft className="h-3.5 w-3.5" />
-                            التفاصيل
-                          </Link>
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </Card>
+      <FilterBar
+        fields={[
+          { type: "search", param: "q", placeholder: "بحث باسم المريض أو رقم الهاتف..." },
+          { type: "date", param: "date" },
+        ]}
+      />
+
+      <AppointmentsTable initial={appointments} filters={filters} />
     </div>
   );
 }

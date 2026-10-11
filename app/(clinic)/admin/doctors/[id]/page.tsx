@@ -10,26 +10,21 @@ import {
   Stethoscope,
   ListOrdered,
 } from "lucide-react";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { getDoctor, listDoctorRules, getDoctorScheduleDays } from "@/server/services/doctors";
-import { listBranches } from "@/server/services/branches";
+import { branchesInScope, listBranches } from "@/server/services/branches";
+import type { BranchScope } from "@/lib/branch-scope";
 import { listSpecialtyOptions } from "@/server/services/specialties";
-import { listAppointments } from "@/server/services/appointments";
+import { appointmentsPageAction } from "@/server/actions/admin";
 import type { DoctorBranchOption } from "./_components/rules-tab";
-import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import RulesTab from "./_components/rules-tab";
 import SlotsTab from "./_components/slots-tab";
 import QueuePanel from "./_components/queue-panel";
+import DoctorAppointmentsTab from "./_components/appointments-tab";
+import { AppointmentStatus } from "@prisma/client";
+import { FilterBar } from "@/components/ui/filter-bar";
+import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
 import EditDoctorModal from "../_components/edit-doctor-modal";
-import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -45,22 +40,24 @@ type Tab = (typeof TABS)[number]["key"];
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; status?: string; date?: string }>;
 }
 
 export default async function DoctorDetailsPage({ params, searchParams }: PageProps) {
   const { id } = await params;
-  const { tab } = await searchParams;
+  const { tab, status, date } = await searchParams;
   const activeTab: Tab = (TABS.map((t) => t.key) as string[]).includes(tab ?? "")
     ? (tab as Tab)
     : "appointments";
 
-  const { clinic } = await requireClinicMember(["ADMIN"]);
-  const doctor = await getDoctor(id, clinic.id);
+  const { clinic, branchIds: scope } = await requirePermission("doctors");
+  // A branch-limited member only reaches doctors who work at their branches,
+  // and everything below (branch options, rules, days) is cut to those branches.
+  const doctor = await getDoctor(id, clinic.id, scope);
   if (!doctor) notFound();
 
   const [branchRows, specialties] = await Promise.all([
-    listBranches(clinic.id, { activeOnly: true }),
+    listBranches(clinic.id, { activeOnly: true }).then((rows) => branchesInScope(rows, scope)),
     listSpecialtyOptions(clinic.id),
   ]);
   const branchHours = (b: (typeof branchRows)[number]) =>
@@ -201,11 +198,22 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
           icon: <Icon />,
         }))}
       >
-        {activeTab === "appointments" && <AppointmentsContent doctorId={id} />}
-        {activeTab === "rules" && (
-          <RulesContent doctorId={id} branches={doctorBranches} clinicId={clinic.id} />
+        {/* Tab content — each fetches only what it needs */}
+        {activeTab === "appointments" && (
+          <AppointmentsContent
+            doctorId={id}
+            filters={{ status: status as AppointmentStatus | undefined, date }}
+          />
         )}
-        {activeTab === "slots" && <SlotsContent doctorId={id} />}
+        {activeTab === "rules" && (
+          <RulesContent
+            doctorId={id}
+            branches={doctorBranches}
+            clinicId={clinic.id}
+            scope={scope}
+          />
+        )}
+        {activeTab === "slots" && <SlotsContent doctorId={id} scope={scope} />}
         {activeTab === "queue" && <QueuePanel doctorId={id} />}
       </LinkTabs>
     </div>
@@ -214,83 +222,32 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
 
 // ─── Per-tab server components ────────────────────────────────────────────────
 
-async function AppointmentsContent({ doctorId }: { doctorId: string }) {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
-  const appointments = await listAppointments(clinic.id, { doctorId });
-
+async function AppointmentsContent({
+  doctorId,
+  filters,
+}: {
+  doctorId: string;
+  filters: { status?: AppointmentStatus; date?: string };
+}) {
+  const initial = await appointmentsPageAction({ ...filters, doctorId }, 1);
   return (
-    <Card className="overflow-hidden">
-      <div className="border-b border-border px-6 py-4">
-        <p className="font-sans text-sm text-muted-foreground">{appointments.length} موعد</p>
-      </div>
-      <div className="overflow-x-auto">
-        <Table className="w-full font-sans text-sm">
-          <TableHeader>
-            <TableRow className="border-b border-border bg-muted/40">
-              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                المريض
-              </TableHead>
-              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                التاريخ
-              </TableHead>
-              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                الوقت
-              </TableHead>
-              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                الحالة
-              </TableHead>
-              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                ملاحظات
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody className="divide-y divide-border">
-            {appointments.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
-                  لا توجد مواعيد لهذا الطبيب
-                </TableCell>
-              </TableRow>
-            )}
-            {appointments.map((appt) => {
-              return (
-                <TableRow key={appt.id} className="transition-colors hover:bg-muted/30">
-                  <TableCell className="px-4 py-3 font-medium text-foreground">
-                    {appt.patient.fullName}
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-muted-foreground">
-                    {appt.slot
-                      ? formatSlotDate(appt.slot.date)
-                      : appt.bookingDate
-                        ? formatSlotDate(appt.bookingDate)
-                        : "—"}
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-muted-foreground" dir="ltr">
-                    {appt.slot ? (
-                      <>
-                        {formatSlotTime(appt.slot.startTime)}
-                        {" – "}
-                        {formatSlotTime(appt.slot.endTime)}
-                      </>
-                    ) : appt.orderNumber != null ? (
-                      <span dir="rtl">دور رقم {appt.orderNumber}</span>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
-                    <AppointmentStatusBadge status={appt.status} />
-                  </TableCell>
-                  <TableCell className="max-w-[200px] truncate px-4 py-3 text-muted-foreground">
-                    {appt.patientNotes ?? "—"}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
-    </Card>
+    <>
+      <FilterBar
+        fields={[
+          {
+            type: "select",
+            param: "status",
+            allLabel: "كل الحالات",
+            options: Object.values(AppointmentStatus).map((s) => ({
+              value: s,
+              label: APPOINTMENT_STATUS_LABELS[s],
+            })),
+          },
+          { type: "date", param: "date" },
+        ]}
+      />
+      <DoctorAppointmentsTab doctorId={doctorId} filters={filters} initial={initial} />
+    </>
   );
 }
 
@@ -298,16 +255,18 @@ async function RulesContent({
   doctorId,
   branches,
   clinicId,
+  scope,
 }: {
   doctorId: string;
   branches: DoctorBranchOption[];
   clinicId: string;
+  scope: BranchScope;
 }) {
-  const rules = await listDoctorRules(doctorId);
+  const rules = await listDoctorRules(doctorId, clinicId, scope);
   return <RulesTab doctorId={doctorId} rules={rules} branches={branches} clinicId={clinicId} />;
 }
 
-async function SlotsContent({ doctorId }: { doctorId: string }) {
-  const days = await getDoctorScheduleDays(doctorId);
+async function SlotsContent({ doctorId, scope }: { doctorId: string; scope: BranchScope }) {
+  const days = await getDoctorScheduleDays(doctorId, 30, scope);
   return <SlotsTab doctorId={doctorId} days={days} />;
 }

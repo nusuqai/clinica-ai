@@ -1,10 +1,13 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { findAuthUserIdByEmail } from "@/lib/supabase/auth-users";
 import { sendEmail, type SendEmailResult } from "./resend";
+import { clinicOrigin, clinicUrl } from "@/lib/clinic-url";
 import {
   clinicApprovedInviteEmail,
   clinicCreatedInviteEmail,
   accountInviteEmail,
+  teamInviteEmail,
   passwordResetEmail,
   emailChangeEmail,
   signupOtpEmail,
@@ -23,6 +26,15 @@ function appUrl(): string {
   return process.env.APP_URL || "http://localhost:3000";
 }
 
+// Where an emailed link should open. Each clinic lives on its own subdomain and
+// the session cookie is per-host, so a link for a clinic's member must land on
+// THAT clinic's host: opening it on the root domain would sign them in there,
+// and they'd have to log in again as soon as they reached their clinic. The
+// root URL is only for flows with no clinic (platform staff, root sign-in).
+function linkOrigin(clinicSlug?: string | null): string {
+  return clinicSlug ? clinicOrigin(clinicSlug) : appUrl();
+}
+
 // verifyOtp() types accepted by our /auth/confirm route.
 type ConfirmType = "recovery" | "invite" | "signup" | "magiclink" | "email_change";
 
@@ -39,6 +51,8 @@ async function generateActionUrl(opts: {
   email: string;
   newEmail?: string;
   next: string;
+  /** The clinic whose host the link opens on; omit for the root domain. */
+  clinicSlug?: string | null;
 }): Promise<string> {
   const admin = createAdminClient();
 
@@ -62,7 +76,7 @@ async function generateActionUrl(opts: {
     ? "email_change"
     : (opts.type as ConfirmType);
 
-  const url = new URL("/auth/confirm", appUrl());
+  const url = new URL("/auth/confirm", linkOrigin(opts.clinicSlug));
   url.searchParams.set("token_hash", data.properties.hashed_token);
   url.searchParams.set("type", confirmType);
   url.searchParams.set("next", opts.next);
@@ -76,11 +90,14 @@ export async function sendClinicApprovedInvite(args: {
   email: string;
   name: string;
   clinicName: string;
+  /** Opens the link on this clinic's host (see linkOrigin). */
+  clinicSlug?: string | null;
 }): Promise<SendEmailResult> {
   const url = await generateActionUrl({
     type: "recovery",
     email: args.email,
     next: "/set-password",
+    clinicSlug: args.clinicSlug,
   });
   const { subject, html } = clinicApprovedInviteEmail({
     requesterName: args.name,
@@ -95,11 +112,14 @@ export async function sendClinicCreatedInvite(args: {
   email: string;
   name: string;
   clinicName: string;
+  /** Opens the link on this clinic's host (see linkOrigin). */
+  clinicSlug?: string | null;
 }): Promise<SendEmailResult> {
   const url = await generateActionUrl({
     type: "recovery",
     email: args.email,
     next: "/set-password",
+    clinicSlug: args.clinicSlug,
   });
   const { subject, html } = clinicCreatedInviteEmail({
     adminName: args.name,
@@ -118,11 +138,14 @@ export async function sendAccountInvite(args: {
   email: string;
   name: string | null;
   clinicName: string;
+  /** Opens the link on this clinic's host (see linkOrigin). */
+  clinicSlug?: string | null;
 }): Promise<SendEmailResult> {
   const url = await generateActionUrl({
     type: "recovery",
     email: args.email,
     next: "/set-password",
+    clinicSlug: args.clinicSlug,
   });
   const { subject, html } = accountInviteEmail({
     name: args.name,
@@ -132,15 +155,50 @@ export async function sendAccountInvite(args: {
   return sendEmail({ to: args.email, subject, html });
 }
 
+/**
+ * Team invite: a clinic admin added someone to the clinic's team. A brand-new
+ * account gets the recovery→/set-password bridge; an account that already has a
+ * password is simply pointed at the clinic's login. Both open on the clinic's host.
+ */
+export async function sendTeamInvite(args: {
+  email: string;
+  name: string | null;
+  clinicName: string;
+  roleName: string;
+  isNewAccount: boolean;
+  /** The clinic they were added to — both links open on its host. */
+  clinicSlug: string;
+}): Promise<SendEmailResult> {
+  const url = args.isNewAccount
+    ? await generateActionUrl({
+        type: "recovery",
+        email: args.email,
+        next: "/set-password",
+        clinicSlug: args.clinicSlug,
+      })
+    : clinicUrl(args.clinicSlug, "/login");
+  const { subject, html } = teamInviteEmail({
+    name: args.name,
+    clinicName: args.clinicName,
+    roleName: args.roleName,
+    actionUrl: url,
+    isNewAccount: args.isNewAccount,
+  });
+  return sendEmail({ to: args.email, subject, html });
+}
+
 /** Forgot-password → send a branded recovery link. */
 export async function sendPasswordReset(args: {
   email: string;
   name: string | null;
+  /** Opens the link on this clinic's host (see linkOrigin). */
+  clinicSlug?: string | null;
 }): Promise<SendEmailResult> {
   const url = await generateActionUrl({
     type: "recovery",
     email: args.email,
     next: "/reset-password",
+    clinicSlug: args.clinicSlug,
   });
   const { subject, html } = passwordResetEmail({ name: args.name, actionUrl: url });
   return sendEmail({ to: args.email, subject, html });
@@ -172,9 +230,8 @@ async function mintSignupOtp(args: {
   }
 
   // The user already exists — remove the stale unconfirmed account and retry.
-  const { data: list } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  const existing = list?.users.find((u) => u.email?.toLowerCase() === args.email.toLowerCase());
-  if (existing) await admin.auth.admin.deleteUser(existing.id);
+  const existingId = await findAuthUserIdByEmail(args.email);
+  if (existingId) await admin.auth.admin.deleteUser(existingId);
 
   const second = await gen();
   if (second.error || !second.data?.properties?.email_otp) {
@@ -218,12 +275,15 @@ export async function sendEmailChange(args: {
   currentEmail: string;
   newEmail: string;
   name: string | null;
+  /** Opens the link on this clinic's host (see linkOrigin). */
+  clinicSlug?: string | null;
 }): Promise<SendEmailResult> {
   const url = await generateActionUrl({
     type: "email_change_new",
     email: args.currentEmail,
     newEmail: args.newEmail,
     next: "/",
+    clinicSlug: args.clinicSlug,
   });
   const { subject, html } = emailChangeEmail({
     name: args.name,

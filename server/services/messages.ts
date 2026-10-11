@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, Role, SenderType, type Prisma } from "@prisma/client";
+import { personSearch, phoneDigits } from "./_search";
 import type {
   AgentMessageMetadata,
   VoiceMessageMetadata,
@@ -62,6 +63,10 @@ export interface MessageItem {
   id: string;
   content: string;
   senderType: SenderType;
+  /** For a manual (ADMIN) reply: the team member who sent it, so the inbox can
+   *  show who answered the client. Null for USER / AGENT messages. */
+  senderId: string | null;
+  senderName: string | null;
   sessionId: string | null;
   createdAt: Date;
   isRead: boolean;
@@ -81,6 +86,8 @@ export interface EscalationItem {
   reason: string | null;
   createdAt: Date;
   resolvedAt: Date | null;
+  /** The team member whose action resolved it; null while open (or unknown). */
+  resolvedByName: string | null;
 }
 
 export interface ConversationDetail {
@@ -93,6 +100,9 @@ export interface ConversationDetail {
   /** Most recent chat session (may be expired) — null if no message yet. */
   activeSessionId: string | null;
   aiEnabled: boolean;
+  /** Who last paused / resumed the AI by hand for this session, if anyone. */
+  aiToggledByName: string | null;
+  aiToggledAt: Date | null;
   escalations: EscalationItem[];
   /** Timestamp of the contact's last inbound message. On WhatsApp this anchors
    *  the 24-hour customer-service window: free-form replies are only allowed
@@ -105,19 +115,53 @@ export interface ConversationDetail {
 // customer contact and must not appear in the inbox.
 async function customerConversationWhere(clinicId: string): Promise<Prisma.ConversationWhereInput> {
   const staff = await prisma.clinicMember.findMany({
-    where: { clinicId, role: { in: [Role.DOCTOR, Role.ADMIN] } },
+    where: { clinicId, role: { in: [Role.DOCTOR, Role.ADMIN, Role.STAFF] } },
     select: { userId: true },
   });
   const staffIds = staff.map((s) => s.userId);
   return { clinicId, OR: [{ userId: null }, { userId: { notIn: staffIds } }] };
 }
 
-export async function getConversations(clinicId: string): Promise<ConversationSummary[]> {
+export interface ConversationFilters {
+  /** Contact name or phone — the linked patient's, or the WhatsApp profile's. */
+  query?: string;
+  channel?: string;
+  /** "unread" (unread patient messages) | "escalated" (an open escalation). */
+  show?: string;
+}
+
+// The inbox filters as conditions on the conversation, run in the database.
+// Combined with AND so they never collide with the base OR (customer vs staff).
+function conversationFilterWhere(f: ConversationFilters): Prisma.ConversationWhereInput[] {
+  const where: Prisma.ConversationWhereInput[] = [];
+  const q = f.query?.trim();
+  if (q) {
+    const phone = phoneDigits(q);
+    const user = personSearch(q);
+    where.push({
+      OR: [
+        ...(user ? [{ user }] : []),
+        { whatsappName: { contains: q, mode: "insensitive" } },
+        ...(phone ? [{ whatsappPhone: { contains: phone } }] : []),
+      ],
+    });
+  }
+  if (f.channel && f.channel in Channel) where.push({ channel: f.channel as Channel });
+  if (f.show === "unread") {
+    where.push({ messages: { some: { isRead: false, senderType: SenderType.USER } } });
+  }
+  if (f.show === "escalated") where.push({ escalations: { some: { resolvedAt: null } } });
+  return where;
+}
+
+export async function getConversations(
+  clinicId: string,
+  filters: ConversationFilters = {}
+): Promise<ConversationSummary[]> {
   const baseWhere = await customerConversationWhere(clinicId);
   const conversations = await prisma.conversation.findMany({
     where: {
-      ...baseWhere,
-      messages: { some: {} },
+      AND: [baseWhere, { messages: { some: {} } }, ...conversationFilterWhere(filters)],
     },
     orderBy: { updatedAt: "desc" },
     include: {
@@ -170,6 +214,7 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
   const messages = await prisma.message.findMany({
     where: { conversationId },
     orderBy: { createdAt: "asc" },
+    include: { sender: { select: { fullName: true } } },
   });
 
   // Open, message-linked escalations for this conversation → per-message badge.
@@ -191,6 +236,10 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
       id: m.id,
       content: m.content,
       senderType: m.senderType,
+      // Attribution is for staff replies only — a USER message's sender is the
+      // patient, already shown as the contact.
+      senderId: m.senderType === SenderType.ADMIN ? m.senderId : null,
+      senderName: m.senderType === SenderType.ADMIN ? (m.sender?.fullName ?? null) : null,
       sessionId: m.sessionId,
       createdAt: m.createdAt,
       isRead: m.isRead,
@@ -236,7 +285,11 @@ export async function getConversationDetail(
         orderBy: { startedAt: "desc" },
         take: 1,
         include: {
-          escalations: { orderBy: { createdAt: "desc" } },
+          escalations: {
+            orderBy: { createdAt: "desc" },
+            include: { resolvedBy: { select: { fullName: true } } },
+          },
+          aiToggledBy: { select: { fullName: true } },
         },
       },
       messages: {
@@ -261,7 +314,14 @@ export async function getConversationDetail(
     userId: c.userId,
     activeSessionId: latestSession?.id ?? null,
     aiEnabled: latestSession?.aiEnabled ?? true,
-    escalations: latestSession?.escalations ?? [],
+    aiToggledByName: latestSession?.aiToggledBy?.fullName ?? null,
+    aiToggledAt: latestSession?.aiToggledAt ?? null,
+    escalations: (latestSession?.escalations ?? []).map((e) => ({
+      reason: e.reason,
+      createdAt: e.createdAt,
+      resolvedAt: e.resolvedAt,
+      resolvedByName: e.resolvedBy?.fullName ?? null,
+    })),
     lastInboundAt: c.messages[0]?.createdAt ?? null,
   };
 }

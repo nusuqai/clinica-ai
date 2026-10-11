@@ -45,6 +45,9 @@ interface Props {
   backLabel: string;
   /** Staff-only: link to this patient's full clinical history. */
   patientHistoryHref?: string | null;
+  /** False for staff who manage appointments but not medical records: the
+      record + attachments sections are left out entirely. Defaults to true. */
+  showRecords?: boolean;
 }
 
 export default function AppointmentDetail({
@@ -56,6 +59,7 @@ export default function AppointmentDetail({
   backHref,
   backLabel,
   patientHistoryHref,
+  showRecords = true,
 }: Props) {
   const isStaff = viewerRole === Role.DOCTOR || viewerRole === Role.ADMIN;
   const visitDate = appt.slot?.date ?? appt.bookingDate;
@@ -178,49 +182,53 @@ export default function AppointmentDetail({
       </Card>
 
       {/* Clinical record for THIS visit */}
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-foreground">
-            <FileText className="h-5 w-5" />
-            السجل العلاجي لهذه الزيارة
-          </h2>
-          {canEdit && (
-            <AppointmentRecordModal
-              appointmentId={appt.id}
-              patientId={appt.patient.id}
-              patientName={appt.patient.fullName}
-              defaultVisitDate={visitDate}
-              record={record}
-              role={viewerRole === Role.ADMIN ? "ADMIN" : "DOCTOR"}
-            />
-          )}
-        </div>
-        {record ? (
-          <RecordTimeline
-            records={[record]}
-            renderRevisionBadge={canEdit ? (r) => <RecordRevisions record={r} /> : undefined}
-          />
-        ) : (
-          <Card className="py-10 text-center">
-            <FileText className="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="font-sans font-medium text-muted-foreground">
-              لا يوجد سجل علاجي لهذه الزيارة بعد
-            </p>
-            {canEdit && viewerRole === Role.ADMIN && (
-              <p className="mt-1 font-sans text-xs text-muted-foreground">
-                يمكن إضافة سجل للمواعيد المكتملة فقط
-              </p>
+      {showRecords && (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-foreground">
+              <FileText className="h-5 w-5" />
+              السجل العلاجي لهذه الزيارة
+            </h2>
+            {canEdit && (
+              <AppointmentRecordModal
+                appointmentId={appt.id}
+                patientId={appt.patient.id}
+                patientName={appt.patient.fullName}
+                defaultVisitDate={visitDate}
+                record={record}
+                role={viewerRole === Role.ADMIN ? "ADMIN" : "DOCTOR"}
+              />
             )}
-          </Card>
-        )}
-      </section>
+          </div>
+          {record ? (
+            <RecordTimeline
+              records={[record]}
+              renderRevisionBadge={canEdit ? (r) => <RecordRevisions record={r} /> : undefined}
+            />
+          ) : (
+            <Card className="py-10 text-center">
+              <FileText className="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" />
+              <p className="font-sans font-medium text-muted-foreground">
+                لا يوجد سجل علاجي لهذه الزيارة بعد
+              </p>
+              {canEdit && viewerRole === Role.ADMIN && (
+                <p className="mt-1 font-sans text-xs text-muted-foreground">
+                  يمكن إضافة سجل للمواعيد المكتملة فقط
+                </p>
+              )}
+            </Card>
+          )}
+        </section>
+      )}
 
       {/* Attachments */}
-      <AppointmentAttachments
-        appointmentId={appt.id}
-        attachments={attachments}
-        canManage={canEdit}
-      />
+      {showRecords && (
+        <AppointmentAttachments
+          appointmentId={appt.id}
+          attachments={attachments}
+          canManage={canEdit}
+        />
+      )}
 
       {/* Feedback */}
       {appt.feedback && (

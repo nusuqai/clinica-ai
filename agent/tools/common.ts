@@ -8,7 +8,19 @@ import { getClinicInfo } from "@/server/services/clinicInfo";
 import { listSpecialties } from "@/server/services/specialties";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import { modeTag } from "@/lib/availability/modes";
-import { jsonTool, money, timeStr } from "./shared";
+import { pageRequest } from "@/lib/pagination";
+import {
+  jsonTool,
+  money,
+  timeStr,
+  LIST_HINT,
+  pageField,
+  pageInfo,
+  showAllField,
+  shouldAskForFilter,
+  askForFilter,
+  type FilterChoice,
+} from "./shared";
 
 /** Arabic label for a doctor's rank (null when unset). */
 function doctorTitleAr(title: string | null): string | null {
@@ -27,8 +39,55 @@ const DAY_LABELS_AR: Record<string, string> = {
   SAT: "السبت",
 };
 
+const DOCTORS_PAGE_SIZE = 20;
+
 /** Tools available to every caller, including unknown WhatsApp contacts. */
 export function commonTools(clinicId: string): DynamicStructuredTool[] {
+  /** One page of the clinic's active doctors, filtered in the database. */
+  async function findDoctors(
+    filters: DoctorService.DoctorFilters,
+    page: number | null,
+  ) {
+    const [doctors, branches] = await Promise.all([
+      DoctorService.listDoctorsPage(
+        clinicId,
+        { ...filters, status: "active" },
+        pageRequest(page ?? 1, DOCTORS_PAGE_SIZE),
+      ),
+      BranchService.listBranches(clinicId, { activeOnly: true }),
+    ]);
+    const branchName = new Map(branches.map((b) => [b.id, b.name]));
+    return {
+      ...pageInfo(doctors),
+      doctors: doctors.items.map((d) => ({
+        id: d.id,
+        name: d.profile.fullName,
+        title: doctorTitleAr(d.title),
+        specialty: d.specialty,
+        specialtyId: d.specialtyId,
+        branches: d.branchIds
+          .map((id) => branchName.get(id))
+          .filter((n): n is string => !!n),
+        qualifications: d.qualifications,
+        expertiseAreas: d.expertiseAreas,
+        examinationFee: money(d.examinationFee),
+        consultationFee: money(d.consultationFee),
+        yearsOfExperience: d.yearsOfExperience,
+        acceptsChildren: d.acceptsChildren,
+        requiresAdvanceBooking: d.requiresAdvanceBooking,
+        bio: d.bio,
+      })),
+    };
+  }
+
+  /** The clinic's specialties that have doctors, as choices to narrow a doctor list. */
+  async function specialtyChoices(): Promise<FilterChoice[]> {
+    const specialties = await listSpecialties(clinicId);
+    return specialties
+      .filter((s) => s._count.doctors > 0)
+      .map((s) => ({ label: s.name, args: { specialtyId: s.id }, count: s._count.doctors }));
+  }
+
   return [
     jsonTool(
       {
@@ -53,34 +112,32 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
     jsonTool(
       {
         name: "list_doctors",
-        description: "اعرض قائمة الأطباء المتاحين في العيادة مع تخصصاتهم.",
-        schema: z.object({}),
+        description: `اعرض أطباء العيادة المتاحين مع تخصصاتهم (٢٠ في الصفحة). ابحث باسم الطبيب عبر query، أو صفِّ بالتخصص (specialtyId) أو بالفرع (branchId) أو بمن يكشف على الأطفال (acceptsChildren). عند طلب «الأطباء» دون تحديد تُعيد الأداة التخصصات كخيارات ليختار المستخدم. ${LIST_HINT}`,
+        schema: z.object({
+          query: z.string().nullable().describe("اسم الطبيب أو جزء منه (اختياري)"),
+          specialtyId: z.string().nullable().describe("معرّف التخصص من list_specialties (اختياري)"),
+          branchId: z.string().nullable().describe("معرّف الفرع من list_branches (اختياري)"),
+          acceptsChildren: z.boolean().nullable().describe("true لمن يكشف على الأطفال فقط (اختياري)"),
+          showAll: showAllField,
+          page: pageField,
+        }),
       },
-      async () => {
-        const [doctors, branches] = await Promise.all([
-          DoctorService.listActiveDoctors(clinicId),
-          BranchService.listBranches(clinicId, { activeOnly: true }),
-        ]);
-        const branchName = new Map(branches.map((b) => [b.id, b.name]));
-        return {
-          doctors: doctors.map((d) => ({
-            id: d.id,
-            name: d.profile.fullName,
-            title: doctorTitleAr(d.title),
-            specialty: d.specialty,
-            branches: d.branchIds
-              .map((id) => branchName.get(id))
-              .filter((n): n is string => !!n),
-            qualifications: d.qualifications,
-            expertiseAreas: d.expertiseAreas,
-            examinationFee: money(d.examinationFee),
-            consultationFee: money(d.consultationFee),
-            yearsOfExperience: d.yearsOfExperience,
-            acceptsChildren: d.acceptsChildren,
-            requiresAdvanceBooking: d.requiresAdvanceBooking,
-            bio: d.bio,
-          })),
-        };
+      async (input) => {
+        const { query, specialtyId, branchId, acceptsChildren } = input;
+        const result = await findDoctors(
+          {
+            query: query ?? undefined,
+            specialtyId: specialtyId ?? undefined,
+            branchId: branchId ?? undefined,
+            acceptsChildren: acceptsChildren ?? undefined,
+          },
+          input.page,
+        );
+        const filtered = !!(query || specialtyId || branchId || acceptsChildren != null);
+        if (shouldAskForFilter(filtered, input, result.total)) {
+          return askForFilter(result.total, "ما التخصص الذي تحتاجه؟", await specialtyChoices());
+        }
+        return result;
       },
     ),
     jsonTool(
@@ -105,7 +162,7 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
       {
         name: "search_doctors_by_specialty",
         description:
-          "ابحث عن الأطباء حسب التخصص، إمّا بمعرّف التخصص (specialtyId من list_specialties، وهو الأدق) أو بنص التخصص (مثل: قلب، جلدية، أطفال). البحث النصي غير حسّاس لحالة الأحرف.",
+          `ابحث عن الأطباء حسب التخصص، إمّا بمعرّف التخصص (specialtyId من list_specialties، وهو الأدق) أو بنص التخصص (مثل: قلب، جلدية، أطفال). البحث النصي غير حسّاس لحالة الأحرف. ${LIST_HINT}`,
         schema: z.object({
           specialtyId: z
             .string()
@@ -115,41 +172,25 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
             .string()
             .nullable()
             .describe("نص التخصص المطلوب إن لم يتوفّر المعرّف"),
+          showAll: showAllField,
+          page: pageField,
         }),
       },
-      async ({ specialtyId, specialty }) => {
-        const [doctors, branches] = await Promise.all([
-          DoctorService.listActiveDoctors(clinicId),
-          BranchService.listBranches(clinicId, { activeOnly: true }),
-        ]);
-        const branchName = new Map(branches.map((b) => [b.id, b.name]));
-        const q = (specialty ?? "").trim().toLowerCase();
-        const matched = doctors.filter((d) =>
+      async (input) => {
+        const { specialtyId, specialty } = input;
+        const result = await findDoctors(
           specialtyId
-            ? d.specialtyId === specialtyId
-            : q
-              ? d.specialty.toLowerCase().includes(q)
-              : true,
+            ? { specialtyId }
+            : { specialtyName: specialty ?? undefined },
+          input.page,
         );
+        if (shouldAskForFilter(!!(specialtyId || specialty?.trim()), input, result.total)) {
+          return askForFilter(result.total, "ما التخصص الذي تحتاجه؟", await specialtyChoices());
+        }
         return {
           specialtyId: specialtyId ?? null,
           specialty: specialty ?? null,
-          doctors: matched.map((d) => ({
-            id: d.id,
-            name: d.profile.fullName,
-            title: doctorTitleAr(d.title),
-            specialty: d.specialty,
-            specialtyId: d.specialtyId,
-            branches: d.branchIds
-              .map((id) => branchName.get(id))
-              .filter((n): n is string => !!n),
-            qualifications: d.qualifications,
-            expertiseAreas: d.expertiseAreas,
-            examinationFee: money(d.examinationFee),
-            consultationFee: money(d.consultationFee),
-            yearsOfExperience: d.yearsOfExperience,
-            acceptsChildren: d.acceptsChildren,
-          })),
+          ...result,
         };
       },
     ),

@@ -22,12 +22,14 @@ const roleVariants: Record<Role, BadgeVariant> = {
   [Role.PATIENT]: "sky",
   [Role.DOCTOR]: "violet",
   [Role.ADMIN]: "rose",
+  [Role.STAFF]: "warning",
 };
 
 const roleLabels: Record<Role, string> = {
   [Role.PATIENT]: "مريض",
   [Role.DOCTOR]: "طبيب",
   [Role.ADMIN]: "مسؤول",
+  [Role.STAFF]: "موظف",
 };
 
 export function RoleBadge({ role }: { role: Role }) {

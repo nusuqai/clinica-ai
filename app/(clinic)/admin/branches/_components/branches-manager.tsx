@@ -115,9 +115,13 @@ const DAY_MODE_OPTIONS: { value: BranchDayMode; label: string }[] = [
 export default function BranchesManager({
   branches,
   clinicId,
+  canManageStructure,
 }: {
   branches: BranchView[];
   clinicId: string;
+  /** Holds "clinic": may add / delete / (de)activate branches and pick the main
+      one. Without it ("branches" only) the member just edits branch details. */
+  canManageStructure: boolean;
 }) {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
@@ -202,12 +206,14 @@ export default function BranchesManager({
 
   return (
     <div>
-      <div className="mb-4 flex justify-end">
-        <Button onClick={openCreate}>
-          <Plus />
-          إضافة فرع
-        </Button>
-      </div>
+      {canManageStructure && (
+        <div className="mb-4 flex justify-end">
+          <Button onClick={openCreate}>
+            <Plus />
+            إضافة فرع
+          </Button>
+        </div>
+      )}
 
       {branches.length === 0 ? (
         <Card className="py-16 text-center">
@@ -246,7 +252,7 @@ export default function BranchesManager({
                       <Pencil />
                     </Button>
                   </Hint>
-                  {!b.isMain && (
+                  {canManageStructure && !b.isMain && (
                     <Hint label="تعيين كفرع رئيسي">
                       <Button
                         variant="ghost"
@@ -260,15 +266,17 @@ export default function BranchesManager({
                       </Button>
                     </Hint>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => runAction(() => setBranchActiveAction(b.id, !b.isActive))}
-                    disabled={isPending}
-                  >
-                    {b.isActive ? "تعطيل" : "تفعيل"}
-                  </Button>
-                  {!b.isMain && (
+                  {canManageStructure && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => runAction(() => setBranchActiveAction(b.id, !b.isActive))}
+                      disabled={isPending}
+                    >
+                      {b.isActive ? "تعطيل" : "تفعيل"}
+                    </Button>
+                  )}
+                  {canManageStructure && !b.isMain && (
                     <Hint label="حذف">
                       <Button
                         variant="ghost-destructive"

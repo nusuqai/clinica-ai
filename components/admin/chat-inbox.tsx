@@ -33,6 +33,7 @@ import { ChatImage } from "@/components/ui/chat-image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { createClient } from "@/lib/supabase/client";
 import {
   sendAdminReply,
@@ -72,6 +73,13 @@ interface ChatInboxProps {
   selectedConversation: ConversationDetail | null;
   messages: MessageItem[];
   clinicId: string;
+  /** The signed-in team member's name — labels their own optimistic replies. */
+  currentUserName: string;
+  /** Team member id → name, to label a colleague's reply arriving over realtime. */
+  staffNames: Record<string, string>;
+  /** Holds "patients": show the link to the contact's patient profile. Without
+   *  it the inbox still shows the contact's name and phone, just not the link. */
+  canOpenPatientProfile: boolean;
 }
 
 /**
@@ -151,6 +159,8 @@ interface RenderedMessage {
   id?: string;
   content: string;
   senderType: MessageItem["senderType"];
+  /** Who sent a manual reply — shown above the bubble. */
+  senderName?: string | null;
   sessionId: string | null;
   createdAt: Date;
   pending?: PendingMessage;
@@ -168,10 +178,18 @@ export default function ChatInbox({
   selectedConversation: initialConversation,
   messages: initialMessages,
   clinicId,
+  currentUserName,
+  staffNames,
+  canOpenPatientProfile,
 }: ChatInboxProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeId = searchParams.get("id");
+  // List filters live in the URL (FilterBar); realtime refreshes reuse them.
+  const filterQuery = searchParams.get("q") ?? "";
+  const filterChannel = searchParams.get("channel") ?? "";
+  const filterShow = searchParams.get("show") ?? "";
+  const hasFilters = !!(filterQuery || filterChannel || filterShow);
 
   const [conversations, setConversations] = useState(initialConversations);
   const [messages, setMessages] = useState(initialMessages);
@@ -231,6 +249,7 @@ export default function ChatInbox({
           id: m.id,
           content: m.content,
           senderType: m.senderType,
+          senderName: m.senderName,
           sessionId: m.sessionId,
           createdAt: m.createdAt,
           voice: m.voice,
@@ -244,6 +263,7 @@ export default function ChatInbox({
         key: p.clientId,
         content: p.content,
         senderType: SenderType.ADMIN,
+        senderName: currentUserName,
         // No session, so the "new session" divider never splits on these.
         sessionId: null,
         createdAt: p.createdAt,
@@ -263,7 +283,7 @@ export default function ChatInbox({
           : {}),
       })),
     ];
-  }, [messages, pending, activeId]);
+  }, [messages, pending, activeId, currentUserName]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -273,13 +293,17 @@ export default function ChatInbox({
   const refreshConversations = useCallback(() => {
     startListTransition(async () => {
       try {
-        const fresh = await fetchConversations(clinicId);
+        const fresh = await fetchConversations({
+          query: filterQuery,
+          channel: filterChannel,
+          show: filterShow,
+        });
         setConversations(fresh);
       } catch (err) {
         console.error("Failed to refresh conversations:", err);
       }
     });
-  }, [clinicId]);
+  }, [filterQuery, filterChannel, filterShow]);
   const handleRealtimeMessage = useCallback(
     (row: RealtimeMessageRow) => {
       // Reconcile with this admin's own optimistic bubble, whichever arrives
@@ -316,6 +340,11 @@ export default function ChatInbox({
                   id: row.id,
                   content: row.content,
                   senderType: row.senderType,
+                  senderId: row.senderType === SenderType.ADMIN ? row.senderId : null,
+                  senderName:
+                    row.senderType === SenderType.ADMIN && row.senderId
+                      ? (staffNames[row.senderId] ?? null)
+                      : null,
                   sessionId: row.sessionId,
                   createdAt: new Date(row.createdAt),
                   isRead: row.isRead,
@@ -382,7 +411,7 @@ export default function ChatInbox({
         return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
       });
     },
-    [activeId, refreshConversations]
+    [activeId, refreshConversations, staffNames]
   );
 
   // A message row changed after insert — a TTS agent reply gets its metadata.voice
@@ -737,11 +766,41 @@ export default function ChatInbox({
           {listPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
         </div>
 
+        {/* Filters — applied in the database; the URL keeps them across selects. */}
+        <div className="border-b border-border px-3 py-2.5">
+          <FilterBar
+            stacked
+            fields={[
+              { type: "search", param: "q", placeholder: "بحث بالاسم أو رقم الهاتف..." },
+              {
+                type: "select",
+                param: "show",
+                allLabel: "كل المحادثات",
+                options: [
+                  { value: "unread", label: "غير المقروءة" },
+                  { value: "escalated", label: "المُصعّدة" },
+                ],
+              },
+              {
+                type: "select",
+                param: "channel",
+                allLabel: "كل القنوات",
+                options: [
+                  { value: Channel.WHATSAPP, label: "واتساب" },
+                  { value: Channel.WEB, label: "الموقع" },
+                ],
+              },
+            ]}
+          />
+        </div>
+
         <ul className="flex-1 divide-y divide-border overflow-y-auto">
           {conversations.length === 0 && (
             <li className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
               <Inbox className="h-8 w-8 opacity-40" />
-              <p className="font-sans text-xs">لا توجد محادثات بعد</p>
+              <p className="font-sans text-xs">
+                {hasFilters ? "لا توجد محادثات مطابقة" : "لا توجد محادثات بعد"}
+              </p>
             </li>
           )}
           {conversations.map((conv) => (
@@ -832,7 +891,7 @@ export default function ChatInbox({
                 )}
               </div>
               <div className="ms-auto flex items-center gap-2">
-                {selectedConversation.userId ? (
+                {!canOpenPatientProfile ? null : selectedConversation.userId ? (
                   <Hint label="فتح ملف العميل في تبويب جديد">
                     <Button
                       asChild
@@ -840,7 +899,7 @@ export default function ChatInbox({
                       className="h-auto gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-normal text-primary hover:bg-primary/20 hover:text-primary [&_svg]:size-3.5"
                     >
                       <a
-                        href={`/admin/users/${selectedConversation.userId}`}
+                        href={`/admin/patients/${selectedConversation.userId}`}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -866,7 +925,15 @@ export default function ChatInbox({
                     const isUnresolved = unresolved.length > 0;
                     const shown = isUnresolved ? unresolved : selectedConversation.escalations;
                     return (
-                      <Hint label={shown.map((e) => escalationReasonLabel(e.reason)).join(" · ")}>
+                      <Hint
+                        label={shown
+                          .map((e) =>
+                            e.resolvedByName
+                              ? `${escalationReasonLabel(e.reason)} — عالجه: ${e.resolvedByName}`
+                              : escalationReasonLabel(e.reason)
+                          )
+                          .join(" · ")}
+                      >
                         <span
                           className={[
                             "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[10px]",
@@ -876,13 +943,21 @@ export default function ChatInbox({
                           {isUnresolved && <AlertTriangle className="h-3 w-3" />}
                           {isUnresolved
                             ? `${unresolved.length} طلب تصعيد بانتظار الرد`
-                            : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد)`}
+                            : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد${
+                                shown[0]?.resolvedByName ? ` — ${shown[0].resolvedByName}` : ""
+                              })`}
                         </span>
                       </Hint>
                     );
                   })()}
                 {selectedConversation.activeSessionId && (
-                  <Hint label="تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة">
+                  <Hint
+                    label={
+                      selectedConversation.aiToggledByName
+                        ? `${selectedConversation.aiEnabled ? "فعّله" : "أوقفه"}: ${selectedConversation.aiToggledByName}`
+                        : "تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة"
+                    }
+                  >
                     <Badge
                       asChild
                       variant={selectedConversation.aiEnabled ? "accent" : "muted"}
@@ -895,6 +970,12 @@ export default function ChatInbox({
                           <BotOff className="h-3.5 w-3.5" />
                         )}
                         {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
+                        {!selectedConversation.aiEnabled &&
+                          selectedConversation.aiToggledByName && (
+                            <span className="opacity-70">
+                              · {selectedConversation.aiToggledByName}
+                            </span>
+                          )}
                       </button>
                     </Badge>
                   </Hint>
@@ -962,6 +1043,13 @@ export default function ChatInbox({
                         {isAgent && (
                           <p className="mb-0.5 text-[10px] font-medium text-accent">
                             🤖 المساعد الذكي
+                          </p>
+                        )}
+                        {/* Who on the team answered the client. */}
+                        {msg.senderType === SenderType.ADMIN && msg.senderName && (
+                          <p className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-primary">
+                            <UserRound className="h-3 w-3" />
+                            {msg.senderName}
                           </p>
                         )}
                         {msg.voice && (

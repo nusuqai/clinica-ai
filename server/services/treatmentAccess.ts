@@ -1,7 +1,7 @@
 import "server-only";
 import { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getClinicContext } from "@/lib/auth";
+import { can, getClinicContext } from "@/lib/auth";
 
 // THE read rule for medical history, in one place so the doctor, admin and
 // patient pages cannot drift apart. Kept out of server/actions/treatments.ts on
@@ -17,7 +17,8 @@ export type HistoryAccess =
  * at demo.clinica-ai.nusuqai.com is authorized for demo's records and only
  * those — the same Profile at another clinic is a different history.
  *
- *   ADMIN   — any patient in their clinic.
+ *   ADMIN   — any patient in their clinic (as does STAFF holding the
+ *             "medical_records" permission).
  *   PATIENT — themselves, nobody else.
  *   DOCTOR  — a patient they have treated here (an appointment exists between
  *             the two). They then see the clinic's whole record for that
@@ -29,7 +30,7 @@ export async function authorizePatientHistory(patientId: string): Promise<Histor
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, error: "غير مصرح" };
 
-  if (ctx.role === Role.ADMIN) {
+  if (can(ctx, "medical_records")) {
     return { ok: true, clinicId: ctx.clinic.id, role: ctx.role };
   }
 

@@ -1,30 +1,24 @@
-import Link from "next/link";
-import { ExternalLink } from "lucide-react";
-import { requireClinicMember } from "@/lib/auth";
-import { listDoctors } from "@/server/services/doctors";
-import { listBranches } from "@/server/services/branches";
+import { requirePermission } from "@/lib/auth";
+import { branchesInScope, listBranches } from "@/server/services/branches";
 import { listSpecialtyOptions } from "@/server/services/specialties";
+import { doctorsPageAction } from "@/server/actions/admin";
 import PageHeader from "@/components/admin/page-header";
+import { FilterBar, type FilterField } from "@/components/ui/filter-bar";
 import AddDoctorModal from "./_components/add-doctor-modal";
-import EditDoctorModal from "./_components/edit-doctor-modal";
-import DoctorRowActions from "./_components/doctor-row-actions";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Hint } from "@/components/ui/tooltip";
+import DoctorsTable from "./_components/doctors-table";
 
-export default async function AdminDoctorsPage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+interface PageProps {
+  searchParams: Promise<{ q?: string; specialty?: string; branch?: string; status?: string }>;
+}
+
+export default async function AdminDoctorsPage({ searchParams }: PageProps) {
+  const { clinic, branchIds: scope } = await requirePermission("doctors");
+  const { q, specialty, branch, status } = await searchParams;
+  const filters = { query: q, specialtyId: specialty, branchId: branch, status };
+
   const [doctors, branchRows, specialties] = await Promise.all([
-    listDoctors(clinic.id),
-    listBranches(clinic.id, { activeOnly: true }),
+    doctorsPageAction(filters, 1),
+    listBranches(clinic.id, { activeOnly: true }).then((rows) => branchesInScope(rows, scope)),
     listSpecialtyOptions(clinic.id),
   ]);
   const branches = branchRows.map((b) => ({
@@ -38,85 +32,50 @@ export default async function AdminDoctorsPage() {
     })),
   }));
 
+  const filterFields: FilterField[] = [
+    { type: "search", param: "q", placeholder: "بحث بالاسم أو رقم الهاتف..." },
+    {
+      type: "select",
+      param: "specialty",
+      allLabel: "كل التخصصات",
+      options: specialties.map((s) => ({ value: s.id, label: s.name })),
+    },
+    // Only worth a control when the clinic actually has several branches.
+    ...(branches.length > 1
+      ? [
+          {
+            type: "select" as const,
+            param: "branch",
+            allLabel: "كل الفروع",
+            options: branches.map((b) => ({ value: b.id, label: b.name })),
+          },
+        ]
+      : []),
+    {
+      type: "select",
+      param: "status",
+      allLabel: "كل الحالات",
+      options: [
+        { value: "active", label: "نشط" },
+        { value: "inactive", label: "غير نشط" },
+      ],
+    },
+  ];
+
   return (
     <div>
       <PageHeader
         title="الأطباء"
-        subtitle={`${doctors.length} طبيب مسجّل`}
+        subtitle={`${doctors.total} طبيب`}
         action={<AddDoctorModal branches={branches} specialties={specialties} />}
       />
-
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table className="w-full font-sans text-sm">
-            <TableHeader>
-              <TableRow className="border-b border-border bg-muted/40">
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  الاسم
-                </TableHead>
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  التخصص
-                </TableHead>
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  المواعيد
-                </TableHead>
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  الحالة
-                </TableHead>
-                <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  إجراءات
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody className="divide-y divide-border">
-              {doctors.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
-                    لا يوجد أطباء. أضف طبيباً جديداً لتبدأ.
-                  </TableCell>
-                </TableRow>
-              )}
-              {doctors.map((doctor) => (
-                <TableRow key={doctor.id} className="transition-colors hover:bg-muted/30">
-                  <TableCell className="px-4 py-3 font-medium text-foreground">
-                    {doctor.profile.fullName}
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-muted-foreground">
-                    {doctor.specialty}
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-muted-foreground">
-                    {doctor._count.appointments}
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
-                    <Badge variant={doctor.isActive ? "success" : "neutral"}>
-                      {doctor.isActive ? "نشط" : "غير نشط"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <Hint label="عرض التفاصيل">
-                        <Link
-                          aria-label="عرض التفاصيل"
-                          href={`/admin/doctors/${doctor.id}`}
-                          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </Link>
-                      </Hint>
-                      <EditDoctorModal
-                        doctor={doctor}
-                        branches={branches}
-                        specialties={specialties}
-                      />
-                      <DoctorRowActions doctorId={doctor.id} isActive={doctor.isActive} />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </Card>
+      <FilterBar fields={filterFields} />
+      <DoctorsTable
+        initial={doctors}
+        filters={filters}
+        branches={branches}
+        specialties={specialties}
+      />
     </div>
   );
 }

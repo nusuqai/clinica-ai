@@ -3,6 +3,7 @@
 import { useDroppable } from "@dnd-kit/core";
 import type { AppointmentStatus } from "@prisma/client";
 import type { AdminAppointment } from "@/server/services/appointments";
+import { InfiniteScroll } from "@/components/ui/infinite-scroll";
 import AppointmentCard from "./appointment-card";
 import { Badge } from "@/components/ui/badge";
 
@@ -17,7 +18,14 @@ const COLUMN_ACCENTS: Record<AppointmentStatus, string> = {
 interface BoardColumnProps {
   status: AppointmentStatus;
   label: string;
+  /** The cards loaded so far. */
   appointments: AdminAppointment[];
+  /** All matching appointments in this status (server count). */
+  total: number;
+  hasMore: boolean;
+  loading: boolean;
+  error: boolean;
+  onLoadMore: () => void;
   onOpenDetails: (appointment: AdminAppointment) => void;
 }
 
@@ -25,25 +33,32 @@ export default function BoardColumn({
   status,
   label,
   appointments,
+  total,
+  hasMore,
+  loading,
+  error,
+  onLoadMore,
   onOpenDetails,
 }: BoardColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
   return (
-    <div className="flex w-72 flex-shrink-0 flex-col">
+    // Fixed height: each column scrolls its own cards, so a long column never
+    // stretches the board or the others.
+    <div className="flex h-[calc(100vh-20rem)] min-h-[280px] w-72 flex-shrink-0 flex-col">
       <div
         className={`flex items-center justify-between rounded-t-xl border-t-4 bg-muted/40 px-3 py-2 ${COLUMN_ACCENTS[status]}`}
       >
         <h3 className="font-heading text-sm font-bold text-foreground">{label}</h3>
         <Badge variant="outline" className="px-2">
-          {appointments.length}
+          {total}
         </Badge>
       </div>
 
       <div
         ref={setNodeRef}
         className={[
-          "flex min-h-[200px] flex-1 flex-col gap-2 rounded-b-xl border border-t-0 border-border p-2 transition-colors",
+          "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-b-xl border border-t-0 border-border p-2 transition-colors",
           isOver ? "bg-primary/5" : "bg-muted/10",
         ].join(" ")}
       >
@@ -53,6 +68,13 @@ export default function BoardColumn({
         {appointments.map((appt) => (
           <AppointmentCard key={appt.id} appointment={appt} onOpenDetails={onOpenDetails} />
         ))}
+        <InfiniteScroll
+          onLoadMore={onLoadMore}
+          hasMore={hasMore}
+          loading={loading}
+          error={error}
+          className="py-1"
+        />
       </div>
     </div>
   );

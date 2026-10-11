@@ -1,5 +1,5 @@
 import { CheckCircle2, XCircle } from "lucide-react";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import PageHeader from "@/components/admin/page-header";
 import { getWhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
 import { Card } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import { Card } from "@/components/ui/card";
  * those are Meta app secrets, and only whoever administers that app needs them.
  */
 export default async function WhatsAppStatusPage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("whatsapp");
   const config = await getWhatsappConfigStatus(clinic.id);
 
   return (

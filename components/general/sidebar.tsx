@@ -27,6 +27,7 @@ import {
 import { useEscalationAlerts } from "./escalation-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ClinicLogo } from "@/components/general/clinic-logo";
+import type { Permission } from "@/lib/permissions";
 
 export interface NavItem {
   href: string;
@@ -34,6 +35,12 @@ export interface NavItem {
   icon: LucideIcon;
   /** Sub-items — when present the item renders as a collapsible group. */
   children?: NavItem[];
+  /** Admin dashboard only: the permission needed to see this item (any one of
+      them, when given a list). Items with
+      neither this nor `adminOnly` are visible to everyone in the dashboard. */
+  permission?: Permission | Permission[];
+  /** Admin dashboard only: visible to the clinic ADMIN alone (team & roles). */
+  adminOnly?: boolean;
 }
 
 /** The clinic's AI unit meter, shown in the admin sidebar. */
