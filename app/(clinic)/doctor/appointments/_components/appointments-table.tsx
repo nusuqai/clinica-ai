@@ -12,6 +12,18 @@ import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import RecordFormModal from "@/components/medical/record-form-modal";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import AppointmentActions from "./appointment-actions";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Hint } from "@/components/ui/tooltip";
 
 type Row = DoctorAppointmentView & { hasRecord: boolean };
 
@@ -30,39 +42,49 @@ export default function AppointmentsTable({
   );
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+    <Card className="overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full font-sans text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40">
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">المريض</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">التاريخ</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">الوقت</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">الحالة</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">
+        <Table className="w-full font-sans text-sm">
+          <TableHeader>
+            <TableRow className="border-b border-border bg-muted/40">
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                المريض
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                التاريخ
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                الوقت
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                الحالة
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
                 ملاحظات المريض
-              </th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">الإجراءات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                الإجراءات
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="divide-y divide-border">
             {items.length === 0 && (
-              <tr>
-                <td colSpan={6} className="py-16 text-center text-muted-foreground">
+              <TableRow>
+                <TableCell colSpan={6} className="py-16 text-center text-muted-foreground">
                   لا توجد مواعيد
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
             {items.map((appt) => {
               return (
-                <tr key={appt.id} className="align-top transition-colors hover:bg-muted/30">
-                  <td className="px-4 py-3">
+                <TableRow key={appt.id} className="align-top transition-colors hover:bg-muted/30">
+                  <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                        <span className="text-xs font-bold text-primary">
+                      <Avatar className="h-8 w-8 rounded-lg">
+                        <AvatarFallback className="rounded-lg bg-primary/10 text-xs font-bold text-primary">
                           {appt.patient.fullName.charAt(0)}
-                        </span>
-                      </div>
+                        </AvatarFallback>
+                      </Avatar>
                       <div>
                         <p className="font-medium text-foreground">{appt.patient.fullName}</p>
                         {appt.patient.phone && (
@@ -72,15 +94,15 @@ export default function AppointmentsTable({
                         )}
                       </div>
                     </div>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">
                     {appt.slot
                       ? formatSlotDate(appt.slot.date)
                       : appt.bookingDate
                         ? formatSlotDate(appt.bookingDate)
                         : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground" dir="ltr">
                     {appt.slot ? (
                       <>
                         {formatSlotTime(appt.slot.startTime)}
@@ -92,29 +114,30 @@ export default function AppointmentsTable({
                     ) : (
                       "—"
                     )}
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <AppointmentStatusBadge status={appt.status} />
                     {appt.cancellationReason && (
-                      <p
-                        className="mt-1 max-w-[120px] truncate text-xs text-muted-foreground"
-                        title={appt.cancellationReason}
-                      >
-                        {appt.cancellationReason}
-                      </p>
+                      <Hint label={appt.cancellationReason}>
+                        <p className="mt-1 max-w-[120px] truncate text-xs text-muted-foreground">
+                          {appt.cancellationReason}
+                        </p>
+                      </Hint>
                     )}
-                  </td>
-                  <td className="max-w-[160px] px-4 py-3 text-muted-foreground">
-                    <p className="truncate text-xs" title={appt.patientNotes ?? ""}>
-                      {appt.patientNotes || "—"}
-                    </p>
+                  </TableCell>
+                  <TableCell className="max-w-[160px] px-4 py-3 text-muted-foreground">
+                    <Hint label={appt.patientNotes ?? ""}>
+                      <p className="truncate text-xs">{appt.patientNotes || "—"}</p>
+                    </Hint>
                     {appt.doctorNotes && (
-                      <p className="mt-0.5 truncate text-xs text-primary" title={appt.doctorNotes}>
-                        ✍ {appt.doctorNotes}
-                      </p>
+                      <Hint label={appt.doctorNotes}>
+                        <p className="mt-0.5 truncate text-xs text-primary">
+                          ✍ {appt.doctorNotes}
+                        </p>
+                      </Hint>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="space-y-1.5">
                       <AppointmentActions
                         appointmentId={appt.id}
@@ -127,16 +150,19 @@ export default function AppointmentsTable({
                         defaultVisitDate={appt.slot?.date ?? appt.bookingDate}
                         hasRecord={appt.hasRecord}
                       />
-                      <Link
-                        href={`/doctor/appointments/${appt.id}`}
-                        className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                      <Button
+                        asChild
+                        variant="outline"
+                        className="h-auto gap-1 rounded-lg bg-transparent px-2.5 py-1.5 text-xs text-muted-foreground hover:border-foreground/30 hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
                       >
-                        <ArrowLeft className="h-3.5 w-3.5" />
-                        التفاصيل
-                      </Link>
+                        <Link href={`/doctor/appointments/${appt.id}`}>
+                          <ArrowLeft className="h-3.5 w-3.5" />
+                          التفاصيل
+                        </Link>
+                      </Button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
             <InfiniteScroll
@@ -146,9 +172,9 @@ export default function AppointmentsTable({
               loading={loading}
               error={error}
             />
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-    </div>
+    </Card>
   );
 }

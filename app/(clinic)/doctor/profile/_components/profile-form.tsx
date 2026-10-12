@@ -1,10 +1,20 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { updateMyProfileAction } from "@/server/actions/doctor";
+import {
+  doctorProfileSchema,
+  doctorProfileToFormData,
+  type DoctorProfileValues,
+} from "@/lib/validations/doctor";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import SpecialtySelect, {
   type SpecialtyOption,
 } from "@/app/(clinic)/admin/doctors/_components/specialty-select";
+import { Alert } from "@/components/ui/alert";
 
 interface ProfileFormProps {
   fullName: string;
@@ -27,100 +37,86 @@ export default function ProfileForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const form = useForm<DoctorProfileValues>({
+    resolver: zodResolver(doctorProfileSchema),
+    defaultValues: {
+      fullName,
+      phone: phone ?? "",
+      specialtyId: specialtyId ?? "",
+      newSpecialtyName: "",
+      consultationFee: consultationFee ?? "",
+      bio: bio ?? "",
+    },
+    mode: "onTouched",
+  });
+
+  const handleSubmit = form.handleSubmit((values) => {
     setError(null);
     setSuccess(false);
-    const formData = new FormData(e.currentTarget);
     startTransition(async () => {
-      const res = await updateMyProfileAction(formData);
+      const res = await updateMyProfileAction(doctorProfileToFormData(values));
       if (res?.error) {
         setError(res.error);
         return;
       }
       setSuccess(true);
+      // The saved values are the new baseline (no longer "dirty").
+      form.reset(values);
       setTimeout(() => setSuccess(false), 4000);
     });
-  }
+  });
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
-          تم تحديث الملف الشخصي بنجاح
-        </div>
-      )}
+    <form onSubmit={handleSubmit} noValidate className="space-y-6">
+      {error && <Alert variant="destructive">{error}</Alert>}
+      {success && <Alert variant="success">تم تحديث الملف الشخصي بنجاح</Alert>}
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <label className="font-sans text-sm font-medium text-foreground">الاسم الكامل *</label>
-          <input
-            name="fullName"
-            type="text"
-            required
-            defaultValue={fullName}
-            placeholder="د. محمد أحمد"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+        <FormField
+          control={form.control}
+          name="fullName"
+          label="الاسم الكامل *"
+          required
+          placeholder="د. محمد أحمد"
+        />
 
-        <div className="space-y-1.5">
-          <label className="font-sans text-sm font-medium text-foreground">رقم الهاتف</label>
-          <input
-            name="phone"
-            type="tel"
-            defaultValue={phone ?? ""}
-            placeholder="+966 5XXXXXXXX"
-            dir="ltr"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+        <FormField
+          type="tel"
+          control={form.control}
+          name="phone"
+          label="رقم الهاتف"
+          placeholder="+966 5XXXXXXXX"
+        />
 
         <div>
-          <SpecialtySelect specialties={specialties} defaultSpecialtyId={specialtyId} />
+          <SpecialtySelect control={form.control} specialties={specialties} />
         </div>
 
-        <div className="space-y-1.5">
-          <label className="font-sans text-sm font-medium text-foreground">
-            رسوم الاستشارة (ر.س)
-          </label>
-          <input
-            name="consultationFee"
-            type="number"
-            min="0"
-            step="0.01"
-            defaultValue={consultationFee ?? ""}
-            placeholder="150"
-            dir="ltr"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+        <FormField
+          type="number"
+          control={form.control}
+          name="consultationFee"
+          label="رسوم الاستشارة (ر.س)"
+          min="0"
+          step="0.01"
+          placeholder="150"
+        />
 
-        <div className="space-y-1.5 sm:col-span-2">
-          <label className="font-sans text-sm font-medium text-foreground">نبذة عنك</label>
-          <textarea
-            name="bio"
-            rows={4}
-            defaultValue={bio ?? ""}
-            placeholder="اكتب نبذة مختصرة عن خبرتك وتخصصك..."
-            className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
+        <FormField
+          type="textarea"
+          control={form.control}
+          name="bio"
+          label="نبذة عنك"
+          rows={4}
+          placeholder="اكتب نبذة مختصرة عن خبرتك وتخصصك..."
+          className="sm:col-span-2"
+        />
       </div>
 
       <div className="flex items-center gap-4 pt-2">
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded-xl bg-primary px-6 py-2.5 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-        >
+        <Button type="submit" loading={isPending} className="px-6">
           {isPending ? "جارٍ الحفظ..." : "حفظ التغييرات"}
-        </button>
+        </Button>
       </div>
     </form>
   );

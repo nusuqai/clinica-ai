@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { Calendar, Users, CheckCircle, ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface HeroSectionProps {
   doctorCount: number;
@@ -79,19 +80,23 @@ export function HeroSection({
 
         {/* CTA buttons */}
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-          <a
-            href="#book"
-            className="group inline-flex items-center gap-2 rounded-xl bg-accent px-7 py-3.5 font-medium text-white shadow-lg shadow-accent/25 transition-all hover:-translate-y-0.5 hover:shadow-accent/40"
+          <Button
+            asChild
+            variant="accent"
+            className="group h-auto gap-2 rounded-xl px-7 py-3.5 text-[length:inherit] shadow-lg shadow-accent/25 transition-all hover:-translate-y-0.5 hover:shadow-accent/40"
           >
-            احجز موعدك الآن
-            <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
-          </a>
-          <a
-            href="#doctors"
-            className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-7 py-3.5 font-medium text-white transition-all hover:border-accent/50 hover:bg-white/5"
+            <a href="#book">
+              احجز موعدك الآن
+              <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+            </a>
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="h-auto gap-2 rounded-xl border-white/20 bg-transparent px-7 py-3.5 text-[length:inherit] text-white transition-all hover:border-accent/50 hover:bg-white/5"
           >
-            تصفح الأطباء
-          </a>
+            <a href="#doctors">تصفح الأطباء</a>
+          </Button>
         </div>
 
         {/* Signed-in patient: their next visit, one glance from the top */}

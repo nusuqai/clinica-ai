@@ -3,6 +3,7 @@ import { BookOpen } from "lucide-react";
 import { requirePlatformAdmin } from "@/lib/auth";
 import { getPlatformWhatsappOverview } from "@/server/services/whatsappOverview";
 import WhatsappManager from "./_components/whatsapp-manager";
+import { Card } from "@/components/ui/card";
 
 // WhatsApp onboarding for every clinic, in one place. A clinic admin can see
 // whether their clinic is connected, but only a platform admin sets it up.
@@ -25,23 +26,23 @@ export default async function PlatformWhatsappPage() {
       </div>
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card p-5">
+        <Card className="p-5">
           <p className="font-heading text-2xl font-bold text-foreground" dir="ltr">
             {overview.configuredCount}
           </p>
           <p className="mt-1 font-sans text-sm text-muted-foreground">عيادات متصلة بواتساب</p>
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-5">
+        </Card>
+        <Card className="p-5">
           <p className="font-heading text-2xl font-bold text-foreground" dir="ltr">
             {overview.clinics.length - overview.configuredCount}
           </p>
           <p className="mt-1 font-sans text-sm text-muted-foreground">عيادات بانتظار الإعداد</p>
-        </div>
+        </Card>
       </div>
 
       <div className="space-y-4">
         {overview.clinics.map((c) => (
-          <div key={c.clinicId} className="rounded-2xl border border-border bg-card p-5">
+          <Card key={c.clinicId} className="p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-heading font-semibold text-foreground">{c.name}</p>
@@ -70,7 +71,7 @@ export default async function PlatformWhatsappPage() {
               </div>
             </div>
             <WhatsappManager clinicId={c.clinicId} config={c.config} appUrl={appUrl} />
-          </div>
+          </Card>
         ))}
         {overview.clinics.length === 0 && (
           <p className="font-sans text-sm text-muted-foreground">لا توجد عيادات.</p>

@@ -1,3 +1,5 @@
+import { Progress } from "@/components/ui/progress";
+
 interface BarListItem {
   label: string;
   sublabel?: string;
@@ -26,12 +28,11 @@ export default function BarList({ items, max, color = "bg-primary" }: BarListPro
               <span className="font-medium text-foreground">{item.value}</span>
             </div>
           </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className={`h-full rounded-full ${color} transition-all duration-500`}
-              style={{ width: `${Math.round((item.value / maxVal) * 100)}%` }}
-            />
-          </div>
+          <Progress
+            value={Math.round((item.value / maxVal) * 100)}
+            className="bg-muted"
+            indicatorClassName={`rounded-full ${color} duration-500`}
+          />
         </div>
       ))}
     </div>

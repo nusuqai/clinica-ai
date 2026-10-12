@@ -1,10 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Save, KeyRound, Copy, Check } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Save, KeyRound, Copy, Check } from "lucide-react";
 import { saveClinicWhatsappConfigAction } from "@/server/actions/platformWhatsapp";
 import type { WhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
-import { Field } from "./field";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
+import {
+  whatsappConnectionSchema,
+  type WhatsappConnectionValues,
+} from "@/lib/validations/platform";
+
+/** Compact muted label used across the WhatsApp console forms. */
+const smallLabel = "text-xs font-normal text-muted-foreground";
 
 interface Props {
   /** The clinic being configured — named explicitly, since the console runs on
@@ -21,10 +34,18 @@ interface Props {
  * Token the clinic pastes back into Meta.
  */
 export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Props) {
-  const [phoneNumberId, setPhoneNumberId] = useState(initialConfig?.phoneNumberId ?? "");
-  const [wabaId, setWabaId] = useState(initialConfig?.wabaId ?? "");
-  const [accessToken, setAccessToken] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [hasToken, setHasToken] = useState(!!initialConfig?.hasToken);
+  const form = useForm<WhatsappConnectionValues>({
+    resolver: zodResolver(whatsappConnectionSchema(hasToken)),
+    defaultValues: {
+      phoneNumberId: initialConfig?.phoneNumberId ?? "",
+      wabaId: initialConfig?.wabaId ?? "",
+      accessToken: "",
+    },
+    mode: "onTouched",
+  });
+  const { control } = form;
+  const saving = form.formState.isSubmitting;
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   // The webhook + verify tokens the clinic must paste into Meta. Known once the
   // config exists (either loaded, or returned by the first save).
@@ -40,8 +61,7 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
       : null
   );
 
-  const handleSave = async () => {
-    setSaving(true);
+  const handleSave = form.handleSubmit(async ({ phoneNumberId, wabaId, accessToken }) => {
     setMessage(null);
     const res = await saveClinicWhatsappConfigAction({
       clinicId,
@@ -49,9 +69,9 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
       wabaId,
       accessToken: accessToken || undefined,
     });
-    setSaving(false);
     if (res.ok) {
-      setAccessToken("");
+      form.reset({ phoneNumberId, wabaId, accessToken: "" });
+      if (accessToken) setHasToken(true);
       setTokens({ webhookToken: res.webhookToken, verifyToken: res.verifyToken });
       setMessage({ ok: true, text: "تم حفظ الإعدادات بنجاح." });
     } else {
@@ -60,7 +80,7 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
         text: ("message" in res && res.message) || "تعذّر حفظ الإعدادات.",
       });
     }
-  };
+  });
 
   const webhookUrl = tokens ? `${appUrl}/api/meta/whatsapp/webhook/${tokens.webhookToken}` : "";
 
@@ -70,50 +90,51 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
         <KeyRound className="h-4 w-4 text-accent" />
         بيانات الاتصال (Meta Cloud API)
       </h2>
-      <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
-        <Field
-          label="Phone Number ID"
-          value={phoneNumberId}
-          onChange={setPhoneNumberId}
-          placeholder="مثال: 1286383577882071"
-        />
-        <Field
-          label="WhatsApp Business Account ID (WABA)"
-          value={wabaId}
-          onChange={setWabaId}
-          placeholder="مثال: 2292332154910536"
-        />
-        <div>
-          <label className="mb-1 block font-sans text-xs text-muted-foreground">
-            Access Token (System User)
-            {initialConfig?.hasToken && (
-              <span className="text-green-600"> — تم حفظ رمز، اتركه فارغًا للإبقاء عليه</span>
-            )}
-          </label>
-          <input
-            type="password"
-            value={accessToken}
-            onChange={(e) => setAccessToken(e.target.value)}
-            placeholder={initialConfig?.hasToken ? "••••••••••••" : "الصق الرمز هنا"}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+      <Card className="space-y-4 p-5">
+        <form onSubmit={handleSave} noValidate className="space-y-4">
+          <FormField
+            control={control}
+            name="phoneNumberId"
+            label="Phone Number ID"
+            labelClassName={smallLabel}
+            placeholder="مثال: 1286383577882071"
             dir="ltr"
           />
-        </div>
+          <FormField
+            control={control}
+            name="wabaId"
+            label="WhatsApp Business Account ID (WABA)"
+            labelClassName={smallLabel}
+            placeholder="مثال: 2292332154910536"
+            dir="ltr"
+          />
+          <FormField
+            control={control}
+            name="accessToken"
+            type="password"
+            label={
+              <>
+                Access Token (System User)
+                {hasToken && (
+                  <span className="text-green-600"> — تم حفظ رمز، اتركه فارغًا للإبقاء عليه</span>
+                )}
+              </>
+            }
+            labelClassName={smallLabel}
+            placeholder={hasToken ? "••••••••••••" : "الصق الرمز هنا"}
+          />
 
-        {message && (
-          <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
-            {message.text}
-          </p>
-        )}
+          {message && (
+            <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
+              {message.text}
+            </p>
+          )}
 
-        <button
-          onClick={handleSave}
-          disabled={saving || !phoneNumberId.trim() || !wabaId.trim()}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          حفظ
-        </button>
+          <Button type="submit" loading={saving}>
+            {!saving && <Save />}
+            حفظ
+          </Button>
+        </form>
 
         {tokens && (
           <div className="mt-2 space-y-3 border-t border-border pt-4">
@@ -125,7 +146,7 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
             <CopyRow label="Verify Token" value={tokens.verifyToken} />
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
@@ -143,26 +164,24 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   };
   return (
     <div>
-      <label className="mb-1 block font-sans text-xs text-muted-foreground">{label}</label>
+      <Label className={`mb-1 block ${smallLabel}`}>{label}</Label>
       <div className="flex items-stretch gap-2">
-        <input
+        <Input
           readOnly
           value={value}
           onFocus={(e) => e.currentTarget.select()}
-          className="flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-xs focus:outline-none"
+          className="flex-1 bg-muted text-xs"
           dir="ltr"
         />
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={copy}
-          className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 text-xs text-muted-foreground hover:bg-muted"
+          className="h-10 shrink-0 text-muted-foreground [&_svg]:size-3.5"
         >
-          {copied ? (
-            <Check className="h-3.5 w-3.5 text-green-600" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" />
-          )}
+          {copied ? <Check className="text-green-600" /> : <Copy />}
           {copied ? "تم" : "نسخ"}
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import { useRealtimeEscalations, RealtimeEscalationRow } from "@/hooks/use-realtime-messages";
 import { playEscalationSound } from "@/lib/notification-sound";
 import { escalationReasonLabel } from "@/lib/escalation-reasons";
@@ -77,7 +77,6 @@ export default function EscalationProvider({
 
   return (
     <EscalationContext.Provider value={{ hasUnresolved, eventTick }}>
-      <Toaster position="top-center" dir="rtl" richColors closeButton />
       {children}
     </EscalationContext.Provider>
   );

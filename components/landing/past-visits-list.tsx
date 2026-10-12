@@ -10,6 +10,7 @@ import { HistoryFilters, useHistoryFilters } from "./history-filters";
 import { InfiniteScroll } from "@/components/ui/infinite-scroll";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import { formatSlotDate } from "@/lib/slot-time";
+import { Badge } from "@/components/ui/badge";
 
 export type PastVisit = PatientAppointment & { hasRecord: boolean };
 
@@ -88,10 +89,10 @@ export function PastVisitsList({
                 </p>
               </div>
               {appt.hasRecord && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 font-sans text-xs font-medium text-primary">
+                <Badge>
                   <FileText className="h-3 w-3" />
                   له سجل علاجي
-                </span>
+                </Badge>
               )}
               <AppointmentStatusBadge status={appt.status} />
               <Link

@@ -7,6 +7,10 @@ import { publicDoctorsPageAction } from "@/server/actions/patient";
 import { useLoadMore } from "@/hooks/use-load-more";
 import { InfiniteScroll } from "@/components/ui/infinite-scroll";
 import { BookAppointmentModal } from "./book-appointment-modal";
+import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
 
 export type PublicDoctor = Awaited<ReturnType<typeof publicDoctorsPageAction>>["items"][number];
 
@@ -48,6 +52,9 @@ function getColor(name: string) {
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + hash * 31;
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
+
+/** ToggleGroup value standing in for the "all specialties" pill. */
+const ALL = "all";
 
 interface BookTarget {
   id: string;
@@ -129,30 +136,29 @@ export function DoctorsClient({
         <div className="mx-auto mb-4 max-w-sm">
           <div className="relative">
             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text/40" />
-            <input
+            <Input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="ابحث باسم الطبيب..."
-              className="w-full rounded-full border border-border bg-white py-2.5 pl-4 pr-10 font-sans text-sm text-text placeholder:text-text/40 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+              className="h-auto rounded-full bg-white py-2.5 pl-4 pr-10 text-text placeholder:text-text/40 focus-visible:border-accent focus-visible:ring-accent/20"
             />
           </div>
         </div>
-        <div className="mb-8 flex flex-wrap justify-center gap-2">
+        {/* Radix can't select an empty value, so "الكل" (id "") maps to ALL. */}
+        <ToggleGroup
+          type="single"
+          variant="accent"
+          value={specialtyId || ALL}
+          onValueChange={(v) => v && setSpecialtyId(v === ALL ? "" : v)}
+          className="mb-8 flex-wrap gap-2"
+        >
           {pills.map((spec) => (
-            <button
-              key={spec.id}
-              onClick={() => setSpecialtyId(spec.id)}
-              className={`inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 font-sans text-sm font-medium transition-all ${
-                specialtyId === spec.id
-                  ? "border-accent bg-accent text-white shadow-md shadow-accent/20"
-                  : "border-border bg-white text-text/70 hover:border-accent/40 hover:text-accent"
-              }`}
-            >
+            <ToggleGroupItem key={spec.id} value={spec.id || ALL} className="rounded-full px-4">
               {spec.name}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
 
         {/* Empty state */}
         {doctors.length === 0 && !loading && (
@@ -175,11 +181,13 @@ export function DoctorsClient({
               >
                 {/* Avatar + name */}
                 <div className="flex items-center gap-4">
-                  <div
-                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${color} font-heading text-lg font-bold text-white`}
-                  >
-                    {initials}
-                  </div>
+                  <Avatar className="h-14 w-14 rounded-2xl">
+                    <AvatarFallback
+                      className={`rounded-2xl ${color} font-heading text-lg font-bold text-white`}
+                    >
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="min-w-0">
                     <p className="truncate font-heading text-base font-bold text-text">
                       د. {doctor.profile.fullName}
@@ -216,7 +224,7 @@ export function DoctorsClient({
                 </div>
 
                 {/* Book button */}
-                <button
+                <Button
                   onClick={() =>
                     setBookTarget({
                       id: doctor.id,
@@ -225,10 +233,10 @@ export function DoctorsClient({
                       fee: doctor.consultationFee,
                     })
                   }
-                  className="mt-5 w-full rounded-xl bg-primary py-2.5 font-sans text-sm font-medium text-white transition-all group-hover:bg-accent"
+                  className="mt-5 w-full transition-all group-hover:bg-accent"
                 >
                   احجز موعد
-                </button>
+                </Button>
               </div>
             );
           })}

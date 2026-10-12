@@ -8,6 +8,15 @@ import { useLoadMore } from "@/hooks/use-load-more";
 import { InfiniteScroll } from "@/components/ui/infinite-scroll";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 
 // The doctor's appointments tab: first page from the server, the rest on scroll.
 export default function DoctorAppointmentsTab({
@@ -25,41 +34,53 @@ export default function DoctorAppointmentsTab({
   );
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+    <Card className="overflow-hidden">
       <div className="border-b border-border px-6 py-4">
         <p className="font-sans text-sm text-muted-foreground">{initial.total} موعد</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full font-sans text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40">
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">المريض</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">التاريخ</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">الوقت</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">الحالة</th>
-              <th className="px-4 py-3 text-start font-medium text-muted-foreground">ملاحظات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
+        <Table className="w-full font-sans text-sm">
+          <TableHeader>
+            <TableRow className="border-b border-border bg-muted/40">
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                المريض
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                التاريخ
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                الوقت
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                الحالة
+              </TableHead>
+              <TableHead className="px-4 py-3 text-start font-medium text-muted-foreground">
+                ملاحظات
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="divide-y divide-border">
             {items.length === 0 && (
-              <tr>
-                <td colSpan={5} className="py-12 text-center text-muted-foreground">
+              <TableRow>
+                <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
                   لا توجد مواعيد لهذا الطبيب
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
             {items.map((appt) => {
               return (
-                <tr key={appt.id} className="transition-colors hover:bg-muted/30">
-                  <td className="px-4 py-3 font-medium text-foreground">{appt.patient.fullName}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                <TableRow key={appt.id} className="transition-colors hover:bg-muted/30">
+                  <TableCell className="px-4 py-3 font-medium text-foreground">
+                    {appt.patient.fullName}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">
                     {appt.slot
                       ? formatSlotDate(appt.slot.date)
                       : appt.bookingDate
                         ? formatSlotDate(appt.bookingDate)
                         : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground" dir="ltr">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground" dir="ltr">
                     {appt.slot ? (
                       <>
                         {formatSlotTime(appt.slot.startTime)}
@@ -71,14 +92,14 @@ export default function DoctorAppointmentsTab({
                     ) : (
                       "—"
                     )}
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <AppointmentStatusBadge status={appt.status} />
-                  </td>
-                  <td className="max-w-[200px] truncate px-4 py-3 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="max-w-[200px] truncate px-4 py-3 text-muted-foreground">
                     {appt.patientNotes ?? "—"}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
             <InfiniteScroll
@@ -88,9 +109,9 @@ export default function DoctorAppointmentsTab({
               loading={loading}
               error={error}
             />
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-    </div>
+    </Card>
   );
 }

@@ -2,12 +2,24 @@
 
 import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, CheckCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Ban, CheckCircle } from "lucide-react";
 import { toggleMySlotBlockedAction } from "@/server/actions/doctor";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
+import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { DoctorSlot } from "@/server/services/doctors";
 import type { AppointmentStatus } from "@prisma/client";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { toast } from "sonner";
+import { Hint } from "@/components/ui/tooltip";
 
 type FilterStatus = "all" | "available" | "blocked" | "booked";
 
@@ -31,19 +43,10 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
     startTransition(async () => {
       const res = await toggleMySlotBlockedAction(slotId);
       if (res?.error) {
-        alert(res.error);
+        toast.error(res.error);
         return;
       }
       router.refresh();
-    });
-  }
-
-  function toggleCollapse(dateKey: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(dateKey)) next.delete(dateKey);
-      else next.add(dateKey);
-      return next;
     });
   }
 
@@ -81,17 +84,19 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
   return (
     <div>
       {/* Filter bar */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <ToggleGroup
+        type="single"
+        size="sm"
+        value={filter}
+        // Radix lets a single group deselect; keep one filter always active.
+        onValueChange={(v) => v && setFilter(v as FilterStatus)}
+        className="mb-4 flex-wrap justify-start gap-2"
+      >
         {(Object.keys(FILTER_LABELS) as FilterStatus[]).map((f) => (
-          <button
+          <ToggleGroupItem
             key={f}
-            onClick={() => setFilter(f)}
-            className={[
-              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-xs font-medium transition-colors",
-              filter === f
-                ? "bg-primary text-white"
-                : "bg-muted/60 text-muted-foreground hover:bg-muted",
-            ].join(" ")}
+            value={f}
+            className="rounded-lg bg-muted/60 px-3 text-xs text-muted-foreground"
           >
             {FILTER_LABELS[f]}
             <span
@@ -102,75 +107,68 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
             >
               {totalByStatus[f]}
             </span>
-          </button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
 
       {slots.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="font-sans text-muted-foreground">
             لا توجد مواعيد متاحة. أضف قواعد توفر وقم بتوليد المواعيد أولاً.
           </p>
-        </div>
+        </Card>
       ) : (
-        <div className="space-y-2">
+        <Accordion
+          type="multiple"
+          value={dateKeys.filter((k) => !collapsed.has(k))}
+          onValueChange={(open) => setCollapsed(new Set(dateKeys.filter((k) => !open.includes(k))))}
+          className="space-y-2"
+        >
           {dateKeys.map((dateKey) => {
             const daySlots = grouped[dateKey];
             const filteredSlots =
               filter === "all" ? daySlots : daySlots.filter((s) => slotStatus(s) === filter);
             if (filteredSlots.length === 0) return null;
 
-            const isOpen = !collapsed.has(dateKey);
             const date = new Date(dateKey + "T00:00:00Z");
 
             const dayCounts = { available: 0, blocked: 0, booked: 0 };
             for (const s of daySlots) dayCounts[slotStatus(s) as Exclude<FilterStatus, "all">]++;
 
             return (
-              <div
-                key={dateKey}
-                className="overflow-hidden rounded-2xl border border-border bg-card"
-              >
-                <button
-                  onClick={() => toggleCollapse(dateKey)}
-                  className="flex w-full items-center justify-between bg-muted/30 px-5 py-3 text-start transition-colors hover:bg-muted/50"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="font-sans text-sm font-medium text-foreground">
-                      {formatSlotDate(date, {
-                        weekday: "long",
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                      })}
-                    </span>
-                    <div className="flex flex-shrink-0 items-center gap-1.5">
-                      {dayCounts.available > 0 && (
-                        <span className="rounded-full bg-emerald-50 px-1.5 py-px font-sans text-[10px] font-medium text-emerald-600">
-                          {dayCounts.available} متاح
-                        </span>
-                      )}
-                      {dayCounts.blocked > 0 && (
-                        <span className="rounded-full bg-gray-100 px-1.5 py-px font-sans text-[10px] font-medium text-gray-500">
-                          {dayCounts.blocked} محظور
-                        </span>
-                      )}
-                      {dayCounts.booked > 0 && (
-                        <span className="rounded-full bg-blue-50 px-1.5 py-px font-sans text-[10px] font-medium text-blue-600">
-                          {dayCounts.booked} محجوز
-                        </span>
-                      )}
+              <Card key={dateKey} asChild className="overflow-hidden">
+                <AccordionItem value={dateKey}>
+                  <AccordionTrigger className="gap-3 bg-muted/30 px-5 py-3 font-normal hover:bg-muted/50">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="font-sans text-sm font-medium text-foreground">
+                        {formatSlotDate(date, {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })}
+                      </span>
+                      <div className="flex flex-shrink-0 items-center gap-1.5">
+                        {dayCounts.available > 0 && (
+                          <Badge className="bg-emerald-50 px-1.5 py-px text-[10px] text-emerald-600">
+                            {dayCounts.available} متاح
+                          </Badge>
+                        )}
+                        {dayCounts.blocked > 0 && (
+                          <Badge className="bg-gray-100 px-1.5 py-px text-[10px] text-gray-500">
+                            {dayCounts.blocked} محظور
+                          </Badge>
+                        )}
+                        {dayCounts.booked > 0 && (
+                          <Badge className="bg-blue-50 px-1.5 py-px text-[10px] text-blue-600">
+                            {dayCounts.booked} محجوز
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  {isOpen ? (
-                    <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                  )}
-                </button>
+                  </AccordionTrigger>
 
-                {isOpen && (
-                  <div className="divide-y divide-border">
+                  <AccordionContent className="divide-y divide-border p-0">
                     {filteredSlots.map((slot) => {
                       const isBooked = !!slot.appointment;
                       const isBlocked = slot.isBlocked;
@@ -197,45 +195,39 @@ export default function DoctorSlotsTab({ slots }: DoctorSlotsTabProps) {
                               </div>
                             )}
                             {!isBooked && !isBlocked && (
-                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-sans text-xs font-medium text-emerald-600">
-                                متاح
-                              </span>
+                              <Badge className="bg-emerald-50 px-2 text-emerald-600">متاح</Badge>
                             )}
                             {isBlocked && (
-                              <span className="rounded-full bg-gray-100 px-2 py-0.5 font-sans text-xs font-medium text-gray-500">
-                                محظور
-                              </span>
+                              <Badge className="bg-gray-100 px-2 text-gray-500">محظور</Badge>
                             )}
                           </div>
 
                           {!isBooked && (
-                            <button
-                              onClick={() => handleToggle(slot.id)}
-                              disabled={isPending}
-                              title={isBlocked ? "إتاحة الموعد" : "حظر الموعد"}
-                              className={[
-                                "flex-shrink-0 rounded-lg p-1.5 transition-colors disabled:opacity-40",
-                                isBlocked
-                                  ? "text-emerald-600 hover:bg-emerald-50"
-                                  : "text-muted-foreground hover:bg-red-50 hover:text-red-500",
-                              ].join(" ")}
-                            >
-                              {isBlocked ? (
-                                <CheckCircle className="h-4 w-4" />
-                              ) : (
-                                <Ban className="h-4 w-4" />
-                              )}
-                            </button>
+                            <Hint label={isBlocked ? "إتاحة الموعد" : "حظر الموعد"}>
+                              <Button
+                                variant={isBlocked ? "ghost" : "ghost-destructive"}
+                                size="icon"
+                                onClick={() => handleToggle(slot.id)}
+                                disabled={isPending}
+                                className={
+                                  isBlocked
+                                    ? "shrink-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-600"
+                                    : "shrink-0"
+                                }
+                              >
+                                {isBlocked ? <CheckCircle /> : <Ban />}
+                              </Button>
+                            </Hint>
                           )}
                         </div>
                       );
                     })}
-                  </div>
-                )}
-              </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Card>
             );
           })}
-        </div>
+        </Accordion>
       )}
     </div>
   );

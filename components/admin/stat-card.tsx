@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { Card } from "@/components/ui/card";
 
 interface StatCardProps {
   label: string;
@@ -17,7 +18,7 @@ const colorMap = {
 
 export default function StatCard({ label, value, icon: Icon, color = "primary" }: StatCardProps) {
   return (
-    <div className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5">
+    <Card className="flex items-center gap-4 p-5">
       <div
         className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl ${colorMap[color]}`}
       >
@@ -27,6 +28,6 @@ export default function StatCard({ label, value, icon: Icon, color = "primary" }
         <p className="font-heading text-2xl font-bold text-foreground">{value}</p>
         <p className="font-sans text-sm text-muted-foreground">{label}</p>
       </div>
-    </div>
+    </Card>
   );
 }

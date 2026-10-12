@@ -6,6 +6,8 @@ import { getDoctorStats, getDoctorByProfileId } from "@/server/services/doctors"
 import { getDoctorAppointments } from "@/server/services/appointments";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Card } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 export default async function DoctorDashboardPage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
@@ -53,7 +55,7 @@ export default async function DoctorDashboardPage() {
       </div>
 
       {/* Upcoming appointments */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <Card className="overflow-hidden">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
             <h2 className="font-heading font-semibold text-foreground">المواعيد القادمة</h2>
@@ -84,11 +86,11 @@ export default async function DoctorDashboardPage() {
                   className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-muted/30"
                 >
                   <div className="flex min-w-0 items-center gap-4">
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                      <span className="font-sans text-sm font-bold text-primary">
+                    <Avatar className="h-10 w-10 rounded-xl">
+                      <AvatarFallback className="rounded-xl bg-primary/10 font-sans text-sm font-bold text-primary">
                         {appt.patient.fullName.charAt(0)}
-                      </span>
-                    </div>
+                      </AvatarFallback>
+                    </Avatar>
                     <div className="min-w-0">
                       <p className="truncate font-sans font-medium text-foreground">
                         {appt.patient.fullName}
@@ -120,7 +122,7 @@ export default async function DoctorDashboardPage() {
             })}
           </ul>
         )}
-      </div>
+      </Card>
 
       {/* Quick links */}
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -154,7 +156,7 @@ function StatCard({
   };
 
   return (
-    <div className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5">
+    <Card className="flex items-center gap-4 p-5">
       <div
         className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl ${colorMap[color]}`}
       >
@@ -164,7 +166,7 @@ function StatCard({
         <p className="font-heading text-2xl font-bold text-foreground">{value}</p>
         <p className="font-sans text-sm text-muted-foreground">{label}</p>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -178,15 +180,17 @@ function QuickLink({
   icon: React.ElementType;
 }) {
   return (
-    <Link
-      href={href}
-      className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:bg-primary/5"
+    <Card
+      asChild
+      className="group flex items-center gap-3 p-4 transition-all hover:border-primary/50 hover:bg-primary/5"
     >
-      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-muted transition-colors group-hover:bg-primary/10">
-        <Icon className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
-      </div>
-      <span className="font-sans text-sm font-medium text-foreground">{label}</span>
-      <ChevronLeft className="mr-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
-    </Link>
+      <Link href={href}>
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-muted transition-colors group-hover:bg-primary/10">
+          <Icon className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+        </div>
+        <span className="font-sans text-sm font-medium text-foreground">{label}</span>
+        <ChevronLeft className="mr-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+      </Link>
+    </Card>
   );
 }

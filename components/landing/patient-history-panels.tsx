@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CalendarCheck, CalendarPlus, ChevronDown, FileText } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 // Expandable "past visits" / "treatment record" panels on the clinic home page.
 // The panel bodies are rendered on the server and handed in as nodes; this
@@ -49,28 +51,26 @@ export function PatientHistoryPanels({
           label="سجلي العلاجي"
           hint={recordCount === 0 ? "التشخيص والروشتات" : `${recordCount} زيارة مسجّلة`}
         />
-        <Link
-          href="#book"
-          className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 text-start transition-colors hover:border-primary/40 hover:bg-primary/5"
+        <Card
+          asChild
+          className="group flex items-center gap-3 p-4 text-start transition-colors hover:border-primary/40 hover:bg-primary/5"
         >
-          <IconTile icon={CalendarPlus} active={false} />
-          <div className="min-w-0">
-            <p className="font-sans text-sm font-medium text-foreground">احجز موعداً جديداً</p>
-            <p className="font-sans text-xs text-muted-foreground">{totalCount} موعد إجمالاً</p>
-          </div>
-          <ArrowLeft className="ms-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
-        </Link>
+          <Link href="#book">
+            <IconTile icon={CalendarPlus} active={false} />
+            <div className="min-w-0">
+              <p className="font-sans text-sm font-medium text-foreground">احجز موعداً جديداً</p>
+              <p className="font-sans text-xs text-muted-foreground">{totalCount} موعد إجمالاً</p>
+            </div>
+            <ArrowLeft className="ms-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+          </Link>
+        </Card>
       </div>
 
       {/* The open panel, directly under the toggles */}
       {open && (
-        <div
-          id={`panel-${open}`}
-          role="region"
-          className="mt-4 rounded-2xl border border-border bg-card p-4 sm:p-6"
-        >
+        <Card id={`panel-${open}`} role="region" className="mt-4 p-4 sm:p-6">
           {open === "visits" ? pastVisits : records}
-        </div>
+        </Card>
       )}
     </div>
   );
@@ -92,13 +92,14 @@ function PanelToggle({
   hint: string;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       onClick={() => onToggle(id)}
       aria-expanded={open}
       aria-controls={`panel-${id}`}
       className={[
-        "group flex items-center gap-3 rounded-2xl border p-4 text-start transition-colors",
+        "group h-auto justify-start gap-3 whitespace-normal rounded-2xl p-4 text-start font-normal [&_svg]:size-auto",
         open
           ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
           : "border-border bg-card hover:border-primary/40 hover:bg-primary/5",
@@ -115,7 +116,7 @@ function PanelToggle({
           open ? "rotate-180 text-primary" : "text-muted-foreground group-hover:text-primary",
         ].join(" ")}
       />
-    </button>
+    </Button>
   );
 }
 

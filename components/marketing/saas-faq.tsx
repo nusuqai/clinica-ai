@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 const FAQS = [
   {
@@ -32,8 +36,6 @@ const FAQS = [
 ];
 
 export function SaasFaq() {
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
-
   return (
     <section id="faq" className="scroll-mt-20 bg-white px-6 py-20">
       <div className="mx-auto max-w-3xl">
@@ -44,34 +46,22 @@ export function SaasFaq() {
           <p className="mt-3 font-sans text-base text-text/60">كل ما تريد معرفته عن المنصة</p>
         </div>
 
-        <div className="flex flex-col gap-3">
-          {FAQS.map((faq, i) => {
-            const isOpen = openIndex === i;
-            return (
-              <div
-                key={faq.question}
-                className="overflow-hidden rounded-2xl border border-border bg-background"
-              >
-                <button
-                  onClick={() => setOpenIndex(isOpen ? null : i)}
-                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-right"
-                >
-                  <span className="font-sans text-sm font-semibold text-text">{faq.question}</span>
-                  <ChevronDown
-                    className={`h-4 w-4 shrink-0 text-accent transition-transform ${
-                      isOpen ? "rotate-180" : ""
-                    }`}
-                  />
-                </button>
-                {isOpen && (
-                  <div className="px-5 pb-4">
-                    <p className="font-sans text-sm leading-relaxed text-text/60">{faq.answer}</p>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <Accordion type="single" collapsible defaultValue="0" className="flex flex-col gap-3">
+          {FAQS.map((faq, i) => (
+            <AccordionItem
+              key={faq.question}
+              value={String(i)}
+              className="overflow-hidden rounded-2xl border border-border bg-background"
+            >
+              <AccordionTrigger className="px-5 font-semibold text-text [&>svg]:text-accent">
+                {faq.question}
+              </AccordionTrigger>
+              <AccordionContent className="px-5">
+                <p className="font-sans text-sm leading-relaxed text-text/60">{faq.answer}</p>
+              </AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
       </div>
     </section>
   );

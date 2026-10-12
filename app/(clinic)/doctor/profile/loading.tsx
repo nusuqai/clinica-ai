@@ -1,4 +1,5 @@
 import { Skeleton, FormCardSkeleton } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
 
 export default function Loading() {
   return (
@@ -8,7 +9,7 @@ export default function Loading() {
         <Skeleton className="h-4 w-52" />
       </div>
 
-      <div className="mb-6 rounded-2xl border border-border bg-card p-6">
+      <Card className="mb-6 p-6">
         <div className="flex items-center gap-4">
           <Skeleton className="h-16 w-16 flex-shrink-0 rounded-2xl" />
           <div className="space-y-2">
@@ -17,7 +18,7 @@ export default function Loading() {
             <Skeleton className="h-3 w-40" />
           </div>
         </div>
-      </div>
+      </Card>
 
       <FormCardSkeleton fields={4} />
 

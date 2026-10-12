@@ -1,9 +1,22 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Pencil, Loader2 } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Pencil } from "lucide-react";
 import Modal from "@/components/admin/modal";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import { updatePatientProfileAction, changePatientEmailAction } from "@/server/actions/admin";
+import { Alert } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import { toFormData } from "@/lib/form-data";
+import {
+  patientEmailSchema,
+  patientProfileSchema,
+  type PatientEmailValues,
+  type PatientProfileInput,
+} from "@/lib/validations/admin";
 
 interface Props {
   userId: string;
@@ -21,119 +34,104 @@ export default function EditPatientModal({ userId, fullName, phone, email, claim
   const [savingProfile, startProfile] = useTransition();
   const [savingEmail, startEmail] = useTransition();
 
-  function handleProfile(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const profileForm = useForm({
+    resolver: zodResolver(patientProfileSchema),
+    defaultValues: { fullName, phone: phone ?? "" } satisfies PatientProfileInput,
+    mode: "onTouched",
+  });
+  const emailForm = useForm<PatientEmailValues>({
+    resolver: zodResolver(patientEmailSchema),
+    defaultValues: { email: claimed ? email : "" },
+    mode: "onTouched",
+  });
+
+  const handleProfile = profileForm.handleSubmit((values) => {
     setError(null);
     setInfo(null);
-    const formData = new FormData(e.currentTarget);
     startProfile(async () => {
-      const res = await updatePatientProfileAction(userId, formData);
+      // An empty phone clears it (the server treats "" as null).
+      const res = await updatePatientProfileAction(userId, toFormData(values));
       if (res?.error) setError(res.error);
       else setInfo("تم حفظ البيانات.");
     });
-  }
+  });
 
-  function handleEmail(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const handleEmail = emailForm.handleSubmit((values) => {
     setError(null);
     setInfo(null);
-    const formData = new FormData(e.currentTarget);
     startEmail(async () => {
-      const res = await changePatientEmailAction(userId, formData);
+      const res = await changePatientEmailAction(userId, toFormData(values));
       if (res?.error) setError(res.error);
       else
         setInfo(
           "تم إرسال رابط التأكيد إلى البريد الجديد. لن يتغيّر البريد حتى يضغط المريض الرابط."
         );
     });
-  }
-
-  const field =
-    "block w-full px-4 py-2.5 font-sans text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent bg-card transition-all";
-  const label = "block text-sm font-medium text-muted-foreground font-sans mb-1.5";
+  });
 
   return (
     <>
-      <button
+      <Button
         onClick={() => {
           setError(null);
           setInfo(null);
           setOpen(true);
         }}
-        className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
       >
-        <Pencil className="h-4 w-4" />
+        <Pencil />
         تعديل
-      </button>
+      </Button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="تعديل بيانات المريض">
         {error && (
-          <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 font-sans text-sm text-red-600">
+          <Alert variant="destructive" className="mb-4 border-red-100 text-red-600">
             {error}
-          </div>
+          </Alert>
         )}
         {info && (
-          <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 font-sans text-sm text-emerald-700">
+          <Alert variant="success" className="mb-4 border-emerald-100">
             {info}
-          </div>
+          </Alert>
         )}
 
         {/* Profile (name + phone) */}
-        <form onSubmit={handleProfile} className="space-y-4">
-          <div>
-            <label className={label}>الاسم الكامل</label>
-            <input name="fullName" defaultValue={fullName} required className={field} />
-          </div>
-          <div>
-            <label className={label}>رقم الهاتف</label>
-            <input
-              name="phone"
-              defaultValue={phone ?? ""}
-              dir="ltr"
-              inputMode="numeric"
-              placeholder="201014443991"
-              className={`${field} text-start`}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={savingProfile}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-sans text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-          >
-            {savingProfile && <Loader2 className="h-4 w-4 animate-spin" />}
+        <form onSubmit={handleProfile} noValidate className="space-y-4">
+          <FormField control={profileForm.control} name="fullName" label="الاسم الكامل" required />
+          <FormField
+            control={profileForm.control}
+            type="tel"
+            name="phone"
+            label="رقم الهاتف"
+            inputMode="numeric"
+            placeholder="201014443991"
+            controlClassName="text-start"
+          />
+          <Button type="submit" loading={savingProfile} className="font-semibold">
             حفظ البيانات
-          </button>
+          </Button>
         </form>
 
-        <hr className="my-6 border-border" />
+        <Separator className="my-6" />
 
         {/* Email change (with verification) */}
-        <form onSubmit={handleEmail} className="space-y-4">
-          <div>
-            <label className={label}>البريد الإلكتروني</label>
-            <input
-              name="email"
-              type="email"
-              defaultValue={claimed ? email : ""}
-              dir="ltr"
-              required
-              placeholder="name@example.com"
-              className={`${field} text-start`}
-            />
-            <p className="mt-1.5 font-sans text-xs text-muted-foreground">
-              {claimed
+        <form onSubmit={handleEmail} noValidate className="space-y-4">
+          <FormField
+            control={emailForm.control}
+            type="email"
+            name="email"
+            label="البريد الإلكتروني"
+            required
+            placeholder="name@example.com"
+            controlClassName="text-start"
+            hint={
+              claimed
                 ? "سيُرسل رابط تأكيد إلى البريد الجديد، ولن يتغيّر قبل الضغط عليه."
-                : "هذا الحساب لم يُفعّل بريدَه بعد (مُسجّل عبر واتساب). أدخل بريداً لإرسال رابط التأكيد."}
-            </p>
-          </div>
-          <button
-            type="submit"
-            disabled={savingEmail}
-            className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 font-sans text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-60"
-          >
-            {savingEmail && <Loader2 className="h-4 w-4 animate-spin" />}
+                : "هذا الحساب لم يُفعّل بريدَه بعد (مُسجّل عبر واتساب). أدخل بريداً لإرسال رابط التأكيد."
+            }
+          />
+          <Button type="submit" variant="outline" loading={savingEmail} className="font-semibold">
             تغيير البريد (بتأكيد)
-          </button>
+          </Button>
         </form>
       </Modal>
     </>

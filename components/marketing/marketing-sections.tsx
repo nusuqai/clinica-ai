@@ -11,6 +11,7 @@ import {
   Stethoscope,
 } from "lucide-react";
 import { RequestClinicForm } from "./request-clinic-form";
+import { Button } from "@/components/ui/button";
 
 // ─── Hero ───────────────────────────────────────────────────────────────────
 
@@ -54,28 +55,35 @@ export function SaasHero({
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
           {isAuthenticated ? (
-            <Link
-              href={continueHref}
-              className="group inline-flex items-center gap-2 rounded-xl bg-accent px-7 py-3.5 font-medium text-white shadow-lg shadow-accent/25 transition-all hover:-translate-y-0.5"
+            <Button
+              asChild
+              variant="accent"
+              className="group h-auto gap-2 rounded-xl px-7 py-3.5 text-[length:inherit] shadow-lg shadow-accent/25 transition-all hover:-translate-y-0.5"
             >
-              الانتقال إلى عيادتي
-              <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
-            </Link>
+              <Link href={continueHref}>
+                الانتقال إلى عيادتي
+                <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+              </Link>
+            </Button>
           ) : (
             <>
-              <a
-                href="#request"
-                className="group inline-flex items-center gap-2 rounded-xl bg-accent px-7 py-3.5 font-medium text-white shadow-lg shadow-accent/25 transition-all hover:-translate-y-0.5"
+              <Button
+                asChild
+                variant="accent"
+                className="group h-auto gap-2 rounded-xl px-7 py-3.5 text-[length:inherit] shadow-lg shadow-accent/25 transition-all hover:-translate-y-0.5"
               >
-                أنشئ عيادتك الآن
-                <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
-              </a>
-              <a
-                href="#features"
-                className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-7 py-3.5 font-medium text-white transition-all hover:border-accent/50 hover:bg-white/5"
+                <a href="#request">
+                  أنشئ عيادتك الآن
+                  <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+                </a>
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+                className="h-auto gap-2 rounded-xl border-white/20 bg-transparent px-7 py-3.5 text-[length:inherit] text-white transition-all hover:border-accent/50 hover:bg-white/5"
               >
-                استكشف المميزات
-              </a>
+                <a href="#features">استكشف المميزات</a>
+              </Button>
             </>
           )}
         </div>

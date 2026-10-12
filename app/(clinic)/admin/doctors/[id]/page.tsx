@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import LinkTabs from "@/components/general/link-tabs";
 import {
   ArrowRight,
   Phone,
@@ -24,6 +26,11 @@ import { AppointmentStatus } from "@prisma/client";
 import { FilterBar } from "@/components/ui/filter-bar";
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
 import EditDoctorModal from "../_components/edit-doctor-modal";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ListCardSkeleton, TableSkeleton } from "@/components/ui/skeleton";
+import { PendingNavigationProvider, PendingSwap } from "@/components/general/pending-navigation";
 
 const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
@@ -93,24 +100,21 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
       </Link>
 
       {/* Doctor header card */}
-      <div className="mb-6 rounded-2xl border border-border bg-card p-6">
+      <Card className="mb-6 p-6">
         <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-          <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10">
-            <span className="font-sans text-xl font-bold text-primary">{initials}</span>
-          </div>
+          <Avatar className="h-16 w-16 rounded-2xl">
+            <AvatarFallback className="rounded-2xl bg-primary/10 font-sans text-xl font-bold text-primary">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
           <div className="min-w-0 flex-1">
             <div className="mb-1 flex flex-wrap items-center gap-2">
               <h1 className="font-heading text-2xl font-bold text-foreground">
                 {doctor.profile.fullName}
               </h1>
-              <span
-                className={[
-                  "inline-flex items-center rounded-full px-2.5 py-0.5 font-sans text-xs font-medium",
-                  doctor.isActive ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500",
-                ].join(" ")}
-              >
+              <Badge variant={doctor.isActive ? "success" : "neutral"}>
                 {doctor.isActive ? "نشط" : "غير نشط"}
-              </span>
+              </Badge>
             </div>
             <p className="font-sans text-muted-foreground">{doctor.specialty}</p>
             <div className="mt-2 flex flex-wrap items-center gap-4">
@@ -153,18 +157,18 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {doctor.title && (
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 font-sans text-xs font-medium text-primary">
+                <Badge className="px-2">
                   {doctor.title === "CONSULTANT" ? "استشاري" : "أخصائي"}
-                </span>
+                </Badge>
               )}
               {doctor.acceptsChildren && (
-                <span className="rounded-full bg-sky-100 px-2 py-0.5 font-sans text-xs font-medium text-sky-700">
+                <Badge variant="sky" className="px-2">
                   يكشف على الأطفال
-                </span>
+                </Badge>
               )}
-              <span className="rounded-full bg-muted px-2 py-0.5 font-sans text-xs font-medium text-muted-foreground">
+              <Badge variant="muted" className="px-2">
                 {doctor.requiresAdvanceBooking ? "يحتاج حجزاً مسبقاً" : "يقبل بدون حجز مسبق"}
-              </span>
+              </Badge>
             </div>
             {doctor.qualifications && (
               <p className="mt-2 max-w-xl font-sans text-sm text-muted-foreground">
@@ -186,39 +190,73 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
             <EditDoctorModal doctor={doctor} branches={branchOptions} specialties={specialties} />
           </div>
         </div>
-      </div>
+      </Card>
 
-      {/* Tab nav */}
-      <div className="mb-6 flex w-fit gap-1 rounded-xl border border-border bg-muted/40 p-1">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <Link
-            key={key}
-            href={`/admin/doctors/${id}?tab=${key}`}
-            className={[
-              "flex items-center gap-2 rounded-lg px-4 py-2 font-sans text-sm font-medium transition-all",
-              activeTab === key
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            ].join(" ")}
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </Link>
-        ))}
-      </div>
-
-      {/* Tab content — each fetches only what it needs */}
-      {activeTab === "appointments" && (
-        <AppointmentsContent
-          doctorId={id}
-          filters={{ status: status as AppointmentStatus | undefined, date }}
-        />
-      )}
-      {activeTab === "rules" && (
-        <RulesContent doctorId={id} branches={doctorBranches} clinicId={clinic.id} scope={scope} />
-      )}
-      {activeTab === "slots" && <SlotsContent doctorId={id} scope={scope} />}
-      {activeTab === "queue" && <QueuePanel doctorId={id} />}
+      <LinkTabs
+        value={activeTab}
+        tabs={TABS.map(({ key, label, icon: Icon }) => ({
+          value: key,
+          label,
+          href: `/admin/doctors/${id}?tab=${key}`,
+          icon: <Icon />,
+        }))}
+        skeletons={{
+          appointments: <TableSkeleton columns={5} rows={6} />,
+          rules: <ListCardSkeleton rows={4} />,
+          slots: <ListCardSkeleton rows={5} />,
+          queue: <ListCardSkeleton rows={4} />,
+        }}
+      >
+        {/* Tab content — each fetches only what it needs, behind its own
+            Suspense boundary: the header and tabs stay put and only the panel
+            falls back to a skeleton. Keys include the filters so a filter change
+            (same route, new search params) shows the fallback too. */}
+        {activeTab === "appointments" && (
+          <PendingNavigationProvider>
+            <FilterBar
+              fields={[
+                {
+                  type: "select",
+                  param: "status",
+                  allLabel: "كل الحالات",
+                  options: Object.values(AppointmentStatus).map((s) => ({
+                    value: s,
+                    label: APPOINTMENT_STATUS_LABELS[s],
+                  })),
+                },
+                { type: "date", param: "date" },
+              ]}
+            />
+            <PendingSwap fallback={<TableSkeleton columns={5} rows={6} />}>
+              <Suspense
+                key={`appointments:${status ?? ""}:${date ?? ""}`}
+                fallback={<TableSkeleton columns={5} rows={6} />}
+              >
+                <AppointmentsContent
+                  doctorId={id}
+                  filters={{ status: status as AppointmentStatus | undefined, date }}
+                />
+              </Suspense>
+            </PendingSwap>
+          </PendingNavigationProvider>
+        )}
+        {activeTab === "rules" && (
+          <Suspense key="rules" fallback={<ListCardSkeleton rows={4} />}>
+            <RulesContent
+              doctorId={id}
+              branches={doctorBranches}
+              clinicId={clinic.id}
+              scope={scope}
+            />
+          </Suspense>
+        )}
+        {activeTab === "slots" && (
+          <Suspense key="slots" fallback={<ListCardSkeleton rows={5} />}>
+            <SlotsContent doctorId={id} scope={scope} />
+          </Suspense>
+        )}
+        {activeTab === "queue" && <QueuePanel doctorId={id} />}
+      </LinkTabs>
     </div>
   );
 }
@@ -233,25 +271,7 @@ async function AppointmentsContent({
   filters: { status?: AppointmentStatus; date?: string };
 }) {
   const initial = await appointmentsPageAction({ ...filters, doctorId }, 1);
-  return (
-    <>
-      <FilterBar
-        fields={[
-          {
-            type: "select",
-            param: "status",
-            allLabel: "كل الحالات",
-            options: Object.values(AppointmentStatus).map((s) => ({
-              value: s,
-              label: APPOINTMENT_STATUS_LABELS[s],
-            })),
-          },
-          { type: "date", param: "date" },
-        ]}
-      />
-      <DoctorAppointmentsTab doctorId={doctorId} filters={filters} initial={initial} />
-    </>
-  );
+  return <DoctorAppointmentsTab doctorId={doctorId} filters={filters} initial={initial} />;
 }
 
 async function RulesContent({

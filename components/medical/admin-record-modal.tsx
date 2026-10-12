@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FilePlus, Pencil } from "lucide-react";
 import Modal from "@/components/admin/modal";
-import RecordForm, { Labeled } from "@/components/medical/record-form";
+import RecordForm from "@/components/medical/record-form";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import { createRecordAsAdminAction, updateRecordAsAdminAction } from "@/server/actions/treatments";
 import type { RecordableVisit, TreatmentRecordView } from "@/server/services/treatments";
 import { formatSlotDate } from "@/lib/slot-time";
@@ -14,9 +16,6 @@ import { formatSlotDate } from "@/lib/slot-time";
 // that has no record yet — the visit decides the treating doctor and the date.
 // Editing keeps the record's doctor and visit; only the clinical content
 // changes, and the change is audited like a doctor's edit.
-
-const selectClass =
-  "w-full rounded-xl border border-border bg-background px-3 py-2 font-sans text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30";
 
 type AdminRecordModalProps = {
   patientId: string;
@@ -40,21 +39,15 @@ export default function AdminRecordModal(props: AdminRecordModalProps) {
   return (
     <>
       {isEdit ? (
-        <button
-          onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-        >
-          <Pencil className="h-3.5 w-3.5" />
+        <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+          <Pencil />
           تعديل
-        </button>
+        </Button>
       ) : (
-        <button
-          onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
-        >
-          <FilePlus className="h-4 w-4" />
+        <Button onClick={() => setOpen(true)}>
+          <FilePlus />
           إضافة سجل علاجي
-        </button>
+        </Button>
       )}
 
       <Modal
@@ -71,20 +64,17 @@ export default function AdminRecordModal(props: AdminRecordModalProps) {
         ) : props.mode === "create" && !chosenVisit ? (
           // Step 1: choose the visit. The form only appears once one is chosen,
           // so the date is set from the visit and nothing typed gets reset.
-          <Labeled label="الزيارة المكتملة">
-            <select
-              value={appointmentId}
-              onChange={(e) => setAppointmentId(e.target.value)}
-              className={selectClass}
-            >
-              <option value="">اختر الزيارة...</option>
-              {props.visits.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.date ? formatSlotDate(v.date) : "بدون تاريخ"} — د. {v.doctorName}
-                </option>
-              ))}
-            </select>
-          </Labeled>
+          <FormField
+            type="select"
+            label="الزيارة المكتملة"
+            placeholder="اختر الزيارة..."
+            value={appointmentId}
+            onValueChange={setAppointmentId}
+            options={props.visits.map((v) => ({
+              value: v.id,
+              label: `${v.date ? formatSlotDate(v.date) : "بدون تاريخ"} — د. ${v.doctorName}`,
+            }))}
+          />
         ) : (
           <RecordForm
             key={isEdit ? props.record.id : `new-${appointmentId}`}
@@ -106,13 +96,15 @@ export default function AdminRecordModal(props: AdminRecordModalProps) {
                       {chosenVisit?.doctorName}
                     </span>
                   </span>
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="sm"
                     onClick={() => setAppointmentId("")}
-                    className="text-xs font-medium text-primary hover:underline"
+                    className="h-auto px-0"
                   >
                     تغيير الزيارة
-                  </button>
+                  </Button>
                 </div>
               )
             }

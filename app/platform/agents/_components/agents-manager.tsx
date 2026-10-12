@@ -5,6 +5,17 @@ import { useRouter } from "next/navigation";
 import { Bot, Clock, Pencil, Plus, Trash2 } from "lucide-react";
 import { DayOfWeek } from "@prisma/client";
 import Modal from "@/components/admin/modal";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Hint } from "@/components/ui/tooltip";
 import {
   createClinicAiAgentAction,
   deleteClinicAiAgentAction,
@@ -46,19 +57,10 @@ const DAYS: { key: DayOfWeek; label: string }[] = [
 
 const PERSONA_MAX = 2000;
 
-const inputCls =
-  "w-full border border-border rounded-xl px-3 py-2 text-sm bg-background text-foreground font-sans focus:outline-none focus:ring-2 focus:ring-primary/30";
-const labelCls = "text-sm font-medium text-foreground font-sans";
+const labelCls = "font-sans text-foreground";
 const hintCls = "text-xs text-muted-foreground font-sans";
-
-function ErrorBox({ message }: { message: string | null }) {
-  if (!message) return null;
-  return (
-    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-sans text-sm text-red-700">
-      {message}
-    </div>
-  );
-}
+// A checkbox or switch with its caption beside it.
+const checkRowCls = "flex cursor-pointer items-center gap-2 font-sans text-sm text-foreground";
 
 // A whole day is stored as a shift from midnight to midnight: an end that is not
 // after its start runs into the next day, so 00:00–00:00 covers all 24 hours.
@@ -90,19 +92,18 @@ export default function AgentsManager({
   agents: AiAgentView[];
 }) {
   const router = useRouter();
+  const confirm = useConfirm();
   // null = closed, "new" = create, otherwise the agent being edited.
   const [editing, setEditing] = useState<AiAgentView | "new" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
 
-  function remove(agent: AiAgentView) {
-    if (!confirm(`حذف الموظف الآلي «${agent.name}»؟`)) return;
-    setError(null);
-    startTransition(async () => {
-      const res = await deleteClinicAiAgentAction(clinicId, agent.id);
-      if (!res.ok) setError(res.error);
-      router.refresh();
+  async function remove(agent: AiAgentView) {
+    const deleted = await confirm({
+      title: "حذف الموظف الآلي",
+      description: <>هل تريد حذف الموظف الآلي «{agent.name}»؟</>,
+      warning: "لن يردّ المساعد في أوقات دوامه بعد الحذف، ولا يمكن التراجع.",
+      onConfirm: () => deleteClinicAiAgentAction(clinicId, agent.id),
     });
+    if (deleted) router.refresh();
   }
 
   return (
@@ -113,20 +114,15 @@ export default function AgentsManager({
             ? "لا يوجد موظفون آليون — لن يردّ المساعد على عملاء هذه العيادة إلى أن تضيف أول موظف."
             : "يردّ الموظف الذي يوافق دوامه وقت الرسالة. خارج دوام الجميع لا يردّ المساعد وتُحوَّل الرسالة إلى فريق العيادة."}
         </p>
-        <button
-          onClick={() => setEditing("new")}
-          className="inline-flex flex-shrink-0 items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
+        <Button onClick={() => setEditing("new")} className="flex-shrink-0">
+          <Plus />
           موظف آلي جديد
-        </button>
+        </Button>
       </div>
-
-      <ErrorBox message={error} />
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {agents.map((agent) => (
-          <div key={agent.id} className="rounded-xl border border-border bg-background p-4">
+          <Card key={agent.id} className="p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-start gap-3">
                 <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
@@ -140,33 +136,32 @@ export default function AgentsManager({
                 </div>
               </div>
               <div className="flex flex-shrink-0 items-center gap-1">
-                <span
-                  className={[
-                    "rounded-full px-2.5 py-0.5 font-sans text-xs font-medium",
-                    !agent.isActive
-                      ? "bg-muted text-muted-foreground"
-                      : agent.onShiftNow
-                        ? "bg-emerald-500/10 text-emerald-600"
-                        : "bg-amber-500/10 text-amber-600",
-                  ].join(" ")}
+                <Badge
+                  variant={!agent.isActive ? "muted" : agent.onShiftNow ? "success" : "warning"}
                 >
                   {!agent.isActive ? "موقوف" : agent.onShiftNow ? "في الدوام الآن" : "خارج الدوام"}
-                </span>
-                <button
-                  onClick={() => setEditing(agent)}
-                  title="تعديل"
-                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <Pencil className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => remove(agent)}
-                  disabled={isPending}
-                  title="حذف"
-                  className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                </Badge>
+                <Hint label="تعديل">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setEditing(agent)}
+                    aria-label="تعديل"
+                    className="hover:bg-primary/10 hover:text-primary"
+                  >
+                    <Pencil />
+                  </Button>
+                </Hint>
+                <Hint label="حذف">
+                  <Button
+                    variant="ghost-destructive"
+                    size="icon"
+                    onClick={() => remove(agent)}
+                    aria-label="حذف"
+                  >
+                    <Trash2 />
+                  </Button>
+                </Hint>
               </div>
             </div>
 
@@ -174,31 +169,29 @@ export default function AgentsManager({
               <Clock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
               {hoursSummary(agent)}
             </p>
-            <div className="mt-2 flex flex-wrap gap-1.5 font-sans text-xs">
-              <span
-                className={[
-                  "rounded-full px-2.5 py-0.5",
-                  agent.dailyUnitCap !== null && agent.unitsLast24h >= agent.dailyUnitCap
-                    ? "bg-red-500/10 font-medium text-red-600"
-                    : "bg-muted text-muted-foreground",
-                ].join(" ")}
-                title="الوحدات المستهلكة خلال آخر 24 ساعة من الحد اليومي"
-              >
-                آخر 24 ساعة: {agent.unitsLast24h} / {agent.dailyUnitCap ?? "بلا حد"}
-              </span>
-              <span className="rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground">
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <Hint label="الوحدات المستهلكة خلال آخر 24 ساعة من الحد اليومي">
+                <Badge
+                  variant={
+                    agent.dailyUnitCap !== null && agent.unitsLast24h >= agent.dailyUnitCap
+                      ? "danger"
+                      : "muted"
+                  }
+                >
+                  آخر 24 ساعة: {agent.unitsLast24h} / {agent.dailyUnitCap ?? "بلا حد"}
+                </Badge>
+              </Hint>
+              <Badge variant="muted">
                 لكل عميل: {agent.dailyUnitCapPerConversation ?? "بلا حد"}
-              </span>
-              <span className="rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground">
-                آخر 30 يوماً: {agent.unitsLast30d} وحدة
-              </span>
+              </Badge>
+              <Badge variant="muted">آخر 30 يوماً: {agent.unitsLast30d} وحدة</Badge>
             </div>
             {agent.persona && (
               <p className="mt-2 line-clamp-3 whitespace-pre-line font-sans text-sm leading-relaxed text-foreground/80">
                 {agent.persona}
               </p>
             )}
-          </div>
+          </Card>
         ))}
       </div>
 
@@ -237,9 +230,9 @@ function CapField({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className={labelCls}>{label}</label>
+      <Label className={labelCls}>{label}</Label>
       <div className="flex items-center gap-3">
-        <input
+        <Input
           type="number"
           min={1}
           max={100000}
@@ -249,14 +242,11 @@ function CapField({
           disabled={value === null}
           required={value !== null}
           placeholder="بلا حد"
-          className={`${inputCls} disabled:opacity-50`}
         />
-        <label className="flex flex-shrink-0 cursor-pointer items-center gap-2 font-sans text-sm text-foreground">
-          <input
-            type="checkbox"
+        <label className={`${checkRowCls} flex-shrink-0`}>
+          <Checkbox
             checked={value === null}
-            onChange={(e) => onChange(e.target.checked ? null : fallback)}
-            className="h-4 w-4 accent-primary"
+            onCheckedChange={(checked) => onChange(checked === true ? null : fallback)}
           />
           بلا حد
         </label>
@@ -354,45 +344,49 @@ function AgentModal({
       width="max-w-2xl"
     >
       <form onSubmit={submit} className="space-y-4">
-        <ErrorBox message={error} />
+        {error && <Alert variant="destructive">{error}</Alert>}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <label className={labelCls}>الاسم</label>
-            <input
+            <Label htmlFor="agent-name" className={labelCls}>
+              الاسم
+            </Label>
+            <Input
+              id="agent-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="مثال: سارة"
               maxLength={40}
               required
-              className={inputCls}
+              autoFocus
             />
           </div>
           <div className="space-y-1.5">
-            <label className={labelCls}>
+            <Label htmlFor="agent-job-title" className={labelCls}>
               المسمّى الوظيفي <span className="text-muted-foreground">(اختياري)</span>
-            </label>
-            <input
+            </Label>
+            <Input
+              id="agent-job-title"
               value={jobTitle}
               onChange={(e) => setJobTitle(e.target.value)}
               placeholder="مثال: موظفة الاستقبال"
               maxLength={60}
-              className={inputCls}
             />
           </div>
         </div>
 
         <div className="space-y-1.5">
-          <label className={labelCls}>
+          <Label htmlFor="agent-persona" className={labelCls}>
             الشخصية وأسلوب الحديث <span className="text-muted-foreground">(اختياري)</span>
-          </label>
-          <textarea
+          </Label>
+          <Textarea
+            id="agent-persona"
             value={persona}
             onChange={(e) => setPersona(e.target.value)}
             rows={5}
             maxLength={PERSONA_MAX}
             placeholder="مثال: ودودة ومرحة، تتحدث باللهجة المصرية، ردودها قصيرة، وتستخدم الإيموجي باعتدال."
-            className={inputCls}
+            className="resize-y leading-relaxed"
           />
           <p className={hintCls}>
             تحدّد النبرة والأسلوب فقط — لا تغيّر ما يستطيع الموظف تنفيذه. {persona.length}/
@@ -401,14 +395,9 @@ function AgentModal({
         </div>
 
         <div className="space-y-2">
-          <label className={labelCls}>الدوام</label>
-          <label className="flex cursor-pointer items-center gap-2 font-sans text-sm text-foreground">
-            <input
-              type="checkbox"
-              checked={alwaysOn}
-              onChange={(e) => setAlwaysOn(e.target.checked)}
-              className="h-4 w-4 accent-primary"
-            />
+          <Label className={labelCls}>الدوام</Label>
+          <label className={checkRowCls}>
+            <Checkbox checked={alwaysOn} onCheckedChange={(v) => setAlwaysOn(v === true)} />
             على مدار الساعة طوال الأسبوع
           </label>
           {!alwaysOn && (
@@ -417,22 +406,18 @@ function AgentModal({
                 const day = days[d.key];
                 return (
                   <div key={d.key} className="flex flex-wrap items-center gap-3">
-                    <label className="flex w-28 cursor-pointer items-center gap-2 font-sans text-sm text-foreground">
-                      <input
-                        type="checkbox"
+                    <label className={`${checkRowCls} w-28`}>
+                      <Checkbox
                         checked={day.on}
-                        onChange={(e) => setDay(d.key, { on: e.target.checked })}
-                        className="h-4 w-4 accent-primary"
+                        onCheckedChange={(v) => setDay(d.key, { on: v === true })}
                       />
                       {d.label}
                     </label>
                     {day.on && (
-                      <label className="flex cursor-pointer items-center gap-2 font-sans text-sm text-foreground">
-                        <input
-                          type="checkbox"
+                      <label className={checkRowCls}>
+                        <Checkbox
                           checked={day.allDay}
-                          onChange={(e) => setDay(d.key, { allDay: e.target.checked })}
-                          className="h-4 w-4 accent-primary"
+                          onCheckedChange={(v) => setDay(d.key, { allDay: v === true })}
                         />
                         طوال اليوم
                       </label>
@@ -442,20 +427,22 @@ function AgentModal({
                     ) : day.allDay ? null : (
                       <div className="flex items-center gap-2 font-sans text-sm text-muted-foreground">
                         من
-                        <input
+                        <Input
                           type="time"
                           value={day.startTime}
                           onChange={(e) => setDay(d.key, { startTime: e.target.value })}
                           required
-                          className={`${inputCls} w-32`}
+                          aria-label={`بداية دوام ${d.label}`}
+                          className="w-32"
                         />
                         إلى
-                        <input
+                        <Input
                           type="time"
                           value={day.endTime}
                           onChange={(e) => setDay(d.key, { endTime: e.target.value })}
                           required
-                          className={`${inputCls} w-32`}
+                          aria-label={`نهاية دوام ${d.label}`}
+                          className="w-32"
                         />
                       </div>
                     )}
@@ -471,7 +458,7 @@ function AgentModal({
         </div>
 
         <div className="space-y-2">
-          <label className={labelCls}>حدود الاستهلاك</label>
+          <Label className={labelCls}>حدود الاستهلاك</Label>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <CapField
               label="الحد اليومي للموظف"
@@ -494,31 +481,18 @@ function AgentModal({
           </p>
         </div>
 
-        <label className="flex cursor-pointer items-center gap-2 font-sans text-sm text-foreground">
-          <input
-            type="checkbox"
-            checked={isActive}
-            onChange={(e) => setIsActive(e.target.checked)}
-            className="h-4 w-4 accent-primary"
-          />
+        <label className={checkRowCls}>
+          <Switch checked={isActive} onCheckedChange={setIsActive} />
           مفعّل ويستقبل المحادثات
         </label>
 
         <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-border px-4 py-2 font-sans text-sm font-medium text-foreground transition-colors hover:bg-muted"
-          >
+          <Button type="button" variant="outline" onClick={onClose}>
             إلغاء
-          </button>
-          <button
-            type="submit"
-            disabled={isPending}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-sans text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-          >
+          </Button>
+          <Button type="submit" loading={isPending}>
             {isPending ? "جارٍ الحفظ…" : "حفظ"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

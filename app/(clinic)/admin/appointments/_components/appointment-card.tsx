@@ -5,6 +5,7 @@ import { GripVertical } from "lucide-react";
 import type { AdminAppointment } from "@/server/services/appointments";
 import { getAllowedTransitions } from "@/lib/appointment-transitions";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Alert } from "@/components/ui/alert";
 
 interface AppointmentCardProps {
   appointment: AdminAppointment;
@@ -87,12 +88,13 @@ function AppointmentCardContent({
       ) : null}
 
       {appointment.cancellationReason && (
-        <p
-          className="mt-2 line-clamp-2 rounded-lg bg-red-50 px-2 py-1 text-xs text-red-600"
+        <Alert
+          variant="destructive"
+          className="mt-2 line-clamp-2 block rounded-lg border-transparent px-2 py-1 text-xs text-red-600"
           title={appointment.cancellationReason}
         >
           {appointment.cancellationReason}
-        </p>
+        </Alert>
       )}
     </>
   );
