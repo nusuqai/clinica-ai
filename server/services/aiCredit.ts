@@ -266,6 +266,8 @@ export async function chargeUsage(args: {
   sessionId: string | null;
   messageId: string | null;
   usage: TokenUsage;
+  /** The AI employee that wrote the reply — attributes the unit to it. */
+  aiAgentId?: string | null;
 }): Promise<UnitAlert | null> {
   const { clinicId, sessionId, messageId, usage } = args;
 
@@ -303,6 +305,7 @@ export async function chargeUsage(args: {
         clinicId,
         sessionId,
         messageId,
+        aiAgentId: args.aiAgentId ?? null,
         model: usage.model,
         promptTokens: usage.promptTokens,
         completionTokens: usage.completionTokens,

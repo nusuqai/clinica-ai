@@ -67,6 +67,9 @@ export interface MessageItem {
    *  show who answered the client. Null for USER / AGENT messages. */
   senderId: string | null;
   senderName: string | null;
+  /** For an AGENT reply: the AI employee that wrote it. Null for system notices
+   *  and replies sent before AI employees existed. */
+  agentName: string | null;
   sessionId: string | null;
   createdAt: Date;
   isRead: boolean;
@@ -214,7 +217,10 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
   const messages = await prisma.message.findMany({
     where: { conversationId },
     orderBy: { createdAt: "asc" },
-    include: { sender: { select: { fullName: true } } },
+    include: {
+      sender: { select: { fullName: true } },
+      aiAgent: { select: { name: true } },
+    },
   });
 
   // Open, message-linked escalations for this conversation → per-message badge.
@@ -240,6 +246,7 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
       // patient, already shown as the contact.
       senderId: m.senderType === SenderType.ADMIN ? m.senderId : null,
       senderName: m.senderType === SenderType.ADMIN ? (m.sender?.fullName ?? null) : null,
+      agentName: m.aiAgent?.name ?? null,
       sessionId: m.sessionId,
       createdAt: m.createdAt,
       isRead: m.isRead,

@@ -6,6 +6,9 @@
  */
 const REASON_LABELS: Record<string, string> = {
   clinic_disabled: "المساعد الذكي متوقف في العيادة",
+  no_agent_on_duty: "لا يوجد موظف آلي في الدوام الآن",
+  agent_daily_cap_reached: "بلغ الموظف الآلي حدّه اليومي من الردود",
+  conversation_daily_cap_reached: "بلغ العميل حدّه اليومي من ردود الموظف الآلي",
   insufficient_units: "نفدت وحدات المساعد الذكي",
   voice_transcription_failed: "تعذّر تفريغ رسالة صوتية",
   image_needs_review: "صورة تحتاج مراجعة من الفريق",

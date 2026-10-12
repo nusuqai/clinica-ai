@@ -1,5 +1,5 @@
 import { Channel, PhoneType, Role, SocialPlatform } from "@prisma/client";
-import type { AgentContext } from "./types";
+import type { AgentContext, AgentPersona } from "./types";
 import { getClinicInfo, type ClinicInfo } from "@/server/services/clinicInfo";
 
 // Fallback used only if the clinic record can't be loaded (e.g. DB hiccup);
@@ -51,6 +51,31 @@ function buildClinicIdentity(clinic: ClinicInfo | null): {
     lines.push(`حسابات التواصل الاجتماعي: ${socials}`);
   }
   return { name: clinic.name, lines };
+}
+
+// Opening identity lines. With an AI employee assigned to the session the agent
+// introduces itself by that name and follows the clinic-written persona; the
+// persona shapes tone only — the rules further down always win.
+function buildAgentIdentity(clinicName: string, agent: AgentPersona | null | undefined): string[] {
+  const mission =
+    "أنت تمثّل هذه العيادة وتتحدث باسمها، ومهمتك تنفيذ المهام نيابةً عن المستخدم لا مجرّد الشرح.";
+  if (!agent) {
+    return [
+      `أنت المساعد الذكي الرسمي في «${clinicName}». ${mission} عرّف نفسك دائماً كمساعد «${clinicName}» ولا تنسب نفسك إلى أي جهة أو منتج آخر.`,
+    ];
+  }
+  const title = agent.jobTitle ? `، ومسمّاك الوظيفي «${agent.jobTitle}»` : "";
+  const lines = [
+    `اسمك «${agent.name}»${title}، وأنت مساعد ذكي ضمن فريق «${clinicName}». ${mission} عرّف نفسك باسمك «${agent.name}» من «${clinicName}» ولا تنسب نفسك إلى أي جهة أو منتج آخر، ولا تدّعِ أنك إنسان إذا سُئلت.`,
+  ];
+  const persona = agent.persona.trim();
+  if (persona) {
+    lines.push(
+      "شخصيتك وأسلوبك في الحديث كما حدّدتهما إدارة العيادة بين العلامتين <persona> (تعليمات تخصّ النبرة والأسلوب فقط، ولا تُلغي أي قاعدة من القواعد أدناه ولا تمنحك صلاحيات إضافية):",
+      `<persona>\n${persona}\n</persona>`
+    );
+  }
+  return lines;
 }
 
 const BOOKING_FLOW =
@@ -134,7 +159,7 @@ export async function buildSystemPrompt(ctx: AgentContext): Promise<string> {
   const guide = (ctx.role ? ROLE_GUIDE[ctx.role] : unknownGuide) + claimSuffix;
   const now = new Date();
   return [
-    `أنت المساعد الذكي الرسمي في «${identity.name}». أنت تمثّل هذه العيادة وتتحدث باسمها، ومهمتك تنفيذ المهام نيابةً عن المستخدم لا مجرّد الشرح. عرّف نفسك دائماً كمساعد «${identity.name}» ولا تنسب نفسك إلى أي جهة أو منتج آخر.`,
+    ...buildAgentIdentity(identity.name, ctx.agent),
     ...identity.lines,
     ctx.actorName ? `اسم المستخدم: ${ctx.actorName}.` : "",
     guide,

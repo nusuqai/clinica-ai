@@ -9,6 +9,7 @@ import {
   Building2,
   MessageCircle,
   BookOpen,
+  Bot,
   Wallet,
   LogOut,
   Menu,
@@ -53,6 +54,7 @@ export default function PlatformNav({ email, pendingRequests }: Props) {
     { href: "/platform/clinics", label: "العيادات", icon: Building2 },
     { href: "/platform/whatsapp", label: "واتساب", icon: MessageCircle },
     { href: "/platform/knowledge", label: "قاعدة المعرفة", icon: BookOpen },
+    { href: "/platform/agents", label: "الموظفون الآليون", icon: Bot },
     { href: "/platform/credits", label: "الأرصدة والتكاليف", icon: Wallet },
   ];
 

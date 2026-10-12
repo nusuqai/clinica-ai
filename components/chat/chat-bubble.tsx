@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, X, Send, Bot, Mic, Square, Trash2 } from "lucide-react";
+import { MessageCircle, X, Send, Headset, Mic, Square, Trash2 } from "lucide-react";
 import ChatMessageView from "./chat-message";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -305,12 +305,12 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
   ) {
     if (guest && data.conversationId) rememberConversationId(data.conversationId);
 
+    // The assistant didn't answer (staff took over, AI off, no agent on duty, a
+    // cap was reached…). Stay silent, exactly like WhatsApp: drop the pending
+    // bubble rather than show text that was never stored. Staff see the
+    // escalation, and their reply arrives over realtime.
     if (data.handoff) {
-      patchAgent(agentId, (m) => ({
-        ...m,
-        streaming: false,
-        content: "تم تحويل محادثتك إلى أحد الموظفين، سيتم الرد عليك قريباً.",
-      }));
+      setMessages((prev) => prev.filter((m) => m.id !== agentId));
       return;
     }
 
@@ -331,7 +331,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       <Button
         size="icon"
         onClick={() => setOpen((v) => !v)}
-        aria-label="المساعد الذكي"
+        aria-label="خدمة العملاء"
         className="fixed bottom-20 end-6 z-40 h-14 w-14 rounded-full shadow-lg transition-all [&_svg]:size-6"
       >
         {open ? <X /> : <MessageCircle />}
@@ -341,17 +341,17 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       {open && (
         <div className="fixed bottom-44 end-6 z-40 flex h-[min(44rem,calc(90vh-8rem))] w-[min(36rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl">
           <div className="flex flex-shrink-0 items-center gap-2 bg-primary px-4 py-3 text-white">
-            <Bot className="h-5 w-5" />
+            <Headset className="h-5 w-5" />
             <div>
-              <p className="font-heading text-sm font-semibold">المساعد الذكي</p>
-              <p className="text-[11px] text-white/70">يساعدك على إنجاز مهامك</p>
+              <p className="font-heading text-sm font-semibold">خدمة العملاء</p>
+              <p className="text-[11px] text-white/70">نسعد بخدمتك</p>
             </div>
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto px-3 py-4" dir="rtl">
             {messages.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
-                <Bot className="h-10 w-10 opacity-30" />
+                <Headset className="h-10 w-10 opacity-30" />
                 <p className="font-sans text-xs">
                   مرحباً! كيف يمكنني مساعدتك اليوم؟ يمكنني حجز المواعيد والإجابة عن استفساراتك.
                 </p>

@@ -167,6 +167,8 @@ model Clinic {
   escalations            Escalation[]
   members                ClinicMember[]
   roles                  ClinicRole[]
+  aiAgents               AiAgent[]
+  aiAgentHours           AiAgentHours[]
   branches               Branch[]
   phones                 ClinicPhone[]
   socials                ClinicSocial[]
@@ -401,6 +403,64 @@ model ClinicMemberBranch {
   @@id([memberId, branchId])
   @@index([branchId])
   @@map("clinic_member_branches")
+}
+
+// An AI employee of the clinic: a named assistant with its own persona and
+// working hours, set up by the platform team (/platform/agents). While it is on
+// shift it answers patient chats under its own name and style. Active agents of
+// one clinic never have overlapping hours, so at most one is on shift at any
+// moment; when none is (including a clinic with no agents at all), the AI stays
+// silent and an escalation is raised for the human staff — see
+// server/services/aiAgents.ts.
+model AiAgent {
+  id                          String   @id @default(uuid()) @db.Uuid
+  clinicId                    String   @db.Uuid
+  name                        String
+  jobTitle                    String?
+  // Free-form tone/style instructions. Injected into the system prompt as style
+  // guidance only — it never overrides the agent's rules.
+  persona                     String   @default("") @db.Text
+  isActive                    Boolean  @default(true)
+  // true → on shift 24/7 and `hours` is ignored.
+  alwaysOn                    Boolean  @default(false)
+  // Usage limits, both counted in units (1 unit = 1 reply) over a ROLLING 24
+  // hours and both null = unlimited. Once a cap is reached the agent stays
+  // silent and the chat is escalated to the human staff until the window frees.
+  //   dailyUnitCap                — everything this agent replies, to anyone.
+  //   dailyUnitCapPerConversation — what it replies to ONE conversation, so a
+  //                                 single chatty patient can't drain the cap.
+  dailyUnitCap                Int?
+  dailyUnitCapPerConversation Int?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  clinic   Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  hours    AiAgentHours[]
+  messages Message[]
+  usage    AiUsageLog[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+  @@map("ai_agents")
+}
+
+// One shift per day for an AI employee, on the clinic's wall clock (same
+// "HH:MM" convention as BranchHours). endTime <= startTime means the shift
+// runs past midnight into the next day. No row for a day = off that day.
+model AiAgentHours {
+  id        String    @id @default(uuid()) @db.Uuid
+  agentId   String    @db.Uuid
+  clinicId  String    @db.Uuid
+  dayOfWeek DayOfWeek
+  startTime String // "HH:MM"
+  endTime   String // "HH:MM"
+
+  clinic Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  agent  AiAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, dayOfWeek])
+  @@index([clinicId])
+  @@map("ai_agent_hours")
 }
 
 // A custom role a clinic ADMIN defines for its staff: a name plus the set of
@@ -888,7 +948,12 @@ model Message {
   // a send error. Always SENT for inbound + web messages.
   deliveryStatus    MessageDelivery @default(SENT)
   sendAttempts      Int             @default(0)
+  // The AI employee that wrote this AGENT reply (inbox attribution). Null for
+  // USER/ADMIN messages, system notices, and replies sent before AI employees
+  // existed.
+  aiAgentId         String?         @db.Uuid
 
+  aiAgent      AiAgent?     @relation(fields: [aiAgentId], references: [id], onDelete: SetNull)
   clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session      ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
@@ -1056,8 +1121,15 @@ model AiUsageLog {
   // (the platform absorbs those in USD). Denormalized here so unit reporting is
   // one aggregate over the same table as cost reporting, with no join.
   unitsCharged     Int         @default(0)
+  // The AI employee whose reply this row bills (REPLY rows). Drives the
+  // per-agent usage caps and the "which agent answered most" reports; the unit
+  // and money ledgers reach it through their usageId. Null on rows not tied to
+  // an agent (transcription/extraction happen before one is chosen) and on rows
+  // written before AI employees existed.
+  aiAgentId        String?     @db.Uuid
   createdAt        DateTime    @default(now())
 
+  aiAgent    AiAgent?        @relation(fields: [aiAgentId], references: [id], onDelete: SetNull)
   clinic     Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   session    ChatSession?    @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   message    Message?        @relation(fields: [messageId], references: [id], onDelete: SetNull)
@@ -1066,6 +1138,7 @@ model AiUsageLog {
 
   @@unique([messageId, kind])
   @@index([clinicId, createdAt])
+  @@index([aiAgentId, createdAt])
   @@map("ai_usage_logs")
 }
 

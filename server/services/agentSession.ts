@@ -125,7 +125,10 @@ export async function persistAgentMessage(
    * a checkpoint BEFORE sending, so a send failure re-delivers this same row
    * without re-running or re-charging the agent.
    */
-  deliveryStatus: MessageDelivery = MessageDelivery.SENT
+  deliveryStatus: MessageDelivery = MessageDelivery.SENT,
+  /** The AI employee that wrote this reply (inbox attribution); null for
+   *  system notices. */
+  aiAgentId: string | null = null
 ): Promise<SessionMessage> {
   const m = await prisma.message.create({
     data: {
@@ -137,6 +140,7 @@ export async function persistAgentMessage(
       metadata: metadata ? (metadata as unknown as Prisma.InputJsonValue) : undefined,
       clinicId,
       deliveryStatus,
+      aiAgentId,
     },
   });
   await touchConversation(conversationId);
