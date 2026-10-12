@@ -60,12 +60,20 @@ function ErrorBox({ message }: { message: string | null }) {
   );
 }
 
+// A whole day is stored as a shift from midnight to midnight: an end that is not
+// after its start runs into the next day, so 00:00–00:00 covers all 24 hours.
+const ALL_DAY = "00:00";
+
+function isAllDay(h: { startTime: string; endTime: string }): boolean {
+  return h.startTime === ALL_DAY && h.endTime === ALL_DAY;
+}
+
 function hoursSummary(agent: AiAgentView): string {
   if (agent.alwaysOn) return "على مدار الساعة";
   return DAYS.filter((d) => agent.hours.some((h) => h.dayOfWeek === d.key))
     .map((d) => {
       const h = agent.hours.find((x) => x.dayOfWeek === d.key)!;
-      return `${d.label} ${h.startTime}–${h.endTime}`;
+      return isAllDay(h) ? `${d.label} طوال اليوم` : `${d.label} ${h.startTime}–${h.endTime}`;
     })
     .join("، ");
 }
@@ -262,6 +270,7 @@ function CapField({
 
 interface DayState {
   on: boolean;
+  allDay: boolean;
   startTime: string;
   endTime: string;
 }
@@ -270,9 +279,12 @@ function initialDays(agent: AiAgentView | null): Record<DayOfWeek, DayState> {
   const days = {} as Record<DayOfWeek, DayState>;
   for (const d of DAYS) {
     const h = agent?.hours.find((x) => x.dayOfWeek === d.key);
-    days[d.key] = h
-      ? { on: true, startTime: h.startTime, endTime: h.endTime }
-      : { on: false, startTime: "09:00", endTime: "17:00" };
+    // An all-day shift keeps the default times behind it, so unticking "all day"
+    // shows a sensible range rather than midnight to midnight.
+    days[d.key] =
+      h && !isAllDay(h)
+        ? { on: true, allDay: false, startTime: h.startTime, endTime: h.endTime }
+        : { on: !!h, allDay: !!h, startTime: "09:00", endTime: "17:00" };
   }
   return days;
 }
@@ -318,8 +330,8 @@ function AgentModal({
       dailyUnitCapPerConversation: perConversationCap,
       hours: DAYS.filter((d) => days[d.key].on).map((d) => ({
         dayOfWeek: d.key,
-        startTime: days[d.key].startTime,
-        endTime: days[d.key].endTime,
+        startTime: days[d.key].allDay ? ALL_DAY : days[d.key].startTime,
+        endTime: days[d.key].allDay ? ALL_DAY : days[d.key].endTime,
       })),
     };
     startTransition(async () => {
@@ -414,7 +426,20 @@ function AgentModal({
                       />
                       {d.label}
                     </label>
-                    {day.on ? (
+                    {day.on && (
+                      <label className="flex cursor-pointer items-center gap-2 font-sans text-sm text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={day.allDay}
+                          onChange={(e) => setDay(d.key, { allDay: e.target.checked })}
+                          className="h-4 w-4 accent-primary"
+                        />
+                        طوال اليوم
+                      </label>
+                    )}
+                    {!day.on ? (
+                      <span className={hintCls}>إجازة</span>
+                    ) : day.allDay ? null : (
                       <div className="flex items-center gap-2 font-sans text-sm text-muted-foreground">
                         من
                         <input
@@ -433,8 +458,6 @@ function AgentModal({
                           className={`${inputCls} w-32`}
                         />
                       </div>
-                    ) : (
-                      <span className={hintCls}>إجازة</span>
                     )}
                   </div>
                 );
