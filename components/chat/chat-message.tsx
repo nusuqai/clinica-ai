@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Headset, FileText, ExternalLink } from "lucide-react";
+import { Headset, FileText, ExternalLink } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 // ToolCallCard is temporarily unused — tool cards are hidden in the web chat
@@ -67,17 +67,10 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
 
   return (
     <div className="flex justify-start gap-2">
-      <div
-        className={[
-          "mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full",
-          isAdmin ? "bg-primary/15" : "bg-accent/15",
-        ].join(" ")}
-      >
-        {isAdmin ? (
-          <Headset className="h-4 w-4 text-primary" />
-        ) : (
-          <Bot className="h-4 w-4 text-accent" />
-        )}
+      {/* One customer-support avatar for both staff and assistant replies, so
+          the conversation reads as a single support desk. */}
+      <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary/15">
+        <Headset className="h-4 w-4 text-primary" />
       </div>
       <div className="max-w-[85%] space-y-1">
         {isAdmin && <p className="text-[10px] font-medium text-primary">أحد الموظفين</p>}
