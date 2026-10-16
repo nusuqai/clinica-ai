@@ -1,6 +1,7 @@
 import { requirePlatformAdmin } from "@/lib/auth";
 import { getPlatformAiOverview } from "@/server/services/aiReports";
 import CreditManager from "./_components/credit-manager";
+import CostBreakdown from "./_components/cost-breakdown";
 import { Card } from "@/components/ui/card";
 
 const usd = (n: number) =>
@@ -51,6 +52,13 @@ export default async function PlatformCreditsPage() {
           </Card>
         ))}
       </div>
+
+      <Card className="mb-8 p-5">
+        <h2 className="mb-4 font-heading text-lg font-semibold text-foreground">
+          توزيع التكلفة الفعلية ({overview.windowDays}ي)
+        </h2>
+        <CostBreakdown breakdown={overview.costBreakdown} />
+      </Card>
 
       <div className="space-y-4">
         {overview.clinics.map((c) => (
@@ -105,6 +113,16 @@ export default async function PlatformCreditsPage() {
                 </div>
               </div>
             </div>
+            {c.costBreakdown.totalUsd > 0 && (
+              <details className="mb-4 rounded-lg border border-border">
+                <summary className="cursor-pointer select-none px-4 py-2.5 font-sans text-sm font-medium text-foreground">
+                  توزيع التكلفة
+                </summary>
+                <div className="border-t border-border p-4">
+                  <CostBreakdown breakdown={c.costBreakdown} />
+                </div>
+              </details>
+            )}
             <CreditManager clinicId={c.clinicId} currentLowUnitsThreshold={c.lowUnitsThreshold} />
           </Card>
         ))}

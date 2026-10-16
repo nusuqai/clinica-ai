@@ -10,8 +10,8 @@ import { getClinicAiStatus } from "./aiCredit";
 //     figure: a clinic's meter is units, and pricing is not its concern.
 //   - getPlatformAiOverview — UNITS *and* DOLLARS. What a platform admin sees:
 //     the same unit meter per clinic, next to the real USD each clinic's replies
-//     cost (from the rates snapshotted by computeCost at charge time), and the
-//     resulting actual cost of one unit.
+//     cost (from the rates snapshotted by computeCost at charge time), the
+//     resulting actual cost of one unit, and where that USD went by call kind.
 //
 // All monetary values are serialized to `number` at this boundary (display
 // only) — the money-mutation path in aiCredit.ts stays on Prisma.Decimal
@@ -166,6 +166,8 @@ export interface PlatformClinicCredit {
    * when the clinic spent no units in the window.
    */
   rawCostPerUnit: number | null;
+  /** Where this clinic's raw USD went in the window. */
+  costBreakdown: AiCostBreakdown;
 }
 
 export interface PlatformAiOverview {
@@ -177,12 +179,111 @@ export interface PlatformAiOverview {
   totalRawSpendWindow: number;
   /** Platform-wide raw USD per unit served in the window; null if no units. */
   rawCostPerUnit: number | null;
+  /** Where the platform's raw USD went in the window (all listed clinics). */
+  costBreakdown: AiCostBreakdown;
+}
+
+// ─── Cost breakdown ───────────────────────────────────────────────────────────
+//
+// Platform-only: what share of the raw OpenAI USD each kind of AI call takes
+// (reply / transcription / TTS / image extraction / any future kind), and —
+// within replies — how much is context (input) vs. generation (output).
+//
+// By kind it is a plain GROUP BY kind over rawCost, so a new AiUsageKind shows
+// up here on its own (labelled by its enum name until KIND_LABEL names it).
+// The reply split is recomputed from each row's token counts and snapshotted
+// rates — the same formula computeCost used — so it stays correct across
+// pricing changes.
+
+export interface CostSlice {
+  key: string;
+  label: string;
+  usd: number;
+  /** 0–1 share of the breakdown's total (for `reply` slices: of reply cost). */
+  share: number;
+  /** Number of calls behind the slice; omitted on the reply sub-split. */
+  calls?: number;
+}
+
+export interface AiCostBreakdown {
+  totalUsd: number;
+  /** One slice per AiUsageKind present in the window, largest first. */
+  byKind: CostSlice[];
+  /** Reply cost split: context (uncached input), cached context, generation. */
+  reply: CostSlice[];
+  /** Total cost of REPLY rows — the base the `reply` shares are taken of. */
+  replyUsd: number;
+}
+
+const KIND_LABEL: Partial<Record<AiUsageKind, string>> = {
+  [AiUsageKind.REPLY]: "ردود المساعد",
+  [AiUsageKind.TRANSCRIPTION]: "تفريغ الرسائل الصوتية",
+  [AiUsageKind.TTS]: "الردود الصوتية",
+  [AiUsageKind.EXTRACTION]: "قراءة الصور",
+};
+
+const REPLY_PART_LABEL = {
+  context: "السياق (إدخال)",
+  cachedContext: "السياق المخزّن مؤقتاً",
+  generation: "التوليد (إخراج)",
+} as const;
+
+/** One (clinic, kind) aggregate. USD is cast to float8 here: display only. */
+interface KindCostRow {
+  clinicId: string;
+  kind: AiUsageKind;
+  calls: number;
+  rawUsd: number;
+  contextUsd: number;
+  cachedContextUsd: number;
+  generationUsd: number;
+}
+
+function buildCostBreakdown(rows: KindCostRow[]): AiCostBreakdown {
+  const byKindMap = new Map<AiUsageKind, { usd: number; calls: number }>();
+  const replyParts = { context: 0, cachedContext: 0, generation: 0 };
+  let replyUsd = 0;
+
+  for (const r of rows) {
+    const k = byKindMap.get(r.kind) ?? { usd: 0, calls: 0 };
+    k.usd += r.rawUsd;
+    k.calls += r.calls;
+    byKindMap.set(r.kind, k);
+
+    if (r.kind === AiUsageKind.REPLY) {
+      replyUsd += r.rawUsd;
+      replyParts.context += r.contextUsd;
+      replyParts.cachedContext += r.cachedContextUsd;
+      replyParts.generation += r.generationUsd;
+    }
+  }
+
+  const totalUsd = [...byKindMap.values()].reduce((s, k) => s + k.usd, 0);
+  const byKind = [...byKindMap.entries()]
+    .map(([kind, k]) => ({
+      key: kind,
+      label: KIND_LABEL[kind] ?? kind,
+      usd: k.usd,
+      share: totalUsd > 0 ? k.usd / totalUsd : 0,
+      calls: k.calls,
+    }))
+    .sort((a, b) => b.usd - a.usd);
+
+  // Shares of the recomputed parts, applied to the logged reply cost — so the
+  // three parts always add up to exactly what the reply rows recorded.
+  const partsTotal = replyParts.context + replyParts.cachedContext + replyParts.generation;
+  const reply = (Object.keys(replyParts) as (keyof typeof replyParts)[]).map((key) => {
+    const share = partsTotal > 0 ? replyParts[key] / partsTotal : 0;
+    return { key, label: REPLY_PART_LABEL[key], usd: share * replyUsd, share };
+  });
+
+  return { totalUsd, byKind, reply, replyUsd };
 }
 
 export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAiOverview> {
   const since = new Date(Date.now() - windowDays * DAY_MS);
 
-  const [clinics, spendRows] = await Promise.all([
+  const [clinics, spendRows, costRows] = await Promise.all([
     prisma.clinic.findMany({
       where: { isActive: true },
       select: {
@@ -207,7 +308,32 @@ export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAi
       where: { createdAt: { gte: since } },
       _sum: { rawCost: true, unitsCharged: true },
     }),
+    // Cost by (clinic, kind), plus each kind's input / cached / output parts
+    // recomputed from the snapshotted rates. promptTokens includes the cached
+    // share, so it is subtracted for the uncached context part. Audio rows have
+    // null token columns and come out as 0 for the parts (only REPLY uses them).
+    prisma.$queryRaw<KindCostRow[]>`
+      SELECT "clinicId",
+             "kind",
+             COUNT(*)::int AS calls,
+             COALESCE(SUM("rawCost"), 0)::float8 AS "rawUsd",
+             COALESCE(SUM((COALESCE("promptTokens", 0) - COALESCE("cachedInputTokens", 0))
+                          * "inputRatePerM"), 0)::float8 / 1000000 AS "contextUsd",
+             COALESCE(SUM(COALESCE("cachedInputTokens", 0)
+                          * COALESCE("cachedInputRatePerM", 0)), 0)::float8 / 1000000 AS "cachedContextUsd",
+             COALESCE(SUM(COALESCE("completionTokens", 0)
+                          * "outputRatePerM"), 0)::float8 / 1000000 AS "generationUsd"
+      FROM "ai_usage_logs"
+      WHERE "createdAt" >= ${since}
+      GROUP BY "clinicId", "kind"`,
   ]);
+
+  const costRowsByClinic = new Map<string, KindCostRow[]>();
+  for (const r of costRows) {
+    const list = costRowsByClinic.get(r.clinicId) ?? [];
+    list.push(r);
+    costRowsByClinic.set(r.clinicId, list);
+  }
 
   const usageByClinic = new Map(
     spendRows.map((r) => [
@@ -246,6 +372,7 @@ export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAi
       unitsUsedWindow: usage.units,
       rawSpendWindow: usage.raw,
       rawCostPerUnit: usage.units > 0 ? usage.raw / usage.units : null,
+      costBreakdown: buildCostBreakdown(costRowsByClinic.get(c.id) ?? []),
     };
   });
 
@@ -257,5 +384,7 @@ export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAi
     lowUnitsCount,
     totalRawSpendWindow,
     rawCostPerUnit: totalUnitsUsedWindow > 0 ? totalRawSpendWindow / totalUnitsUsedWindow : null,
+    // Same clinics as the totals above (active ones), so the two agree.
+    costBreakdown: buildCostBreakdown(clinics.flatMap((c) => costRowsByClinic.get(c.id) ?? [])),
   };
 }
