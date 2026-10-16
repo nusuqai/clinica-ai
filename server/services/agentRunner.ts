@@ -457,6 +457,7 @@ async function deliverPushReply<T>(args: {
   const usage = gen.usage ?? {
     promptTokens: 0,
     completionTokens: 0,
+    cachedInputTokens: 0,
     totalTokens: 0,
     model: DEFAULT_MODEL,
   };

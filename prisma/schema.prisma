@@ -58,22 +58,10 @@ enum ClinicRequestStatus {
   REJECTED
 }
 
-// Money-movement kinds on the per-clinic AI credit ledger. TOPUP/ADJUSTMENT are
-// platform-admin actions; USAGE is written automatically when the agent replies.
-enum AiLedgerType {
-  TOPUP
-  USAGE
-  ADJUSTMENT
-  TRANSCRIPTION
-  TTS
-  EXTRACTION
-}
-
 // Movement kinds on the per-clinic AI UNIT ledger — the clinic-facing meter.
-// Deliberately narrower than AiLedgerType: units are only ever granted by a
-// platform admin (TOPUP/ADJUSTMENT) or spent one-per-agent-reply (USAGE).
-// Transcription and TTS cost the platform money but never cost a clinic a unit,
-// so they have no counterpart here.
+// Units are only ever granted by a platform admin (TOPUP/ADJUSTMENT) or spent
+// one-per-agent-reply (USAGE). Transcription, TTS and image extraction cost the
+// platform money but never cost a clinic a unit, so they have no kind here.
 enum AiUnitLedgerType {
   TOPUP
   USAGE
@@ -180,7 +168,6 @@ model Clinic {
   whatsappConfig         WhatsappConfig?
   aiCredit               ClinicAiCredit?
   aiUsage                AiUsageLog[]
-  aiLedger               AiCreditLedger[]
   aiUnitLedger           AiUnitLedger[]
   branchHours            BranchHours[]
   doctorBranch           DoctorBranch[]
@@ -1024,24 +1011,13 @@ enum ConversationProcessingStatus {
 // ─── AI credit & cost metering ────────────────────────────────────────────────
 
 // 1:1 satellite of Clinic (mirrors WhatsappConfig). Holds the per-clinic global
-// AI on/off switch (clinic-admin controlled) and BOTH prepaid meters.
+// AI on/off switch (clinic-admin controlled) and the clinic's unit meter.
 //
-// TWO METERS, ONE ROW — but only one of them is prepaid:
-//   - `unitBalance` (Int) is what a CLINIC is granted, sees and spends: one unit
-//     per agent reply, whatever that reply actually cost. Its source of truth is
-//     AiUnitLedger. It is the ONLY meter shown to a clinic admin, and the only
-//     one that gates the agent (see getClinicAiStatus).
-//   - `balance` (USD) is platform telemetry: the real, marked-up cost of every
-//     reply, transcription and TTS call, accruing negatively. Its source of
-//     truth is AiCreditLedger. Nothing tops it up — there is no dollar grant —
-//     so it never gates anything and only platform admins ever see the figures
-//     derived from it.
-//
-// Both balances are denormalized caches: SUM(ledger.amount) must equal each.
-// `markup` is the per-clinic multiplier applied to the raw OpenAI cost
-// (platform-admin controlled). All money is Decimal(18,8): a single agent turn
-// can cost far under one cent, so 8 fractional digits keep sums of many tiny
-// charges exact. Never touched by JS floats.
+// `unitBalance` (Int) is what a CLINIC is granted, sees and spends: one unit per
+// agent reply, whatever that reply actually cost. Its source of truth is
+// AiUnitLedger (SUM(ledger.amount) must equal it). It is the only meter, and
+// the only thing that gates the agent (see getClinicAiStatus). The real USD
+// cost of each call is telemetry on AiUsageLog.rawCost — never charged.
 model ClinicAiCredit {
   id                    String    @id @default(uuid()) @db.Uuid
   clinicId              String    @unique @db.Uuid
@@ -1080,9 +1056,6 @@ model ClinicAiCredit {
   // agent has stopped answering this clinic's customers".
   lowUnitsNotifiedAt    DateTime?
   unitsOutNotifiedAt    DateTime?
-  balance               Decimal   @default(0) @db.Decimal(18, 8)
-  markup                Decimal   @default(1.5) @db.Decimal(6, 4)
-  lowBalanceThreshold   Decimal   @default(5) @db.Decimal(18, 8)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -1091,11 +1064,11 @@ model ClinicAiCredit {
   @@map("clinic_ai_credits")
 }
 
-// Append-only usage/cost analytics — one row per charged agent reply. Stores the
-// token counts, the rate + markup snapshots (so historical cost stays correct if
-// pricing changes later) and both the raw OpenAI cost and the charged (marked-up)
-// cost actually deducted. `messageId` is unique: a webhook redelivery that
-// re-charges the same reply hits the constraint and rolls the whole txn back.
+// Append-only usage/cost analytics — one row per AI call (reply, transcription,
+// TTS, image extraction). Stores the token counts, the rate snapshots (so
+// historical cost stays correct if pricing changes later) and the raw OpenAI
+// cost. (messageId, kind) is unique: a webhook redelivery that re-charges the
+// same reply hits the constraint and rolls the whole txn back.
 model AiUsageLog {
   id               String      @id @default(uuid()) @db.Uuid
   clinicId         String      @db.Uuid
@@ -1110,20 +1083,27 @@ model AiUsageLog {
   promptTokens     Int?
   completionTokens Int?
   totalTokens      Int?
+  // The share of promptTokens served from OpenAI's prompt cache (billed at
+  // cachedInputRatePerM, not inputRatePerM). Null on audio rows and on rows
+  // written before cached tokens were captured — those billed every prompt
+  // token at the full input rate.
+  cachedInputTokens Int?
   // Billed audio length for TRANSCRIPTION/TTS rows; null for REPLY rows.
   audioSeconds     Int?
   inputRatePerM    Decimal     @db.Decimal(12, 4)
+  // Snapshot of the cached-input list rate; null wherever cachedInputTokens is.
+  cachedInputRatePerM Decimal? @db.Decimal(12, 4)
   outputRatePerM   Decimal     @db.Decimal(12, 4)
+  // Real OpenAI list cost of this call (USD, Decimal — never a JS float).
+  // Telemetry only: clinics are charged in units, never in dollars.
   rawCost          Decimal     @db.Decimal(18, 8)
-  markup           Decimal     @db.Decimal(6, 4)
-  chargedCost      Decimal     @db.Decimal(18, 8)
   // Units this row cost the clinic: 1 on REPLY rows, 0 on TRANSCRIPTION/TTS
   // (the platform absorbs those in USD). Denormalized here so unit reporting is
   // one aggregate over the same table as cost reporting, with no join.
   unitsCharged     Int         @default(0)
   // The AI employee whose reply this row bills (REPLY rows). Drives the
   // per-agent usage caps and the "which agent answered most" reports; the unit
-  // and money ledgers reach it through their usageId. Null on rows not tied to
+  // ledger reaches it through its usageId. Null on rows not tied to
   // an agent (transcription/extraction happen before one is chosen) and on rows
   // written before AI employees existed.
   aiAgentId        String?     @db.Uuid
@@ -1133,7 +1113,6 @@ model AiUsageLog {
   clinic     Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   session    ChatSession?    @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   message    Message?        @relation(fields: [messageId], references: [id], onDelete: SetNull)
-  ledger     AiCreditLedger?
   unitLedger AiUnitLedger?
 
   @@unique([messageId, kind])
@@ -1142,31 +1121,9 @@ model AiUsageLog {
   @@map("ai_usage_logs")
 }
 
-// Append-only money ledger — the SOURCE OF TRUTH for ClinicAiCredit.balance.
-// `amount` is signed (+topup, -usage, ± adjustment); `balanceAfter` snapshots the
-// running balance right after this entry. USAGE rows link 1:1 to their AiUsageLog.
-model AiCreditLedger {
-  id           String       @id @default(uuid()) @db.Uuid
-  clinicId     String       @db.Uuid
-  type         AiLedgerType
-  amount       Decimal      @db.Decimal(18, 8)
-  balanceAfter Decimal      @db.Decimal(18, 8)
-  usageId      String?      @unique @db.Uuid
-  note         String?
-  actorId      String?      @db.Uuid
-  createdAt    DateTime     @default(now())
-
-  clinic Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  usage  AiUsageLog? @relation(fields: [usageId], references: [id], onDelete: SetNull)
-
-  @@index([clinicId, createdAt])
-  @@map("ai_credit_ledger")
-}
-
-// Append-only UNIT ledger — the SOURCE OF TRUTH for ClinicAiCredit.unitBalance,
-// and the clinic-facing mirror of AiCreditLedger. `amount` is signed (+topup,
-// -1 per agent reply, ± adjustment); `balanceAfter` snapshots the running unit
-// count right after this entry.
+// Append-only UNIT ledger — the SOURCE OF TRUTH for ClinicAiCredit.unitBalance.
+// `amount` is signed (+topup, -1 per agent reply, ± adjustment); `balanceAfter`
+// snapshots the running unit count right after this entry.
 //
 // USAGE rows link 1:1 to the AiUsageLog they were spent on, which is what makes
 // the meter auditable: every unit a clinic lost can be traced to the exact reply

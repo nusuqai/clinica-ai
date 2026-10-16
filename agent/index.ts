@@ -53,6 +53,43 @@ export const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
 // through lists itself (up to 3 pages per question, see LIST_RULES in prompts).
 const RECURSION_LIMIT = 40;
 
+/** The usage of ONE LLM call, minus the model name. */
+type CallUsage = Omit<TokenUsage, "model">;
+
+/**
+ * Reads one LLM call's billable token counts off its final AIMessage.
+ *
+ * All counts come from LangChain's usage_metadata; cache reads are a subset of
+ * input_tokens, not extra.
+ */
+function readCallUsage(msg: {
+  usage_metadata?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
+    input_token_details?: { cache_read?: number };
+  };
+}): CallUsage {
+  const u = msg.usage_metadata;
+  return {
+    promptTokens: u?.input_tokens ?? 0,
+    completionTokens: u?.output_tokens ?? 0,
+    cachedInputTokens: u?.input_token_details?.cache_read ?? 0,
+    totalTokens: u?.total_tokens ?? 0,
+  };
+}
+
+function addCallUsage(sum: CallUsage, call: CallUsage): void {
+  sum.promptTokens += call.promptTokens;
+  sum.completionTokens += call.completionTokens;
+  sum.cachedInputTokens += call.cachedInputTokens;
+  sum.totalTokens += call.totalTokens;
+}
+
+function emptyUsage(): CallUsage {
+  return { promptTokens: 0, completionTokens: 0, cachedInputTokens: 0, totalTokens: 0 };
+}
+
 async function buildAgent(ctx: AgentContext) {
   return createReactAgent({
     llm: createModel(),
@@ -154,9 +191,7 @@ export async function* runAgentStream(
 
   // A ReAct turn makes one LLM call per tool-calling round, so token usage is
   // summed across every `on_chat_model_end` event, not read from the last one.
-  let promptTokens = 0;
-  let completionTokens = 0;
-  let totalTokens = 0;
+  const usage = emptyUsage();
   let usageModel = DEFAULT_MODEL;
 
   const stream = agent.streamEvents(
@@ -198,26 +233,16 @@ export async function* runAgentStream(
       });
       yield { type: "tool_result", name: ev.name, result, status };
     } else if (ev.event === "on_chat_model_end") {
-      // LangChain surfaces per-call usage on the final AIMessage. Field names
-      // are input_tokens / output_tokens / total_tokens; the billed model name
-      // is on response_metadata. Sum prompt/completion separately — never derive
-      // cost from total_tokens (providers don't always keep it consistent).
+      // LangChain surfaces per-call usage on the final AIMessage; the billed
+      // model name is on response_metadata. Sum each token kind separately —
+      // never derive cost from total_tokens (providers don't always keep it
+      // consistent).
       const out = ev.data?.output as
-        | {
-            usage_metadata?: {
-              input_tokens?: number;
-              output_tokens?: number;
-              total_tokens?: number;
-            };
+        | (Parameters<typeof readCallUsage>[0] & {
             response_metadata?: { model_name?: string };
-          }
+          })
         | undefined;
-      const u = out?.usage_metadata;
-      if (u) {
-        promptTokens += u.input_tokens ?? 0;
-        completionTokens += u.output_tokens ?? 0;
-        totalTokens += u.total_tokens ?? 0;
-      }
+      if (out) addCallUsage(usage, readCallUsage(out));
       if (out?.response_metadata?.model_name) {
         usageModel = out.response_metadata.model_name;
       }
@@ -228,7 +253,7 @@ export async function* runAgentStream(
     type: "done",
     text: finalText.trim(),
     toolCalls,
-    usage: { promptTokens, completionTokens, totalTokens, model: usageModel },
+    usage: { ...usage, model: usageModel },
   };
 }
 
@@ -252,7 +277,11 @@ export async function runAgentToText(
     { messages },
     { recursionLimit: RECURSION_LIMIT, configurable: { thread_id: ctx.sessionId } },
   )) as { messages?: BaseMessage[] };
-  const out = result.messages ?? [];
+  // The final state is the input history FOLLOWED BY this turn's messages. Read
+  // only this turn's: re-collecting the replayed history's tool calls would save
+  // them onto this reply, and they'd be replayed (and re-collected) next turn —
+  // doubling the history every turn.
+  const out = (result.messages ?? []).slice(messages.length);
 
   // Pair each tool_call id with the ToolMessage that carries its result.
   const toolResults = new Map<string, ToolMessage>();
@@ -260,22 +289,18 @@ export async function runAgentToText(
     if (m instanceof ToolMessage && m.tool_call_id) toolResults.set(m.tool_call_id, m);
   }
 
-  let promptTokens = 0;
-  let completionTokens = 0;
-  let totalTokens = 0;
+  const usage = emptyUsage();
   let usageModel = DEFAULT_MODEL;
   const toolCalls: ToolCallRecord[] = [];
   let finalText = "";
 
   for (const m of out) {
-    if (!(m instanceof AIMessage)) continue;
+    // Not `instanceof AIMessage`: a streamed model call (see createModel) yields an
+    // AIMessageChunk, which is a sibling class, not a subclass — instanceof would
+    // skip every AI message (empty reply, zero usage, no tool calls recorded).
+    if (!AIMessage.isInstance(m)) continue;
 
-    const u = m.usage_metadata;
-    if (u) {
-      promptTokens += u.input_tokens ?? 0;
-      completionTokens += u.output_tokens ?? 0;
-      totalTokens += u.total_tokens ?? 0;
-    }
+    addCallUsage(usage, readCallUsage(m));
     const model = (m.response_metadata as { model_name?: string } | undefined)?.model_name;
     if (model) usageModel = model;
 
@@ -298,6 +323,6 @@ export async function runAgentToText(
   return {
     text: finalText.trim(),
     toolCalls,
-    usage: { promptTokens, completionTokens, totalTokens, model: usageModel },
+    usage: { ...usage, model: usageModel },
   };
 }
