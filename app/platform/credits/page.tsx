@@ -105,11 +105,7 @@ export default async function PlatformCreditsPage() {
                 </div>
               </div>
             </div>
-            <CreditManager
-              clinicId={c.clinicId}
-              currentMarkup={c.markup}
-              currentLowUnitsThreshold={c.lowUnitsThreshold}
-            />
+            <CreditManager clinicId={c.clinicId} currentLowUnitsThreshold={c.lowUnitsThreshold} />
           </Card>
         ))}
         {overview.clinics.length === 0 && (

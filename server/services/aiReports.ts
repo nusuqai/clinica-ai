@@ -157,11 +157,8 @@ export interface PlatformClinicCredit {
   lowUnitsThreshold: number;
   lowUnits: boolean;
   unitsUsedWindow: number;
-  /** USD telemetry — platform-only, and never a balance anyone tops up. */
-  markup: number;
-  /** Marked-up USD accrued in the window (replies + voice). */
-  spendWindow: number;
-  /** Raw provider USD in the window, before markup — the true cost to serve. */
+  /** Raw provider USD in the window — the true cost to serve. Platform-only
+   *  telemetry, never charged to the clinic. */
   rawSpendWindow: number;
   /**
    * What one unit really cost to serve in the window: total raw USD (voice
@@ -177,7 +174,6 @@ export interface PlatformAiOverview {
   totalUnitBalance: number;
   totalUnitsUsedWindow: number;
   lowUnitsCount: number;
-  totalSpendWindow: number;
   totalRawSpendWindow: number;
   /** Platform-wide raw USD per unit served in the window; null if no units. */
   rawCostPerUnit: number | null;
@@ -198,7 +194,6 @@ export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAi
             aiEnabled: true,
             unitBalance: true,
             lowUnitsThreshold: true,
-            markup: true,
           },
         },
       },
@@ -210,7 +205,7 @@ export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAi
     prisma.aiUsageLog.groupBy({
       by: ["clinicId"],
       where: { createdAt: { gte: since } },
-      _sum: { chargedCost: true, rawCost: true, unitsCharged: true },
+      _sum: { rawCost: true, unitsCharged: true },
     }),
   ]);
 
@@ -218,7 +213,6 @@ export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAi
     spendRows.map((r) => [
       r.clinicId,
       {
-        charged: num(r._sum.chargedCost),
         raw: num(r._sum.rawCost),
         units: r._sum.unitsCharged ?? 0,
       },
@@ -228,18 +222,16 @@ export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAi
   let totalUnitBalance = 0;
   let totalUnitsUsedWindow = 0;
   let lowUnitsCount = 0;
-  let totalSpendWindow = 0;
   let totalRawSpendWindow = 0;
 
   const rows: PlatformClinicCredit[] = clinics.map((c) => {
     const unitBalance = c.aiCredit?.unitBalance ?? 0;
     const lowUnitsThreshold = c.aiCredit?.lowUnitsThreshold ?? 50;
-    const usage = usageByClinic.get(c.id) ?? { charged: 0, raw: 0, units: 0 };
+    const usage = usageByClinic.get(c.id) ?? { raw: 0, units: 0 };
     const lowUnits = unitBalance <= lowUnitsThreshold;
 
     totalUnitBalance += unitBalance;
     totalUnitsUsedWindow += usage.units;
-    totalSpendWindow += usage.charged;
     totalRawSpendWindow += usage.raw;
     if (lowUnits) lowUnitsCount += 1;
 
@@ -252,8 +244,6 @@ export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAi
       lowUnitsThreshold,
       lowUnits,
       unitsUsedWindow: usage.units,
-      markup: c.aiCredit?.markup ? c.aiCredit.markup.toNumber() : 1.5,
-      spendWindow: usage.charged,
       rawSpendWindow: usage.raw,
       rawCostPerUnit: usage.units > 0 ? usage.raw / usage.units : null,
     };
@@ -265,7 +255,6 @@ export async function getPlatformAiOverview(windowDays = 30): Promise<PlatformAi
     totalUnitBalance,
     totalUnitsUsedWindow,
     lowUnitsCount,
-    totalSpendWindow,
     totalRawSpendWindow,
     rawCostPerUnit: totalUnitsUsedWindow > 0 ? totalRawSpendWindow / totalUnitsUsedWindow : null,
   };

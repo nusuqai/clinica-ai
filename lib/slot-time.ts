@@ -24,3 +24,12 @@ export function formatSlotTime(
 export function formatSlotTimeRange(start: Date | string, end: Date | string): string {
   return `${formatSlotTime(start)} – ${formatSlotTime(end)}`;
 }
+
+/** An appointment's day: the slot's date, or the booking date for queue bookings.
+ *  Lives here (not in a "use client" component) so server components can call it. */
+export function visitDate(appt: {
+  slot: { date: Date } | null;
+  bookingDate: Date | null;
+}): Date | null {
+  return appt.slot?.date ?? appt.bookingDate;
+}
