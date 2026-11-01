@@ -122,6 +122,12 @@ export interface InboundEnvelope {
   name: string;
   /** Meta's message id (`wamid.…`), needed to mark read / show typing. */
   messageId: string;
+  /**
+   * The wamid this message quotes (`messages[].context.id`) when the patient
+   * swiped-to-reply on an earlier message — or tapped a quick-reply button on a
+   * template, which Meta reports the same way. Null for a plain message.
+   */
+  quotedWamid: string | null;
   /** The clinic's WhatsApp sender id this arrived on — routes to a clinic. */
   phoneNumberId: string;
   message: InboundWhatsAppMessage;
@@ -300,14 +306,17 @@ export function parseWebhookPayload(payload: Record<string, unknown>): InboundEn
         }
 
         const message = classify(msg);
+        // A forwarded message also carries `context`, but without an `id`.
+        const quotedWamid = (msg.context as { id?: string } | undefined)?.id ?? null;
         console.log(
-          `[wa-debug] parse: message phone=${phone ?? "(hidden)"} userId=${userId ?? "(none)"} id=${messageId} type=${msg.type} → kind=${message.kind}`
+          `[wa-debug] parse: message phone=${phone ?? "(hidden)"} userId=${userId ?? "(none)"} id=${messageId} type=${msg.type} → kind=${message.kind}${quotedWamid ? ` quotes=${quotedWamid}` : ""}`
         );
         envelopes.push({
           phone,
           userId,
           name: names.get(phone ?? "") ?? names.get(userId ?? "") ?? phone ?? userId ?? "",
           messageId,
+          quotedWamid,
           phoneNumberId,
           message,
         });

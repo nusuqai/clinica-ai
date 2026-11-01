@@ -9,6 +9,7 @@ import type {
   StructuredKind,
 } from "@/lib/meta/whatsapp-inbound";
 import { MEDIA_NOTICES } from "@/lib/meta/inbound";
+import { quoteKindOf, quoteSnippet } from "@/lib/message-quote";
 import { uploadPatientMedia } from "@/lib/supabase/storage";
 import { transcribeAudio } from "./transcription";
 import { synthesizeSpeech } from "./tts";
@@ -86,6 +87,20 @@ function mediaPlaceholder(kind: ArchivedMediaKind | "image"): string {
   }
 }
 
+/**
+ * "This turn answers that message" preamble for a patient's quoted reply, so the
+ * agent resolves references like "غيّره" against the quoted text. The quote may
+ * come from an older session the agent never loaded, so it is spelled out here.
+ * Trimmed to keep a long quoted reply from bloating every later turn.
+ */
+function quotePreamble(replyTo: SessionMessage["replyTo"]): string {
+  if (!replyTo) return "";
+  const author =
+    replyTo.senderType === SenderType.USER ? "رسالة سابقة من العميل" : "رسالة من العيادة";
+  const snippet = quoteSnippet(replyTo.content, quoteKindOf(replyTo.metadata), 400);
+  return snippet ? `[↩︎ ردًّا على ${author}: «${snippet}»]\n` : "";
+}
+
 function toPrior(messages: SessionMessage[]): PriorMessage[] {
   return messages.map((m) => {
     // An image the agent was allowed to read was described once and the text
@@ -93,9 +108,10 @@ function toPrior(messages: SessionMessage[]): PriorMessage[] {
     // arrival turn AND reuses the same description on every later turn — the image
     // itself is never re-sent (issue #52).
     const analysis = m.metadata?.media?.analysis;
-    const content = analysis
-      ? `${m.content}\n\n[صورة أرسلها العميل — وصفها: ${analysis}]`
-      : m.content;
+    const body = analysis ? `${m.content}\n\n[صورة أرسلها العميل — وصفها: ${analysis}]` : m.content;
+    // Only the patient's quotes need explaining — the agent's own turns are its
+    // history, and a staff quote reads fine without it.
+    const content = m.senderType === SenderType.USER ? quotePreamble(m.replyTo) + body : body;
     return {
       senderType: m.senderType,
       content,
@@ -694,7 +710,9 @@ export async function handleWhatsAppMessage(
   userText: string,
   /** Meta message id — enables read receipts and the typing indicator. */
   messageId: string,
-  creds: WhatsAppCredentials
+  creds: WhatsAppCredentials,
+  /** The wamid the patient quoted (swipe-to-reply), if any. */
+  quotedWamid: string | null = null
 ): Promise<void> {
   const conv = await loadConversation(conversationId);
   // The conversation was just created/updated by the webhook, so this is defensive.
@@ -717,7 +735,8 @@ export async function handleWhatsAppMessage(
     userText,
     profile?.id ?? null,
     null,
-    messageId
+    messageId,
+    quotedWamid
   );
   console.log(
     `[wa-debug] user message STORED convId=${conversationId} sessionId=${sessionId} profileId=${profile?.id ?? "none"}`
@@ -747,7 +766,9 @@ export async function handleWhatsAppVoiceMessage(
   contact: WhatsAppContact,
   voice: { mediaId: string; mimeType: string },
   messageId: string,
-  creds: WhatsAppCredentials
+  creds: WhatsAppCredentials,
+  /** The wamid the patient quoted (swipe-to-reply), if any. */
+  quotedWamid: string | null = null
 ): Promise<void> {
   const conv = await loadConversation(conversationId);
   if (!conv) {
@@ -800,7 +821,8 @@ export async function handleWhatsAppVoiceMessage(
     content,
     profile?.id ?? null,
     voiceMeta ? { voice: voiceMeta } : null,
-    messageId
+    messageId,
+    quotedWamid
   );
 
   // Charge transcription (its own ledger line) whenever a model actually ran.
@@ -845,7 +867,9 @@ export async function handleWhatsAppImageMessage(
   contact: WhatsAppContact,
   image: { mediaId: string; mimeType: string; caption?: string },
   messageId: string,
-  creds: WhatsAppCredentials
+  creds: WhatsAppCredentials,
+  /** The wamid the patient quoted (swipe-to-reply), if any. */
+  quotedWamid: string | null = null
 ): Promise<void> {
   const conv = await loadConversation(conversationId);
   if (!conv) {
@@ -929,7 +953,8 @@ export async function handleWhatsAppImageMessage(
     content,
     profile?.id ?? null,
     mediaMeta ? { media: mediaMeta } : null,
-    messageId
+    messageId,
+    quotedWamid
   );
 
   // The one-time vision call is its own USD-only ledger line (either mode).
@@ -991,7 +1016,9 @@ export async function handleWhatsAppMediaMessage(
     caption?: string;
   },
   messageId: string,
-  creds: WhatsAppCredentials
+  creds: WhatsAppCredentials,
+  /** The wamid the patient quoted (swipe-to-reply), if any. */
+  quotedWamid: string | null = null
 ): Promise<void> {
   const conv = await loadConversation(conversationId);
   if (!conv) return;
@@ -1036,7 +1063,8 @@ export async function handleWhatsAppMediaMessage(
     content,
     profile?.id ?? null,
     mediaMeta ? { media: mediaMeta } : null,
-    messageId
+    messageId,
+    quotedWamid
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
@@ -1052,7 +1080,9 @@ export async function handleWhatsAppStructuredMessage(
   contact: WhatsAppContact,
   structured: { structuredKind: StructuredKind; data: unknown; summary: string },
   messageId: string,
-  creds: WhatsAppCredentials
+  creds: WhatsAppCredentials,
+  /** The wamid the patient quoted (swipe-to-reply), if any. */
+  quotedWamid: string | null = null
 ): Promise<void> {
   const conv = await loadConversation(conversationId);
   if (!conv) return;
@@ -1071,7 +1101,8 @@ export async function handleWhatsAppStructuredMessage(
     structured.summary,
     profile?.id ?? null,
     { structured: structuredMeta },
-    messageId
+    messageId,
+    quotedWamid
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");

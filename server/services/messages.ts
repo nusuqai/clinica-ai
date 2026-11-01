@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, Role, SenderType, type Prisma } from "@prisma/client";
 import { personSearch, phoneDigits } from "./_search";
+import { quoteKindOf, quoteSnippet } from "@/lib/message-quote";
 import type {
   AgentMessageMetadata,
   VoiceMessageMetadata,
@@ -59,6 +60,16 @@ export interface MessageEscalation {
   reason: string | null;
 }
 
+/** The message a reply quotes, reduced to what the quoted-preview block shows. */
+export interface MessageReplyPreview {
+  id: string;
+  senderType: SenderType;
+  /** Staff member (ADMIN) or AI employee (AGENT) who wrote it; null for the
+   *  patient, whom the inbox labels with the contact name. */
+  authorName: string | null;
+  snippet: string;
+}
+
 export interface MessageItem {
   id: string;
   content: string;
@@ -83,6 +94,8 @@ export interface MessageItem {
   escalation?: MessageEscalation;
   /** The patient's emoji reaction to this message (WhatsApp), if any. */
   reaction?: string;
+  /** The earlier message this one quotes, if any (and if it still exists). */
+  replyTo?: MessageReplyPreview;
 }
 
 export interface EscalationItem {
@@ -220,6 +233,16 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
     include: {
       sender: { select: { fullName: true } },
       aiAgent: { select: { name: true } },
+      replyTo: {
+        select: {
+          id: true,
+          content: true,
+          senderType: true,
+          metadata: true,
+          sender: { select: { fullName: true } },
+          aiAgent: { select: { name: true } },
+        },
+      },
     },
   });
 
@@ -276,6 +299,22 @@ export async function getMessages(conversationId: string): Promise<MessageItem[]
       ...(structured ? { structured: { kind: structured.kind } } : {}),
       ...(escalation ? { escalation } : {}),
       ...(meta?.reaction ? { reaction: meta.reaction } : {}),
+      ...(m.replyTo
+        ? {
+            replyTo: {
+              id: m.replyTo.id,
+              senderType: m.replyTo.senderType,
+              authorName:
+                m.replyTo.senderType === SenderType.ADMIN
+                  ? (m.replyTo.sender?.fullName ?? null)
+                  : (m.replyTo.aiAgent?.name ?? null),
+              snippet: quoteSnippet(
+                m.replyTo.content,
+                quoteKindOf(m.replyTo.metadata as AgentMessageMetadata | null)
+              ),
+            },
+          }
+        : {}),
     };
   });
 }
