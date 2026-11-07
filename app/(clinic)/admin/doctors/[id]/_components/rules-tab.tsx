@@ -220,7 +220,7 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
                     onCheckedChange={() => handleToggleActive(rule)}
                     disabled={isPending}
                     aria-label={rule.isActive ? "تعطيل القاعدة" : "تفعيل القاعدة"}
-                    className="data-[state=checked]:bg-emerald-500"
+                    className="aria-checked:bg-emerald-500"
                   />
                 </Hint>
 

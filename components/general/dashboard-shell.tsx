@@ -18,6 +18,10 @@ interface DashboardShellProps {
   /** Admin only — conversation IDs with an unresolved escalation on load. */
   initialUnresolvedEscalationConversationIds?: string[];
   clinicId: string;
+  /** Admin only — the signed-in member (their colleague alerts + reminders). */
+  userId?: string;
+  /** Admin only — conversations waiting on this member, on load. */
+  initialNeedsMeCount?: number;
   /** The clinic this host belongs to — shown in the sidebar and topbar so a
       user who is a member of more than one clinic always knows where they are. */
   clinicName: string;
@@ -51,6 +55,8 @@ export default function DashboardShell({
   permissions = [],
   roleLabel: roleLabelOverride = null,
   initialUnresolvedEscalationConversationIds = [],
+  userId = "",
+  initialNeedsMeCount = 0,
 }: DashboardShellProps) {
   // Each clinic is served from its own subdomain, so the nav config's hrefs
   // ("/admin", "/dashboard", "/" …) are already correct as-is — no clinic
@@ -97,12 +103,14 @@ export default function DashboardShell({
     </SidebarProvider>
   );
 
-  if (!escalationAlerts) return shell;
+  if (!escalationAlerts || !userId) return shell;
 
   return (
     <EscalationProvider
       initialConversationIds={initialUnresolvedEscalationConversationIds}
       clinicId={clinicId}
+      userId={userId}
+      initialNeedsMeCount={initialNeedsMeCount}
     >
       {shell}
     </EscalationProvider>

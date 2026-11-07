@@ -2,44 +2,30 @@
 
 import { useState, useEffect, useMemo, useRef, useTransition, useCallback, Fragment } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { formatDistanceToNow } from "date-fns";
-import { ar } from "date-fns/locale";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { toast } from "sonner";
 import {
   MessageSquare,
   Send,
-  Phone,
-  Globe,
-  Loader2,
-  Inbox,
-  Bot,
-  BotOff,
-  AlertTriangle,
   Clock,
   FileText,
-  RotateCw,
-  UserRound,
-  ExternalLink,
   Paperclip,
   X,
-  CheckCircle2,
   Reply,
+  Lock,
+  MessageCircle,
 } from "lucide-react";
-import { quoteSnippet, type QuoteAttachmentKind } from "@/lib/message-quote";
-import { WhatsappIcon } from "@/components/icons/whatsapp-icon";
 import WhatsappTemplatePicker from "@/components/admin/whatsapp-template-picker";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
-import { escalationReasonLabel } from "@/lib/escalation-reasons";
-import { ChatImage } from "@/components/ui/chat-image";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { FilterBar } from "@/components/ui/filter-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import {
   sendAdminReply,
   sendAdminMediaReply,
+  sendAdminVoiceReply,
+  sendQuickReply,
   createStaffMediaUpload,
   retryWhatsappDelivery,
   resolveMessageEscalation,
@@ -47,8 +33,16 @@ import {
   type SendAdminReplyResult,
 } from "@/server/actions/messages";
 import {
-  useRealtimeMessages,
+  addInternalNote,
+  assignConversation,
+  deleteInternalNote,
+  deleteMessageNote,
+  setConversationPinned,
+} from "@/server/actions/inbox";
+import {
   useRealtimeConversations,
+  useRealtimeInternalNotes,
+  parseDbTimestamp,
   RealtimeMessageRow,
 } from "@/hooks/use-realtime-messages";
 import { useEscalationAlerts } from "@/components/general/escalation-provider";
@@ -59,6 +53,13 @@ import type {
   MessageReplyPreview,
   ConversationDetail,
 } from "@/server/services/messages";
+import type {
+  InboxLabelItem,
+  InboxTeammate,
+  InternalNoteItem,
+  QuickReplyItem,
+  ReminderItem,
+} from "@/server/services/inbox";
 import {
   fetchConversations,
   fetchConversationDetail,
@@ -67,15 +68,38 @@ import {
 import type { AgentMessageMetadata } from "@/agent/types";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { Hint } from "@/components/ui/tooltip";
+import { ConversationList } from "@/components/admin/inbox/conversation-list";
+import { ThreadHeader, type ThreadDialog } from "@/components/admin/inbox/thread-header";
+import type { ConversationMenuDialog } from "@/components/admin/inbox/conversation-menu";
+import { MessageBubble, InternalNoteBubble } from "@/components/admin/inbox/message-bubble";
+import { LabelsDialog } from "@/components/admin/inbox/labels-dialog";
+import { ReminderDialog } from "@/components/admin/inbox/reminder-dialog";
+import { EscalateDialog } from "@/components/admin/inbox/escalate-dialog";
+import { MessageNoteDialog } from "@/components/admin/inbox/message-note-dialog";
+import { QuickRepliesPanel, quickReplyFile } from "@/components/admin/inbox/quick-replies";
+import { VoiceRecorder } from "@/components/admin/inbox/voice-recorder";
+import {
+  clientMediaKind,
+  toReplyPreview,
+  quoteAuthor,
+  type PendingMedia,
+  type PendingMessage,
+  type Quotable,
+  type RenderedMessage,
+  type RenderedInternalNote,
+  type TimelineItem,
+} from "@/components/admin/inbox/types";
 
 interface ChatInboxProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationDetail | null;
   messages: MessageItem[];
+  /** Staff-only internal notes of the selected conversation. */
+  internalNotes: InternalNoteItem[];
   clinicId: string;
+  /** The signed-in team member. */
+  currentUserId: string;
   /** The signed-in team member's name — labels their own optimistic replies. */
   currentUserName: string;
   /** Team member id → name, to label a colleague's reply arriving over realtime. */
@@ -85,35 +109,13 @@ interface ChatInboxProps {
   /** Holds "patients": show the link to the contact's patient profile. Without
    *  it the inbox still shows the contact's name and phone, just not the link. */
   canOpenPatientProfile: boolean;
-}
-
-/**
- * `sending` → in flight. `sent` → persisted and delivered, kept only until the
- * server row arrives. `failed_sync` → nothing was written to the database.
- * `failed_whatsapp` → the row exists but WhatsApp delivery failed.
- */
-type PendingStatus = "sending" | "sent" | "failed_sync" | "failed_whatsapp";
-
-/** Formats an audio length as m:ss. */
-function formatDuration(totalSec: number): string {
-  const m = Math.floor(totalSec / 60);
-  const s = Math.floor(totalSec % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-/** Optimistic media on a pending staff attachment (kept until the server row
- *  arrives). `file` is retained so a failed send can be retried. */
-interface PendingMedia {
-  kind: "image" | "video" | "audio" | "document";
-  mimeType: string;
-  filename?: string;
-  /** Local object URL for instant preview before the upload lands. */
-  localUrl?: string;
-  caption?: string;
-  file: File;
-  /** Intrinsic dimensions for an image (read client-side before upload). */
-  width?: number;
-  height?: number;
+  /** The viewer's personal labels. */
+  labels: InboxLabelItem[];
+  /** Teammates a conversation can be assigned / escalated to. */
+  teammates: InboxTeammate[];
+  /** The conversation id the server rendered for (null = none) — tells a
+   *  still-loading thread apart from one that doesn't exist. */
+  requestedId: string | null;
 }
 
 /** Reads an image file's pixel dimensions in the browser (null if not an image
@@ -135,122 +137,81 @@ function readImageSize(file: File): Promise<{ width: number; height: number } | 
   });
 }
 
-/** An admin reply rendered optimistically, before/independently of the server
- *  round-trip. Client-side only — these do not survive a reload. */
-interface PendingMessage {
-  clientId: string;
-  conversationId: string;
-  content: string;
-  createdAt: Date;
-  status: PendingStatus;
-  /** Set once the message row exists; lets it replace the server bubble. */
-  serverId?: string;
-  /** Set when this is a media attachment, not a text reply. */
-  media?: PendingMedia;
-  /** The message this reply quotes — shown on the bubble and resent on retry. */
-  replyTo?: MessageReplyPreview;
-}
+type ComposerMode = "reply" | "internal";
 
-/** The fields a quote preview can be built from — both a server message and a
- *  rendered (possibly optimistic) bubble carry them. */
-interface Quotable {
-  id?: string;
-  content: string;
-  senderType: SenderType;
-  senderName?: string | null;
-  agentName?: string | null;
-  voice?: unknown;
-  media?: { kind: QuoteAttachmentKind } | null;
-  structured?: { kind: QuoteAttachmentKind } | null;
-}
-
-/** Builds the quoted-preview for a message (mirrors getMessages server-side). */
-function toReplyPreview(m: Quotable & { id: string }): MessageReplyPreview {
-  return {
-    id: m.id,
-    senderType: m.senderType,
-    authorName:
-      m.senderType === SenderType.ADMIN
-        ? (m.senderName ?? null)
-        : m.senderType === SenderType.AGENT
-          ? (m.agentName ?? null)
-          : null,
-    snippet: quoteSnippet(
-      m.content,
-      m.voice ? "voice" : (m.media?.kind ?? m.structured?.kind ?? null)
-    ),
-  };
-}
-
-/** Who wrote a quoted message, as the inbox labels it. */
-function quoteAuthor(preview: MessageReplyPreview, contactName: string): string {
-  if (preview.senderType === SenderType.USER) return contactName;
-  if (preview.senderType === SenderType.AGENT) return preview.authorName ?? "المساعد الذكي";
-  return preview.authorName ?? "فريق العيادة";
-}
-
-/** Categorises a browser File's mime into the outbound media kind. */
-function clientMediaKind(mime: string): "image" | "video" | "audio" | "document" {
-  const base = (mime || "").split(";")[0].trim().toLowerCase();
-  if (base.startsWith("image/")) return "image";
-  if (base.startsWith("video/")) return "video";
-  if (base.startsWith("audio/")) return "audio";
-  return "document";
-}
-
-interface RenderedMessage {
-  key: string;
-  /** Server message id (absent on optimistic bubbles) — used for media playback. */
-  id?: string;
-  content: string;
-  senderType: MessageItem["senderType"];
-  /** Who sent a manual reply — shown above the bubble. */
-  senderName?: string | null;
-  /** The AI employee behind an AGENT reply — shown above the bubble. */
-  agentName?: string | null;
-  sessionId: string | null;
-  createdAt: Date;
-  pending?: PendingMessage;
-  voice?: MessageItem["voice"];
-  media?: MessageItem["media"];
-  /** Local preview URL for a still-uploading attachment (no server id yet). */
-  mediaLocalUrl?: string;
-  structured?: MessageItem["structured"];
-  escalation?: MessageItem["escalation"];
-  reaction?: MessageItem["reaction"];
-  replyTo?: MessageItem["replyTo"];
+function ThreadSkeleton() {
+  return (
+    <div className="flex flex-1 flex-col">
+      <div className="flex items-center gap-3 border-b border-border px-5 py-3">
+        <Skeleton className="h-9 w-9 flex-shrink-0 rounded-full" />
+        <div className="space-y-1.5">
+          <Skeleton className="h-3.5 w-28" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+      </div>
+      <div className="flex-1 space-y-3 px-5 py-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className={`flex ${i % 2 ? "justify-end" : "justify-start"}`}>
+            <Skeleton className={`h-10 rounded-2xl ${i % 2 ? "w-1/3" : "w-1/2"}`} />
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-border px-4 py-3">
+        <Skeleton className="h-12 w-full rounded-xl" />
+      </div>
+    </div>
+  );
 }
 
 export default function ChatInbox({
   conversations: initialConversations,
   selectedConversation: initialConversation,
   messages: initialMessages,
+  internalNotes: initialInternalNotes,
   clinicId,
+  currentUserId,
   currentUserName,
   staffNames,
   agentNames,
   canOpenPatientProfile,
+  labels: initialLabels,
+  teammates,
+  requestedId,
 }: ChatInboxProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeId = searchParams.get("id");
-  // List filters live in the URL (FilterBar); realtime refreshes reuse them.
+  // List filters live in the URL; realtime refreshes reuse them.
   const filterQuery = searchParams.get("q") ?? "";
   const filterChannel = searchParams.get("channel") ?? "";
   const filterShow = searchParams.get("show") ?? "";
-  const hasFilters = !!(filterQuery || filterChannel || filterShow);
+  const filterLabel = searchParams.get("label") ?? "";
 
   const [conversations, setConversations] = useState(initialConversations);
   const [messages, setMessages] = useState(initialMessages);
+  const [internalNotes, setInternalNotes] = useState(initialInternalNotes);
   const [selectedConversation, setSelectedConversation] = useState(initialConversation);
-  const [reply, setReply] = useState("");
+  const [labels, setLabels] = useState(initialLabels);
+  const [composerMode, setComposerMode] = useState<ComposerMode>("reply");
   const [pending, setPending] = useState<PendingMessage[]>([]);
+  const [pendingNotes, setPendingNotes] = useState<RenderedInternalNote[]>([]);
   const [listPending, startListTransition] = useTransition();
   const [aiTogglePending, startAiToggle] = useTransition();
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   // A file the admin picked to attach, staged before send (the textarea becomes
   // its optional caption).
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  // One preview URL per staged image, revoked when it's replaced or cleared.
+  const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pendingFile?.type.startsWith("image/")) {
+      setPendingPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(pendingFile);
+    setPendingPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [pendingFile]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Escalation ids being resolved (optimistically hidden while the call runs).
   const [resolvedEscalations, setResolvedEscalations] = useState<Set<string>>(new Set());
@@ -258,17 +219,65 @@ export default function ChatInbox({
   // reload — the window can lapse while the admin sits on a thread.
   const [nowTs, setNowTs] = useState(() => Date.now());
   const bottomRef = useRef<HTMLDivElement>(null);
-  const replyInputRef = useRef<HTMLTextAreaElement>(null);
+  const replyInputRef = useRef<HTMLTextAreaElement | null>(null);
+  // The reply box is uncontrolled: its text lives in the DOM (read via the ref)
+  // so typing never re-renders this whole inbox. Only the empty ↔ non-empty
+  // flip is state (it swaps the mic for the send button). Drafts are kept per
+  // conversation so a half-typed reply never follows the admin to another
+  // patient, and comes back when they return.
+  const draftsRef = useRef(new Map<string, string>());
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  const [hasText, setHasText] = useState(false);
+  const getReply = () => replyInputRef.current?.value ?? "";
+  const setReplyText = useCallback((value: string) => {
+    const el = replyInputRef.current;
+    if (el) el.value = value;
+    const id = activeIdRef.current;
+    if (id) {
+      if (value) draftsRef.current.set(id, value);
+      else draftsRef.current.delete(id);
+    }
+    setHasText(value.trim().length > 0);
+  }, []);
+  // The box remounts (thread loading, 24h window flip, voice recording), so
+  // restore the current conversation's draft whenever it attaches.
+  const bindReplyInput = useCallback((el: HTMLTextAreaElement | null) => {
+    replyInputRef.current = el;
+    if (!el) return;
+    const draft = draftsRef.current.get(activeIdRef.current ?? "") ?? "";
+    el.value = draft;
+    setHasText(draft.trim().length > 0);
+  }, []);
   // The message the admin chose to answer (WhatsApp-style quoted reply); sent
   // with the next text/attachment, then cleared.
   const [replyingTo, setReplyingTo] = useState<MessageReplyPreview | null>(null);
   // Briefly ringed after jumping to it from a quote.
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<ThreadDialog>(null);
+  // The message a note / colleague escalation is about (null = whole conversation).
+  const [targetMessage, setTargetMessage] = useState<{ id: string; snippet: string } | null>(null);
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickQuery, setQuickQuery] = useState("");
+  const [recording, setRecording] = useState(false);
+  // Set when the list pushed the thread — then "back" can pop history (so the
+  // phone's own back button and ours agree). A deep link replaces instead.
+  const cameFromListRef = useRef(false);
 
-  // A quote belongs to its thread — drop it when switching conversations.
-  useEffect(() => setReplyingTo(null), [activeId]);
+  const { eventTick, needsMeCount, refreshNeedsMe, refreshReminders } = useEscalationAlerts();
+
+  // A quote / staged attachment belongs to its thread — drop on switch.
+  useEffect(() => {
+    setReplyingTo(null);
+    setComposerMode("reply");
+    setQuickOpen(false);
+    // Swap in this conversation's draft (the box may stay mounted across a switch).
+    if (replyInputRef.current) setReplyText(draftsRef.current.get(activeId ?? "") ?? "");
+  }, [activeId, setReplyText]);
 
   const startReply = (msg: Quotable & { id: string }) => {
+    setComposerMode("reply");
     setReplyingTo(toReplyPreview(msg));
     replyInputRef.current?.focus();
   };
@@ -283,10 +292,28 @@ export default function ChatInbox({
     setTimeout(() => setHighlightedId((cur) => (cur === id ? null : cur)), 1600);
   };
 
-  // Sync when server re-renders with fresh data
+  // Client-side cache of conversation detail + messages, keyed by conversation
+  // id. Lets switching back to an already-visited thread render instantly
+  // instead of waiting on the server round-trip triggered by router.push.
+  const conversationCache = useRef<
+    Map<string, { detail: ConversationDetail; messages: MessageItem[]; notes: InternalNoteItem[] }>
+  >(new Map());
+
+  // Sync when the server re-renders with fresh data, and cache it for this id.
   useEffect(() => setConversations(initialConversations), [initialConversations]);
-  useEffect(() => setMessages(initialMessages), [initialMessages]);
-  useEffect(() => setSelectedConversation(initialConversation), [initialConversation]);
+  useEffect(() => setLabels(initialLabels), [initialLabels]);
+  useEffect(() => {
+    setMessages(initialMessages);
+    setInternalNotes(initialInternalNotes);
+    setSelectedConversation(initialConversation);
+    if (initialConversation) {
+      conversationCache.current.set(initialConversation.id, {
+        detail: initialConversation,
+        messages: initialMessages,
+        notes: initialInternalNotes,
+      });
+    }
+  }, [initialConversation, initialMessages, initialInternalNotes]);
 
   // An optimistic bubble is retired once its real row shows up in the server
   // props. Failed and in-flight ones stay put — they're the only record of the
@@ -308,16 +335,43 @@ export default function ChatInbox({
     return () => clearInterval(id);
   }, []);
 
-  // Server rows plus this thread's optimistic bubbles. A pending entry that
-  // already has a row hides that row, so a message that failed to reach
-  // WhatsApp renders once — from pending state, carrying its badge.
-  const threadMessages = useMemo<RenderedMessage[]>(() => {
+  // Opening a conversation can acknowledge an assignment alert (server-side, in
+  // the page render) — re-read the counter once we land on it.
+  useEffect(() => {
+    if (activeId) refreshNeedsMe();
+  }, [activeId, refreshNeedsMe]);
+
+  // The thread's server state belongs to `activeId` only once it has arrived.
+  const threadReady = !!selectedConversation && selectedConversation.id === activeId;
+  // The server already answered for this id and found nothing (stale link).
+  const threadMissing =
+    !!activeId &&
+    (!/^[0-9a-f-]{36}$/i.test(activeId) || (requestedId === activeId && !initialConversation));
+  const threadLoading = !!activeId && !threadReady && !threadMissing;
+
+  // Colleague escalations that point at a specific message → "escalated to X".
+  const escalatedToByMessage = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of selectedConversation?.staffAlerts ?? []) {
+      if (a.kind === "ESCALATION" && a.messageId) {
+        map.set(a.messageId, a.recipientId === currentUserId ? "أنت" : a.recipientName);
+      }
+    }
+    return map;
+  }, [selectedConversation, currentUserId]);
+
+  // Server rows + internal notes (by time), then this thread's optimistic
+  // bubbles. A pending entry that already has a row hides that row, so a
+  // message that failed to reach WhatsApp renders once — from pending state.
+  const timeline = useMemo<TimelineItem[]>(() => {
+    if (!threadReady) return [];
     const mine = pending.filter((p) => p.conversationId === activeId);
     const superseded = new Set(mine.map((p) => p.serverId).filter((id): id is string => !!id));
-    return [
+    const serverItems: TimelineItem[] = [
       ...messages
         .filter((m) => !superseded.has(m.id))
-        .map((m) => ({
+        .map((m): RenderedMessage => ({
+          kind: "message",
           key: m.id,
           id: m.id,
           content: m.content,
@@ -332,10 +386,24 @@ export default function ChatInbox({
           escalation: m.escalation,
           reaction: m.reaction,
           replyTo: m.replyTo,
+          notes: m.notes,
         })),
-      // Always newest, so appending keeps the createdAt-ascending order.
-      ...mine.map((p) => ({
+      ...internalNotes.map((n): RenderedInternalNote => ({
+        kind: "internal",
+        key: `note-${n.id}`,
+        id: n.id,
+        content: n.content,
+        authorId: n.authorId,
+        authorName: n.authorName,
+        createdAt: n.createdAt,
+      })),
+    ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    const optimistic: TimelineItem[] = [
+      ...mine.map((p): RenderedMessage => ({
+        kind: "message",
         key: p.clientId,
+        id: undefined,
         content: p.content,
         senderType: SenderType.ADMIN,
         senderName: currentUserName,
@@ -344,6 +412,7 @@ export default function ChatInbox({
         createdAt: p.createdAt,
         pending: p,
         replyTo: p.replyTo,
+        ...(p.voice ? { voiceLocalUrl: p.voice.localUrl } : {}),
         ...(p.media
           ? {
               media: {
@@ -358,13 +427,15 @@ export default function ChatInbox({
             }
           : {}),
       })),
+      ...pendingNotes.filter((n) => n.key.startsWith(`${activeId}:`)),
     ];
-  }, [messages, pending, activeId, currentUserName]);
+    return [...serverItems, ...optimistic];
+  }, [threadReady, messages, internalNotes, pending, pendingNotes, activeId, currentUserName]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when the thread changes.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [threadMessages]);
+  }, [timeline]);
 
   const refreshConversations = useCallback(() => {
     startListTransition(async () => {
@@ -373,13 +444,117 @@ export default function ChatInbox({
           query: filterQuery,
           channel: filterChannel,
           show: filterShow,
+          label: filterLabel,
         });
         setConversations(fresh);
       } catch (err) {
         console.error("Failed to refresh conversations:", err);
       }
     });
-  }, [filterQuery, filterChannel, filterShow]);
+  }, [filterQuery, filterChannel, filterShow, filterLabel]);
+
+  /** Re-reads the open conversation (assignment, reminders, alerts, notes…). */
+  const reloadThread = useCallback(
+    async (opts: { messages?: boolean } = {}) => {
+      if (!activeId) return;
+      try {
+        const [detail, msgs] = await Promise.all([
+          fetchConversationDetail(activeId),
+          opts.messages ? fetchMessages(activeId) : Promise.resolve(null),
+        ]);
+        if (detail)
+          setSelectedConversation((cur) => (cur?.id === detail.id || !cur ? detail : cur));
+        if (msgs) setMessages(msgs);
+      } catch (err) {
+        console.error("Failed to reload conversation:", err);
+      }
+    },
+    [activeId]
+  );
+
+  /** A utility changed server state — refresh what depends on it. */
+  const afterUtilityChange = useCallback(
+    (opts: { messages?: boolean } = {}) => {
+      void reloadThread(opts);
+      refreshConversations();
+      refreshNeedsMe();
+    },
+    [reloadThread, refreshConversations, refreshNeedsMe]
+  );
+
+  // ── List row ⋮ actions (no need to open the conversation) ──
+  // Patches the row and, if it's open, the thread header too.
+  const patchConversation = (
+    id: string,
+    patch: Partial<Pick<ConversationSummary, "pinned" | "assignedTo">>
+  ) => {
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    setSelectedConversation((prev) => (prev?.id === id ? { ...prev, ...patch } : prev));
+  };
+
+  const handleListTogglePin = (conv: ConversationSummary) => {
+    const next = !conv.pinned;
+    patchConversation(conv.id, { pinned: next });
+    void setConversationPinned(conv.id, next).then((res) => {
+      if (!res.ok) {
+        patchConversation(conv.id, { pinned: !next });
+        toast.error("تعذّر تثبيت المحادثة");
+      }
+      // The server owns the order (pins on top).
+      refreshConversations();
+    });
+  };
+
+  const handleListAssign = (conv: ConversationSummary, assigneeId: string | null) => {
+    const previous = conv.assignedTo;
+    const name =
+      assigneeId === currentUserId
+        ? currentUserName
+        : (teammates.find((t) => t.id === assigneeId)?.fullName ?? "");
+    patchConversation(conv.id, { assignedTo: assigneeId ? { id: assigneeId, name } : null });
+    void assignConversation(conv.id, assigneeId).then((res) => {
+      if (!res.ok) {
+        patchConversation(conv.id, { assignedTo: previous });
+        toast.error(res.error === "forbidden" ? "غير مسموح" : "تعذّر إسناد المحادثة");
+      } else if (!assigneeId) {
+        toast.success("تم إلغاء الإسناد");
+      } else {
+        toast.success(
+          assigneeId === currentUserId
+            ? "تم إسناد المحادثة إليك"
+            : `تم الإسناد إلى ${name || "الزميل"}`
+        );
+      }
+      refreshConversations();
+      refreshNeedsMe();
+    });
+  };
+
+  // A dialog opened from a list row's ⋮ (the conversation may not be open).
+  const [listDialog, setListDialog] = useState<{
+    conversationId: string;
+    dialog: ConversationMenuDialog;
+    reminders: ReminderItem[];
+  } | null>(null);
+  const listDialogConversation = listDialog
+    ? conversations.find((c) => c.id === listDialog.conversationId)
+    : undefined;
+
+  // The row summary has no reminder list — load it for the reminder dialog.
+  const loadListReminders = useCallback(async (conversationId: string) => {
+    const detail = await fetchConversationDetail(conversationId).catch(() => null);
+    setListDialog((prev) =>
+      prev?.conversationId === conversationId
+        ? { ...prev, reminders: detail?.reminders ?? [] }
+        : prev
+    );
+  }, []);
+
+  const handleListOpenDialog = (conv: ConversationSummary, dialog: ConversationMenuDialog) => {
+    setListDialog({ conversationId: conv.id, dialog, reminders: [] });
+    if (dialog === "reminder") void loadListReminders(conv.id);
+  };
+
   const handleRealtimeMessage = useCallback(
     (row: RealtimeMessageRow) => {
       // Reconcile with this admin's own optimistic bubble, whichever arrives
@@ -425,7 +600,7 @@ export default function ChatInbox({
                   : null,
               agentName: row.aiAgentId ? (agentNames[row.aiAgentId] ?? null) : null,
               sessionId: row.sessionId,
-              createdAt: new Date(row.createdAt),
+              createdAt: parseDbTimestamp(row.createdAt),
               isRead: row.isRead,
               ...(voice
                 ? {
@@ -466,10 +641,10 @@ export default function ChatInbox({
         }
       }
 
+      // A patient message can put an assigned conversation in my queue.
+      if (row.senderType === SenderType.USER) refreshNeedsMe();
+
       // Patch the sidebar in place — preview, timestamp, unread, order.
-      // This is the single source of truth for an existing conversation's
-      // summary row; nothing else should refetch and overwrite it for the
-      // "new message on an existing conversation" case.
       setConversations((prev) => {
         const idx = prev.findIndex((c) => c.id === row.conversationId);
         if (idx === -1) {
@@ -478,25 +653,32 @@ export default function ChatInbox({
           refreshConversations();
           return prev;
         }
+        const unreadCount =
+          row.senderType === SenderType.USER && row.conversationId !== activeId
+            ? prev[idx].unreadCount + 1
+            : prev[idx].unreadCount;
         const updated: ConversationSummary = {
           ...prev[idx],
           lastMessage: row.content,
-          lastMessageAt: new Date(row.createdAt),
-          unreadCount:
-            row.senderType === SenderType.USER && row.conversationId !== activeId
-              ? prev[idx].unreadCount + 1
-              : prev[idx].unreadCount,
+          lastMessageAt: parseDbTimestamp(row.createdAt),
+          unreadCount,
+          needsMe:
+            prev[idx].needsMe || (prev[idx].assignedTo?.id === currentUserId && unreadCount > 0),
         };
         const rest = prev.filter((_, i) => i !== idx);
-        return [updated, ...rest]; // mirrors orderBy: { updatedAt: "desc" }
+        // Due reminders + my pins stay on top; the rest is newest-first.
+        const head = rest.filter((c) => c.reminderDue || c.pinned);
+        const tail = rest.filter((c) => !c.reminderDue && !c.pinned);
+        if (updated.reminderDue || updated.pinned) return [updated, ...head, ...tail];
+        return [...head, updated, ...tail];
       });
     },
-    [activeId, refreshConversations, staffNames, agentNames]
+    [activeId, refreshConversations, refreshNeedsMe, staffNames, agentNames, currentUserId]
   );
 
   // A message row changed after insert — a TTS agent reply gets its metadata.voice
-  // attached post-stream, or a patient reacts to a message (metadata.reaction).
-  // Patch the open thread so the audio player / reaction chip appears live.
+  // attached post-stream, a staff voice note gets its transcript, or a patient
+  // reacts to a message (metadata.reaction). Patch the open thread live.
   const handleRealtimeUpdate = useCallback(
     (row: RealtimeMessageRow) => {
       if (row.conversationId !== activeId) return;
@@ -509,6 +691,7 @@ export default function ChatInbox({
           m.id === row.id
             ? {
                 ...m,
+                content: row.content,
                 reaction,
                 ...(voice
                   ? {
@@ -529,12 +712,69 @@ export default function ChatInbox({
 
   useRealtimeConversations(clinicId, handleRealtimeMessage, handleRealtimeUpdate);
 
-  // EscalationProvider owns the single realtime subscription for escalations
-  // (a second subscribed channel with the same name crashes the realtime
-  // client) — react to its event counter instead of subscribing again here.
-  // Escalations don't always come with a new message (e.g. resolving one by
-  // re-enabling the AI doesn't), so they need their own refresh trigger.
-  const { eventTick } = useEscalationAlerts();
+  // Staff-only notes posted by colleagues appear live in the open thread.
+  useRealtimeInternalNotes(
+    activeId,
+    (row) => {
+      setPendingNotes((prev) => prev.filter((n) => n.id !== row.id));
+      setInternalNotes((prev) =>
+        prev.some((n) => n.id === row.id)
+          ? prev
+          : [
+              ...prev,
+              {
+                id: row.id,
+                content: row.content,
+                authorId: row.authorId,
+                authorName: row.authorId
+                  ? row.authorId === currentUserId
+                    ? currentUserName
+                    : (staffNames[row.authorId] ?? null)
+                  : null,
+                createdAt: parseDbTimestamp(row.createdAt),
+              },
+            ]
+      );
+    },
+    (id) => setInternalNotes((prev) => prev.filter((n) => n.id !== id)),
+    {
+      // A note pinned to a message, added by me in another tab or by a
+      // colleague. Someone else's private note is never shown.
+      onInsert: (row) => {
+        if (row.visibility !== "CLINIC" && row.authorId !== currentUserId) return;
+        const note = {
+          id: row.id,
+          content: row.content,
+          visibility: row.visibility,
+          authorId: row.authorId,
+          authorName:
+            row.authorId === currentUserId
+              ? currentUserName
+              : (staffNames[row.authorId] ?? "فريق العيادة"),
+          createdAt: parseDbTimestamp(row.createdAt),
+        };
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === row.messageId && !m.notes?.some((n) => n.id === row.id)
+              ? { ...m, notes: [...(m.notes ?? []), note] }
+              : m
+          )
+        );
+      },
+      onDelete: (id) =>
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.notes?.some((n) => n.id === id)
+              ? { ...m, notes: m.notes.filter((n) => n.id !== id) }
+              : m
+          )
+        ),
+    }
+  );
+
+  // EscalationProvider owns the single realtime subscription for escalations and
+  // colleague alerts (a second subscribed channel with the same name crashes the
+  // realtime client) — react to its event counter instead of subscribing again.
   const isFirstEventTick = useRef(true);
   useEffect(() => {
     if (isFirstEventTick.current) {
@@ -542,31 +782,10 @@ export default function ChatInbox({
       return;
     }
     refreshConversations();
-  }, [eventTick, refreshConversations]);
+    void reloadThread();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventTick]);
 
-  // Client-side cache of conversation detail + messages, keyed by conversation
-  // id. Lets switching back to an already-visited thread render instantly
-  // instead of waiting on the server round-trip triggered by router.push.
-  // ✅ correct — generic type goes in <>, initial value goes in the () call
-  const conversationCache = useRef<
-    Map<string, { detail: ConversationDetail; messages: MessageItem[] }>
-  >(new Map());
-  // Sync when server re-renders with fresh data, and cache it for this id so
-  // switching back later can skip the loading gap.
-  useEffect(() => {
-    setConversations(initialConversations);
-  }, [initialConversations]);
-
-  useEffect(() => {
-    setMessages(initialMessages);
-    setSelectedConversation(initialConversation);
-    if (initialConversation) {
-      conversationCache.current.set(initialConversation.id, {
-        detail: initialConversation,
-        messages: initialMessages,
-      });
-    }
-  }, [initialConversation, initialMessages]);
   const handleSelectConversation = (id: string) => {
     const cached = conversationCache.current.get(id);
     if (cached) {
@@ -574,11 +793,30 @@ export default function ChatInbox({
       // server-side, and the effect above will reconcile once that lands.
       setSelectedConversation(cached.detail);
       setMessages(cached.messages);
+      setInternalNotes(cached.notes);
     }
+    // Opening it reads it — zero the badge immediately (the page render
+    // persists it server-side).
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)));
     const params = new URLSearchParams(searchParams.toString());
     params.set("id", id);
+    cameFromListRef.current = true;
     router.push(`/admin/messages?${params.toString()}`);
   };
+
+  /** Mobile: back to the list. */
+  const handleBack = () => {
+    if (cameFromListRef.current) {
+      cameFromListRef.current = false;
+      router.back();
+      return;
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("id");
+    const qs = params.toString();
+    router.replace(qs ? `/admin/messages?${qs}` : "/admin/messages");
+  };
+
   const isWhatsapp = selectedConversation?.channel === Channel.WHATSAPP;
   // Outside the 24-hour window WhatsApp refuses free-form text; the admin must
   // send an approved template instead. `nowTs` is read so this recomputes on
@@ -591,40 +829,143 @@ export default function ChatInbox({
     setPending((prev) => prev.map((p) => (p.clientId === clientId ? { ...p, ...patch } : p)));
   }, []);
 
-  /** Runs the full send (creates the row + delivers) and reflects the outcome
-   *  on the bubble. Used for the first attempt and for retrying a sync failure,
-   *  where no row exists yet. */
-  const deliver = useCallback(
-    async (clientId: string, conversationId: string, text: string, replyToId?: string) => {
-      let result: SendAdminReplyResult;
-      try {
-        result = await sendAdminReply(conversationId, text, replyToId);
-      } catch (err) {
-        // Network error, or the action itself blew up.
-        console.error("Failed to send admin reply:", err);
-        patchPending(clientId, { status: "failed_sync" });
-        return;
-      }
+  /** Reflects a send result on its optimistic bubble. */
+  const settle = useCallback(
+    (clientId: string, result: SendAdminReplyResult) => {
       if (!result.ok) {
         patchPending(clientId, { status: "failed_sync" });
+        if (result.reason === "outside_window")
+          toast.error("انتهت نافذة الـ24 ساعة — أرسل قالبًا معتمدًا");
         return;
       }
       patchPending(clientId, {
         serverId: result.messageId,
         status: result.whatsappSendFailed ? "failed_whatsapp" : "sent",
       });
+      // A reply answers colleague escalations raised to me here.
+      refreshNeedsMe();
     },
-    [patchPending, router]
+    [patchPending, refreshNeedsMe]
   );
 
-  const handleSend = () => {
-    const text = reply.trim();
-    if (!text || !activeId || isOutsideWindow) return;
-    // Safe to clear: the text now lives in the bubble, and stays there if the
-    // send fails.
-    setReply("");
+  /** Runs the full send (creates the row + delivers) and reflects the outcome
+   *  on the bubble. Used for the first attempt and for retrying a sync failure,
+   *  where no row exists yet. */
+  const deliver = useCallback(
+    async (clientId: string, conversationId: string, text: string, replyToId?: string) => {
+      try {
+        settle(clientId, await sendAdminReply(conversationId, text, replyToId));
+      } catch (err) {
+        console.error("Failed to send admin reply:", err);
+        patchPending(clientId, { status: "failed_sync" });
+      }
+    },
+    [patchPending, settle]
+  );
+
+  /** Uploads a browser file straight to Storage (signed URL) → its path. */
+  const uploadToStorage = async (conversationId: string, file: File, mimeType: string) => {
+    const up = await createStaffMediaUpload(conversationId, mimeType);
+    if (!up.ok) return null;
+    const supabase = createClient();
+    const { error } = await supabase.storage
+      .from(up.bucket)
+      .uploadToSignedUrl(up.path, up.token, file, { contentType: mimeType || undefined });
+    if (error) {
+      console.error("Storage upload failed:", error);
+      return null;
+    }
+    return up.path;
+  };
+
+  /** Uploads a staged file, then persists + relays it. */
+  const deliverMedia = useCallback(
+    async (clientId: string, conversationId: string, media: PendingMedia, replyToId?: string) => {
+      try {
+        const path = await uploadToStorage(conversationId, media.file, media.mimeType);
+        if (!path) {
+          patchPending(clientId, { status: "failed_sync" });
+          return;
+        }
+        settle(
+          clientId,
+          await sendAdminMediaReply(conversationId, {
+            path,
+            mimeType: media.mimeType || "application/octet-stream",
+            filename: media.filename,
+            caption: media.caption,
+            width: media.width,
+            height: media.height,
+            replyToId,
+          })
+        );
+      } catch (err) {
+        console.error("Failed to send admin media:", err);
+        patchPending(clientId, { status: "failed_sync" });
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [patchPending, settle]
+  );
+
+  /** Uploads a recorded OGG/Opus voice note, then persists + relays it. */
+  const deliverVoice = useCallback(
+    async (clientId: string, conversationId: string, entry: PendingMessage) => {
+      if (!entry.voice) return;
+      try {
+        const path = await uploadToStorage(conversationId, entry.voice.file, "audio/ogg");
+        if (!path) {
+          patchPending(clientId, { status: "failed_sync" });
+          return;
+        }
+        settle(
+          clientId,
+          await sendAdminVoiceReply(conversationId, {
+            path,
+            mimeType: "audio/ogg",
+            durationSec: entry.voice.durationSec,
+            replyToId: entry.replyTo?.id,
+          })
+        );
+      } catch (err) {
+        console.error("Failed to send voice note:", err);
+        patchPending(clientId, { status: "failed_sync" });
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [patchPending, settle]
+  );
+
+  const deliverQuickReply = useCallback(
+    async (clientId: string, conversationId: string, quickReplyId: string, replyToId?: string) => {
+      try {
+        settle(clientId, await sendQuickReply(conversationId, quickReplyId, replyToId));
+      } catch (err) {
+        console.error("Failed to send quick reply:", err);
+        patchPending(clientId, { status: "failed_sync" });
+      }
+    },
+    [patchPending, settle]
+  );
+
+  const takeQuote = () => {
     const quote = replyingTo ?? undefined;
     setReplyingTo(null);
+    return quote;
+  };
+
+  const handleSend = () => {
+    const text = getReply().trim();
+    if (!text || !activeId) return;
+    if (composerMode === "internal") {
+      handleSendInternal(text);
+      return;
+    }
+    if (isOutsideWindow) return;
+    // Safe to clear: the text now lives in the bubble, and stays there if the
+    // send fails.
+    setReplyText("");
+    const quote = takeQuote();
     const clientId = crypto.randomUUID();
     setPending((prev) => [
       ...prev,
@@ -640,60 +981,52 @@ export default function ChatInbox({
     void deliver(clientId, activeId, text, quote?.id);
   };
 
-  /** Uploads a staged file straight to Storage (signed URL), then persists +
-   *  relays it. Used for the first attempt and for retrying a sync failure. */
-  const deliverMedia = useCallback(
-    async (clientId: string, conversationId: string, media: PendingMedia, replyToId?: string) => {
-      try {
-        const up = await createStaffMediaUpload(conversationId, media.mimeType);
-        if (!up.ok) {
-          patchPending(clientId, { status: "failed_sync" });
-          return;
+  const handleSendInternal = (text: string) => {
+    if (!activeId) return;
+    const conversationId = activeId;
+    setReplyText("");
+    const clientKey = `${conversationId}:${crypto.randomUUID()}`;
+    setPendingNotes((prev) => [
+      ...prev,
+      {
+        kind: "internal",
+        key: clientKey,
+        id: clientKey,
+        content: text,
+        authorId: currentUserId,
+        authorName: currentUserName,
+        createdAt: new Date(),
+        pending: true,
+      },
+    ]);
+    void (async () => {
+      const res = await addInternalNote(conversationId, text).catch(() => null);
+      setPendingNotes((prev) => prev.filter((n) => n.key !== clientKey));
+      if (!res || !res.ok) {
+        toast.error("تعذّر حفظ الملاحظة الداخلية");
+        // Give the text back without clobbering anything typed since.
+        if (activeIdRef.current === conversationId) {
+          if (!getReply().trim()) setReplyText(text);
+        } else if (!draftsRef.current.has(conversationId)) {
+          draftsRef.current.set(conversationId, text);
         }
-        const supabase = createClient();
-        const { error: upErr } = await supabase.storage
-          .from(up.bucket)
-          .uploadToSignedUrl(up.path, up.token, media.file, {
-            contentType: media.mimeType || undefined,
-          });
-        if (upErr) {
-          console.error("Storage upload failed:", upErr);
-          patchPending(clientId, { status: "failed_sync" });
-          return;
-        }
-        const result = await sendAdminMediaReply(conversationId, {
-          path: up.path,
-          mimeType: media.mimeType || "application/octet-stream",
-          filename: media.filename,
-          caption: media.caption,
-          width: media.width,
-          height: media.height,
-          replyToId,
-        });
-        if (!result.ok) {
-          patchPending(clientId, { status: "failed_sync" });
-          return;
-        }
-        patchPending(clientId, {
-          serverId: result.messageId,
-          status: result.whatsappSendFailed ? "failed_whatsapp" : "sent",
-        });
-      } catch (err) {
-        console.error("Failed to send admin media:", err);
-        patchPending(clientId, { status: "failed_sync" });
+        return;
       }
-    },
-    [patchPending]
-  );
+      setInternalNotes((prev) =>
+        prev.some((n) => n.id === res.data.id) ? prev : [...prev, res.data]
+      );
+      refreshNeedsMe();
+      void reloadThread();
+    })();
+  };
 
   const handleSendMedia = (file: File) => {
     if (!activeId || isOutsideWindow) return;
     const conversationId = activeId;
-    const caption = reply.trim();
-    const quote = replyingTo ?? undefined;
+    const caption = getReply().trim();
+    const quote = takeQuote();
     const clientId = crypto.randomUUID();
-    setReply("");
-    setReplyingTo(null);
+    setReplyText("");
     setPendingFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     void (async () => {
@@ -726,28 +1059,75 @@ export default function ChatInbox({
     })();
   };
 
+  const handleVoiceRecorded = (file: File, durationSec: number) => {
+    if (!activeId || isOutsideWindow) return;
+    const conversationId = activeId;
+    const quote = takeQuote();
+    const clientId = crypto.randomUUID();
+    const entry: PendingMessage = {
+      clientId,
+      conversationId,
+      // Matches the server placeholder so the realtime row reconciles with it.
+      content: "[رسالة صوتية من الفريق]",
+      createdAt: new Date(),
+      status: "sending",
+      voice: { file, localUrl: URL.createObjectURL(file), durationSec },
+      replyTo: quote,
+    };
+    setPending((prev) => [...prev, entry]);
+    void deliverVoice(clientId, conversationId, entry);
+  };
+
+  const handleQuickInsert = (item: QuickReplyItem) => {
+    setComposerMode("reply");
+    setReplyText(item.content);
+    if (item.hasMedia) {
+      void quickReplyFile(item).then((f) => {
+        if (f) setPendingFile(f);
+        else toast.error("تعذّر تحميل صورة الرد");
+      });
+    }
+    setTimeout(() => replyInputRef.current?.focus(), 0);
+  };
+
+  const handleQuickSend = (item: QuickReplyItem) => {
+    if (!activeId || isOutsideWindow) return;
+    // Clear the "/query" the panel was opened from.
+    if (getReply().startsWith("/")) setReplyText("");
+    const quote = takeQuote();
+    const clientId = crypto.randomUUID();
+    setPending((prev) => [
+      ...prev,
+      {
+        clientId,
+        conversationId: activeId,
+        content: item.content,
+        createdAt: new Date(),
+        status: "sending",
+        replyTo: quote,
+        quickReplyId: item.id,
+      },
+    ]);
+    void deliverQuickReply(clientId, activeId, item.id, quote?.id);
+  };
+
   const handleResolveEscalation = (escalationId: string) => {
     // Optimistically hide the badge; restore it if the server rejects.
     setResolvedEscalations((prev) => new Set(prev).add(escalationId));
-    void (async () => {
-      try {
-        const res = await resolveMessageEscalation(escalationId);
-        if (!res.ok) {
-          setResolvedEscalations((prev) => {
-            const next = new Set(prev);
-            next.delete(escalationId);
-            return next;
-          });
-        }
-      } catch (err) {
+    const restore = () =>
+      setResolvedEscalations((prev) => {
+        const next = new Set(prev);
+        next.delete(escalationId);
+        return next;
+      });
+    void resolveMessageEscalation(escalationId)
+      .then((res) => {
+        if (!res.ok) restore();
+      })
+      .catch((err) => {
         console.error("Failed to resolve escalation:", err);
-        setResolvedEscalations((prev) => {
-          const next = new Set(prev);
-          next.delete(escalationId);
-          return next;
-        });
-      }
-    })();
+        restore();
+      });
   };
 
   // A template send is already persisted server-side; show it immediately as a
@@ -765,6 +1145,7 @@ export default function ChatInbox({
         serverId: msg.messageId,
       },
     ]);
+    refreshNeedsMe();
   };
 
   const handleRetry = (clientId: string) => {
@@ -775,27 +1156,29 @@ export default function ChatInbox({
     // The row already exists — re-deliver it instead of writing a duplicate.
     if (entry.status === "failed_whatsapp" && entry.serverId) {
       const serverId = entry.serverId;
-      void (async () => {
-        try {
-          const result = await retryWhatsappDelivery(serverId);
-          patchPending(clientId, {
-            status: result.ok ? "sent" : "failed_whatsapp",
-          });
+      void retryWhatsappDelivery(serverId)
+        .then((result) => {
+          patchPending(clientId, { status: result.ok ? "sent" : "failed_whatsapp" });
           if (result.ok) router.refresh();
-        } catch (err) {
+        })
+        .catch((err) => {
           console.error("Failed to retry WhatsApp delivery:", err);
           patchPending(clientId, { status: "failed_whatsapp" });
-        }
-      })();
+        });
       return;
     }
 
-    // A media send that never persisted — re-upload + resend from the kept File.
-    if (entry.media) {
-      void deliverMedia(clientId, entry.conversationId, entry.media, entry.replyTo?.id);
-      return;
+    if (entry.voice) return void deliverVoice(clientId, entry.conversationId, entry);
+    if (entry.media)
+      return void deliverMedia(clientId, entry.conversationId, entry.media, entry.replyTo?.id);
+    if (entry.quickReplyId) {
+      return void deliverQuickReply(
+        clientId,
+        entry.conversationId,
+        entry.quickReplyId,
+        entry.replyTo?.id
+      );
     }
-
     void deliver(clientId, entry.conversationId, entry.content, entry.replyTo?.id);
   };
 
@@ -812,6 +1195,23 @@ export default function ChatInbox({
     });
   };
 
+  // Runs per keystroke but touches no state on plain typing: React bails out of
+  // same-value updates, so only the empty ↔ non-empty flip and "/" re-render.
+  const handleReplyChange = (value: string) => {
+    if (activeId) {
+      if (value) draftsRef.current.set(activeId, value);
+      else draftsRef.current.delete(activeId);
+    }
+    setHasText(value.trim().length > 0);
+    // "/" at the start opens the quick-replies pool, filtered by what follows.
+    if (composerMode === "reply" && value.startsWith("/") && !value.includes("\n")) {
+      setQuickQuery(value.slice(1));
+      setQuickOpen(true);
+    } else if (quickOpen && !value.startsWith("/")) {
+      setQuickOpen(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Escape" && replyingTo) {
       e.preventDefault();
@@ -820,312 +1220,135 @@ export default function ChatInbox({
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (pendingFile) handleSendMedia(pendingFile);
+      if (quickOpen) return;
+      if (pendingFile && composerMode === "reply") handleSendMedia(pendingFile);
       else handleSend();
     }
   };
 
-  // Ref mirror of `conversations` so the "mark read" effect below can read
-  // current unread state without depending on (and rerunning on) every list update.
-  const conversationsRef = useRef(conversations);
-  useEffect(() => {
-    conversationsRef.current = conversations;
-  }, [conversations]);
+  const openMessageNote = (m: RenderedMessage) => {
+    if (!m.id) return;
+    setTargetMessage({ id: m.id, snippet: toReplyPreview({ ...m, id: m.id }).snippet });
+    setNoteDialogOpen(true);
+  };
 
-  // Opening a conversation reads it — zero the badge immediately (optimistic).
-  // Server-side persistence is handled by the page render itself (it calls
-  // markConversationRead whenever it renders with an `id`), so we deliberately
-  // do NOT fire a second server action here: doing so races the RSC navigation
-  // that router.push kicks off, and the concurrent pair can trip Supabase's
-  // single-use refresh-token rotation, logging the admin out mid-select and
-  // bouncing them to the home page. One request per select keeps auth stable.
-  // Only runs when there's actually something unread, so it's a no-op on repeat
-  // visits to an already-read thread.
-  useEffect(() => {
-    if (!activeId) return;
-    const current = conversationsRef.current.find((c) => c.id === activeId);
-    if (!current || current.unreadCount === 0) return;
+  const openMessageEscalate = (m: RenderedMessage | null) => {
+    setTargetMessage(
+      m?.id ? { id: m.id, snippet: toReplyPreview({ ...m, id: m.id }).snippet } : null
+    );
+    setDialog("escalate");
+  };
 
-    setConversations((prev) => prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)));
-  }, [activeId]);
+  const handleDeleteMessageNote = (noteId: string) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.notes ? { ...m, notes: m.notes.filter((n) => n.id !== noteId) } : m))
+    );
+    void deleteMessageNote(noteId).then((res) => {
+      if (!res.ok) {
+        toast.error("تعذّر حذف الملاحظة");
+        void reloadThread({ messages: true });
+      }
+    });
+  };
+
+  const handleDeleteInternalNote = (noteId: string) => {
+    setInternalNotes((prev) => prev.filter((n) => n.id !== noteId));
+    void deleteInternalNote(noteId).then((res) => {
+      if (!res.ok) {
+        toast.error("تعذّر حذف الملاحظة");
+        void reloadThread();
+      }
+    });
+  };
+
+  const internalMode = composerMode === "internal";
+  // Free-form replies are blocked outside the window; internal notes never are.
+  const replyBlocked = !internalMode && isOutsideWindow;
+
+  let lastSessionId: string | null = null;
 
   return (
-    <Card className="flex h-[calc(100vh-7rem)] overflow-hidden">
-      {/* ── Left pane: conversations list ── */}
-      <aside className="flex w-72 flex-shrink-0 flex-col border-e border-border">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="font-heading text-sm font-semibold text-foreground">المحادثات</h2>
-          {listPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-        </div>
+    <Card className="-m-4 flex h-[calc(100dvh-4rem)] overflow-hidden rounded-none border-0 md:m-0 md:h-[calc(100vh-7rem)] md:rounded-2xl md:border">
+      {/* ── Conversations list (full screen on mobile until a chat is open) ── */}
+      <ConversationList
+        conversations={conversations}
+        activeId={activeId}
+        loading={listPending}
+        labels={labels}
+        needsMeCount={needsMeCount}
+        currentUserId={currentUserId}
+        onSelect={handleSelectConversation}
+        onTogglePin={handleListTogglePin}
+        onAssign={handleListAssign}
+        onOpenDialog={handleListOpenDialog}
+        teammates={teammates}
+        canOpenPatientProfile={canOpenPatientProfile}
+        className={cn("w-full md:w-80 md:flex-shrink-0", activeId ? "hidden md:flex" : "flex")}
+      />
 
-        {/* Filters — applied in the database; the URL keeps them across selects. */}
-        <div className="border-b border-border px-3 py-2.5">
-          <FilterBar
-            stacked
-            fields={[
-              { type: "search", param: "q", placeholder: "بحث بالاسم أو رقم الهاتف..." },
-              {
-                type: "select",
-                param: "show",
-                allLabel: "كل المحادثات",
-                options: [
-                  { value: "unread", label: "غير المقروءة" },
-                  { value: "escalated", label: "المُصعّدة" },
-                ],
-              },
-              {
-                type: "select",
-                param: "channel",
-                allLabel: "كل القنوات",
-                options: [
-                  { value: Channel.WHATSAPP, label: "واتساب" },
-                  { value: Channel.WEB, label: "الموقع" },
-                ],
-              },
-            ]}
-          />
-        </div>
-
-        <ul className="flex-1 divide-y divide-border overflow-y-auto">
-          {conversations.length === 0 && (
-            <li className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-              <Inbox className="h-8 w-8 opacity-40" />
-              <p className="font-sans text-xs">
-                {hasFilters ? "لا توجد محادثات مطابقة" : "لا توجد محادثات بعد"}
-              </p>
-            </li>
-          )}
-          {conversations.map((conv) => (
-            <li key={conv.id}>
-              <Button
-                variant="ghost"
-                onClick={() => handleSelectConversation(conv.id)}
-                className={[
-                  "block h-auto w-full whitespace-normal rounded-none px-4 py-3 text-start font-normal text-foreground hover:bg-muted/50 hover:text-foreground",
-                  conv.hasUnresolvedEscalation ? "bg-red-50" : "",
-                  activeId === conv.id ? "bg-accent/8 border-e-2 border-accent" : "",
-                ].join(" ")}
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="flex max-w-[140px] items-center gap-1.5 truncate font-sans text-sm font-medium text-foreground">
-                    {conv.hasUnresolvedEscalation && (
-                      <AlertTriangle
-                        className="h-3.5 w-3.5 flex-shrink-0 text-red-500"
-                        aria-label="طلب تصعيد غير محلول"
-                      />
-                    )}
-                    <span className="truncate">{conv.contactName}</span>
-                  </span>
-                  <div className="flex flex-shrink-0 items-center gap-1.5">
-                    {conv.unreadCount > 0 && (
-                      <Badge
-                        variant="accent"
-                        dir="ltr"
-                        className="h-4 min-w-4 justify-center bg-accent px-1 text-[10px] font-bold leading-none text-white"
-                      >
-                        {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
-                      </Badge>
-                    )}
-                    {conv.channel === Channel.WHATSAPP ? (
-                      <WhatsappIcon className="h-3.5 w-3.5 text-green-500" />
-                    ) : (
-                      <Globe className="h-3.5 w-3.5 text-accent" />
-                    )}
-                  </div>
-                </div>
-                {conv.lastMessage && (
-                  <p className="truncate font-sans text-xs text-muted-foreground">
-                    {conv.lastMessage}
-                  </p>
-                )}
-                {conv.lastMessageAt && (
-                  <p className="mt-0.5 font-sans text-[10px] text-muted-foreground/60" dir="rtl">
-                    {formatDistanceToNow(new Date(conv.lastMessageAt), {
-                      addSuffix: true,
-                      locale: ar,
-                    })}
-                  </p>
-                )}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </aside>
-
-      {/* ── Right pane: message thread ── */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {!selectedConversation ? (
+      {/* ── Thread (full screen on mobile) ── */}
+      <div className={cn("min-w-0 flex-1 flex-col", activeId ? "flex" : "hidden md:flex")}>
+        {!activeId ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
             <MessageSquare className="h-12 w-12 opacity-20" />
             <p className="font-sans text-sm">اختر محادثة لعرض الرسائل</p>
           </div>
+        ) : threadMissing ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+            <MessageSquare className="h-12 w-12 opacity-20" />
+            <p className="font-sans text-sm">المحادثة غير موجودة</p>
+            <Button variant="outline" size="sm" onClick={handleBack}>
+              العودة للمحادثات
+            </Button>
+          </div>
+        ) : threadLoading || !selectedConversation ? (
+          <ThreadSkeleton />
         ) : (
           <>
-            {/* Thread header */}
-            <div className="flex flex-shrink-0 items-center gap-3 border-b border-border px-5 py-3">
-              <Avatar className="h-9 w-9 rounded-full">
-                <AvatarFallback className="bg-accent/20 font-sans text-xs font-bold text-accent">
-                  {selectedConversation.contactName.charAt(0)}
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-sans text-sm font-medium text-foreground">
-                  {selectedConversation.contactName}
-                </p>
-                {selectedConversation.contactPhone && (
-                  <p
-                    className="flex items-center gap-1 font-sans text-xs text-muted-foreground"
-                    dir="ltr"
-                  >
-                    <Phone className="h-3 w-3" />
-                    {selectedConversation.contactPhone}
-                  </p>
-                )}
-              </div>
-              <div className="ms-auto flex items-center gap-2">
-                {!canOpenPatientProfile ? null : selectedConversation.userId ? (
-                  <Hint label="فتح ملف العميل في تبويب جديد">
-                    <Button
-                      asChild
-                      variant="ghost"
-                      className="h-auto gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-normal text-primary hover:bg-primary/20 hover:text-primary [&_svg]:size-3.5"
-                    >
-                      <a
-                        href={`/admin/patients/${selectedConversation.userId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <UserRound className="h-3.5 w-3.5" />
-                        ملف العميل
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </Button>
-                  </Hint>
-                ) : (
-                  <Hint label="لا يوجد حساب مرتبط بعد — سيظهر الملف بعد تسجيل العميل">
-                    <Badge className="cursor-not-allowed gap-1.5 bg-muted py-1 font-normal text-muted-foreground/60">
-                      <UserRound className="h-3.5 w-3.5" />
-                      ملف العميل
-                    </Badge>
-                  </Hint>
-                )}
-                {selectedConversation.escalations.length > 0 &&
-                  (() => {
-                    const unresolved = selectedConversation.escalations.filter(
-                      (e) => !e.resolvedAt
-                    );
-                    const isUnresolved = unresolved.length > 0;
-                    const shown = isUnresolved ? unresolved : selectedConversation.escalations;
-                    return (
-                      <Hint
-                        label={shown
-                          .map((e) =>
-                            e.resolvedByName
-                              ? `${escalationReasonLabel(e.reason)} — عالجه: ${e.resolvedByName}`
-                              : escalationReasonLabel(e.reason)
-                          )
-                          .join(" · ")}
-                      >
-                        <span
-                          className={[
-                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[10px]",
-                            isUnresolved ? "bg-red-100 text-red-700" : "text-muted-foreground",
-                          ].join(" ")}
-                        >
-                          {isUnresolved && <AlertTriangle className="h-3 w-3" />}
-                          {isUnresolved
-                            ? `${unresolved.length} طلب تصعيد بانتظار الرد`
-                            : `${selectedConversation.escalations.length} طلب تصعيد (تم الرد${
-                                shown[0]?.resolvedByName ? ` — ${shown[0].resolvedByName}` : ""
-                              })`}
-                        </span>
-                      </Hint>
-                    );
-                  })()}
-                {selectedConversation.activeSessionId && (
-                  <Hint
-                    label={
-                      selectedConversation.aiToggledByName
-                        ? `${selectedConversation.aiEnabled ? "فعّله" : "أوقفه"}: ${selectedConversation.aiToggledByName}`
-                        : "تفعيل/إيقاف رد المساعد الذكي لهذه الجلسة"
-                    }
-                  >
-                    <Badge
-                      asChild
-                      variant={selectedConversation.aiEnabled ? "accent" : "muted"}
-                      className="cursor-pointer gap-1.5 py-1 font-normal disabled:opacity-50"
-                    >
-                      <button onClick={handleToggleAi} disabled={aiTogglePending}>
-                        {selectedConversation.aiEnabled ? (
-                          <Bot className="h-3.5 w-3.5" />
-                        ) : (
-                          <BotOff className="h-3.5 w-3.5" />
-                        )}
-                        {selectedConversation.aiEnabled ? "الذكاء مفعّل" : "الذكاء متوقف"}
-                        {!selectedConversation.aiEnabled &&
-                          selectedConversation.aiToggledByName && (
-                            <span className="opacity-70">
-                              · {selectedConversation.aiToggledByName}
-                            </span>
-                          )}
-                      </button>
-                    </Badge>
-                  </Hint>
-                )}
-                {selectedConversation.channel === Channel.WHATSAPP ? (
-                  <Badge className="bg-green-100 px-2 font-normal text-green-700">
-                    <WhatsappIcon className="h-3 w-3" />
-                    واتساب
-                  </Badge>
-                ) : (
-                  <Badge variant="accent" className="px-2 font-normal">
-                    <Globe className="h-3 w-3" />
-                    ويب
-                  </Badge>
-                )}
-              </div>
-            </div>
+            <ThreadHeader
+              detail={selectedConversation}
+              labels={labels}
+              teammates={teammates}
+              currentUserId={currentUserId}
+              canOpenPatientProfile={canOpenPatientProfile}
+              aiTogglePending={aiTogglePending}
+              onToggleAi={handleToggleAi}
+              onBack={handleBack}
+              onOpenDialog={(d) => (d === "escalate" ? openMessageEscalate(null) : setDialog(d))}
+              onChanged={() => afterUtilityChange()}
+              onDetailPatch={(patch) =>
+                setSelectedConversation((prev) => (prev ? { ...prev, ...patch } : prev))
+              }
+            />
 
-            {/* Messages */}
-            <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
-              {threadMessages.length === 0 && (
+            {/* Messages + staff-only notes */}
+            <div className="flex-1 space-y-3 overflow-y-auto px-3 py-4 md:px-5">
+              {timeline.length === 0 && (
                 <p className="py-8 text-center font-sans text-xs text-muted-foreground">
                   لا توجد رسائل في هذه المحادثة
                 </p>
               )}
-              {threadMessages.map((msg, idx) => {
-                const prev = threadMessages[idx - 1];
-                const showDivider = !!msg.sessionId && msg.sessionId !== prev?.sessionId;
-                const isOutgoing =
-                  msg.senderType === SenderType.ADMIN || msg.senderType === SenderType.AGENT;
-                const isAgent = msg.senderType === SenderType.AGENT;
-                const status = msg.pending?.status;
-                const isFailed = status === "failed_sync" || status === "failed_whatsapp";
-                // Only saved messages can be quoted, and only while a free-form
-                // reply is still allowed (a template can't carry a quote).
-                const msgId = msg.id;
-                const replyButton =
-                  msgId && !isOutsideWindow ? (
-                    <Hint label="رد على هذه الرسالة">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => startReply({ ...msg, id: msgId })}
-                        aria-label="رد على هذه الرسالة"
-                        className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 [&_svg]:size-4"
-                      >
-                        <Reply />
-                      </Button>
-                    </Hint>
-                  ) : null;
+              {timeline.map((item) => {
+                if (item.kind === "internal") {
+                  return (
+                    <InternalNoteBubble
+                      key={item.key}
+                      note={item}
+                      currentUserId={currentUserId}
+                      onDelete={handleDeleteInternalNote}
+                    />
+                  );
+                }
+                const showDivider = !!item.sessionId && item.sessionId !== lastSessionId;
+                if (item.sessionId) lastSessionId = item.sessionId;
                 return (
-                  <Fragment key={msg.key}>
+                  <Fragment key={item.key}>
                     {showDivider && (
                       <div className="flex items-center gap-2 py-1" dir="rtl">
                         <Separator className="flex-1" />
                         <span className="whitespace-nowrap font-sans text-[10px] text-muted-foreground">
                           جلسة جديدة ·{" "}
-                          {new Date(msg.createdAt).toLocaleString("ar-EG", {
+                          {new Date(item.createdAt).toLocaleString("ar-EG", {
                             dateStyle: "medium",
                             timeStyle: "short",
                           })}
@@ -1133,245 +1356,70 @@ export default function ChatInbox({
                         <Separator className="flex-1" />
                       </div>
                     )}
-                    <div
-                      className={[
-                        "group flex items-center gap-1",
-                        isOutgoing ? "justify-start" : "justify-end",
-                      ].join(" ")}
-                    >
-                      {/* Reply sits on the bubble's inner side: after an outgoing
-                          one, before an incoming one. */}
-                      {!isOutgoing && replyButton}
-                      <div
-                        id={msg.id ? `msg-${msg.id}` : undefined}
-                        className={[
-                          "max-w-[70%] rounded-2xl px-3.5 py-2 font-sans text-sm leading-relaxed transition-[opacity,box-shadow]",
-                          isAgent
-                            ? "rounded-ss-sm border border-accent/20 bg-accent/10 text-foreground"
-                            : isOutgoing
-                              ? isFailed
-                                ? "rounded-ss-sm border border-red-200 bg-red-50 text-foreground"
-                                : "rounded-ss-sm bg-muted text-foreground"
-                              : "rounded-se-sm bg-primary text-white",
-                          status === "sending" ? "opacity-50" : "",
-                          msg.id && highlightedId === msg.id
-                            ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-background"
-                            : "",
-                        ].join(" ")}
-                      >
-                        {isAgent && (
-                          <p className="mb-0.5 text-[10px] font-medium text-accent">
-                            🤖 {msg.agentName ?? "المساعد الذكي"}
-                          </p>
-                        )}
-                        {/* Who on the team answered the client. */}
-                        {msg.senderType === SenderType.ADMIN && msg.senderName && (
-                          <p className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-primary">
-                            <UserRound className="h-3 w-3" />
-                            {msg.senderName}
-                          </p>
-                        )}
-                        {/* The message this one quotes — click to jump to it. */}
-                        {msg.replyTo && (
-                          <button
-                            type="button"
-                            onClick={() => jumpToMessage(msg.replyTo!.id)}
-                            className={[
-                              "mb-1.5 block w-full rounded-lg border-s-[3px] px-2 py-1 text-start transition-colors",
-                              isOutgoing
-                                ? "border-primary bg-foreground/5 hover:bg-foreground/10"
-                                : "border-white/70 bg-white/15 hover:bg-white/25",
-                            ].join(" ")}
-                          >
-                            <span
-                              className={[
-                                "block text-[11px] font-semibold",
-                                isOutgoing ? "text-primary" : "text-white",
-                              ].join(" ")}
-                            >
-                              {quoteAuthor(msg.replyTo, selectedConversation.contactName)}
-                            </span>
-                            <span
-                              className={[
-                                "line-clamp-2 block text-xs",
-                                isOutgoing ? "text-muted-foreground" : "text-white/80",
-                              ].join(" ")}
-                            >
-                              {msg.replyTo.snippet || "رسالة"}
-                            </span>
-                          </button>
-                        )}
-                        {msg.voice && (
-                          <div className="mb-1">
-                            {msg.voice.status === "failed" ? (
-                              <p className="flex items-center gap-1 text-[11px] text-red-600">
-                                🎤 تعذّر تفريغ الرسالة الصوتية
-                              </p>
-                            ) : (
-                              <audio
-                                controls
-                                preload="none"
-                                src={msg.id ? `/api/admin/media/${msg.id}` : undefined}
-                                className="h-9 w-full max-w-[240px]"
-                              />
-                            )}
-                            {typeof msg.voice.durationSec === "number" && (
-                              <span
-                                className="mt-0.5 block text-[10px] text-muted-foreground"
-                                dir="ltr"
-                              >
-                                🎤 {formatDuration(msg.voice.durationSec)}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {msg.media && (msg.id || msg.mediaLocalUrl) && (
-                          <div className="mb-1">
-                            {(() => {
-                              // Prefer the signed endpoint once persisted; fall back
-                              // to the local object URL while still uploading.
-                              const mediaUrl = msg.id
-                                ? `/api/admin/media/${msg.id}`
-                                : msg.mediaLocalUrl;
-                              return msg.media.kind === "image" ? (
-                                <ChatImage
-                                  src={mediaUrl}
-                                  alt={msg.media.caption ?? "صورة"}
-                                  width={msg.media.width}
-                                  height={msg.media.height}
-                                  maxWidth={240}
-                                />
-                              ) : msg.media.kind === "sticker" ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={mediaUrl}
-                                  alt="ملصق"
-                                  loading="lazy"
-                                  className="h-24 w-24 object-contain"
-                                />
-                              ) : msg.media.kind === "video" ? (
-                                <video
-                                  controls
-                                  preload="none"
-                                  src={mediaUrl}
-                                  className="max-h-64 w-full max-w-[240px] rounded-lg"
-                                />
-                              ) : (
-                                // document (or archived audio) — a download link.
-                                <Button
-                                  asChild
-                                  variant="outline"
-                                  className="h-auto gap-2 rounded-lg bg-background/50 px-3 py-2 text-xs font-normal hover:bg-muted"
-                                >
-                                  <a href={mediaUrl} target="_blank" rel="noopener noreferrer">
-                                    <FileText className="h-4 w-4 flex-shrink-0" />
-                                    <span className="max-w-[180px] truncate">
-                                      {msg.media.filename ?? "ملف مرفق"}
-                                    </span>
-                                    <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
-                                  </a>
-                                </Button>
-                              );
-                            })()}
-                            {msg.media.analysis && (
-                              <p className="mt-1 text-[10px] italic text-muted-foreground">
-                                🔍 {msg.media.analysis}
-                              </p>
-                            )}
-                            {msg.media.extraction && (
-                              <div className="mt-1 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2">
-                                <p className="mb-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-500">
-                                  📋 نص مستخرج من الصورة (للمراجعة)
-                                </p>
-                                <p className="whitespace-pre-wrap text-xs text-foreground">
-                                  {msg.media.extraction}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {isAgent ? (
-                          <div className="prose prose-sm prose-neutral max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                          </div>
-                        ) : (
-                          // For a voice message the content IS the transcript; render it
-                          // beneath the player. Skip the empty string of a spoken reply.
-                          msg.content && <p>{msg.content}</p>
-                        )}
-                        {msg.escalation && !resolvedEscalations.has(msg.escalation.id) && (
-                          <Alert
-                            variant="warning"
-                            className="mt-1.5 items-center rounded-lg border-amber-300 px-2 py-1 text-[11px] text-amber-800"
-                          >
-                            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
-                            <span className="flex-1">
-                              {escalationReasonLabel(msg.escalation.reason)}
-                            </span>
-                            <Button
-                              size="sm"
-                              onClick={() => handleResolveEscalation(msg.escalation!.id)}
-                              className="h-auto gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-xs hover:bg-amber-700 [&_svg]:size-3"
-                            >
-                              <CheckCircle2 />
-                              تحديد كمحلولة
-                            </Button>
-                          </Alert>
-                        )}
-                        {status === "sending" ? (
-                          <p className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            جارٍ الإرسال...
-                          </p>
-                        ) : isFailed ? (
-                          <div className="mt-1 flex items-center gap-1.5 text-[10px] text-red-700">
-                            <AlertTriangle className="h-3 w-3 flex-shrink-0" />
-                            <span>
-                              {status === "failed_whatsapp"
-                                ? "تم الحفظ لكن لم تصل إلى واتساب"
-                                : "لم يتم حفظ الرسالة"}
-                            </span>
-                            <Button
-                              variant="link"
-                              size="sm"
-                              onClick={() => handleRetry(msg.pending!.clientId)}
-                              className="h-auto gap-1 p-0 text-xs text-[inherit] underline hover:no-underline [&_svg]:size-3"
-                            >
-                              <RotateCw />
-                              إعادة المحاولة
-                            </Button>
-                          </div>
-                        ) : (
-                          <p
-                            className={[
-                              "mt-1 text-[10px]",
-                              isOutgoing ? "text-muted-foreground" : "text-white/60",
-                            ].join(" ")}
-                            dir="ltr"
-                          >
-                            {new Date(msg.createdAt).toLocaleTimeString("ar-EG", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </p>
-                        )}
-                        {msg.reaction && (
-                          <div className="mt-1 inline-flex items-center rounded-full border border-border bg-background px-1.5 py-0.5 text-sm leading-none shadow-sm">
-                            {msg.reaction}
-                          </div>
-                        )}
-                      </div>
-                      {isOutgoing && replyButton}
-                    </div>
+                    <MessageBubble
+                      msg={item}
+                      contactName={selectedConversation.contactName}
+                      canReply={!isOutsideWindow}
+                      highlighted={!!item.id && highlightedId === item.id}
+                      escalationHidden={
+                        !!item.escalation && resolvedEscalations.has(item.escalation.id)
+                      }
+                      escalatedTo={item.id ? escalatedToByMessage.get(item.id) : null}
+                      currentUserId={currentUserId}
+                      onReply={() => item.id && startReply({ ...item, id: item.id })}
+                      onJump={jumpToMessage}
+                      onResolveEscalation={handleResolveEscalation}
+                      onRetry={handleRetry}
+                      onAddNote={() => openMessageNote(item)}
+                      onEscalate={() => openMessageEscalate(item)}
+                      onDeleteNote={handleDeleteMessageNote}
+                    />
                   </Fragment>
                 );
               })}
               <div ref={bottomRef} />
             </div>
 
-            {/* Reply box */}
-            <div className="flex-shrink-0 border-t border-border px-4 py-3">
-              {isOutsideWindow ? (
+            {/* Composer */}
+            <div
+              className={cn(
+                "flex-shrink-0 border-t border-border px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 md:px-4 md:pb-3",
+                internalMode && "bg-amber-50/60 dark:bg-amber-950/20"
+              )}
+            >
+              {/* Reply to the patient / staff-only internal note */}
+              <div className="mb-2 flex gap-1 rounded-xl bg-muted p-1">
+                <button
+                  type="button"
+                  onClick={() => setComposerMode("reply")}
+                  className={cn(
+                    "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1 font-sans text-xs font-medium transition-colors",
+                    !internalMode
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  رد على العميل
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setComposerMode("internal");
+                    setReplyingTo(null);
+                    setQuickOpen(false);
+                  }}
+                  className={cn(
+                    "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1 font-sans text-xs font-medium transition-colors",
+                    internalMode ? "bg-amber-500 text-white shadow-sm" : "text-muted-foreground"
+                  )}
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  ملاحظة داخلية للفريق
+                </button>
+              </div>
+
+              {replyBlocked ? (
                 // Outside the 24-hour window WhatsApp refuses free-form text —
                 // only an approved template can reach the contact.
                 <Alert variant="warning" className="flex-col gap-2.5 px-3.5 text-xs text-amber-800">
@@ -1393,8 +1441,7 @@ export default function ChatInbox({
                 </Alert>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {/* The message being answered — sent as a quoted reply. */}
-                  {replyingTo && (
+                  {replyingTo && !internalMode && (
                     <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 py-2 pe-2 ps-3">
                       <Reply className="h-4 w-4 flex-shrink-0 text-primary" />
                       <button
@@ -1420,13 +1467,12 @@ export default function ChatInbox({
                       </Button>
                     </div>
                   )}
-                  {/* Staged attachment preview */}
-                  {pendingFile && (
+                  {pendingFile && !internalMode && (
                     <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2">
-                      {pendingFile.type.startsWith("image/") ? (
+                      {pendingPreviewUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={URL.createObjectURL(pendingFile)}
+                          src={pendingPreviewUrl}
                           alt={pendingFile.name}
                           className="h-10 w-10 rounded object-cover"
                         />
@@ -1450,7 +1496,7 @@ export default function ChatInbox({
                       </Button>
                     </div>
                   )}
-                  <div className="flex items-end gap-2">
+                  <div className="flex items-end gap-1.5 md:gap-2">
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1460,47 +1506,177 @@ export default function ChatInbox({
                         if (f) setPendingFile(f);
                       }}
                     />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => fileInputRef.current?.click()}
-                      aria-label="إرفاق ملف"
-                      className="h-10 w-10 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
-                    >
-                      <Paperclip />
-                    </Button>
-                    <Textarea
-                      ref={replyInputRef}
-                      value={reply}
-                      onChange={(e) => setReply(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder={
-                        pendingFile
-                          ? "أضف تعليقاً (اختياري)..."
-                          : "اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
-                      }
-                      rows={2}
-                      className="flex-1 px-3.5 py-2.5 leading-relaxed"
-                      dir="rtl"
-                    />
-                    <Button
-                      size="icon"
-                      onClick={() => {
-                        if (pendingFile) handleSendMedia(pendingFile);
-                        else handleSend();
-                      }}
-                      disabled={!pendingFile && !reply.trim()}
-                      className="h-10 w-10 shrink-0 rounded-xl"
-                    >
-                      <Send />
-                    </Button>
+                    {!internalMode && !recording && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => fileInputRef.current?.click()}
+                          aria-label="إرفاق ملف"
+                          className="h-10 w-10 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
+                        >
+                          <Paperclip />
+                        </Button>
+                        <QuickRepliesPanel
+                          open={quickOpen}
+                          onOpenChange={(o) => {
+                            setQuickOpen(o);
+                            if (o && !getReply().startsWith("/")) setQuickQuery("");
+                          }}
+                          initialQuery={quickQuery}
+                          disabled={isOutsideWindow}
+                          onInsert={handleQuickInsert}
+                          onSend={handleQuickSend}
+                        />
+                      </>
+                    )}
+                    {!recording && (
+                      <Textarea
+                        ref={bindReplyInput}
+                        onChange={(e) => handleReplyChange(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder={
+                          internalMode
+                            ? "ملاحظة يراها الفريق فقط — لا تُرسل للعميل..."
+                            : pendingFile
+                              ? "أضف تعليقاً (اختياري)..."
+                              : "اكتب ردك... أو «/» للردود السريعة"
+                        }
+                        rows={1}
+                        className={cn(
+                          "max-h-40 min-h-10 flex-1 resize-none px-3.5 py-2.5 leading-relaxed md:min-h-[4.25rem]",
+                          internalMode &&
+                            "border-amber-300 bg-amber-50 focus-visible:ring-amber-400 dark:bg-amber-950/30"
+                        )}
+                        dir="rtl"
+                      />
+                    )}
+                    {!internalMode && !pendingFile && !hasText ? (
+                      <VoiceRecorder
+                        disabled={isOutsideWindow}
+                        onRecorded={handleVoiceRecorded}
+                        onActiveChange={setRecording}
+                      />
+                    ) : (
+                      <Button
+                        size="icon"
+                        onClick={() => {
+                          if (pendingFile && !internalMode) handleSendMedia(pendingFile);
+                          else handleSend();
+                        }}
+                        disabled={(!pendingFile || internalMode) && !hasText}
+                        aria-label={internalMode ? "حفظ الملاحظة" : "إرسال"}
+                        className={cn(
+                          "h-10 w-10 shrink-0 rounded-xl",
+                          internalMode && "bg-amber-500 hover:bg-amber-600"
+                        )}
+                      >
+                        {internalMode ? <Lock /> : <Send />}
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
             </div>
+
+            <LabelsDialog
+              open={dialog === "labels"}
+              onOpenChange={(o) => setDialog(o ? "labels" : null)}
+              conversationId={selectedConversation.id}
+              labels={labels}
+              selectedIds={selectedConversation.labelIds}
+              onLabelsChange={(next) => {
+                setLabels(next);
+                refreshConversations();
+              }}
+              onSelectedChange={(ids) => {
+                setSelectedConversation((prev) => (prev ? { ...prev, labelIds: ids } : prev));
+                setConversations((prev) =>
+                  prev.map((c) =>
+                    c.id === selectedConversation.id
+                      ? { ...c, labels: labels.filter((l) => ids.includes(l.id)) }
+                      : c
+                  )
+                );
+              }}
+            />
+            <ReminderDialog
+              open={dialog === "reminder"}
+              onOpenChange={(o) => setDialog(o ? "reminder" : null)}
+              conversationId={selectedConversation.id}
+              reminders={selectedConversation.reminders}
+              currentUserId={currentUserId}
+              onChanged={() => {
+                afterUtilityChange();
+                refreshReminders();
+              }}
+            />
+            <EscalateDialog
+              open={dialog === "escalate"}
+              onOpenChange={(o) => setDialog(o ? "escalate" : null)}
+              conversationId={selectedConversation.id}
+              message={targetMessage}
+              teammates={teammates}
+              currentUserId={currentUserId}
+              onDone={() => afterUtilityChange()}
+            />
+            <MessageNoteDialog
+              open={noteDialogOpen}
+              onOpenChange={setNoteDialogOpen}
+              message={targetMessage}
+              onSaved={() => void reloadThread({ messages: true })}
+            />
           </>
         )}
       </div>
+
+      {listDialog && listDialogConversation && (
+        <>
+          <LabelsDialog
+            open={listDialog.dialog === "labels"}
+            onOpenChange={(o) => !o && setListDialog(null)}
+            conversationId={listDialog.conversationId}
+            labels={labels}
+            selectedIds={listDialogConversation.labels.map((l) => l.id)}
+            onLabelsChange={(next) => {
+              setLabels(next);
+              refreshConversations();
+            }}
+            onSelectedChange={(ids) => {
+              const id = listDialog.conversationId;
+              setConversations((prev) =>
+                prev.map((c) =>
+                  c.id === id ? { ...c, labels: labels.filter((l) => ids.includes(l.id)) } : c
+                )
+              );
+              setSelectedConversation((prev) =>
+                prev?.id === id ? { ...prev, labelIds: ids } : prev
+              );
+            }}
+          />
+          <ReminderDialog
+            open={listDialog.dialog === "reminder"}
+            onOpenChange={(o) => !o && setListDialog(null)}
+            conversationId={listDialog.conversationId}
+            reminders={listDialog.reminders}
+            currentUserId={currentUserId}
+            onChanged={() => {
+              void loadListReminders(listDialog.conversationId);
+              afterUtilityChange();
+              refreshReminders();
+            }}
+          />
+          <EscalateDialog
+            open={listDialog.dialog === "escalate"}
+            onOpenChange={(o) => !o && setListDialog(null)}
+            conversationId={listDialog.conversationId}
+            message={null}
+            teammates={teammates}
+            currentUserId={currentUserId}
+            onDone={() => afterUtilityChange()}
+          />
+        </>
+      )}
 
       {showTemplatePicker && selectedConversation && (
         <WhatsappTemplatePicker

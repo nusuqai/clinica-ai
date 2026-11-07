@@ -11,6 +11,7 @@ import { Role } from "@prisma/client";
 
 export const PERMISSIONS = [
   "messages",
+  "quick_replies",
   "appointments",
   "doctors",
   "patients",
@@ -38,6 +39,12 @@ export const PERMISSION_META: Record<
     label: "إدارة الرسائل",
     description:
       "صندوق الرسائل: قراءة المحادثات، الرد على العملاء، وإيقاف أو تشغيل المساعد الذكي للمحادثة",
+    scope: "clinic",
+  },
+  quick_replies: {
+    label: "إدارة الردود السريعة",
+    description:
+      "إضافة وتعديل وحذف الردود الجاهزة (العروض والرسائل المتكررة) التي يستخدمها الفريق داخل المحادثات",
     scope: "clinic",
   },
   appointments: {

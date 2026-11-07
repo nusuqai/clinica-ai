@@ -4,14 +4,14 @@ import { Card } from "@/components/ui/card";
 export default function Loading() {
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-6">
+      <div className="mb-6 hidden md:block">
         <Skeleton className="mb-2 h-7 w-24" />
         <Skeleton className="h-4 w-64" />
       </div>
 
-      <Card className="flex h-[calc(100vh-7rem)] overflow-hidden">
+      <Card className="-m-4 flex h-[calc(100dvh-4rem)] overflow-hidden rounded-none border-0 md:m-0 md:h-[calc(100vh-7rem)] md:rounded-2xl md:border">
         {/* Conversation list */}
-        <aside className="flex w-72 flex-shrink-0 flex-col border-e border-border">
+        <aside className="flex w-full flex-col border-e border-border md:w-80 md:flex-shrink-0">
           <div className="border-b border-border px-4 py-3">
             <Skeleton className="h-4 w-24" />
           </div>
@@ -29,7 +29,7 @@ export default function Loading() {
         </aside>
 
         {/* Thread */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="hidden min-w-0 flex-1 flex-col md:flex">
           <div className="flex items-center gap-3 border-b border-border px-5 py-3">
             <Skeleton className="h-9 w-9 flex-shrink-0 rounded-full" />
             <div className="space-y-1.5">

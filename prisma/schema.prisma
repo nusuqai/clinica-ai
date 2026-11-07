@@ -185,6 +185,13 @@ model Clinic {
   treatmentRevisions     TreatmentRecordRevision[]
   appointmentAttachments AppointmentAttachment[]
   conversationProcessing ConversationProcessing[]
+  conversationPins       ConversationPin[]
+  inboxLabels            InboxLabel[]
+  conversationReminders  ConversationReminder[]
+  internalNotes          InternalNote[]
+  messageNotes           MessageNote[]
+  quickReplies           QuickReply[]
+  staffAlerts            StaffAlert[]
 
   @@map("clinics")
 }
@@ -234,7 +241,7 @@ model Branch {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  clinic            Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  clinic            Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   phones            BranchPhone[]
   hours             BranchHours[]
   doctors           DoctorBranch[]
@@ -352,10 +359,10 @@ model WhatsappConfig {
 // Membership join table: a Profile belongs to a Clinic with a role. The unique
 // pair (userId, clinicId) means one role per user per clinic.
 model ClinicMember {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  clinicId  String   @db.Uuid
-  role      Role
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  clinicId     String   @db.Uuid
+  role         Role
   // The custom role a STAFF member holds; null for every other role (and for a
   // STAFF member whose role was removed — they then have no permissions).
   clinicRoleId String?  @db.Uuid
@@ -364,12 +371,12 @@ model ClinicMember {
   // flag rather than "empty list means all": deleting a member's last branch
   // must leave them with NO branch, never silently widen them to all of them.
   // Ignored for ADMIN (always all), DOCTOR and PATIENT.
-  allBranches Boolean @default(true)
-  createdAt DateTime @default(now())
+  allBranches  Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
-  user       Profile     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clinic     Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  clinicRole ClinicRole? @relation(fields: [clinicRoleId], references: [id], onDelete: SetNull)
+  user       Profile              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinic     Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  clinicRole ClinicRole?          @relation(fields: [clinicRoleId], references: [id], onDelete: SetNull)
   branches   ClinicMemberBranch[]
 
   @@unique([userId, clinicId])
@@ -508,22 +515,35 @@ model Profile {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  doctor              Doctor?
-  appointments        Appointment[]
-  conversations       Conversation[]
-  sentMessages        Message[]                 @relation("SenderProfile")
-  resolvedEscalations Escalation[]              @relation("EscalationResolver")
-  aiToggledSessions   ChatSession[]             @relation("SessionAiToggler")
-  clinicMemberships   ClinicMember[]
-  reviewedRequests    ClinicRequest[]           @relation("RequestReviewer")
-  appointmentFeedback AppointmentFeedback[]
+  doctor                Doctor?
+  appointments          Appointment[]
+  conversations         Conversation[]
+  sentMessages          Message[]                 @relation("SenderProfile")
+  resolvedEscalations   Escalation[]              @relation("EscalationResolver")
+  aiToggledSessions     ChatSession[]             @relation("SessionAiToggler")
+  clinicMemberships     ClinicMember[]
+  reviewedRequests      ClinicRequest[]           @relation("RequestReviewer")
+  appointmentFeedback   AppointmentFeedback[]
   // Medical history: records ABOUT this profile as a patient, records it wrote
   // as a doctor, and the edits it made to any record.
-  treatmentRecords    TreatmentRecord[]         @relation("PatientTreatmentRecords")
-  authoredRecords     TreatmentRecord[]         @relation("AuthoredTreatmentRecords")
-  treatmentEdits      TreatmentRecordRevision[] @relation("TreatmentRecordEdits")
+  treatmentRecords      TreatmentRecord[]         @relation("PatientTreatmentRecords")
+  authoredRecords       TreatmentRecord[]         @relation("AuthoredTreatmentRecords")
+  treatmentEdits        TreatmentRecordRevision[] @relation("TreatmentRecordEdits")
   // Visit files this profile uploaded as staff.
-  uploadedAttachments AppointmentAttachment[]   @relation("UploadedAttachments")
+  uploadedAttachments   AppointmentAttachment[]   @relation("UploadedAttachments")
+  // Inbox utilities (per-user state + team collaboration on conversations).
+  assignedConversations Conversation[]            @relation("ConversationAssignee")
+  assignedByMe          Conversation[]            @relation("ConversationAssigner")
+  conversationPins      ConversationPin[]
+  inboxLabels           InboxLabel[]
+  createdReminders      ConversationReminder[]    @relation("ReminderCreator")
+  doneReminders         ConversationReminder[]    @relation("ReminderCompleter")
+  internalNotes         InternalNote[]
+  messageNotes          MessageNote[]
+  quickReplies          QuickReply[]
+  receivedStaffAlerts   StaffAlert[]              @relation("StaffAlertRecipient")
+  sentStaffAlerts       StaffAlert[]              @relation("StaffAlertActor")
+  resolvedStaffAlerts   StaffAlert[]              @relation("StaffAlertResolver")
 
   @@map("profiles")
 }
@@ -818,9 +838,9 @@ model AppointmentAttachment {
 }
 
 model Conversation {
-  id             String   @id @default(uuid()) @db.Uuid
-  clinicId       String   @db.Uuid
-  userId         String?  @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  clinicId       String    @db.Uuid
+  userId         String?   @db.Uuid
   whatsappPhone  String?
   // Meta Business-Scoped User ID (BSUID). Since the WhatsApp usernames rollout,
   // contacts messaging with a username hidden phone arrive with only this id
@@ -829,38 +849,53 @@ model Conversation {
   whatsappUserId String?
   whatsappName   String?
   channel        Channel
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  // The team member this conversation is assigned to (clinic-wide, everyone
+  // sees it). Null = unassigned. Assigning does NOT pause the AI.
+  assignedToId   String?   @db.Uuid
+  assignedById   String?   @db.Uuid
+  assignedAt     DateTime?
 
-  clinic      Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  user        Profile?                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages    Message[]
-  sessions    ChatSession[]
-  escalations Escalation[]
-  processing  ConversationProcessing?
+  clinic        Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  user          Profile?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedTo    Profile?                @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedBy    Profile?                @relation("ConversationAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+  messages      Message[]
+  sessions      ChatSession[]
+  escalations   Escalation[]
+  processing    ConversationProcessing?
+  pins          ConversationPin[]
+  labels        ConversationLabel[]
+  reminders     ConversationReminder[]
+  internalNotes InternalNote[]
+  messageNotes  MessageNote[]
+  staffAlerts   StaffAlert[]
 
   @@unique([clinicId, whatsappPhone])
   @@unique([clinicId, whatsappUserId])
   @@unique([clinicId, userId, channel])
   @@index([clinicId])
+  @@index([assignedToId])
+  @@index([assignedById])
   @@map("conversations")
 }
 
 // A bounded chat window (fixed 30-min from its first message) used to scope
 // LLM context and to group messages with dividers in the admin inbox.
 model ChatSession {
-  id             String   @id @default(uuid()) @db.Uuid
-  conversationId String   @db.Uuid
-  clinicId       String   @db.Uuid
-  startedAt      DateTime @default(now())
+  id             String    @id @default(uuid()) @db.Uuid
+  conversationId String    @db.Uuid
+  clinicId       String    @db.Uuid
+  startedAt      DateTime  @default(now())
   expiresAt      DateTime // startedAt + SESSION_MINUTES (env, default 30 min)
   // AI auto-reply for this session. Defaults on for every new session; the
   // admin can pause it, or the escalate_to_human tool turns it off when the
   // user asks for a human. Does not carry over to the next session.
-  aiEnabled      Boolean  @default(true)
+  aiEnabled      Boolean   @default(true)
   // The staff member who last paused / resumed the AI by hand, and when. Null
   // when the flag was never toggled manually (default, or the escalation tool).
-  aiToggledById  String?  @db.Uuid
+  aiToggledById  String?   @db.Uuid
   aiToggledAt    DateTime?
 
   clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
@@ -946,15 +981,17 @@ model Message {
   // Distinct from reactions, which attach to their target via metadata.
   replyToId         String?         @db.Uuid
 
-  aiAgent      AiAgent?     @relation(fields: [aiAgentId], references: [id], onDelete: SetNull)
-  replyTo      Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies      Message[]    @relation("MessageReplies")
-  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  session      ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  sender       Profile?     @relation("SenderProfile", fields: [senderId], references: [id], onDelete: SetNull)
+  aiAgent      AiAgent?      @relation(fields: [aiAgentId], references: [id], onDelete: SetNull)
+  replyTo      Message?      @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]     @relation("MessageReplies")
+  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  conversation Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  session      ChatSession?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  sender       Profile?      @relation("SenderProfile", fields: [senderId], references: [id], onDelete: SetNull)
   aiUsage      AiUsageLog[]
   escalations  Escalation[]
+  notes        MessageNote[]
+  staffAlerts  StaffAlert[]
 
   @@index([conversationId])
   @@index([sessionId])
@@ -1079,49 +1116,49 @@ model ClinicAiCredit {
 // cost. (messageId, kind) is unique: a webhook redelivery that re-charges the
 // same reply hits the constraint and rolls the whole txn back.
 model AiUsageLog {
-  id               String      @id @default(uuid()) @db.Uuid
-  clinicId         String      @db.Uuid
-  sessionId        String?     @db.Uuid
-  messageId        String?     @db.Uuid
+  id                  String      @id @default(uuid()) @db.Uuid
+  clinicId            String      @db.Uuid
+  sessionId           String?     @db.Uuid
+  messageId           String?     @db.Uuid
   // What this row bills for. A message can now carry more than one usage row
   // (a voice message: TRANSCRIPTION on the inbound + REPLY/TTS on the answer),
   // so idempotency is (messageId, kind) rather than messageId alone.
-  kind             AiUsageKind @default(REPLY)
-  model            String
+  kind                AiUsageKind @default(REPLY)
+  model               String
   // Token columns are REPLY-shaped and null for audio rows.
-  promptTokens     Int?
-  completionTokens Int?
-  totalTokens      Int?
+  promptTokens        Int?
+  completionTokens    Int?
+  totalTokens         Int?
   // The share of promptTokens served from OpenAI's prompt cache (billed at
   // cachedInputRatePerM, not inputRatePerM). Null on audio rows and on rows
   // written before cached tokens were captured — those billed every prompt
   // token at the full input rate.
-  cachedInputTokens Int?
+  cachedInputTokens   Int?
   // Billed audio length for TRANSCRIPTION/TTS rows; null for REPLY rows.
-  audioSeconds     Int?
-  inputRatePerM    Decimal     @db.Decimal(12, 4)
+  audioSeconds        Int?
+  inputRatePerM       Decimal     @db.Decimal(12, 4)
   // Snapshot of the cached-input list rate; null wherever cachedInputTokens is.
-  cachedInputRatePerM Decimal? @db.Decimal(12, 4)
-  outputRatePerM   Decimal     @db.Decimal(12, 4)
+  cachedInputRatePerM Decimal?    @db.Decimal(12, 4)
+  outputRatePerM      Decimal     @db.Decimal(12, 4)
   // Real OpenAI list cost of this call (USD, Decimal — never a JS float).
   // Telemetry only: clinics are charged in units, never in dollars.
-  rawCost          Decimal     @db.Decimal(18, 8)
+  rawCost             Decimal     @db.Decimal(18, 8)
   // Units this row cost the clinic: 1 on REPLY rows, 0 on TRANSCRIPTION/TTS
   // (the platform absorbs those in USD). Denormalized here so unit reporting is
   // one aggregate over the same table as cost reporting, with no join.
-  unitsCharged     Int         @default(0)
+  unitsCharged        Int         @default(0)
   // The AI employee whose reply this row bills (REPLY rows). Drives the
   // per-agent usage caps and the "which agent answered most" reports; the unit
   // ledger reaches it through its usageId. Null on rows not tied to
   // an agent (transcription/extraction happen before one is chosen) and on rows
   // written before AI employees existed.
-  aiAgentId        String?     @db.Uuid
-  createdAt        DateTime    @default(now())
+  aiAgentId           String?     @db.Uuid
+  createdAt           DateTime    @default(now())
 
-  aiAgent    AiAgent?        @relation(fields: [aiAgentId], references: [id], onDelete: SetNull)
-  clinic     Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  session    ChatSession?    @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  message    Message?        @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  aiAgent    AiAgent?      @relation(fields: [aiAgentId], references: [id], onDelete: SetNull)
+  clinic     Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  session    ChatSession?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  message    Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
   unitLedger AiUnitLedger?
 
   @@unique([messageId, kind])
@@ -1356,4 +1393,203 @@ model AppointmentFeedback {
   @@index([clinicId])
   @@index([patientId])
   @@map("appointment_feedback")
+}
+
+// ─── Inbox utilities ─────────────────────────────────────────────────────────
+// Staff-side collaboration on conversations. None of these tables is ever read
+// by the agent or sent to the patient: they are invisible outside the dashboard.
+
+// Who can see a reminder / message note: only its author, or the whole team.
+enum NoteVisibility {
+  PRIVATE
+  CLINIC
+}
+
+// A conversation pinned to the top of ONE team member's inbox (per user).
+model ConversationPin {
+  userId         String   @db.Uuid
+  conversationId String   @db.Uuid
+  clinicId       String   @db.Uuid
+  createdAt      DateTime @default(now())
+
+  user         Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@id([userId, conversationId])
+  @@index([conversationId])
+  @@index([clinicId, userId])
+  @@map("conversation_pins")
+}
+
+// A personal label (name + colour) a team member files conversations under.
+// Labels belong to their owner — colleagues never see them.
+model InboxLabel {
+  id        String   @id @default(uuid()) @db.Uuid
+  clinicId  String   @db.Uuid
+  ownerId   String   @db.Uuid
+  name      String
+  // One of the palette keys in lib/inbox-labels.ts (not a raw hex).
+  color     String
+  createdAt DateTime @default(now())
+
+  clinic        Clinic              @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  owner         Profile             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  conversations ConversationLabel[]
+
+  @@unique([clinicId, ownerId, name])
+  @@index([ownerId])
+  @@map("inbox_labels")
+}
+
+model ConversationLabel {
+  labelId        String   @db.Uuid
+  conversationId String   @db.Uuid
+  createdAt      DateTime @default(now())
+
+  label        InboxLabel   @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@id([labelId, conversationId])
+  @@index([conversationId])
+  @@map("conversation_labels")
+}
+
+// "Check back on this conversation at <dueAt>", with an optional note. PRIVATE
+// = only its creator sees it; CLINIC = the whole team sees it (only the creator
+// is alerted). Once due and not done, the conversation floats to the top.
+model ConversationReminder {
+  id             String         @id @default(uuid()) @db.Uuid
+  clinicId       String         @db.Uuid
+  conversationId String         @db.Uuid
+  createdById    String         @db.Uuid
+  dueAt          DateTime
+  note           String?
+  visibility     NoteVisibility @default(PRIVATE)
+  doneAt         DateTime?
+  doneById       String?        @db.Uuid
+  createdAt      DateTime       @default(now())
+
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdBy    Profile      @relation("ReminderCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  doneBy       Profile?     @relation("ReminderCompleter", fields: [doneById], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([clinicId, doneAt, dueAt])
+  @@index([createdById, doneAt])
+  @@index([doneById])
+  @@map("conversation_reminders")
+}
+
+// A staff-only message inside a conversation thread (clinic-wide). Kept in its
+// own table — never in `messages` — so it can't reach the patient, the agent's
+// context, WhatsApp, unread counts or the 24h window.
+model InternalNote {
+  id             String   @id @default(uuid()) @db.Uuid
+  clinicId       String   @db.Uuid
+  conversationId String   @db.Uuid
+  authorId       String?  @db.Uuid
+  content        String
+  createdAt      DateTime @default(now())
+
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       Profile?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([clinicId])
+  @@index([authorId])
+  @@map("internal_notes")
+}
+
+// A note pinned to one message — PRIVATE (its author only) or CLINIC (team).
+model MessageNote {
+  id             String         @id @default(uuid()) @db.Uuid
+  clinicId       String         @db.Uuid
+  conversationId String         @db.Uuid
+  messageId      String         @db.Uuid
+  authorId       String         @db.Uuid
+  content        String
+  visibility     NoteVisibility @default(PRIVATE)
+  createdAt      DateTime       @default(now())
+
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message      Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  author       Profile      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([clinicId])
+  @@index([authorId])
+  @@map("message_notes")
+}
+
+// The clinic's pool of saved replies (offers, directions, repetitive answers).
+// Anyone with `messages` uses them; only `quick_replies` holders manage them.
+model QuickReply {
+  id            String   @id @default(uuid()) @db.Uuid
+  clinicId      String   @db.Uuid
+  title         String
+  content       String
+  category      String?
+  // Optional image, stored in the patient-media bucket under
+  // <clinicId>/quick-replies/. Copied into the conversation on send.
+  mediaPath     String?
+  mediaMimeType String?
+  mediaWidth    Int?
+  mediaHeight   Int?
+  usageCount    Int      @default(0)
+  createdById   String?  @db.Uuid
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdBy Profile? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([clinicId])
+  @@index([createdById])
+  @@map("quick_replies")
+}
+
+enum StaffAlertKind {
+  // A colleague escalated a message/conversation to the recipient, with a note.
+  ESCALATION
+  // The conversation was assigned to the recipient.
+  ASSIGNMENT
+}
+
+// A notification for ONE team member, delivered over realtime (toast + sound)
+// and counted in their "needs my response" filter until resolved.
+model StaffAlert {
+  id             String         @id @default(uuid()) @db.Uuid
+  clinicId       String         @db.Uuid
+  conversationId String         @db.Uuid
+  // The specific message escalated, when there is one.
+  messageId      String?        @db.Uuid
+  recipientId    String         @db.Uuid
+  actorId        String?        @db.Uuid
+  kind           StaffAlertKind
+  note           String?
+  createdAt      DateTime       @default(now())
+  // ESCALATION: the recipient replied / posted a note, or someone marked it
+  // done. ASSIGNMENT: the recipient opened the conversation.
+  resolvedAt     DateTime?
+  resolvedById   String?        @db.Uuid
+
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message      Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  recipient    Profile      @relation("StaffAlertRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor        Profile?     @relation("StaffAlertActor", fields: [actorId], references: [id], onDelete: SetNull)
+  resolvedBy   Profile?     @relation("StaffAlertResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, resolvedAt])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([clinicId])
+  @@index([actorId])
+  @@index([resolvedById])
+  @@map("staff_alerts")
 }

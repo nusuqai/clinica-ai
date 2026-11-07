@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { Channel, SenderType, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { can, getClinicContext } from "@/lib/auth";
@@ -17,9 +18,17 @@ import {
   createPatientMediaUploadUrl,
   downloadPatientMedia,
   outboundMediaKind,
+  uploadPatientMedia,
 } from "@/lib/supabase/storage";
 import { resolveActiveSession } from "@/server/services/agentSession";
-import type { AgentMessageMetadata, MediaAttachmentMetadata } from "@/agent/types";
+import { resolveMyEscalationAlerts } from "@/server/services/inbox";
+import { transcribeAudio } from "@/server/services/transcription";
+import { chargeTranscription, isDuplicateChargeError } from "@/server/services/aiCredit";
+import type {
+  AgentMessageMetadata,
+  MediaAttachmentMetadata,
+  VoiceMessageMetadata,
+} from "@/agent/types";
 
 /**
  * How to address an outbound message to a conversation's WhatsApp contact:
@@ -136,6 +145,8 @@ export async function sendAdminReply(
       where: { conversationId, resolvedAt: null },
       data: { resolvedAt: new Date(), resolvedById: ctx.user.id },
     });
+    // ...and answers any escalation a colleague raised to this staff member.
+    await resolveMyEscalationAlerts(conversationId, ctx.user.id);
   } catch (err) {
     // Nothing was persisted (or the reply is in an unknown state) — the inbox
     // keeps the bubble and offers a retry.
@@ -302,6 +313,8 @@ export async function sendAdminMediaReply(
       where: { conversationId, resolvedAt: null },
       data: { resolvedAt: new Date(), resolvedById: ctx.user.id },
     });
+    // ...and answers any escalation a colleague raised to this staff member.
+    await resolveMyEscalationAlerts(conversationId, ctx.user.id);
   } catch (err) {
     console.error("Failed to save admin media reply:", err);
     return { ok: false, reason: "server_error" };
@@ -374,6 +387,20 @@ export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: bo
     if (!creds) return { ok: false };
     // Re-deliver with the same quote the original send carried.
     const options = { replyToWamid: message.replyTo?.whatsappMessageId };
+
+    const voiceMeta = (message.metadata as AgentMessageMetadata | null)?.voice;
+    if (message.senderType === SenderType.ADMIN && voiceMeta?.storagePath) {
+      const bytes = await downloadPatientMedia(voiceMeta.storagePath);
+      if (!bytes) return { ok: false };
+      const waMediaId = await uploadMedia(creds, bytes, voiceMeta.mimeType, "voice.ogg");
+      await sendMediaMessage(
+        recipient,
+        { kind: "audio", mediaId: waMediaId, voice: isOggOpus(voiceMeta.mimeType) },
+        creds,
+        options
+      );
+      return { ok: true };
+    }
 
     const mediaMeta = (message.metadata as AgentMessageMetadata | null)?.media;
     if (mediaMeta?.storagePath) {
@@ -482,6 +509,8 @@ export async function sendWhatsappTemplate(
       where: { conversationId, resolvedAt: null },
       data: { resolvedAt: new Date(), resolvedById: ctx.user.id },
     });
+    // ...and answers any escalation a colleague raised to this staff member.
+    await resolveMyEscalationAlerts(conversationId, ctx.user.id);
     await prisma.conversation.update({
       where: { id: conversationId },
       data: { updatedAt: new Date() },
@@ -542,4 +571,251 @@ export async function setSessionAiEnabled(sessionId: string, enabled: boolean): 
   }
 
   revalidatePath("/admin/messages", "page");
+}
+
+/** WhatsApp only renders OGG/Opus as a voice note (with the waveform). */
+function isOggOpus(mime: string): boolean {
+  const base = mime.split(";")[0].trim().toLowerCase();
+  return base === "audio/ogg" || base === "audio/opus";
+}
+
+/** Staff placeholder content until the transcript lands — keeps the agent's
+ *  history (and the inbox preview) meaningful in the meantime. */
+const STAFF_VOICE_PLACEHOLDER = "[رسالة صوتية من الفريق]";
+
+/**
+ * Sends a staff voice note (recorded in the browser as OGG/Opus and uploaded
+ * straight to the bucket via `createStaffMediaUpload`) to the patient as a real
+ * WhatsApp voice message. The transcript is produced AFTER the response (it never
+ * delays delivery) and written back onto the message, so the inbox shows it and
+ * the AI knows what was said if it takes the conversation back. Transcription is
+ * metered as its own ledger line (TRANSCRIPTION), like a patient voice note.
+ */
+export async function sendAdminVoiceReply(
+  conversationId: string,
+  voice: { path: string; mimeType: string; durationSec?: number | null; replyToId?: string | null }
+): Promise<SendAdminReplyResult> {
+  const ctx = await getClinicContext();
+  if (!ctx) return { ok: false, reason: "unauthorized" };
+  if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
+
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: conversationId, clinicId: ctx.clinic.id },
+  });
+  if (!conversation) return { ok: false, reason: "not_found" };
+  if (!voice.path.startsWith(`${ctx.clinic.id}/${conversationId}/`)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  if (!voice.mimeType.toLowerCase().startsWith("audio/")) return { ok: false, reason: "forbidden" };
+  if (conversation.channel === Channel.WHATSAPP) {
+    if (!isWithinWhatsappWindow(await lastInboundAt(conversationId))) {
+      return { ok: false, reason: "outside_window" };
+    }
+  }
+
+  const bytes = await downloadPatientMedia(voice.path);
+  if (!bytes) return { ok: false, reason: "server_error" };
+  const baseMime = voice.mimeType.split(";")[0].trim().toLowerCase();
+  const clinicId = ctx.clinic.id;
+  const durationSec =
+    typeof voice.durationSec === "number" && voice.durationSec > 0
+      ? Math.round(voice.durationSec)
+      : null;
+
+  let message;
+  let quoted: Awaited<ReturnType<typeof quotedMessage>> = null;
+  let sessionId: string | null = null;
+  try {
+    sessionId = await resolveActiveSession(conversationId, clinicId);
+    quoted = await quotedMessage(conversationId, voice.replyToId);
+    const voiceMeta: VoiceMessageMetadata = {
+      storagePath: voice.path,
+      mimeType: baseMime,
+      durationSec,
+      transcript: "",
+      model: "",
+      status: "transcribing",
+    };
+    message = await prisma.message.create({
+      data: {
+        conversationId,
+        sessionId,
+        senderType: SenderType.ADMIN,
+        senderId: ctx.user.id,
+        content: STAFF_VOICE_PLACEHOLDER,
+        isRead: true,
+        clinicId,
+        metadata: { voice: voiceMeta } as unknown as Prisma.InputJsonValue,
+        replyToId: quoted?.id ?? null,
+      },
+    });
+    await prisma.escalation.updateMany({
+      where: { conversationId, resolvedAt: null },
+      data: { resolvedAt: new Date(), resolvedById: ctx.user.id },
+    });
+    await resolveMyEscalationAlerts(conversationId, ctx.user.id);
+  } catch (err) {
+    console.error("Failed to save staff voice reply:", err);
+    return { ok: false, reason: "server_error" };
+  }
+
+  let whatsappSendFailed = false;
+  const recipient = whatsappRecipient(conversation);
+  if (recipient) {
+    try {
+      const creds = await getClinicWhatsappCredentials(clinicId);
+      if (!creds) throw new Error("WhatsApp is not configured for this clinic");
+      const waMediaId = await uploadMedia(creds, bytes, baseMime, "voice.ogg");
+      const wamid = await sendMediaMessage(
+        recipient,
+        { kind: "audio", mediaId: waMediaId, voice: isOggOpus(baseMime) },
+        creds,
+        { replyToWamid: quoted?.whatsappMessageId }
+      );
+      if (wamid) {
+        await prisma.message
+          .update({ where: { id: message.id }, data: { whatsappMessageId: wamid } })
+          .catch(() => {});
+      }
+    } catch (err) {
+      console.error("Failed to send WhatsApp voice:", err);
+      whatsappSendFailed = true;
+    }
+  }
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { updatedAt: new Date() },
+  });
+
+  // Transcribe off the response path. The UPDATE reaches the inbox over
+  // realtime, swapping the placeholder for the transcript.
+  const messageId = message.id;
+  after(async () => {
+    let next: VoiceMessageMetadata;
+    let transcript = "";
+    try {
+      const result = await transcribeAudio({ bytes, mimeType: baseMime });
+      transcript = result.text;
+      next = {
+        storagePath: voice.path,
+        mimeType: baseMime,
+        durationSec: durationSec ?? result.durationSec,
+        transcript,
+        model: result.model,
+        status: transcript ? "transcribed" : "failed",
+      };
+      await chargeTranscription({
+        clinicId,
+        sessionId,
+        messageId,
+        model: result.model,
+        audioSeconds: next.durationSec,
+      }).catch((err) => {
+        if (!isDuplicateChargeError(err)) {
+          console.error("[aiCredit] failed to charge staff transcription", err);
+        }
+      });
+    } catch (err) {
+      console.error("[staff-voice] transcription failed:", err);
+      next = {
+        storagePath: voice.path,
+        mimeType: baseMime,
+        durationSec,
+        transcript: "",
+        model: "",
+        status: "failed",
+      };
+    }
+    // Merge, so a reaction that landed meanwhile isn't overwritten.
+    const current = await prisma.message.findUnique({
+      where: { id: messageId },
+      select: { metadata: true },
+    });
+    const meta = (current?.metadata as AgentMessageMetadata | null) ?? {};
+    await prisma.message
+      .update({
+        where: { id: messageId },
+        data: {
+          content: transcript || STAFF_VOICE_PLACEHOLDER,
+          metadata: { ...meta, voice: next } as unknown as Prisma.InputJsonValue,
+        },
+      })
+      .catch((err) => console.error("[staff-voice] failed to store transcript:", err));
+  });
+
+  revalidatePath("/admin/messages", "page");
+  return {
+    ok: true,
+    messageId: message.id,
+    createdAt: message.createdAt.toISOString(),
+    whatsappSendFailed,
+  };
+}
+
+/**
+ * Sends a saved quick reply straight into the conversation: its text as a
+ * normal staff reply, and its image (if any) copied into the conversation's
+ * folder and sent as an attachment with the text as caption. Bumps the reply's
+ * usage count so the pool stays sorted by what the team actually uses.
+ */
+export async function sendQuickReply(
+  conversationId: string,
+  quickReplyId: string,
+  replyToId?: string | null
+): Promise<SendAdminReplyResult> {
+  const ctx = await getClinicContext();
+  if (!ctx) return { ok: false, reason: "unauthorized" };
+  if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
+
+  const qr = await prisma.quickReply.findFirst({
+    where: { id: quickReplyId, clinicId: ctx.clinic.id },
+  });
+  if (!qr) return { ok: false, reason: "not_found" };
+
+  let result: SendAdminReplyResult;
+  if (qr.mediaPath && qr.mediaMimeType) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, clinicId: ctx.clinic.id },
+      select: { id: true, channel: true },
+    });
+    if (!conversation) return { ok: false, reason: "not_found" };
+    if (
+      conversation.channel === Channel.WHATSAPP &&
+      !isWithinWhatsappWindow(await lastInboundAt(conversationId))
+    ) {
+      return { ok: false, reason: "outside_window" };
+    }
+    const bytes = await downloadPatientMedia(qr.mediaPath);
+    if (!bytes) return { ok: false, reason: "server_error" };
+    // A per-message copy: deleting / replacing the quick reply later must not
+    // break images already sent in conversations.
+    const stored = await uploadPatientMedia({
+      clinicId: ctx.clinic.id,
+      conversationId,
+      bytes,
+      contentType: qr.mediaMimeType,
+    }).catch((err) => {
+      console.error("Failed to copy quick-reply media:", err);
+      return null;
+    });
+    if (!stored) return { ok: false, reason: "server_error" };
+    result = await sendAdminMediaReply(conversationId, {
+      path: stored.path,
+      mimeType: stored.contentType,
+      caption: qr.content,
+      width: qr.mediaWidth ?? undefined,
+      height: qr.mediaHeight ?? undefined,
+      replyToId,
+    });
+  } else {
+    result = await sendAdminReply(conversationId, qr.content, replyToId);
+  }
+
+  if (result.ok) {
+    await prisma.quickReply
+      .update({ where: { id: qr.id }, data: { usageCount: { increment: 1 } } })
+      .catch(() => {});
+  }
+  return result;
 }
