@@ -54,7 +54,7 @@ export default function DoctorRowActions({
           checked={active}
           onCheckedChange={toggleActive}
           disabled={isPending}
-          className="data-[state=checked]:bg-emerald-500"
+          className="aria-checked:bg-emerald-500"
         />
       </Hint>
       <Hint label="حذف الطبيب">

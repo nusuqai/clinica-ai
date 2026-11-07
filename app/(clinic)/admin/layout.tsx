@@ -3,7 +3,7 @@ import { Role } from "@prisma/client";
 import { can, requireClinicMember, roleHome } from "@/lib/auth";
 import { isDashboardRole } from "@/lib/permissions";
 import DashboardShell from "@/components/general/dashboard-shell";
-import { getUnresolvedEscalationConversationIds } from "@/server/services/messages";
+import { countNeedsMe, getUnresolvedEscalationConversationIds } from "@/server/services/messages";
 import { getClinicUnitSummary } from "@/server/services/aiCredit";
 
 // The admin dashboard is shared by the clinic ADMIN and its STAFF. The layout
@@ -15,10 +15,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   const isClinicAdmin = ctx.role === Role.ADMIN;
   // Only fetch what this member is allowed to see in the shell.
-  const [initialUnresolvedEscalationConversationIds, units] = await Promise.all([
-    can(ctx, "messages") ? getUnresolvedEscalationConversationIds(ctx.clinic.id) : [],
-    can(ctx, "agent") ? getClinicUnitSummary(ctx.clinic.id) : null,
-  ]);
+  const [initialUnresolvedEscalationConversationIds, units, initialNeedsMeCount] =
+    await Promise.all([
+      can(ctx, "messages") ? getUnresolvedEscalationConversationIds(ctx.clinic.id) : [],
+      can(ctx, "agent") ? getClinicUnitSummary(ctx.clinic.id) : null,
+      can(ctx, "messages") ? countNeedsMe(ctx.clinic.id, ctx.user.id) : 0,
+    ]);
 
   return (
     <DashboardShell
@@ -27,6 +29,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       userEmail={ctx.user.email}
       initialUnresolvedEscalationConversationIds={initialUnresolvedEscalationConversationIds}
       clinicId={ctx.clinic.id}
+      userId={ctx.user.id}
+      initialNeedsMeCount={initialNeedsMeCount}
       clinicName={ctx.clinic.name}
       clinicLogoUrl={ctx.clinic.logoUrl}
       aiUnits={

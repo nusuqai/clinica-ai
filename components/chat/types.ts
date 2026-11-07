@@ -19,6 +19,13 @@ export interface ChatMessage {
   /** Autoplay the audio (only for a reply that just arrived live, never for
    *  history loaded on reload). */
   autoPlayAudio?: boolean;
+  /** The earlier message this one quotes (a staff reply picked in the inbox),
+   *  shown as a small preview above the bubble. */
+  replyTo?: {
+    id: string;
+    role: "user" | "agent" | "admin";
+    snippet: string;
+  };
   /** A media attachment (e.g. an image or document a staff member sent). The URL
    *  streams from the owner-scoped media endpoint. */
   media?: {

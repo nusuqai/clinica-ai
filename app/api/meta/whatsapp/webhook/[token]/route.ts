@@ -126,7 +126,7 @@ export async function POST(
 }
 
 async function processMessage(
-  { phone, userId, name, messageId, message }: InboundEnvelope,
+  { phone, userId, name, messageId, quotedWamid, message }: InboundEnvelope,
   creds: ClinicWhatsappCredentials
 ): Promise<void> {
   console.log(
@@ -154,7 +154,8 @@ async function processMessage(
       { phone, userId },
       { mediaId: message.mediaId, mimeType: message.mimeType },
       messageId,
-      creds
+      creds,
+      quotedWamid
     );
     return;
   }
@@ -167,7 +168,8 @@ async function processMessage(
       { phone, userId },
       { mediaId: message.mediaId, mimeType: message.mimeType, caption: message.caption },
       messageId,
-      creds
+      creds,
+      quotedWamid
     );
     return;
   }
@@ -188,7 +190,8 @@ async function processMessage(
         caption: message.caption,
       },
       messageId,
-      creds
+      creds,
+      quotedWamid
     );
     return;
   }
@@ -203,7 +206,8 @@ async function processMessage(
       { phone, userId },
       { structuredKind: message.structuredKind, data: message.data, summary: message.summary },
       messageId,
-      creds
+      creds,
+      quotedWamid
     );
     return;
   }
@@ -232,7 +236,14 @@ async function processMessage(
   // Hands off to the agent: it persists the user message + reply (linked to the
   // active session) and sends the reply back over the Cloud API.
   console.log(`[wa-debug] routing → text handler convId=${conversation.id}`);
-  await handleWhatsAppMessage(conversation.id, { phone, userId }, message.text, messageId, creds);
+  await handleWhatsAppMessage(
+    conversation.id,
+    { phone, userId },
+    message.text,
+    messageId,
+    creds,
+    quotedWamid
+  );
 }
 
 /**

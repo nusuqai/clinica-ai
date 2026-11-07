@@ -97,7 +97,7 @@ export default function AppSidebar({
   aiUnits = null,
 }: AppSidebarProps) {
   const pathname = usePathname();
-  const { hasUnresolved } = useEscalationAlerts();
+  const { hasUnresolved, needsMeCount } = useEscalationAlerts();
   const { state, toggleSidebar, isMobile, setOpenMobile } = useSidebar();
   const collapsed = state === "collapsed" && !isMobile;
 
@@ -180,7 +180,9 @@ export default function AppSidebar({
                   key={item.href}
                   item={item}
                   active={isHrefActive(item.href)}
-                  showAlert={item.href.endsWith("/admin/messages") && hasUnresolved}
+                  showAlert={
+                    item.href.endsWith("/admin/messages") && (hasUnresolved || needsMeCount > 0)
+                  }
                   onNavigate={onNavigate}
                 />
               )

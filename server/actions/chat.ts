@@ -3,7 +3,12 @@
 import { Channel, type SenderType } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getOrCreateWebConversation, getSessionMessages } from "@/server/services/agentSession";
+import {
+  getOrCreateWebConversation,
+  getSessionMessages,
+  type SessionMessage,
+} from "@/server/services/agentSession";
+import { quoteKindOf, quoteSnippet } from "@/lib/message-quote";
 import type { AgentMessageMetadata } from "@/agent/types";
 
 export interface WebChatMessage {
@@ -12,6 +17,26 @@ export interface WebChatMessage {
   senderType: SenderType;
   metadata: AgentMessageMetadata | null;
   createdAt: string;
+  /** The message this one quotes (e.g. a staff reply picked in the inbox),
+   *  reduced to a preview — only the snippet leaves the server. */
+  replyTo: { id: string; senderType: SenderType; snippet: string } | null;
+}
+
+function toWebChatMessage(m: SessionMessage): WebChatMessage {
+  return {
+    id: m.id,
+    content: m.content,
+    senderType: m.senderType,
+    metadata: m.metadata,
+    createdAt: m.createdAt.toISOString(),
+    replyTo: m.replyTo
+      ? {
+          id: m.replyTo.id,
+          senderType: m.replyTo.senderType,
+          snippet: quoteSnippet(m.replyTo.content, quoteKindOf(m.replyTo.metadata)),
+        }
+      : null,
+  };
 }
 
 export interface WebChatState {
@@ -50,13 +75,7 @@ export async function getWebChatMessages(): Promise<WebChatState | null> {
 
   return {
     conversationId,
-    messages: messages.map((m) => ({
-      id: m.id,
-      content: m.content,
-      senderType: m.senderType,
-      metadata: m.metadata,
-      createdAt: m.createdAt.toISOString(),
-    })),
+    messages: messages.map(toWebChatMessage),
   };
 }
 
@@ -83,12 +102,6 @@ export async function getGuestChatMessages(conversationId: string): Promise<WebC
 
   return {
     conversationId,
-    messages: messages.map((m) => ({
-      id: m.id,
-      content: m.content,
-      senderType: m.senderType,
-      metadata: m.metadata,
-      createdAt: m.createdAt.toISOString(),
-    })),
+    messages: messages.map(toWebChatMessage),
   };
 }

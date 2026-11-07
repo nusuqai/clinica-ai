@@ -22,6 +22,31 @@ export interface SessionMessage {
   metadata: AgentMessageMetadata | null;
   createdAt: Date;
   clinicId: string;
+  /** The earlier message this one quotes — may sit in an older session, which
+   *  is exactly when the agent needs it spelled out. */
+  replyTo?: {
+    id: string;
+    content: string;
+    senderType: SenderType;
+    metadata: AgentMessageMetadata | null;
+  } | null;
+}
+
+/**
+ * Maps a quoted WhatsApp wamid to our Message id within the conversation. Null
+ * when it isn't a message we stored (it predates wamid tracking, or was sent
+ * outside the system) — the reply is still kept, just unlinked.
+ */
+export async function resolveReplyToId(
+  conversationId: string,
+  quotedWamid: string | null
+): Promise<string | null> {
+  if (!quotedWamid) return null;
+  const target = await prisma.message.findFirst({
+    where: { conversationId, whatsappMessageId: quotedWamid },
+    select: { id: true },
+  });
+  return target?.id ?? null;
 }
 
 /**
@@ -67,6 +92,9 @@ export async function getSessionMessages(sessionId: string): Promise<SessionMess
   const messages = await prisma.message.findMany({
     where: { sessionId },
     orderBy: { createdAt: "asc" },
+    include: {
+      replyTo: { select: { id: true, content: true, senderType: true, metadata: true } },
+    },
   });
   return messages.map((m) => ({
     id: m.id,
@@ -75,6 +103,14 @@ export async function getSessionMessages(sessionId: string): Promise<SessionMess
     metadata: (m.metadata as AgentMessageMetadata | null) ?? null,
     createdAt: m.createdAt,
     clinicId: m.clinicId,
+    replyTo: m.replyTo
+      ? {
+          id: m.replyTo.id,
+          content: m.replyTo.content,
+          senderType: m.replyTo.senderType,
+          metadata: (m.replyTo.metadata as AgentMessageMetadata | null) ?? null,
+        }
+      : null,
   }));
 }
 
@@ -87,7 +123,9 @@ export async function persistUserMessage(
   /** Optional metadata — e.g. `{ voice }` for a transcribed voice note. */
   metadata: AgentMessageMetadata | null = null,
   /** The inbound WhatsApp message id (wamid), so a later reaction can attach. */
-  whatsappMessageId: string | null = null
+  whatsappMessageId: string | null = null,
+  /** The wamid the patient quoted (WhatsApp `context.id`), linked as replyToId. */
+  quotedWamid: string | null = null
 ): Promise<SessionMessage> {
   const m = await prisma.message.create({
     data: {
@@ -99,6 +137,7 @@ export async function persistUserMessage(
       isRead: false,
       metadata: metadata ? (metadata as unknown as Prisma.InputJsonValue) : undefined,
       whatsappMessageId,
+      replyToId: await resolveReplyToId(conversationId, quotedWamid),
       clinicId,
     },
   });

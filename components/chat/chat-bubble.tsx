@@ -5,7 +5,11 @@ import { MessageCircle, X, Send, Headset, Mic, Square, Trash2 } from "lucide-rea
 import ChatMessageView from "./chat-message";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { getWebChatMessages, getGuestChatMessages } from "@/server/actions/chat";
+import {
+  getWebChatMessages,
+  getGuestChatMessages,
+  type WebChatMessage,
+} from "@/server/actions/chat";
 import { useRealtimeMessages } from "@/hooks/use-realtime-messages";
 import { SenderType } from "@prisma/client";
 import type { ChatMessage, ClientToolCall } from "./types";
@@ -38,6 +42,21 @@ function mediaFrom(id: string, metadata: unknown): ChatMessage["media"] | undefi
     width: media.width,
     height: media.height,
   };
+}
+
+function roleOf(senderType: SenderType): ChatMessage["role"] {
+  return senderType === SenderType.USER
+    ? "user"
+    : senderType === SenderType.ADMIN
+      ? "admin"
+      : "agent";
+}
+
+/** The quoted-message preview for a stored message, if it quotes one. */
+function replyToFrom(m: WebChatMessage): ChatMessage["replyTo"] {
+  return m.replyTo
+    ? { id: m.replyTo.id, role: roleOf(m.replyTo.senderType), snippet: m.replyTo.snippet }
+    : undefined;
 }
 
 // A guest's conversation isn't tied to an account, so its id is the browser's
@@ -101,14 +120,10 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
         setMessages(
           state.messages.map((m) => ({
             id: m.id,
-            role:
-              m.senderType === SenderType.USER
-                ? "user"
-                : m.senderType === SenderType.ADMIN
-                  ? "admin"
-                  : "agent",
+            role: roleOf(m.senderType),
             content: m.content,
             toolCalls: (m.metadata?.toolCalls as ClientToolCall[] | undefined) ?? undefined,
+            replyTo: replyToFrom(m),
           }))
         );
       });
@@ -120,13 +135,9 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       setMessages(
         state.messages.map((m) => ({
           id: m.id,
-          role:
-            m.senderType === SenderType.USER
-              ? "user"
-              : m.senderType === SenderType.ADMIN
-                ? "admin"
-                : "agent",
+          role: roleOf(m.senderType),
           content: m.content,
+          replyTo: replyToFrom(m),
           toolCalls: (m.metadata?.toolCalls as ClientToolCall[] | undefined) ?? undefined,
           // Replay a stored voice note after reload via the owner-scoped
           // signed-url endpoint.
@@ -158,6 +169,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
             role: "admin" as const,
             content: m.content,
             media: mediaFrom(m.id, m.metadata),
+            replyTo: replyToFrom(m),
           }));
         return newAdminMessages.length ? [...prev, ...newAdminMessages] : prev;
       });
