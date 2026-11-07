@@ -72,7 +72,8 @@ export interface VoiceMessageMetadata {
   transcript: string;
   /** Model that produced (STT) or spoke (TTS) this audio. */
   model: string;
-  status: "transcribed" | "failed" | "spoken";
+  /** "transcribing" = a staff voice note whose transcript is still on its way. */
+  status: "transcribed" | "failed" | "spoken" | "transcribing";
 }
 
 /**

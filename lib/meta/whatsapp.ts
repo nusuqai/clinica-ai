@@ -386,11 +386,19 @@ export type OutboundMediaKind = "image" | "video" | "audio" | "document";
  */
 export async function sendMediaMessage(
   recipient: WhatsAppRecipient,
-  media: { kind: OutboundMediaKind; mediaId: string; caption?: string; filename?: string },
+  media: {
+    kind: OutboundMediaKind;
+    mediaId: string;
+    caption?: string;
+    filename?: string;
+    /** audio only: deliver as a voice note (requires OGG/Opus), not a file. */
+    voice?: boolean;
+  },
   creds: WhatsAppCredentials,
   options?: SendOptions
 ): Promise<string | null> {
   const payload: Record<string, unknown> = { id: media.mediaId };
+  if (media.kind === "audio" && media.voice) payload.voice = true;
   if (media.caption && media.kind !== "audio") payload.caption = media.caption;
   if (media.kind === "document" && media.filename) payload.filename = media.filename;
   const res = await sendMessage(creds, {
