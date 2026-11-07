@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, X, Send, Loader2, Bot, Mic, Square, Trash2 } from "lucide-react";
+import { MessageCircle, X, Send, Headset, Mic, Square, Trash2 } from "lucide-react";
 import ChatMessageView from "./chat-message";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { getWebChatMessages, getGuestChatMessages } from "@/server/actions/chat";
 import { useRealtimeMessages } from "@/hooks/use-realtime-messages";
 import { SenderType } from "@prisma/client";
@@ -303,12 +305,12 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
   ) {
     if (guest && data.conversationId) rememberConversationId(data.conversationId);
 
+    // The assistant didn't answer (staff took over, AI off, no agent on duty, a
+    // cap was reached…). Stay silent, exactly like WhatsApp: drop the pending
+    // bubble rather than show text that was never stored. Staff see the
+    // escalation, and their reply arrives over realtime.
     if (data.handoff) {
-      patchAgent(agentId, (m) => ({
-        ...m,
-        streaming: false,
-        content: "تم تحويل محادثتك إلى أحد الموظفين، سيتم الرد عليك قريباً.",
-      }));
+      setMessages((prev) => prev.filter((m) => m.id !== agentId));
       return;
     }
 
@@ -326,29 +328,30 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
   return (
     <>
       {/* Launcher */}
-      <button
+      <Button
+        size="icon"
         onClick={() => setOpen((v) => !v)}
-        aria-label="المساعد الذكي"
-        className="fixed bottom-20 end-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-all hover:bg-primary/90"
+        aria-label="خدمة العملاء"
+        className="fixed bottom-20 end-6 z-40 h-14 w-14 rounded-full shadow-lg transition-all [&_svg]:size-6"
       >
-        {open ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
-      </button>
+        {open ? <X /> : <MessageCircle />}
+      </Button>
 
       {/* Panel */}
       {open && (
         <div className="fixed bottom-44 end-6 z-40 flex h-[min(44rem,calc(90vh-8rem))] w-[min(36rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl">
           <div className="flex flex-shrink-0 items-center gap-2 bg-primary px-4 py-3 text-white">
-            <Bot className="h-5 w-5" />
+            <Headset className="h-5 w-5" />
             <div>
-              <p className="font-heading text-sm font-semibold">المساعد الذكي</p>
-              <p className="text-[11px] text-white/70">يساعدك على إنجاز مهامك</p>
+              <p className="font-heading text-sm font-semibold">خدمة العملاء</p>
+              <p className="text-[11px] text-white/70">نسعد بخدمتك</p>
             </div>
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto px-3 py-4" dir="rtl">
             {messages.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
-                <Bot className="h-10 w-10 opacity-30" />
+                <Headset className="h-10 w-10 opacity-30" />
                 <p className="font-sans text-xs">
                   مرحباً! كيف يمكنني مساعدتك اليوم؟ يمكنني حجز المواعيد والإجابة عن استفساراتك.
                 </p>
@@ -362,7 +365,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
 
           <div className="flex-shrink-0 border-t border-border px-3 py-3">
             <div className="flex items-end gap-2">
-              <textarea
+              <Textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -376,51 +379,49 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
                 rows={1}
                 disabled={streaming || recording}
                 dir="rtl"
-                className="max-h-40 flex-1 resize-none overflow-y-auto rounded-xl border border-border bg-card px-3 py-2 font-sans text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+                className="max-h-40 min-h-10 flex-1 overflow-y-auto bg-card leading-relaxed"
               />
               {/* Record voice when there's nothing typed; send when there is. */}
               {recording ? (
                 <>
-                  <button
+                  <Button
+                    variant="outline"
+                    size="icon"
                     onClick={cancelRecording}
                     aria-label="إلغاء التسجيل"
-                    className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-muted"
+                    className="h-10 w-10 shrink-0 rounded-xl bg-card text-muted-foreground"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                  <button
+                    <Trash2 />
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="icon"
                     onClick={stopRecording}
                     aria-label="إرسال التسجيل"
-                    className="flex h-10 w-10 flex-shrink-0 animate-pulse items-center justify-center rounded-xl bg-red-500 text-white transition-colors hover:bg-red-600"
+                    className="h-10 w-10 shrink-0 animate-pulse rounded-xl"
                   >
-                    <Square className="h-4 w-4" />
-                  </button>
+                    <Square />
+                  </Button>
                 </>
               ) : input.trim() ? (
-                <button
+                <Button
+                  size="icon"
                   onClick={send}
-                  disabled={streaming}
-                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+                  loading={streaming}
+                  className="h-10 w-10 shrink-0 rounded-xl"
                 >
-                  {streaming ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </button>
+                  {!streaming && <Send />}
+                </Button>
               ) : (
-                <button
+                <Button
+                  size="icon"
                   onClick={startRecording}
-                  disabled={streaming}
+                  loading={streaming}
                   aria-label="تسجيل رسالة صوتية"
-                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+                  className="h-10 w-10 shrink-0 rounded-xl"
                 >
-                  {streaming ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Mic className="h-4 w-4" />
-                  )}
-                </button>
+                  {!streaming && <Mic />}
+                </Button>
               )}
             </div>
           </div>

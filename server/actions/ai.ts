@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { Role } from "@prisma/client";
-import { getClinicContext } from "@/lib/auth";
+import { can, getClinicContext } from "@/lib/auth";
 import {
   setClinicAiEnabled,
   setClinicVoiceReplyEnabled,
@@ -24,7 +24,7 @@ type ActionError = {
 async function requireAdminClinic() {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false as const, reason: "unauthorized" as const };
-  if (ctx.role !== Role.ADMIN) return { ok: false as const, reason: "forbidden" as const };
+  if (!can(ctx, "agent")) return { ok: false as const, reason: "forbidden" as const };
   return { ok: true as const, ctx };
 }
 

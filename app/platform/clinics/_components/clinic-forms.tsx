@@ -2,65 +2,102 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { createClinic, updateClinic } from "@/server/actions/clinics";
 import { clinicHost, clinicOrigin } from "@/lib/clinic-url";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Card } from "@/components/ui/card";
+import { toFormData } from "@/lib/form-data";
+import {
+  createClinicSchema,
+  updateClinicSchema,
+  type CreateClinicValues,
+  type UpdateClinicValues,
+} from "@/lib/validations/platform";
 
-const inputCls =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground";
+const EMPTY_CLINIC: CreateClinicValues = {
+  name: "",
+  slug: "",
+  adminName: "",
+  adminEmail: "",
+  adminPhone: "",
+  logoUrl: "",
+  primaryColor: "",
+  accentColor: "",
+};
 
 export function CreateClinicForm() {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  const form = useForm<CreateClinicValues>({
+    resolver: zodResolver(createClinicSchema),
+    defaultValues: EMPTY_CLINIC,
+    mode: "onTouched",
+  });
+
+  const handleSubmit = form.handleSubmit((values) => {
+    start(async () => {
+      setError(null);
+      const res = await createClinic(toFormData(values));
+      if (res && "error" in res && res.error) setError(res.error);
+      else {
+        form.reset(EMPTY_CLINIC);
+        router.refresh();
+      }
+    });
+  });
+
+  const { control } = form;
   return (
-    <form
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const fd = new FormData(e.currentTarget);
-        start(async () => {
-          setError(null);
-          const res = await createClinic(fd);
-          if (res && "error" in res && res.error) setError(res.error);
-          else {
-            (e.target as HTMLFormElement).reset();
-            router.refresh();
-          }
-        });
-      }}
-    >
-      <input name="name" placeholder="اسم العيادة" required className={inputCls} />
-      <input name="slug" placeholder="المعرّف (اختياري)" className={inputCls} dir="ltr" />
+    <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={handleSubmit} noValidate>
+      <FormField control={control} name="name" placeholder="اسم العيادة" required />
+      <FormField control={control} name="slug" placeholder="المعرّف (اختياري)" dir="ltr" />
 
       {/* Managing admin — the account set up as this clinic's ADMIN */}
-      <input name="adminName" placeholder="اسم مدير العيادة" required className={inputCls} />
-      <input
-        name="adminEmail"
+      <FormField control={control} name="adminName" placeholder="اسم مدير العيادة" required />
+      <FormField
+        control={control}
         type="email"
+        name="adminEmail"
         placeholder="بريد مدير العيادة"
         required
-        className={inputCls}
+      />
+      <FormField
+        control={control}
+        name="adminPhone"
+        placeholder="هاتف المدير (اختياري)"
         dir="ltr"
       />
-      <input name="adminPhone" placeholder="هاتف المدير (اختياري)" className={inputCls} dir="ltr" />
 
-      <input name="logoUrl" placeholder="رابط الشعار (اختياري)" className={inputCls} dir="ltr" />
-      <div className="flex gap-3">
-        <input name="primaryColor" placeholder="#0B1F3A" className={inputCls} dir="ltr" />
-        <input name="accentColor" placeholder="#00C2CB" className={inputCls} dir="ltr" />
+      <FormField control={control} name="logoUrl" placeholder="رابط الشعار (اختياري)" dir="ltr" />
+      <div className="flex items-start gap-3">
+        <FormField
+          control={control}
+          name="primaryColor"
+          placeholder="#0B1F3A"
+          dir="ltr"
+          className="flex-1"
+        />
+        <FormField
+          control={control}
+          name="accentColor"
+          placeholder="#00C2CB"
+          dir="ltr"
+          className="flex-1"
+        />
       </div>
       <p className="text-xs text-muted-foreground sm:col-span-2">
         سيتم إنشاء حساب لمدير العيادة (أو استخدام حسابه الحالي) وتعيينه مسؤولاً عن هذه العيادة.
       </p>
       <div className="flex items-center gap-3 sm:col-span-2">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-        >
+        <Button type="submit" loading={pending}>
           إنشاء
-        </button>
+        </Button>
         {error && <span className="text-xs text-red-600">{error}</span>}
       </div>
     </form>
@@ -86,6 +123,18 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  const form = useForm<UpdateClinicValues>({
+    resolver: zodResolver(updateClinicSchema),
+    defaultValues: {
+      name: clinic.name,
+      logoUrl: clinic.logoUrl ?? "",
+      primaryColor: clinic.primaryColor ?? "",
+      accentColor: clinic.accentColor ?? "",
+    },
+    mode: "onTouched",
+  });
+  const { control } = form;
+
   const save = (fd: FormData) =>
     start(async () => {
       setError(null);
@@ -99,7 +148,7 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
     });
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card className="p-5">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <p className="font-heading font-semibold text-foreground">{clinic.name}</p>
@@ -113,20 +162,18 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
             {clinicHost(clinic.slug)}
           </a>
         </div>
-        <button
-          disabled={pending}
-          onClick={() => {
-            const fd = new FormData();
-            fd.set("isActive", clinic.isActive ? "false" : "true");
-            save(fd);
-          }}
-          className={[
-            "rounded-full px-3 py-1 text-xs font-medium",
-            clinic.isActive ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500",
-          ].join(" ")}
-        >
-          {clinic.isActive ? "نشطة" : "معطّلة"}
-        </button>
+        <Badge asChild variant={clinic.isActive ? "success" : "neutral"} className="px-3 py-1">
+          <button
+            disabled={pending}
+            onClick={() => {
+              const fd = new FormData();
+              fd.set("isActive", clinic.isActive ? "false" : "true");
+              save(fd);
+            }}
+          >
+            {clinic.isActive ? "نشطة" : "معطّلة"}
+          </button>
+        </Badge>
       </div>
 
       <p className="mb-3 text-xs text-muted-foreground">
@@ -135,52 +182,35 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
 
       <form
         className="grid grid-cols-1 gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          save(new FormData(e.currentTarget));
-        }}
+        onSubmit={form.handleSubmit((values) => save(toFormData(values)))}
+        noValidate
       >
-        <input
-          name="name"
-          defaultValue={clinic.name}
-          className={inputCls}
-          placeholder="اسم العيادة"
-        />
-        <input
-          name="logoUrl"
-          defaultValue={clinic.logoUrl ?? ""}
-          className={inputCls}
-          dir="ltr"
-          placeholder="رابط الشعار"
-        />
-        <div className="flex gap-2">
-          <input
+        <FormField control={control} name="name" placeholder="اسم العيادة" />
+        <FormField control={control} name="logoUrl" dir="ltr" placeholder="رابط الشعار" />
+        <div className="flex items-start gap-2">
+          <FormField
+            control={control}
             name="primaryColor"
-            defaultValue={clinic.primaryColor ?? ""}
-            className={inputCls}
             dir="ltr"
             placeholder="اللون الأساسي"
+            className="flex-1"
           />
-          <input
+          <FormField
+            control={control}
             name="accentColor"
-            defaultValue={clinic.accentColor ?? ""}
-            className={inputCls}
             dir="ltr"
             placeholder="لون التمييز"
+            className="flex-1"
           />
         </div>
         <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
-          >
+          <Button type="submit" variant="outline" size="sm" loading={pending}>
             حفظ
-          </button>
+          </Button>
           {saved && <span className="text-xs text-emerald-600">تم الحفظ</span>}
           {error && <span className="text-xs text-red-600">{error}</span>}
         </div>
       </form>
-    </div>
+    </Card>
   );
 }

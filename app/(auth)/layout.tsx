@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getHostClinic } from "@/lib/auth";
+import { ClinicLogo } from "@/components/general/clinic-logo";
 
 // One auth shell for every host: the branding panel carries the clinic when the
 // request is for a clinic's subdomain, and the platform otherwise.
@@ -28,12 +29,7 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
         {clinic ? (
           <Link href="/" className="relative z-10 flex items-center gap-3">
             {clinic.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={clinic.logoUrl}
-                alt={clinic.name}
-                className="h-12 w-12 rounded-xl object-cover"
-              />
+              <ClinicLogo src={clinic.logoUrl} name={clinic.name} className="h-12 w-12" />
             ) : null}
             <span className="font-heading text-2xl font-bold text-white">{clinic.name}</span>
           </Link>

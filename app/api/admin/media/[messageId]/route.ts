@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getClinicContext } from "@/lib/auth";
+import { can, getClinicContext } from "@/lib/auth";
 import { getPatientMediaSignedUrl } from "@/lib/supabase/storage";
 import type { AgentMessageMetadata } from "@/agent/types";
 
@@ -23,7 +23,7 @@ export async function GET(
 
   const ctx = await getClinicContext();
   if (!ctx) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (ctx.role !== Role.ADMIN && ctx.role !== Role.DOCTOR) {
+  if (!can(ctx, "messages") && ctx.role !== Role.DOCTOR) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

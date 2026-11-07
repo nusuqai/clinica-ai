@@ -7,9 +7,17 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getHostClinic, redirectToUserClinic, roleHome } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { findAuthUserIdByEmail } from "@/lib/supabase/auth-users";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/secret-box";
 import { sendPasswordReset, sendClinicSignupOtp } from "@/lib/email/send-auth-email";
 import { otpCooldownRemaining, recordOtpSent } from "@/server/services/otpThrottle";
+import {
+  firstIssue,
+  forgotPasswordSchema,
+  registerSchema,
+  setPasswordSchema,
+  verifyOtpSchema,
+} from "@/lib/validations/auth";
 
 // Ensure the identity Profile row exists. It's normally created by the Supabase
 // auth DB trigger, but that can lag a beat right after sign-up, so we retry once
@@ -67,12 +75,13 @@ async function clearSignupPassword(): Promise<void> {
   }
 }
 
-// Find an existing auth user by email (case-insensitive). Supabase has no
-// direct getUserByEmail on this client version, so we scan — fine at our scale.
+// Find an existing auth user by email (case-insensitive): an indexed lookup on
+// auth.users for the id, then the full user (confirmation state, metadata).
 async function findAuthUserByEmail(email: string) {
-  const admin = createAdminClient();
-  const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  return data?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase()) ?? null;
+  const id = await findAuthUserIdByEmail(email);
+  if (!id) return null;
+  const { data } = await createAdminClient().auth.admin.getUserById(id);
+  return data?.user ?? null;
 }
 
 // ─── Shared auth ──────────────────────────────────────────────────────────────
@@ -208,13 +217,9 @@ export async function startClinicSignup(formData: FormData) {
   const clinic = await getHostClinic();
   if (!clinic) return { error: "العيادة غير موجودة." };
 
-  const email = (formData.get("email") as string)?.trim();
-  const password = formData.get("password") as string;
-  const fullName = (formData.get("fullName") as string)?.trim();
-  const phone = (formData.get("phone") as string)?.trim() || null;
-  if (!email || !password || !fullName) {
-    return { error: "الرجاء تعبئة جميع الحقول." };
-  }
+  const parsed = registerSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: firstIssue(parsed.error) };
+  const { email, password, fullName, phone } = parsed.data;
 
   // Is this email already registered?
   const existing = await findAuthUserByEmail(email);
@@ -269,9 +274,9 @@ export async function verifyClinicSignup(formData: FormData) {
   const clinic = await getHostClinic();
   if (!clinic) return { error: "العيادة غير موجودة." };
 
-  const email = (formData.get("email") as string)?.trim();
-  const token = (formData.get("token") as string)?.trim();
-  if (!email || !token) return { error: "أدخل الرمز المرسل إلى بريدك." };
+  const parsed = verifyOtpSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: firstIssue(parsed.error) };
+  const { email, token } = parsed.data;
 
   const { data, error } = await supabase.auth.verifyOtp({
     email,
@@ -353,13 +358,17 @@ export async function signOut() {
 // Send a branded password-reset email. Always returns success to avoid leaking
 // which addresses have accounts (account enumeration).
 export async function forgotPassword(formData: FormData) {
-  const email = (formData.get("email") as string)?.trim();
-  if (!email) return { error: "أدخل بريدك الإلكتروني." };
+  const parsed = forgotPasswordSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: firstIssue(parsed.error) };
+  const { email } = parsed.data;
 
   try {
     // generateLink no-ops harmlessly for unknown emails; we ignore the result
     // either way so the response can't be used to enumerate accounts.
-    await sendPasswordReset({ email, name: null });
+    // The reset link opens on the host the request came from: the clinic's own
+    // subdomain when asked for there, the root domain otherwise.
+    const clinic = await getHostClinic();
+    await sendPasswordReset({ email, name: null, clinicSlug: clinic?.slug });
   } catch {
     // Swallow — never reveal whether the email exists.
   }
@@ -371,15 +380,9 @@ export async function forgotPassword(formData: FormData) {
 // "reset password" recovery flow.
 export async function setNewPassword(formData: FormData) {
   const supabase = await createClient();
-  const password = formData.get("password") as string;
-  const confirm = formData.get("confirmPassword") as string;
-
-  if (!password || password.length < 8) {
-    return { error: "كلمة المرور يجب أن تكون 8 أحرف على الأقل." };
-  }
-  if (password !== confirm) {
-    return { error: "كلمتا المرور غير متطابقتين." };
-  }
+  const parsed = setPasswordSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: firstIssue(parsed.error) };
+  const { password } = parsed.data;
 
   const {
     data: { user },

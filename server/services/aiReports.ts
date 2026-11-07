@@ -52,6 +52,9 @@ export interface ClinicAiUsageReport {
   byDay: LabelValue[];
   /** WhatsApp vs. the website. */
   byChannel: LabelValue[];
+  /** Units per AI employee — who answered most. Replies from before AI
+   *  employees existed, or by a since-deleted one, are left out. */
+  byAgent: LabelValue[];
 }
 
 const CHANNEL_LABEL: Record<Channel, string> = {
@@ -66,7 +69,7 @@ export async function getClinicAiUsage(
   const since = new Date(Date.now() - windowDays * DAY_MS);
   const status = await getClinicAiStatus(clinicId);
 
-  const [totals, sessionRows, byDayRows, byChannelRows] = await Promise.all([
+  const [totals, sessionRows, byDayRows, byChannelRows, byAgentRows] = await Promise.all([
     prisma.aiUsageLog.aggregate({
       where: { clinicId, createdAt: { gte: since } },
       _sum: { unitsCharged: true },
@@ -101,6 +104,15 @@ export async function getClinicAiUsage(
         AND u."createdAt" >= ${since}
         AND u."unitsCharged" > 0
       GROUP BY c."channel"`,
+    prisma.$queryRaw<{ name: string; units: number }[]>`
+      SELECT a."name" AS name, SUM(u."unitsCharged")::int AS units
+      FROM "ai_usage_logs" u
+      JOIN "ai_agents" a ON a."id" = u."aiAgentId"
+      WHERE u."clinicId" = ${clinicId}::uuid
+        AND u."createdAt" >= ${since}
+        AND u."unitsCharged" > 0
+      GROUP BY a."id", a."name"
+      ORDER BY units DESC`,
   ]);
 
   const unitsUsed = totals._sum.unitsCharged ?? 0;
@@ -131,6 +143,7 @@ export async function getClinicAiUsage(
     byChannel: byChannelRows
       .map((r) => ({ label: CHANNEL_LABEL[r.channel] ?? r.channel, value: r.units }))
       .sort((a, b) => b.value - a.value),
+    byAgent: byAgentRows.map((r) => ({ label: r.name, value: r.units })),
   };
 }
 

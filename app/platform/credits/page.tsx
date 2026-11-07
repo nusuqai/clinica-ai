@@ -1,6 +1,7 @@
 import { requirePlatformAdmin } from "@/lib/auth";
 import { getPlatformAiOverview } from "@/server/services/aiReports";
 import CreditManager from "./_components/credit-manager";
+import { Card } from "@/components/ui/card";
 
 const usd = (n: number) =>
   `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
@@ -42,18 +43,18 @@ export default async function PlatformCreditsPage() {
 
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-2xl border border-border bg-card p-5">
+          <Card key={s.label} className="p-5">
             <p className="font-heading text-2xl font-bold text-foreground" dir="ltr">
               {s.value}
             </p>
             <p className="mt-1 font-sans text-sm text-muted-foreground">{s.label}</p>
-          </div>
+          </Card>
         ))}
       </div>
 
       <div className="space-y-4">
         {overview.clinics.map((c) => (
-          <div key={c.clinicId} className="rounded-2xl border border-border bg-card p-5">
+          <Card key={c.clinicId} className="p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-heading font-semibold text-foreground">{c.name}</p>
@@ -109,7 +110,7 @@ export default async function PlatformCreditsPage() {
               currentMarkup={c.markup}
               currentLowUnitsThreshold={c.lowUnitsThreshold}
             />
-          </div>
+          </Card>
         ))}
         {overview.clinics.length === 0 && (
           <p className="font-sans text-sm text-muted-foreground">لا توجد عيادات.</p>

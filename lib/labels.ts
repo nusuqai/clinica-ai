@@ -14,6 +14,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   [Role.PATIENT]: "مريض",
   [Role.DOCTOR]: "طبيب",
   [Role.ADMIN]: "مشرف",
+  [Role.STAFF]: "موظف",
 };
 
 export const PROCEDURE_KIND_LABELS: Record<ProcedureKind, string> = {

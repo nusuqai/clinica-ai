@@ -1,11 +1,11 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import type { AdminAppointment } from "@/server/services/appointments";
 import { getAllowedTransitions } from "@/lib/appointment-transitions";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { Alert } from "@/components/ui/alert";
 
 interface AppointmentCardProps {
   appointment: AdminAppointment;
@@ -14,20 +14,17 @@ interface AppointmentCardProps {
 
 export default function AppointmentCard({ appointment, onOpenDetails }: AppointmentCardProps) {
   const canMove = getAllowedTransitions(appointment.status).length > 0;
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: appointment.id,
     disabled: !canMove,
   });
 
+  // The card stays put while dragging (dimmed); the board's DragOverlay renders
+  // the moving copy, so it isn't clipped by the column's scroll container.
   return (
     <div
       ref={setNodeRef}
-      style={{
-        transform: CSS.Translate.toString(transform),
-        touchAction: "none",
-        position: "relative",
-        zIndex: isDragging ? 10 : "auto",
-      }}
+      style={{ touchAction: "none" }}
       // A click (no drag — the sensor needs 6px of movement to start dragging)
       // opens the details popup.
       onClick={() => {
@@ -41,6 +38,29 @@ export default function AppointmentCard({ appointment, onOpenDetails }: Appointm
       {...listeners}
       {...attributes}
     >
+      <AppointmentCardContent appointment={appointment} canMove={canMove} />
+    </div>
+  );
+}
+
+/** The dragged copy shown in the board's DragOverlay. */
+export function AppointmentCardOverlay({ appointment }: { appointment: AdminAppointment }) {
+  return (
+    <div className="cursor-grabbing select-none rounded-xl border border-border bg-card p-3 font-sans shadow-lg">
+      <AppointmentCardContent appointment={appointment} canMove />
+    </div>
+  );
+}
+
+function AppointmentCardContent({
+  appointment,
+  canMove,
+}: {
+  appointment: AdminAppointment;
+  canMove: boolean;
+}) {
+  return (
+    <>
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-medium text-foreground">{appointment.patient.fullName}</p>
         {canMove && <GripVertical className="h-4 w-4 flex-shrink-0 text-muted-foreground" />}
@@ -68,13 +88,14 @@ export default function AppointmentCard({ appointment, onOpenDetails }: Appointm
       ) : null}
 
       {appointment.cancellationReason && (
-        <p
-          className="mt-2 line-clamp-2 rounded-lg bg-red-50 px-2 py-1 text-xs text-red-600"
+        <Alert
+          variant="destructive"
+          className="mt-2 line-clamp-2 block rounded-lg border-transparent px-2 py-1 text-xs text-red-600"
           title={appointment.cancellationReason}
         >
           {appointment.cancellationReason}
-        </p>
+        </Alert>
       )}
-    </div>
+    </>
   );
 }

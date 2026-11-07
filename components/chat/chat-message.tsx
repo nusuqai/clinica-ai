@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Headset, FileText, ExternalLink } from "lucide-react";
+import { Headset, FileText, ExternalLink } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 // ToolCallCard is temporarily unused — tool cards are hidden in the web chat
@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 // import { ToolCallCard } from "./tool-cards";
 import { ChatImage } from "@/components/ui/chat-image";
 import type { ChatMessage } from "./types";
+import { Button } from "@/components/ui/button";
 
 /** Renders a media attachment (image/video/document) sent in the chat. */
 function MediaAttachment({ media }: { media: NonNullable<ChatMessage["media"]> }) {
@@ -32,16 +33,17 @@ function MediaAttachment({ media }: { media: NonNullable<ChatMessage["media"]> }
     );
   }
   return (
-    <a
-      href={media.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/50 px-3 py-2 text-xs hover:bg-muted"
+    <Button
+      asChild
+      variant="outline"
+      className="h-auto gap-2 rounded-lg bg-background/50 px-3 py-2 text-xs font-normal hover:bg-muted"
     >
-      <FileText className="h-4 w-4 flex-shrink-0" />
-      <span className="max-w-[180px] truncate">{media.filename ?? "ملف مرفق"}</span>
-      <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
-    </a>
+      <a href={media.url} target="_blank" rel="noopener noreferrer">
+        <FileText className="h-4 w-4 flex-shrink-0" />
+        <span className="max-w-[180px] truncate">{media.filename ?? "ملف مرفق"}</span>
+        <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
+      </a>
+    </Button>
   );
 }
 
@@ -67,17 +69,10 @@ export default function ChatMessageView({ message }: { message: ChatMessage }) {
 
   return (
     <div className="flex justify-start gap-2">
-      <div
-        className={[
-          "mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full",
-          isAdmin ? "bg-primary/15" : "bg-accent/15",
-        ].join(" ")}
-      >
-        {isAdmin ? (
-          <Headset className="h-4 w-4 text-primary" />
-        ) : (
-          <Bot className="h-4 w-4 text-accent" />
-        )}
+      {/* One customer-support avatar for both staff and assistant replies, so
+          the conversation reads as a single support desk. */}
+      <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary/15">
+        <Headset className="h-4 w-4 text-primary" />
       </div>
       <div className="max-w-[85%] space-y-1">
         {isAdmin && <p className="text-[10px] font-medium text-primary">أحد الموظفين</p>}

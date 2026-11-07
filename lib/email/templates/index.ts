@@ -112,6 +112,42 @@ export function clinicCreatedInviteEmail(args: {
   };
 }
 
+// 4a) Team invite — a clinic admin added this person to the clinic's team (as
+// another admin or under a custom role). A brand-new account sets its password
+// first; an existing account just signs in.
+export function teamInviteEmail(args: {
+  name: string | null;
+  clinicName: string;
+  roleName: string;
+  actionUrl: string;
+  isNewAccount: boolean;
+}): BuiltEmail {
+  const greeting = args.name ? `مرحباً ${esc(args.name)}` : "مرحباً";
+  return {
+    subject: `تمت إضافتك إلى فريق «${args.clinicName}» — ${BRAND.name}`,
+    html: renderEmail({
+      preheader: `أصبحت عضواً في فريق عمل ${args.clinicName}.`,
+      clinicName: args.clinicName,
+      heading: `${greeting} 👋`,
+      bodyHtml:
+        p(
+          `تمت إضافتك إلى فريق عمل عيادة <strong>«${esc(args.clinicName)}»</strong> بدور <strong>«${esc(args.roleName)}»</strong>.`
+        ) +
+        p(
+          args.isNewAccount
+            ? "اضغط الزر أدناه لتعيين كلمة المرور الخاصة بك، ثم سجّل الدخول إلى لوحة التحكم."
+            : "سجّل الدخول بحسابك الحالي للوصول إلى لوحة التحكم."
+        ) +
+        linkFallback(args.actionUrl),
+      cta: {
+        label: args.isNewAccount ? "تعيين كلمة المرور" : "تسجيل الدخول",
+        url: args.actionUrl,
+      },
+      ...(args.isNewAccount ? { footnote: LINK_EXPIRY_NOTE } : {}),
+    }),
+  };
+}
+
 // 4b) Web-account claim invite — a WhatsApp patient set an email and now needs to
 // set a password to enable website login.
 export function accountInviteEmail(args: {

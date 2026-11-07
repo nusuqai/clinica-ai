@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Bot, AlertTriangle, Mic, Image as ImageIcon, Timer } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Bot, AlertTriangle, Mic, Image as ImageIcon, Timer } from "lucide-react";
 import {
   toggleClinicAiAction,
   toggleClinicVoiceReplyAction,
@@ -9,9 +12,21 @@ import {
   toggleClinicImageAutoReplyAction,
   setClinicDebounceSecondsAction,
 } from "@/server/actions/ai";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Switch } from "@/components/ui/switch";
+import { Card } from "@/components/ui/card";
 
 const DEBOUNCE_MIN = 5;
 const DEBOUNCE_MAX = 120;
+
+const debounceSchema = z.object({
+  seconds: z.coerce
+    .number({ message: "أدخل عدد الثواني." })
+    .int("أدخل عدداً صحيحاً.")
+    .min(DEBOUNCE_MIN, `${DEBOUNCE_MIN} ثوانٍ على الأقل.`)
+    .max(DEBOUNCE_MAX, `${DEBOUNCE_MAX} ثانية كحد أقصى.`),
+});
 
 interface Props {
   initialEnabled: boolean;
@@ -60,8 +75,15 @@ export default function AiSettingsForm({
   const [imageAutoReply, setImageAutoReply] = useState(initialImageAutoReplyEnabled);
   const [imageAutoReplySaving, setImageAutoReplySaving] = useState(false);
 
-  const [debounce, setDebounce] = useState(String(initialDebounceSeconds));
-  const [debounceSaving, setDebounceSaving] = useState(false);
+  const debounceForm = useForm<
+    z.input<typeof debounceSchema>,
+    unknown,
+    z.output<typeof debounceSchema>
+  >({
+    resolver: zodResolver(debounceSchema),
+    defaultValues: { seconds: String(initialDebounceSeconds) },
+  });
+  const debounceSaving = debounceForm.formState.isSubmitting;
 
   const toggle = async () => {
     const next = !enabled;
@@ -138,14 +160,11 @@ export default function AiSettingsForm({
     }
   };
 
-  const saveDebounce = async () => {
-    const n = Number(debounce);
-    setDebounceSaving(true);
+  const saveDebounce = debounceForm.handleSubmit(async ({ seconds }) => {
     setMessage(null);
-    const res = await setClinicDebounceSecondsAction(n);
-    setDebounceSaving(false);
+    const res = await setClinicDebounceSecondsAction(seconds);
     if (res.ok) {
-      setDebounce(String(res.seconds));
+      debounceForm.reset({ seconds: String(res.seconds) });
       setMessage({ ok: true, text: `تم ضبط مهلة التجميع على ${res.seconds} ثانية.` });
     } else {
       setMessage({
@@ -153,7 +172,7 @@ export default function AiSettingsForm({
         text: res.message ?? "تعذّر تحديث الإعداد.",
       });
     }
-  };
+  });
 
   return (
     <div className="space-y-4">
@@ -177,7 +196,7 @@ export default function AiSettingsForm({
       )}
 
       {/* Global toggle */}
-      <div className="rounded-2xl border border-border bg-card p-5">
+      <Card className="p-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -190,35 +209,22 @@ export default function AiSettingsForm({
               </p>
             </div>
           </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
-            onClick={toggle}
+          <Switch
+            checked={enabled}
+            onCheckedChange={toggle}
             disabled={saving}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-              enabled ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            {saving ? (
-              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
-            ) : (
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  enabled ? "-translate-x-6" : "-translate-x-1"
-                }`}
-              />
-            )}
-          </button>
+            className="shrink-0"
+          />
         </div>
         {message && (
           <p className={`mt-3 text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
             {message.text}
           </p>
         )}
-      </div>
+      </Card>
 
       {/* Voice reply toggle */}
-      <div className="rounded-2xl border border-border bg-card p-5">
+      <Card className="p-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -232,30 +238,17 @@ export default function AiSettingsForm({
               </p>
             </div>
           </div>
-          <button
-            role="switch"
-            aria-checked={voiceEnabled}
-            onClick={toggleVoice}
+          <Switch
+            checked={voiceEnabled}
+            onCheckedChange={toggleVoice}
             disabled={voiceSaving || !enabled}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-              voiceEnabled ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            {voiceSaving ? (
-              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
-            ) : (
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  voiceEnabled ? "-translate-x-6" : "-translate-x-1"
-                }`}
-              />
-            )}
-          </button>
+            className="shrink-0"
+          />
         </div>
-      </div>
+      </Card>
 
       {/* Image analysis toggle */}
-      <div className="rounded-2xl border border-border bg-card p-5">
+      <Card className="p-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -269,25 +262,12 @@ export default function AiSettingsForm({
               </p>
             </div>
           </div>
-          <button
-            role="switch"
-            aria-checked={imageEnabled}
-            onClick={toggleImage}
+          <Switch
+            checked={imageEnabled}
+            onCheckedChange={toggleImage}
             disabled={imageSaving || !enabled}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-              imageEnabled ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            {imageSaving ? (
-              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
-            ) : (
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  imageEnabled ? "-translate-x-6" : "-translate-x-1"
-                }`}
-              />
-            )}
-          </button>
+            className="shrink-0"
+          />
         </div>
 
         {/* Sub-control: respond vs. extract-only. Only meaningful when analysis is on. */}
@@ -299,30 +279,17 @@ export default function AiSettingsForm({
               الروشتات صعبة القراءة) ويُحفظ لفريق الاستقبال مع تحويل المحادثة لموظف — دون رد آلي.
             </p>
           </div>
-          <button
-            role="switch"
-            aria-checked={imageAutoReply}
-            onClick={toggleImageAutoReply}
+          <Switch
+            checked={imageAutoReply}
+            onCheckedChange={toggleImageAutoReply}
             disabled={imageAutoReplySaving || !enabled || !imageEnabled}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-              imageAutoReply ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            {imageAutoReplySaving ? (
-              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-white" />
-            ) : (
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  imageAutoReply ? "-translate-x-6" : "-translate-x-1"
-                }`}
-              />
-            )}
-          </button>
+            className="shrink-0"
+          />
         </div>
-      </div>
+      </Card>
 
       {/* Message debounce window */}
-      <div className="rounded-2xl border border-border bg-card p-5">
+      <Card className="p-5">
         <div className="flex items-start gap-3">
           <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <Timer className="h-5 w-5" />
@@ -333,32 +300,27 @@ export default function AiSettingsForm({
               مدة الانتظار بعد آخر رسالة من العميل قبل أن يرد المساعد — تتيح له إنهاء كتابة رسائله
               المتتابعة فيرد عليها جميعاً مرة واحدة. ({DEBOUNCE_MIN}–{DEBOUNCE_MAX} ثانية)
             </p>
-            <div className="mt-3 flex items-center gap-2">
-              <input
+            <form onSubmit={saveDebounce} noValidate className="mt-3 flex items-start gap-2">
+              <FormField
+                control={debounceForm.control}
+                name="seconds"
                 type="number"
                 min={DEBOUNCE_MIN}
                 max={DEBOUNCE_MAX}
-                value={debounce}
-                onChange={(e) => setDebounce(e.target.value)}
                 disabled={debounceSaving}
-                className="w-24 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50"
+                className="w-24"
               />
-              <span className="text-sm text-muted-foreground">ثانية</span>
-              <button
-                onClick={saveDebounce}
-                disabled={debounceSaving || debounce === ""}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-              >
-                {debounceSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <span className="pt-2.5 text-sm text-muted-foreground">ثانية</span>
+              <Button type="submit" loading={debounceSaving} className="font-semibold">
                 حفظ
-              </button>
-            </div>
+              </Button>
+            </form>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Unit meter (read-only) */}
-      <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
+      <Card className="space-y-3 p-5">
         <p className="font-sans text-sm font-semibold text-foreground">رصيد الوحدات</p>
         <div className="flex items-end justify-between">
           <div>
@@ -379,7 +341,7 @@ export default function AiSettingsForm({
         <p className="border-t border-border pt-3 font-sans text-xs text-muted-foreground">
           تتم إضافة الوحدات من قِبل المنصة. للاستفسار أو إضافة وحدات، تواصل مع فريق المنصة.
         </p>
-      </div>
+      </Card>
     </div>
   );
 }

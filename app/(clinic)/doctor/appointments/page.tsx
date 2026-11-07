@@ -1,19 +1,23 @@
-import Link from "next/link";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { getDoctorByProfileId } from "@/server/services/doctors";
-import { getDoctorAppointments } from "@/server/services/appointments";
-import { mapRecordsByAppointment } from "@/server/services/treatments";
-import { AppointmentStatusBadge } from "@/components/admin/status-badge";
-import RecordFormModal from "@/components/medical/record-form-modal";
-import AppointmentActions from "./_components/appointment-actions";
 import type { AppointmentStatus } from "@prisma/client";
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/labels";
-import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { myAppointmentsPageAction } from "@/server/actions/doctor";
+import AppointmentsTable from "./_components/appointments-table";
+import { FilterBar } from "@/components/ui/filter-bar";
+import { Button } from "@/components/ui/button";
+import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
+import { Await } from "@/components/general/await";
+import {
+  PendingLink,
+  PendingNavigationProvider,
+  PendingSwap,
+} from "@/components/general/pending-navigation";
 
 interface PageProps {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; date?: string }>;
 }
 
 export default async function DoctorAppointmentsPage({ searchParams }: PageProps) {
@@ -21,182 +25,84 @@ export default async function DoctorAppointmentsPage({ searchParams }: PageProps
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
   if (!doctor) redirect(`/`);
 
-  const { status } = await searchParams;
+  const { status, q, date } = await searchParams;
   const filterStatus = Object.keys(APPOINTMENT_STATUS_LABELS).includes(status ?? "")
     ? (status as AppointmentStatus)
     : undefined;
 
-  const appointments = await getDoctorAppointments(doctor.id, {
-    status: filterStatus,
-  });
+  const filters = { status: filterStatus, patientQuery: q, date };
+  // Not awaited: the header, pills and filters render at once; the count and
+  // the table stream in behind Suspense fallbacks keyed by the filters.
+  const appointmentsPromise = myAppointmentsPageAction(filters, 1);
+  const filtersKey = JSON.stringify(filters);
+  const tableSkeleton = <TableSkeleton columns={6} rows={7} />;
 
-  // Which of these visits already have a clinical record — one query for the
-  // whole page rather than one per row.
-  const recordsByAppointment = await mapRecordsByAppointment(
-    appointments.map((a) => a.id),
-    ctx.clinic.id
-  );
+  // Status pills are links; keep the search + date when switching status.
+  const pillHref = (s?: string) => {
+    const params = new URLSearchParams();
+    if (s) params.set("status", s);
+    if (q) params.set("q", q);
+    if (date) params.set("date", date);
+    const qs = params.toString();
+    return qs ? `/doctor/appointments?${qs}` : "/doctor/appointments";
+  };
 
   return (
-    <div>
-      {/* Header */}
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">المواعيد</h1>
-          <p className="mt-1 font-sans text-sm text-muted-foreground">{appointments.length} موعد</p>
+    <PendingNavigationProvider>
+      <div>
+        {/* Header */}
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-heading text-2xl font-bold text-foreground">المواعيد</h1>
+            <div className="mt-1 font-sans text-sm text-muted-foreground">
+              <PendingSwap fallback={<Skeleton className="h-4 w-16" />}>
+                <Suspense key={filtersKey} fallback={<Skeleton className="h-4 w-16" />}>
+                  <Await promise={appointmentsPromise}>{(a) => `${a.total} موعد`}</Await>
+                </Suspense>
+              </PendingSwap>
+            </div>
+          </div>
         </div>
-      </div>
 
-      {/* Status filter pills */}
-      <div className="mb-6 flex flex-wrap gap-2">
-        <a
-          href={`/doctor/appointments`}
-          className={[
-            "rounded-full px-3 py-1.5 font-sans text-sm font-medium transition-colors",
-            !filterStatus
-              ? "bg-primary text-white"
-              : "bg-muted text-muted-foreground hover:bg-muted/70",
-          ].join(" ")}
-        >
-          الكل
-        </a>
-        {(Object.entries(APPOINTMENT_STATUS_LABELS) as [AppointmentStatus, string][]).map(
-          ([val, label]) => (
-            <a
-              key={val}
-              href={`/doctor/appointments?status=${val}`}
-              className={[
-                "rounded-full px-3 py-1.5 font-sans text-sm font-medium transition-colors",
-                filterStatus === val
-                  ? "bg-primary text-white"
-                  : "bg-muted text-muted-foreground hover:bg-muted/70",
-              ].join(" ")}
-            >
-              {label}
-            </a>
-          )
-        )}
-      </div>
-
-      {/* Table */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="overflow-x-auto">
-          <table className="w-full font-sans text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/40">
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">المريض</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">التاريخ</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">الوقت</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">الحالة</th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  ملاحظات المريض
-                </th>
-                <th className="px-4 py-3 text-start font-medium text-muted-foreground">
-                  الإجراءات
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {appointments.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-16 text-center text-muted-foreground">
-                    لا توجد مواعيد
-                  </td>
-                </tr>
-              )}
-              {appointments.map((appt) => {
-                return (
-                  <tr key={appt.id} className="align-top transition-colors hover:bg-muted/30">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                          <span className="text-xs font-bold text-primary">
-                            {appt.patient.fullName.charAt(0)}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="font-medium text-foreground">{appt.patient.fullName}</p>
-                          {appt.patient.phone && (
-                            <p className="text-xs text-muted-foreground" dir="ltr">
-                              {appt.patient.phone}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {appt.slot
-                        ? formatSlotDate(appt.slot.date)
-                        : appt.bookingDate
-                          ? formatSlotDate(appt.bookingDate)
-                          : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground" dir="ltr">
-                      {appt.slot ? (
-                        <>
-                          {formatSlotTime(appt.slot.startTime)}
-                          {" – "}
-                          {formatSlotTime(appt.slot.endTime)}
-                        </>
-                      ) : appt.orderNumber != null ? (
-                        <span dir="rtl">دور رقم {appt.orderNumber}</span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <AppointmentStatusBadge status={appt.status} />
-                      {appt.cancellationReason && (
-                        <p
-                          className="mt-1 max-w-[120px] truncate text-xs text-muted-foreground"
-                          title={appt.cancellationReason}
-                        >
-                          {appt.cancellationReason}
-                        </p>
-                      )}
-                    </td>
-                    <td className="max-w-[160px] px-4 py-3 text-muted-foreground">
-                      <p className="truncate text-xs" title={appt.patientNotes ?? ""}>
-                        {appt.patientNotes || "—"}
-                      </p>
-                      {appt.doctorNotes && (
-                        <p
-                          className="mt-0.5 truncate text-xs text-primary"
-                          title={appt.doctorNotes}
-                        >
-                          ✍ {appt.doctorNotes}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="space-y-1.5">
-                        <AppointmentActions
-                          appointmentId={appt.id}
-                          currentStatus={appt.status}
-                          currentNotes={appt.doctorNotes}
-                        />
-                        <RecordFormModal
-                          appointmentId={appt.id}
-                          patientName={appt.patient.fullName}
-                          defaultVisitDate={appt.slot?.date ?? appt.bookingDate}
-                          hasRecord={recordsByAppointment.has(appt.id)}
-                        />
-                        <Link
-                          href={`/doctor/appointments/${appt.id}`}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-                        >
-                          <ArrowLeft className="h-3.5 w-3.5" />
-                          التفاصيل
-                        </Link>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        {/* Status filter pills — client-side navigations, so the table's
+            skeleton shows the moment one is clicked. */}
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Button
+            asChild
+            variant={!filterStatus ? "default" : "secondary"}
+            className="h-auto rounded-full px-3 py-1.5"
+          >
+            <PendingLink href={pillHref()}>الكل</PendingLink>
+          </Button>
+          {(Object.entries(APPOINTMENT_STATUS_LABELS) as [AppointmentStatus, string][]).map(
+            ([val, label]) => (
+              <Button
+                asChild
+                key={val}
+                variant={filterStatus === val ? "default" : "secondary"}
+                className="h-auto rounded-full px-3 py-1.5"
+              >
+                <PendingLink href={pillHref(val)}>{label}</PendingLink>
+              </Button>
+            )
+          )}
         </div>
+
+        <FilterBar
+          fields={[
+            { type: "search", param: "q", placeholder: "بحث باسم المريض أو رقم الهاتف..." },
+            { type: "date", param: "date" },
+          ]}
+        />
+
+        <PendingSwap fallback={tableSkeleton}>
+          <Suspense key={filtersKey} fallback={tableSkeleton}>
+            <Await promise={appointmentsPromise}>
+              {(appointments) => <AppointmentsTable initial={appointments} filters={filters} />}
+            </Await>
+          </Suspense>
+        </PendingSwap>
       </div>
-    </div>
+    </PendingNavigationProvider>
   );
 }

@@ -34,6 +34,7 @@ import {
   markAgentDelivery,
   type SessionMessage,
 } from "./agentSession";
+import { resolveOnDutyAgent, agentCapReached } from "./aiAgents";
 import {
   armDebounce,
   markMessagesProcessed,
@@ -142,6 +143,8 @@ export async function chargeReply(args: {
   sessionId: string | null;
   messageId: string | null;
   usage: TokenUsage;
+  /** The AI employee that wrote the reply — the unit is attributed to it. */
+  aiAgentId?: string | null;
 }): Promise<void> {
   try {
     const alert = await chargeUsage(args);
@@ -304,7 +307,16 @@ async function chargeExtractionSafe(args: {
  *  the agent answered and the caller persists/delivers (web returns it in the
  *  HTTP response; push channels hand it to an adapter). */
 export type AgentReply =
-  | { kind: "skipped"; reason: "handoff" | "clinic_disabled" | "insufficient_units" }
+  | {
+      kind: "skipped";
+      reason:
+        | "handoff"
+        | "clinic_disabled"
+        | "insufficient_units"
+        | "no_agent_on_duty"
+        | "agent_daily_cap_reached"
+        | "conversation_daily_cap_reached";
+    }
   | {
       kind: "reply";
       text: string;
@@ -312,6 +324,9 @@ export type AgentReply =
       usage: TokenUsage | null;
       /** Clinic opted into spoken replies — the deliver step may synthesize TTS. */
       voiceReplyEnabled: boolean;
+      /** The AI employee that answered — the caller stamps it on the persisted
+       *  reply. */
+      aiAgentId: string;
     };
 
 /**
@@ -340,10 +355,26 @@ export async function generateAgentReply(ctx: AgentContext): Promise<AgentReply>
     return { kind: "skipped", reason: "insufficient_units" };
   }
 
+  // Which AI employee is on shift right now. With nobody on shift (outside every
+  // agent's hours, or no agents set up) the AI stays silent and the message is
+  // escalated to the human staff.
+  const agent = await resolveOnDutyAgent(clinicId);
+  if (!agent) {
+    await ensureOpenEscalation(clinicId, conversationId, sessionId, "no_agent_on_duty");
+    return { kind: "skipped", reason: "no_agent_on_duty" };
+  }
+  // The agent's usage caps (rolling 24h): its total, then this conversation's
+  // share. Reached → silent + escalated, same as being off shift.
+  const capReached = await agentCapReached(agent, conversationId);
+  if (capReached) {
+    await ensureOpenEscalation(clinicId, conversationId, sessionId, capReached);
+    return { kind: "skipped", reason: capReached };
+  }
   const prior = await getSessionMessages(sessionId);
   // Throws on agent failure → caller decides (web surfaces an error; push retries).
-  const { text, toolCalls, usage } = await runAgentToText(ctx, toPrior(prior));
+  const { text, toolCalls, usage } = await runAgentToText({ ...ctx, agent }, toPrior(prior));
   return {
+    aiAgentId: agent.id,
     kind: "reply",
     text: text || FALLBACK_REPLY,
     toolCalls,
@@ -420,7 +451,7 @@ async function deliverPushReply<T>(args: {
 
   const gen = await generateAgentReply(ctx);
   if (gen.kind === "skipped") return { kind: "skipped" };
-  const { text: reply, toolCalls, voiceReplyEnabled } = gen;
+  const { text: reply, toolCalls, voiceReplyEnabled, aiAgentId } = gen;
   // On the rare turn with no usage metadata, still bill the one unit (USD side
   // computes to zero) rather than hand out a free reply — same as the web path.
   const usage = gen.usage ?? {
@@ -460,10 +491,11 @@ async function deliverPushReply<T>(args: {
         clinicId,
         reply,
         { toolCalls, ...(voiceMeta ? { voice: voiceMeta } : {}) },
-        MessageDelivery.QUEUED
+        MessageDelivery.QUEUED,
+        aiAgentId
       );
       await markMessagesProcessed(processedIds);
-      await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage });
+      await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage, aiAgentId });
       if (tts.model) {
         await chargeTtsSafe({
           clinicId,
@@ -501,10 +533,11 @@ async function deliverPushReply<T>(args: {
     clinicId,
     reply,
     { toolCalls },
-    MessageDelivery.QUEUED
+    MessageDelivery.QUEUED,
+    aiAgentId
   );
   await markMessagesProcessed(processedIds);
-  await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage });
+  await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage, aiAgentId });
   const out = await adapter.sendText(transport, recipient, reply);
   await markAgentDelivery(
     agentMsg.id,

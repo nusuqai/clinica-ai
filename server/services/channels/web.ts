@@ -1,5 +1,5 @@
 import "server-only";
-import { Channel, type Role, type Prisma } from "@prisma/client";
+import { Channel, MessageDelivery, type Role, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_MODEL, type AgentContext } from "@/agent";
 import type { ToolCallRecord, VoiceMessageMetadata } from "@/agent/types";
@@ -216,7 +216,9 @@ async function runWebReplyCore(ctx: AgentContext): Promise<WebReplyOutcome | nul
     gen.text,
     {
       toolCalls: gen.toolCalls,
-    }
+    },
+    MessageDelivery.SENT,
+    gen.aiAgentId
   );
   // Unconditional: the unit is owed because the agent answered. On the rare turn
   // with no usage metadata we still bill the one unit (USD side computes to zero).
@@ -224,6 +226,7 @@ async function runWebReplyCore(ctx: AgentContext): Promise<WebReplyOutcome | nul
     clinicId: ctx.clinicId,
     sessionId: ctx.sessionId,
     messageId: agentMsg.id,
+    aiAgentId: gen.aiAgentId,
     usage: gen.usage ?? {
       promptTokens: 0,
       completionTokens: 0,

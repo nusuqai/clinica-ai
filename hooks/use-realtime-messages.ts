@@ -11,6 +11,7 @@ export interface RealtimeMessageRow {
   sessionId: string | null;
   senderType: SenderType;
   senderId: string | null;
+  aiAgentId: string | null;
   content: string;
   metadata: unknown;
   isRead: boolean;

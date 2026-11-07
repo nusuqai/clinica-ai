@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { AppointmentTemplatePurpose, Role } from "@prisma/client";
-import { getClinicContext } from "@/lib/auth";
+import { can, getClinicContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { listMessageTemplates } from "@/lib/meta/whatsapp";
@@ -39,7 +39,7 @@ export interface AppointmentTemplateBinding {
 async function requireAdminClinic() {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false as const, reason: "unauthorized" as const };
-  if (ctx.role !== Role.ADMIN) return { ok: false as const, reason: "forbidden" as const };
+  if (!can(ctx, "whatsapp")) return { ok: false as const, reason: "forbidden" as const };
   return { ok: true as const, ctx };
 }
 

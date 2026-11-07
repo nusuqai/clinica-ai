@@ -76,6 +76,7 @@ export function claimWebLoginTool(ctx: AgentContext): DynamicStructuredTool {
         email: normalizedEmail,
         name: ctx.actorName || null,
         clinicName: clinic?.name ?? "",
+        clinicSlug: ctx.clinicSlug,
       });
 
       return { invited: true, email: normalizedEmail };

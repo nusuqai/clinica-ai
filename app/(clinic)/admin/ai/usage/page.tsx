@@ -1,9 +1,10 @@
 import { Coins, MessageSquare, CalendarClock, MessagesSquare } from "lucide-react";
-import { requireClinicMember } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import PageHeader from "@/components/admin/page-header";
 import StatCard from "@/components/admin/stat-card";
 import BarList from "@/components/admin/bar-list";
 import { getClinicAiUsage } from "@/server/services/aiReports";
+import { Card } from "@/components/ui/card";
 
 // The clinic's view of its AI meter: units, never dollars. One unit = one reply
 // the agent sent. What that reply cost to produce is platform accounting and is
@@ -14,7 +15,7 @@ const decimal = (n: number) =>
   n.toLocaleString("ar-EG", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export default async function AiUsagePage() {
-  const { clinic } = await requireClinicMember(["ADMIN"]);
+  const { clinic } = await requirePermission("agent");
   const report = await getClinicAiUsage(clinic.id);
 
   const spentNothing = report.unitsUsed === 0;
@@ -84,7 +85,7 @@ export default async function AiUsagePage() {
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <Card className="p-6">
           <h2 className="mb-6 font-heading font-semibold text-foreground">الاستهلاك اليومي</h2>
           {!spentNothing ? (
             <BarList
@@ -98,10 +99,10 @@ export default async function AiUsagePage() {
           ) : (
             <p className="font-sans text-sm text-muted-foreground">لا يوجد استهلاك بعد.</p>
           )}
-        </div>
+        </Card>
 
         <div className="space-y-6">
-          <div className="rounded-2xl border border-border bg-card p-6">
+          <Card className="p-6">
             <h2 className="mb-6 font-heading font-semibold text-foreground">حسب القناة</h2>
             {report.byChannel.length > 0 ? (
               <BarList
@@ -114,10 +115,23 @@ export default async function AiUsagePage() {
             ) : (
               <p className="font-sans text-sm text-muted-foreground">لا يوجد استهلاك بعد.</p>
             )}
-          </div>
+          </Card>
+
+          {report.byAgent.length > 0 && (
+            <Card className="p-6">
+              <h2 className="mb-6 font-heading font-semibold text-foreground">حسب الموظف الآلي</h2>
+              <BarList
+                items={report.byAgent.map((a) => ({
+                  label: a.label,
+                  sublabel: "وحدة",
+                  value: a.value,
+                }))}
+              />
+            </Card>
+          )}
 
           {report.busiestDay && (
-            <div className="rounded-2xl border border-border bg-card p-6">
+            <Card className="p-6">
               <h2 className="mb-3 font-heading font-semibold text-foreground">
                 أعلى يوم استهلاكاً
               </h2>
@@ -128,18 +142,22 @@ export default async function AiUsagePage() {
               <p className="mt-1 font-sans text-sm text-muted-foreground" dir="ltr">
                 {report.busiestDay.label}
               </p>
-            </div>
+            </Card>
           )}
 
-          <div className="rounded-2xl border border-border bg-card p-6">
+          <Card className="p-6">
             <h2 className="mb-3 font-heading font-semibold text-foreground">كيف تُحتسب الوحدات؟</h2>
             <ul className="space-y-2 font-sans text-sm text-muted-foreground">
               <li>• كل رد يرسله المساعد الذكي = وحدة واحدة، مهما كان طول الرد.</li>
               <li>• ردود فريق العيادة اليدوية لا تُخصم منها أي وحدة.</li>
               <li>• الرسائل الصوتية تُحتسب كأي رد عادي: وحدة واحدة للرد.</li>
               <li>• عند نفاد الوحدات يتوقف الرد الآلي وتُحوَّل المحادثات إلى فريق العيادة.</li>
+              <li>
+                • قد يكون للموظف الآلي حد يومي من الردود، إجمالاً ولكل عميل؛ عند بلوغه تُحوَّل
+                المحادثة إلى فريق العيادة.
+              </li>
             </ul>
-          </div>
+          </Card>
         </div>
       </div>
     </div>

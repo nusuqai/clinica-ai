@@ -1,7 +1,7 @@
 "use server";
 
 import { Role } from "@prisma/client";
-import { getClinicContext } from "@/lib/auth";
+import { canAny, getClinicContext } from "@/lib/auth";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { listMessageTemplates, type MessageTemplate } from "@/lib/meta/whatsapp";
 
@@ -29,7 +29,7 @@ export async function listTemplatesAction(): Promise<
 > {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
-  if (ctx.role !== Role.ADMIN) return { ok: false, reason: "forbidden" };
+  if (!canAny(ctx, ["messages", "whatsapp"])) return { ok: false, reason: "forbidden" };
 
   const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
   if (!creds) return { ok: false, reason: "not_configured" };

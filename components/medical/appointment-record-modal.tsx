@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FilePlus, Pencil } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import RecordForm from "@/components/medical/record-form";
+import { Button } from "@/components/ui/button";
 import {
   createRecordForAppointmentAction,
   updateRecordAction,
@@ -46,18 +47,10 @@ export default function AppointmentRecordModal({
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className={[
-          "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 font-sans text-sm font-medium transition-colors",
-          hasRecord
-            ? "border border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-            : "bg-primary text-white hover:bg-primary/90",
-        ].join(" ")}
-      >
-        {hasRecord ? <Pencil className="h-4 w-4" /> : <FilePlus className="h-4 w-4" />}
+      <Button variant={hasRecord ? "outline" : "default"} onClick={() => setOpen(true)}>
+        {hasRecord ? <Pencil /> : <FilePlus />}
         {hasRecord ? "تعديل السجل العلاجي" : "إضافة سجل علاجي"}
-      </button>
+      </Button>
 
       <Modal
         open={open}

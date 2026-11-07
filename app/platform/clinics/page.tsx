@@ -1,35 +1,56 @@
-import { prisma } from "@/lib/prisma";
-import { CreateClinicForm, ClinicCard } from "./_components/clinic-forms";
+import { Suspense } from "react";
+import { Await } from "@/components/general/await";
+import { PendingNavigationProvider, PendingSwap } from "@/components/general/pending-navigation";
+import { CardGridSkeleton } from "@/components/ui/skeleton";
+import { clinicsPageAction } from "@/server/actions/clinics";
+import { CreateClinicForm } from "./_components/clinic-forms";
+import ClinicList from "./_components/clinic-list";
+import { FilterBar } from "@/components/ui/filter-bar";
+import { Card } from "@/components/ui/card";
 
-export default async function PlatformClinicsPage() {
-  const clinics = await prisma.clinic.findMany({
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      logoUrl: true,
-      primaryColor: true,
-      accentColor: true,
-      isActive: true,
-      _count: { select: { members: true, doctors: true } },
-    },
-  });
+interface PageProps {
+  searchParams: Promise<{ q?: string; active?: string }>;
+}
+
+export default async function PlatformClinicsPage({ searchParams }: PageProps) {
+  const { q, active } = await searchParams;
+  const filters = { query: q, active };
+  // Not awaited: the page renders at once and the list streams in behind a
+  // Suspense fallback keyed by the filters.
+  const clinicsPromise = clinicsPageAction(filters, 1);
 
   return (
-    <div>
-      <h1 className="mb-6 font-heading text-2xl font-bold text-foreground">العيادات</h1>
+    <PendingNavigationProvider>
+      <div>
+        <h1 className="mb-6 font-heading text-2xl font-bold text-foreground">العيادات</h1>
 
-      <div className="mb-8 rounded-2xl border border-border bg-card p-6">
-        <h2 className="mb-4 font-heading font-semibold text-foreground">إنشاء عيادة جديدة</h2>
-        <CreateClinicForm />
-      </div>
+        <Card className="mb-8 p-6">
+          <h2 className="mb-4 font-heading font-semibold text-foreground">إنشاء عيادة جديدة</h2>
+          <CreateClinicForm />
+        </Card>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {clinics.map((c) => (
-          <ClinicCard key={c.id} clinic={c} />
-        ))}
+        <FilterBar
+          fields={[
+            { type: "search", param: "q", placeholder: "بحث باسم العيادة أو النطاق..." },
+            {
+              type: "select",
+              param: "active",
+              allLabel: "كل العيادات",
+              options: [
+                { value: "active", label: "مفعّلة" },
+                { value: "inactive", label: "معطّلة" },
+              ],
+            },
+          ]}
+        />
+        <PendingSwap fallback={<CardGridSkeleton count={4} />}>
+          <Suspense key={JSON.stringify(filters)} fallback={<CardGridSkeleton count={4} />}>
+            <Await promise={clinicsPromise}>
+              {(clinics) => <ClinicList initial={clinics} filters={filters} />}
+            </Await>
+          </Suspense>
+        </PendingSwap>
       </div>
-    </div>
+    </PendingNavigationProvider>
   );
 }

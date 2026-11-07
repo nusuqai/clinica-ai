@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { authorizePatientHistory } from "@/server/services/treatmentAccess";
 import { listPatientRecords } from "@/server/services/treatments";
 import RecordTimeline from "@/components/medical/record-timeline";
+import { Card } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -36,12 +38,12 @@ export default async function DoctorPatientHistoryPage({ params }: PageProps) {
         العودة إلى المرضى
       </Link>
 
-      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-card p-5">
-        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-accent/10">
-          <span className="font-sans text-lg font-bold text-accent">
+      <Card className="mb-6 flex flex-wrap items-center gap-4 p-5">
+        <Avatar className="h-12 w-12 rounded-2xl">
+          <AvatarFallback className="rounded-2xl bg-accent/10 font-sans text-lg font-bold text-accent">
             {patient.fullName.charAt(0)}
-          </span>
-        </div>
+          </AvatarFallback>
+        </Avatar>
         <div className="min-w-0">
           <h1 className="font-heading text-xl font-bold text-foreground">{patient.fullName}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-3 font-sans text-sm text-muted-foreground">
@@ -54,7 +56,7 @@ export default async function DoctorPatientHistoryPage({ params }: PageProps) {
             <span>{records.length} زيارة مسجّلة</span>
           </div>
         </div>
-      </div>
+      </Card>
 
       <h2 className="mb-4 font-heading text-lg font-bold text-foreground">السجل العلاجي</h2>
       <RecordTimeline

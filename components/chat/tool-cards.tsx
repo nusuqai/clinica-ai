@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { AppointmentStatus } from "@prisma/client";
 import type { ClientToolCall } from "./types";
+import { Alert } from "@/components/ui/alert";
 
 // ── shared layout ────────────────────────────────────────────────────────────
 
@@ -37,10 +38,13 @@ function CardShell({
 
 function ErrorCard({ message }: { message: string }) {
   return (
-    <div className="mt-1.5 flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 font-sans text-xs text-red-600">
+    <Alert
+      variant="destructive"
+      className="mt-1.5 items-center border-transparent px-3 py-2 text-xs text-red-600"
+    >
       <XCircle className="h-4 w-4 flex-shrink-0" />
       <span>{message}</span>
-    </div>
+    </Alert>
   );
 }
 
@@ -72,6 +76,7 @@ type R = Record<string, unknown>;
 
 function DoctorListCard({ result }: { result: R }) {
   const doctors = (result.doctors as R[]) ?? [];
+  const more = typeof result.total === "number" ? result.total - doctors.length : 0;
   return (
     <CardShell icon={<Stethoscope className="h-4 w-4" />} title="الأطباء">
       {doctors.length === 0 && (
@@ -88,6 +93,9 @@ function DoctorListCard({ result }: { result: R }) {
           )}
         </div>
       ))}
+      {result.hasMore === true && more > 0 && (
+        <p className="text-[11px] text-muted-foreground">و{more} آخرون</p>
+      )}
     </CardShell>
   );
 }
@@ -345,6 +353,26 @@ function GenericToolCard({ name, result }: { name: string; result: R }) {
   );
 }
 
+// A broad (unfiltered) list request: the tool returned the choices the agent
+// asks the user to pick from, instead of the rows.
+function FilterChoicesCard({ result }: { result: R }) {
+  const choices = (result.choices as R[]) ?? [];
+  return (
+    <CardShell icon={<Wrench className="h-4 w-4" />} title={String(result.question ?? "اختر")}>
+      {choices.map((c, i) => (
+        <div key={i} className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-foreground">
+            {i + 1}. {String(c.label)}
+          </p>
+          {typeof c.count === "number" && (
+            <span className="text-[11px] text-muted-foreground">{c.count}</span>
+          )}
+        </div>
+      ))}
+    </CardShell>
+  );
+}
+
 // ── registry ─────────────────────────────────────────────────────────────────
 
 const REGISTRY: Record<string, (r: R) => React.ReactNode> = {
@@ -367,6 +395,7 @@ export function ToolCallCard({ call }: { call: ClientToolCall }) {
   if (call.status === "error") {
     return <ErrorCard message={String(result.error ?? "حدث خطأ أثناء تنفيذ العملية")} />;
   }
+  if (result.needsFilter) return <FilterChoicesCard result={result} />;
   const render = REGISTRY[call.name];
   return <>{render ? render(result) : <GenericToolCard name={call.name} result={result} />}</>;
 }

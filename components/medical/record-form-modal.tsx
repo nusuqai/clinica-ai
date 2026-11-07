@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 import { FileText, Pencil } from "lucide-react";
 import Modal from "@/components/admin/modal";
 import RecordForm from "@/components/medical/record-form";
+import { Button } from "@/components/ui/button";
 import {
   createRecordForAppointmentAction,
   getRecordForAppointmentAction,
   updateRecordAction,
 } from "@/server/actions/treatments";
 import type { TreatmentRecordView } from "@/server/services/treatments";
+import { Hint } from "@/components/ui/tooltip";
 
 // The doctor's write surface for a visit's clinical record. Opened from the
 // appointment row; loads any existing record ON OPEN rather than having the
@@ -57,19 +59,21 @@ export default function RecordFormModal({
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        title={hasRecord ? "تعديل السجل العلاجي" : "إضافة سجل علاجي"}
-        className={[
-          "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-sans text-xs font-medium transition-colors",
-          hasRecord
-            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-            : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
-        ].join(" ")}
-      >
-        {hasRecord ? <Pencil className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
-        {hasRecord ? "السجل العلاجي" : "سجل علاجي"}
-      </button>
+      <Hint label={hasRecord ? "تعديل السجل العلاجي" : "إضافة سجل علاجي"}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setOpen(true)}
+          className={
+            hasRecord
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              : undefined
+          }
+        >
+          {hasRecord ? <Pencil /> : <FileText />}
+          {hasRecord ? "السجل العلاجي" : "سجل علاجي"}
+        </Button>
+      </Hint>
 
       <Modal
         open={open}

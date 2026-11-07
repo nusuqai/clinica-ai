@@ -4,6 +4,9 @@ import { requireClinicMember } from "@/lib/auth";
 import { getDoctorByProfileId } from "@/server/services/doctors";
 import { listSpecialtyOptions } from "@/server/services/specialties";
 import ProfileForm from "./_components/profile-form";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 export default async function DoctorProfilePage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
@@ -28,11 +31,13 @@ export default async function DoctorProfilePage() {
       </div>
 
       {/* Avatar card */}
-      <div className="mb-6 rounded-2xl border border-border bg-card p-6">
+      <Card className="mb-6 p-6">
         <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10">
-            <span className="font-sans text-2xl font-bold text-primary">{initials}</span>
-          </div>
+          <Avatar className="h-16 w-16 rounded-2xl">
+            <AvatarFallback className="rounded-2xl bg-primary/10 font-sans text-2xl font-bold text-primary">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
           <div>
             <h2 className="font-heading text-lg font-bold text-foreground">
               {doctor.profile.fullName}
@@ -54,21 +59,16 @@ export default async function DoctorProfilePage() {
                   {String(doctor.consultationFee)} ر.س
                 </span>
               )}
-              <span
-                className={[
-                  "rounded-full px-2 py-0.5 font-sans text-xs font-medium",
-                  doctor.isActive ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500",
-                ].join(" ")}
-              >
+              <Badge variant={doctor.isActive ? "success" : "neutral"}>
                 {doctor.isActive ? "نشط" : "غير نشط"}
-              </span>
+              </Badge>
             </div>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Edit form */}
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <Card className="p-6">
         <h3 className="mb-5 font-heading font-semibold text-foreground">تعديل المعلومات</h3>
         <ProfileForm
           fullName={doctor.profile.fullName}
@@ -78,11 +78,11 @@ export default async function DoctorProfilePage() {
           bio={doctor.bio}
           consultationFee={doctor.consultationFee ? String(doctor.consultationFee) : null}
         />
-      </div>
+      </Card>
 
       {/* Stats */}
       <div className="mt-6 grid grid-cols-2 gap-4">
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-5">
+        <Card className="flex items-center gap-3 p-5">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
             <Stethoscope className="h-5 w-5 text-primary" />
           </div>
@@ -92,8 +92,8 @@ export default async function DoctorProfilePage() {
             </p>
             <p className="font-sans text-xs text-muted-foreground">إجمالي المواعيد</p>
           </div>
-        </div>
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-5">
+        </Card>
+        <Card className="flex items-center gap-3 p-5">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/10">
             <UserCircle className="h-5 w-5 text-accent" />
           </div>
@@ -106,7 +106,7 @@ export default async function DoctorProfilePage() {
             </p>
             <p className="font-sans text-xs text-muted-foreground">تاريخ التسجيل</p>
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );

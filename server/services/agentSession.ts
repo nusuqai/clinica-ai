@@ -125,7 +125,10 @@ export async function persistAgentMessage(
    * a checkpoint BEFORE sending, so a send failure re-delivers this same row
    * without re-running or re-charging the agent.
    */
-  deliveryStatus: MessageDelivery = MessageDelivery.SENT
+  deliveryStatus: MessageDelivery = MessageDelivery.SENT,
+  /** The AI employee that wrote this reply (inbox attribution); null for
+   *  system notices. */
+  aiAgentId: string | null = null
 ): Promise<SessionMessage> {
   const m = await prisma.message.create({
     data: {
@@ -137,6 +140,7 @@ export async function persistAgentMessage(
       metadata: metadata ? (metadata as unknown as Prisma.InputJsonValue) : undefined,
       clinicId,
       deliveryStatus,
+      aiAgentId,
     },
   });
   await touchConversation(conversationId);
@@ -170,9 +174,7 @@ export async function getUnprocessedUserMessages(
  * failed, or crashed between persist and send). The processor re-delivers this
  * instead of re-running the agent — so a send retry never re-charges AI.
  */
-export async function findUndeliveredAgentReply(
-  conversationId: string
-): Promise<{
+export async function findUndeliveredAgentReply(conversationId: string): Promise<{
   id: string;
   sessionId: string | null;
   clinicId: string;

@@ -1,4 +1,5 @@
 import { PageHeaderSkeleton, StatCardGridSkeleton, Skeleton } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
 
 export default function Loading() {
   return (
@@ -8,7 +9,7 @@ export default function Loading() {
 
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="rounded-2xl border border-border bg-card p-6">
+          <Card key={i} className="p-6">
             <Skeleton className="mb-6 h-4 w-40" />
             <div className="mb-6 grid grid-cols-2 gap-3">
               {Array.from({ length: 4 }).map((_, j) => (
@@ -16,14 +17,14 @@ export default function Loading() {
               ))}
             </div>
             <Skeleton className="h-24 w-full rounded-lg" />
-          </div>
+          </Card>
         ))}
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <Card className="p-6">
         <Skeleton className="mb-6 h-4 w-48" />
         <Skeleton className="h-32 w-full rounded-lg" />
-      </div>
+      </Card>
     </div>
   );
 }

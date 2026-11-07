@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Prisma, type KnowledgeDoc } from "@prisma/client";
 import { ok, err, type Result } from "./_result";
+import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 
 /** One row in the knowledge catalog (no heavy `content` field). */
 export interface KnowledgeDocMeta {
@@ -46,12 +47,34 @@ export async function getKnowledgeDoc(
 // The functions below back the admin UI, so they include inactive docs and the
 // full row (id, flags, timestamps).
 
-/** Every knowledge doc for a clinic (active + inactive), newest edits first. */
-export async function listKnowledgeDocsForAdmin(clinicId: string): Promise<KnowledgeDoc[]> {
-  return prisma.knowledgeDoc.findMany({
-    where: { clinicId },
-    orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }],
-  });
+/** One page of a clinic's knowledge docs matching title/summary search and state, in the DB. */
+export async function listKnowledgeDocsPage(
+  clinicId: string,
+  filters: { query?: string; status?: string },
+  req: PageRequest
+): Promise<Paginated<KnowledgeDoc>> {
+  const q = filters.query?.trim();
+  const where: Prisma.KnowledgeDocWhereInput = {
+    clinicId,
+    ...(q && {
+      OR: [
+        { title: { contains: q, mode: "insensitive" } },
+        { summary: { contains: q, mode: "insensitive" } },
+      ],
+    }),
+    ...(filters.status === "active" && { isActive: true }),
+    ...(filters.status === "inactive" && { isActive: false }),
+  };
+  return paginate(
+    req,
+    (args) =>
+      prisma.knowledgeDoc.findMany({
+        where,
+        orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+        ...args,
+      }),
+    () => prisma.knowledgeDoc.count({ where })
+  );
 }
 
 /** One doc by id, scoped to the clinic (ownership). Null if not found here. */

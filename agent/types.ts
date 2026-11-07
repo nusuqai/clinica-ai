@@ -5,8 +5,10 @@ import type { Role, Channel } from "@prisma/client";
  * against this — the agent can only ever do what this actor is allowed to do.
  *
  * `role` is the effective role driving tool selection:
- *   - PATIENT | DOCTOR | ADMIN → an identified user (web always; WhatsApp when
- *     the phone matches a profile).
+ *   - PATIENT → an identified patient (web always; WhatsApp when the phone
+ *     matches a profile) — the only role with action tools.
+ *   - DOCTOR | ADMIN | STAFF → an identified team member; info-only tools (they
+ *     have no assistant of their own — see getToolsForRole).
  *   - null → an unknown WhatsApp contact (info-only tools, no actions).
  */
 export interface AgentContext {
@@ -26,6 +28,18 @@ export interface AgentContext {
   sessionId: string;
   /** Display name used to greet the contact. */
   actorName: string;
+  /** The AI employee on shift for this reply (name + persona), set by
+   *  `generateAgentReply` — which never runs the agent without one. */
+  agent?: AgentPersona | null;
+}
+
+/** The identity an AI employee speaks with — see AiAgent in the schema. */
+export interface AgentPersona {
+  id: string;
+  name: string;
+  jobTitle: string | null;
+  /** Clinic-written tone/style instructions; may be empty. */
+  persona: string;
 }
 
 /**

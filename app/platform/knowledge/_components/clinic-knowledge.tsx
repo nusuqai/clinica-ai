@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { ChevronDown, BookOpen } from "lucide-react";
 import KnowledgeManager, { type KnowledgeDocView } from "./knowledge-manager";
+import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface Props {
   clinicId: string;
@@ -17,21 +19,22 @@ export default function ClinicKnowledge({ clinicId, docs }: Props) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <BookOpen className="h-4 w-4" />
-        {open ? "إخفاء المستندات" : docs.length > 0 ? "إدارة المستندات" : "إضافة أول مستند"}
-        <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          <BookOpen />
+          {open ? "إخفاء المستندات" : docs.length > 0 ? "إدارة المستندات" : "إضافة أول مستند"}
+          <ChevronDown className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        </Button>
+      </CollapsibleTrigger>
 
-      {open && (
-        <div className="mt-4 border-t border-border pt-4">
-          <KnowledgeManager clinicId={clinicId} docs={docs} />
-        </div>
-      )}
-    </div>
+      <CollapsibleContent className="mt-4 border-t border-border pt-4">
+        <KnowledgeManager clinicId={clinicId} docs={docs} />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
