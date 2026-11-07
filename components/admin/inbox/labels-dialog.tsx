@@ -13,7 +13,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { LABEL_COLOR_KEYS, LABEL_DOT, labelClass, type LabelColor } from "@/lib/inbox-labels";
+import {
+  LABEL_COLOR_KEYS,
+  labelDotStyle,
+  labelForeground,
+  labelStyle,
+  type LabelColor,
+} from "@/lib/inbox-labels";
 import {
   createLabel,
   deleteLabel,
@@ -28,9 +34,9 @@ export function LabelChip({ label, className }: { label: InboxLabelItem; classNa
     <span
       className={cn(
         "inline-flex max-w-[110px] items-center truncate rounded-full border px-1.5 py-px font-sans text-[10px] font-medium leading-4",
-        labelClass(label.color),
         className
       )}
+      style={labelStyle(label.color)}
     >
       {label.name}
     </span>
@@ -55,11 +61,14 @@ function ColorPicker({
           aria-pressed={value === c}
           className={cn(
             "flex h-6 w-6 items-center justify-center rounded-full ring-offset-2 ring-offset-background transition",
-            LABEL_DOT[c],
             value === c && "ring-2 ring-foreground/60"
           )}
+          style={labelDotStyle(c)}
         >
-          {value === c && <Check className="h-3.5 w-3.5 text-white" />}
+          {value === c && (
+            // Dark tick on the light swatches, white on the rest.
+            <Check className="h-3.5 w-3.5" style={{ color: labelForeground(c) }} />
+          )}
         </button>
       ))}
     </div>
