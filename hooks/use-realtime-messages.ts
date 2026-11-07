@@ -12,6 +12,8 @@ export interface RealtimeMessageRow {
   senderType: SenderType;
   senderId: string | null;
   aiAgentId: string | null;
+  /** The message this one quotes, if any. */
+  replyToId: string | null;
   content: string;
   metadata: unknown;
   isRead: boolean;

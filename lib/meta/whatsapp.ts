@@ -152,6 +152,19 @@ function recipientAddress(recipient: WhatsAppRecipient): Record<string, string> 
   throw new WhatsAppApiError("outbound message has no recipient (neither phone nor BSUID)", 400);
 }
 
+/**
+ * Renders the send as a quoted reply to an earlier message (WhatsApp's
+ * swipe-to-reply bubble). Meta silently drops the quote if the wamid is unknown
+ * or too old, so the message still goes out.
+ */
+export interface SendOptions {
+  replyToWamid?: string | null;
+}
+
+function replyContext(options?: SendOptions): Record<string, unknown> {
+  return options?.replyToWamid ? { context: { message_id: options.replyToWamid } } : {};
+}
+
 /** Cloud API caps a text body at 4096 characters. */
 const MAX_BODY_LENGTH = 4096;
 
@@ -184,16 +197,20 @@ function chunkText(text: string): string[] {
 export async function sendTextMessage(
   recipient: WhatsAppRecipient,
   text: string,
-  creds: WhatsAppCredentials
+  creds: WhatsAppCredentials,
+  options?: SendOptions
 ): Promise<string | null> {
   const address = recipientAddress(recipient);
   // On a multi-chunk reply, the first chunk's wamid is what a reaction would
-  // reference (it's the visible message the patient taps).
+  // reference (it's the visible message the patient taps). Only that chunk
+  // carries the quote, so a long reply doesn't repeat it on every part.
   let firstWamid: string | null = null;
-  for (const body of chunkText(markdownToWhatsApp(text))) {
+  const chunks = chunkText(markdownToWhatsApp(text));
+  for (const [i, body] of chunks.entries()) {
     const res = await sendMessage(creds, {
       recipient_type: "individual",
       ...address,
+      ...(i === 0 ? replyContext(options) : {}),
       type: "text",
       text: { preview_url: true, body },
     });
@@ -370,7 +387,8 @@ export type OutboundMediaKind = "image" | "video" | "audio" | "document";
 export async function sendMediaMessage(
   recipient: WhatsAppRecipient,
   media: { kind: OutboundMediaKind; mediaId: string; caption?: string; filename?: string },
-  creds: WhatsAppCredentials
+  creds: WhatsAppCredentials,
+  options?: SendOptions
 ): Promise<string | null> {
   const payload: Record<string, unknown> = { id: media.mediaId };
   if (media.caption && media.kind !== "audio") payload.caption = media.caption;
@@ -378,6 +396,7 @@ export async function sendMediaMessage(
   const res = await sendMessage(creds, {
     recipient_type: "individual",
     ...recipientAddress(recipient),
+    ...replyContext(options),
     type: media.kind,
     [media.kind]: payload,
   });

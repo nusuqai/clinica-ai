@@ -24,7 +24,9 @@ import {
   Paperclip,
   X,
   CheckCircle2,
+  Reply,
 } from "lucide-react";
+import { quoteSnippet, type QuoteAttachmentKind } from "@/lib/message-quote";
 import { WhatsappIcon } from "@/components/icons/whatsapp-icon";
 import WhatsappTemplatePicker from "@/components/admin/whatsapp-template-picker";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
@@ -54,6 +56,7 @@ import { Channel, SenderType } from "@prisma/client";
 import type {
   ConversationSummary,
   MessageItem,
+  MessageReplyPreview,
   ConversationDetail,
 } from "@/server/services/messages";
 import {
@@ -144,6 +147,46 @@ interface PendingMessage {
   serverId?: string;
   /** Set when this is a media attachment, not a text reply. */
   media?: PendingMedia;
+  /** The message this reply quotes — shown on the bubble and resent on retry. */
+  replyTo?: MessageReplyPreview;
+}
+
+/** The fields a quote preview can be built from — both a server message and a
+ *  rendered (possibly optimistic) bubble carry them. */
+interface Quotable {
+  id?: string;
+  content: string;
+  senderType: SenderType;
+  senderName?: string | null;
+  agentName?: string | null;
+  voice?: unknown;
+  media?: { kind: QuoteAttachmentKind } | null;
+  structured?: { kind: QuoteAttachmentKind } | null;
+}
+
+/** Builds the quoted-preview for a message (mirrors getMessages server-side). */
+function toReplyPreview(m: Quotable & { id: string }): MessageReplyPreview {
+  return {
+    id: m.id,
+    senderType: m.senderType,
+    authorName:
+      m.senderType === SenderType.ADMIN
+        ? (m.senderName ?? null)
+        : m.senderType === SenderType.AGENT
+          ? (m.agentName ?? null)
+          : null,
+    snippet: quoteSnippet(
+      m.content,
+      m.voice ? "voice" : (m.media?.kind ?? m.structured?.kind ?? null)
+    ),
+  };
+}
+
+/** Who wrote a quoted message, as the inbox labels it. */
+function quoteAuthor(preview: MessageReplyPreview, contactName: string): string {
+  if (preview.senderType === SenderType.USER) return contactName;
+  if (preview.senderType === SenderType.AGENT) return preview.authorName ?? "المساعد الذكي";
+  return preview.authorName ?? "فريق العيادة";
 }
 
 /** Categorises a browser File's mime into the outbound media kind. */
@@ -175,6 +218,7 @@ interface RenderedMessage {
   structured?: MessageItem["structured"];
   escalation?: MessageItem["escalation"];
   reaction?: MessageItem["reaction"];
+  replyTo?: MessageItem["replyTo"];
 }
 
 export default function ChatInbox({
@@ -214,6 +258,30 @@ export default function ChatInbox({
   // reload — the window can lapse while the admin sits on a thread.
   const [nowTs, setNowTs] = useState(() => Date.now());
   const bottomRef = useRef<HTMLDivElement>(null);
+  const replyInputRef = useRef<HTMLTextAreaElement>(null);
+  // The message the admin chose to answer (WhatsApp-style quoted reply); sent
+  // with the next text/attachment, then cleared.
+  const [replyingTo, setReplyingTo] = useState<MessageReplyPreview | null>(null);
+  // Briefly ringed after jumping to it from a quote.
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  // A quote belongs to its thread — drop it when switching conversations.
+  useEffect(() => setReplyingTo(null), [activeId]);
+
+  const startReply = (msg: Quotable & { id: string }) => {
+    setReplyingTo(toReplyPreview(msg));
+    replyInputRef.current?.focus();
+  };
+
+  /** Scrolls to the quoted message and flashes it. A quote whose target isn't
+   *  in the thread (deleted) just does nothing. */
+  const jumpToMessage = (id: string) => {
+    const el = document.getElementById(`msg-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedId(id);
+    setTimeout(() => setHighlightedId((cur) => (cur === id ? null : cur)), 1600);
+  };
 
   // Sync when server re-renders with fresh data
   useEffect(() => setConversations(initialConversations), [initialConversations]);
@@ -263,6 +331,7 @@ export default function ChatInbox({
           structured: m.structured,
           escalation: m.escalation,
           reaction: m.reaction,
+          replyTo: m.replyTo,
         })),
       // Always newest, so appending keeps the createdAt-ascending order.
       ...mine.map((p) => ({
@@ -274,6 +343,7 @@ export default function ChatInbox({
         sessionId: null,
         createdAt: p.createdAt,
         pending: p,
+        replyTo: p.replyTo,
         ...(p.media
           ? {
               media: {
@@ -337,49 +407,52 @@ export default function ChatInbox({
         const voice = meta?.voice;
         const media = meta?.media;
         const structured = meta?.structured;
-        setMessages((prev) =>
-          prev.some((m) => m.id === row.id)
-            ? prev
-            : [
-                ...prev,
-                {
-                  id: row.id,
-                  content: row.content,
-                  senderType: row.senderType,
-                  senderId: row.senderType === SenderType.ADMIN ? row.senderId : null,
-                  senderName:
-                    row.senderType === SenderType.ADMIN && row.senderId
-                      ? (staffNames[row.senderId] ?? null)
-                      : null,
-                  agentName: row.aiAgentId ? (agentNames[row.aiAgentId] ?? null) : null,
-                  sessionId: row.sessionId,
-                  createdAt: new Date(row.createdAt),
-                  isRead: row.isRead,
-                  ...(voice
-                    ? {
-                        voice: {
-                          durationSec: voice.durationSec,
-                          transcript: voice.transcript,
-                          status: voice.status,
-                        },
-                      }
-                    : {}),
-                  ...(media
-                    ? {
-                        media: {
-                          kind: media.kind,
-                          mimeType: media.mimeType,
-                          filename: media.filename,
-                          caption: media.caption,
-                          analysis: media.analysis,
-                          extraction: media.extraction,
-                        },
-                      }
-                    : {}),
-                  ...(structured ? { structured: { kind: structured.kind } } : {}),
-                },
-              ]
-        );
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === row.id)) return prev;
+          // The row carries only the quoted id; the quote itself is already in
+          // the thread (an unknown one simply renders without a preview).
+          const quoted = row.replyToId ? prev.find((m) => m.id === row.replyToId) : undefined;
+          return [
+            ...prev,
+            {
+              id: row.id,
+              content: row.content,
+              senderType: row.senderType,
+              senderId: row.senderType === SenderType.ADMIN ? row.senderId : null,
+              senderName:
+                row.senderType === SenderType.ADMIN && row.senderId
+                  ? (staffNames[row.senderId] ?? null)
+                  : null,
+              agentName: row.aiAgentId ? (agentNames[row.aiAgentId] ?? null) : null,
+              sessionId: row.sessionId,
+              createdAt: new Date(row.createdAt),
+              isRead: row.isRead,
+              ...(voice
+                ? {
+                    voice: {
+                      durationSec: voice.durationSec,
+                      transcript: voice.transcript,
+                      status: voice.status,
+                    },
+                  }
+                : {}),
+              ...(media
+                ? {
+                    media: {
+                      kind: media.kind,
+                      mimeType: media.mimeType,
+                      filename: media.filename,
+                      caption: media.caption,
+                      analysis: media.analysis,
+                      extraction: media.extraction,
+                    },
+                  }
+                : {}),
+              ...(structured ? { structured: { kind: structured.kind } } : {}),
+              ...(quoted ? { replyTo: toReplyPreview(quoted) } : {}),
+            },
+          ];
+        });
 
         // An inbound (patient) message may have raised a per-message escalation,
         // which the bare realtime row can't carry. Refetch the thread so the
@@ -522,10 +595,10 @@ export default function ChatInbox({
    *  on the bubble. Used for the first attempt and for retrying a sync failure,
    *  where no row exists yet. */
   const deliver = useCallback(
-    async (clientId: string, conversationId: string, text: string) => {
+    async (clientId: string, conversationId: string, text: string, replyToId?: string) => {
       let result: SendAdminReplyResult;
       try {
-        result = await sendAdminReply(conversationId, text);
+        result = await sendAdminReply(conversationId, text, replyToId);
       } catch (err) {
         // Network error, or the action itself blew up.
         console.error("Failed to send admin reply:", err);
@@ -550,6 +623,8 @@ export default function ChatInbox({
     // Safe to clear: the text now lives in the bubble, and stays there if the
     // send fails.
     setReply("");
+    const quote = replyingTo ?? undefined;
+    setReplyingTo(null);
     const clientId = crypto.randomUUID();
     setPending((prev) => [
       ...prev,
@@ -559,15 +634,16 @@ export default function ChatInbox({
         content: text,
         createdAt: new Date(),
         status: "sending",
+        replyTo: quote,
       },
     ]);
-    void deliver(clientId, activeId, text);
+    void deliver(clientId, activeId, text, quote?.id);
   };
 
   /** Uploads a staged file straight to Storage (signed URL), then persists +
    *  relays it. Used for the first attempt and for retrying a sync failure. */
   const deliverMedia = useCallback(
-    async (clientId: string, conversationId: string, media: PendingMedia) => {
+    async (clientId: string, conversationId: string, media: PendingMedia, replyToId?: string) => {
       try {
         const up = await createStaffMediaUpload(conversationId, media.mimeType);
         if (!up.ok) {
@@ -592,6 +668,7 @@ export default function ChatInbox({
           caption: media.caption,
           width: media.width,
           height: media.height,
+          replyToId,
         });
         if (!result.ok) {
           patchPending(clientId, { status: "failed_sync" });
@@ -613,8 +690,10 @@ export default function ChatInbox({
     if (!activeId || isOutsideWindow) return;
     const conversationId = activeId;
     const caption = reply.trim();
+    const quote = replyingTo ?? undefined;
     const clientId = crypto.randomUUID();
     setReply("");
+    setReplyingTo(null);
     setPendingFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     void (async () => {
@@ -640,9 +719,10 @@ export default function ChatInbox({
           createdAt: new Date(),
           status: "sending",
           media,
+          replyTo: quote,
         },
       ]);
-      await deliverMedia(clientId, conversationId, media);
+      await deliverMedia(clientId, conversationId, media, quote?.id);
     })();
   };
 
@@ -712,11 +792,11 @@ export default function ChatInbox({
 
     // A media send that never persisted — re-upload + resend from the kept File.
     if (entry.media) {
-      void deliverMedia(clientId, entry.conversationId, entry.media);
+      void deliverMedia(clientId, entry.conversationId, entry.media, entry.replyTo?.id);
       return;
     }
 
-    void deliver(clientId, entry.conversationId, entry.content);
+    void deliver(clientId, entry.conversationId, entry.content, entry.replyTo?.id);
   };
 
   const handleToggleAi = () => {
@@ -733,6 +813,11 @@ export default function ChatInbox({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape" && replyingTo) {
+      e.preventDefault();
+      setReplyingTo(null);
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (pendingFile) handleSendMedia(pendingFile);
@@ -1016,6 +1101,23 @@ export default function ChatInbox({
                 const isAgent = msg.senderType === SenderType.AGENT;
                 const status = msg.pending?.status;
                 const isFailed = status === "failed_sync" || status === "failed_whatsapp";
+                // Only saved messages can be quoted, and only while a free-form
+                // reply is still allowed (a template can't carry a quote).
+                const msgId = msg.id;
+                const replyButton =
+                  msgId && !isOutsideWindow ? (
+                    <Hint label="رد على هذه الرسالة">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => startReply({ ...msg, id: msgId })}
+                        aria-label="رد على هذه الرسالة"
+                        className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 [&_svg]:size-4"
+                      >
+                        <Reply />
+                      </Button>
+                    </Hint>
+                  ) : null;
                 return (
                   <Fragment key={msg.key}>
                     {showDivider && (
@@ -1032,11 +1134,18 @@ export default function ChatInbox({
                       </div>
                     )}
                     <div
-                      className={["flex", isOutgoing ? "justify-start" : "justify-end"].join(" ")}
+                      className={[
+                        "group flex items-center gap-1",
+                        isOutgoing ? "justify-start" : "justify-end",
+                      ].join(" ")}
                     >
+                      {/* Reply sits on the bubble's inner side: after an outgoing
+                          one, before an incoming one. */}
+                      {!isOutgoing && replyButton}
                       <div
+                        id={msg.id ? `msg-${msg.id}` : undefined}
                         className={[
-                          "max-w-[70%] rounded-2xl px-3.5 py-2 font-sans text-sm leading-relaxed transition-opacity",
+                          "max-w-[70%] rounded-2xl px-3.5 py-2 font-sans text-sm leading-relaxed transition-[opacity,box-shadow]",
                           isAgent
                             ? "rounded-ss-sm border border-accent/20 bg-accent/10 text-foreground"
                             : isOutgoing
@@ -1045,6 +1154,9 @@ export default function ChatInbox({
                                 : "rounded-ss-sm bg-muted text-foreground"
                               : "rounded-se-sm bg-primary text-white",
                           status === "sending" ? "opacity-50" : "",
+                          msg.id && highlightedId === msg.id
+                            ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-background"
+                            : "",
                         ].join(" ")}
                       >
                         {isAgent && (
@@ -1058,6 +1170,36 @@ export default function ChatInbox({
                             <UserRound className="h-3 w-3" />
                             {msg.senderName}
                           </p>
+                        )}
+                        {/* The message this one quotes — click to jump to it. */}
+                        {msg.replyTo && (
+                          <button
+                            type="button"
+                            onClick={() => jumpToMessage(msg.replyTo!.id)}
+                            className={[
+                              "mb-1.5 block w-full rounded-lg border-s-[3px] px-2 py-1 text-start transition-colors",
+                              isOutgoing
+                                ? "border-primary bg-foreground/5 hover:bg-foreground/10"
+                                : "border-white/70 bg-white/15 hover:bg-white/25",
+                            ].join(" ")}
+                          >
+                            <span
+                              className={[
+                                "block text-[11px] font-semibold",
+                                isOutgoing ? "text-primary" : "text-white",
+                              ].join(" ")}
+                            >
+                              {quoteAuthor(msg.replyTo, selectedConversation.contactName)}
+                            </span>
+                            <span
+                              className={[
+                                "line-clamp-2 block text-xs",
+                                isOutgoing ? "text-muted-foreground" : "text-white/80",
+                              ].join(" ")}
+                            >
+                              {msg.replyTo.snippet || "رسالة"}
+                            </span>
+                          </button>
                         )}
                         {msg.voice && (
                           <div className="mb-1">
@@ -1219,6 +1361,7 @@ export default function ChatInbox({
                           </div>
                         )}
                       </div>
+                      {isOutgoing && replyButton}
                     </div>
                   </Fragment>
                 );
@@ -1250,6 +1393,33 @@ export default function ChatInbox({
                 </Alert>
               ) : (
                 <div className="flex flex-col gap-2">
+                  {/* The message being answered — sent as a quoted reply. */}
+                  {replyingTo && (
+                    <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 py-2 pe-2 ps-3">
+                      <Reply className="h-4 w-4 flex-shrink-0 text-primary" />
+                      <button
+                        type="button"
+                        onClick={() => jumpToMessage(replyingTo.id)}
+                        className="min-w-0 flex-1 border-s-2 border-primary ps-2 text-start"
+                      >
+                        <span className="block text-[11px] font-semibold text-primary">
+                          الرد على {quoteAuthor(replyingTo, selectedConversation.contactName)}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {replyingTo.snippet || "رسالة"}
+                        </span>
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setReplyingTo(null)}
+                        aria-label="إلغاء الرد"
+                        className="[&_svg]:size-4"
+                      >
+                        <X />
+                      </Button>
+                    </div>
+                  )}
                   {/* Staged attachment preview */}
                   {pendingFile && (
                     <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2">
@@ -1300,6 +1470,7 @@ export default function ChatInbox({
                       <Paperclip />
                     </Button>
                     <Textarea
+                      ref={replyInputRef}
                       value={reply}
                       onChange={(e) => setReply(e.target.value)}
                       onKeyDown={handleKeyDown}

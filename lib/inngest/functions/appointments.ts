@@ -460,8 +460,10 @@ async function sendAppointmentNotify(
   const context = buildTokenContext(appt);
   const variables = buildTemplateVariables(binding.variableMap, context);
 
+  // Kept so a patient who quotes (or taps a button on) this template links back to it.
+  let wamid: string | null = null;
   try {
-    await sendTemplateMessage(
+    wamid = await sendTemplateMessage(
       recipient,
       { name: binding.templateName, languageCode: binding.languageCode, variables },
       { phoneNumberId: creds.phoneNumberId, accessToken: creds.accessToken }
@@ -485,6 +487,7 @@ async function sendAppointmentNotify(
       data: {
         clinicId,
         conversationId: thread.id,
+        whatsappMessageId: wamid,
         senderType: SenderType.AGENT,
         content: renderBindingText(binding, variables, PURPOSE_LABEL[purpose]),
         metadata: {
@@ -576,8 +579,10 @@ async function sendFollowUpReminder(recordId: string, clinicId: string): Promise
   const context = buildFollowUpTokenContext(record);
   const variables = buildTemplateVariables(binding.variableMap, context);
 
+  // Kept so a patient who quotes (or taps a button on) this template links back to it.
+  let wamid: string | null = null;
   try {
-    await sendTemplateMessage(
+    wamid = await sendTemplateMessage(
       recipient,
       { name: binding.templateName, languageCode: binding.languageCode, variables },
       { phoneNumberId: creds.phoneNumberId, accessToken: creds.accessToken }
@@ -598,6 +603,7 @@ async function sendFollowUpReminder(recordId: string, clinicId: string): Promise
       data: {
         clinicId,
         conversationId: thread.id,
+        whatsappMessageId: wamid,
         senderType: SenderType.AGENT,
         content: renderBindingText(binding, variables, PURPOSE_LABEL.FOLLOWUP_REMINDER),
         metadata: {

@@ -939,8 +939,16 @@ model Message {
   // USER/ADMIN messages, system notices, and replies sent before AI employees
   // existed.
   aiAgentId         String?         @db.Uuid
+  // The earlier message this one quotes (a WhatsApp "reply" bubble, or a staff
+  // reply picked from the inbox). Inbound: resolved from Meta's
+  // `messages[].context.id` wamid. Null for plain messages, and when the quoted
+  // message isn't one we stored — the reply is still kept, just without a link.
+  // Distinct from reactions, which attach to their target via metadata.
+  replyToId         String?         @db.Uuid
 
   aiAgent      AiAgent?     @relation(fields: [aiAgentId], references: [id], onDelete: SetNull)
+  replyTo      Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]    @relation("MessageReplies")
   clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   session      ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
@@ -952,6 +960,7 @@ model Message {
   @@index([sessionId])
   @@index([clinicId, createdAt])
   @@index([conversationId, whatsappMessageId])
+  @@index([replyToId])
   // Serves the processor's "unprocessed user messages in this session" read and
   // the "is there an undelivered reply to resume" resume-check.
   @@index([sessionId, processedAt])

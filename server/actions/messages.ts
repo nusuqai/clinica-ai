@@ -47,6 +47,22 @@ export type SendAdminReplyFailure =
   | "outside_window"
   | "server_error";
 
+/**
+ * The message a staff reply quotes, accepted only if it lives in this same
+ * conversation — a client-supplied id is never trusted beyond that. An unknown
+ * id degrades to a plain (unquoted) reply rather than failing the send.
+ */
+async function quotedMessage(
+  conversationId: string,
+  replyToId: string | null | undefined
+): Promise<{ id: string; whatsappMessageId: string | null } | null> {
+  if (!replyToId) return null;
+  return prisma.message.findFirst({
+    where: { id: replyToId, conversationId },
+    select: { id: true, whatsappMessageId: true },
+  });
+}
+
 /** The contact's last inbound message time — anchors the WhatsApp window. */
 async function lastInboundAt(conversationId: string): Promise<Date | null> {
   const m = await prisma.message.findFirst({
@@ -73,7 +89,9 @@ export type SendAdminReplyResult =
 
 export async function sendAdminReply(
   conversationId: string,
-  content: string
+  content: string,
+  /** The message this reply quotes (picked in the inbox), if any. */
+  replyToId?: string | null
 ): Promise<SendAdminReplyResult> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
@@ -94,8 +112,10 @@ export async function sendAdminReply(
   }
 
   let message;
+  let quoted: Awaited<ReturnType<typeof quotedMessage>> = null;
   try {
     const sessionId = await resolveActiveSession(conversationId, ctx.clinic.id);
+    quoted = await quotedMessage(conversationId, replyToId);
 
     message = await prisma.message.create({
       data: {
@@ -106,6 +126,7 @@ export async function sendAdminReply(
         content,
         isRead: true,
         clinicId: ctx.clinic.id,
+        replyToId: quoted?.id ?? null,
       },
     });
 
@@ -128,7 +149,9 @@ export async function sendAdminReply(
     try {
       const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
       if (!creds) throw new Error("WhatsApp is not configured for this clinic");
-      const wamid = await sendTextMessage(recipient, content, creds);
+      const wamid = await sendTextMessage(recipient, content, creds, {
+        replyToWamid: quoted?.whatsappMessageId,
+      });
       // Record the wamid so a patient's reaction can attach to this reply.
       if (wamid) {
         await prisma.message
@@ -215,6 +238,8 @@ export async function sendAdminMediaReply(
     caption?: string;
     width?: number;
     height?: number;
+    /** The message this attachment quotes (picked in the inbox), if any. */
+    replyToId?: string | null;
   }
 ): Promise<SendAdminReplyResult> {
   const ctx = await getClinicContext();
@@ -247,8 +272,10 @@ export async function sendAdminMediaReply(
   const caption = media.caption?.trim() ?? "";
 
   let message;
+  let quoted: Awaited<ReturnType<typeof quotedMessage>> = null;
   try {
     const sessionId = await resolveActiveSession(conversationId, ctx.clinic.id);
+    quoted = await quotedMessage(conversationId, media.replyToId);
     const mediaMeta: MediaAttachmentMetadata = {
       kind,
       storagePath: media.path,
@@ -268,6 +295,7 @@ export async function sendAdminMediaReply(
         isRead: true,
         clinicId: ctx.clinic.id,
         metadata: { media: mediaMeta } as unknown as Prisma.InputJsonValue,
+        replyToId: quoted?.id ?? null,
       },
     });
     await prisma.escalation.updateMany({
@@ -289,7 +317,8 @@ export async function sendAdminMediaReply(
       const wamid = await sendMediaMessage(
         recipient,
         { kind, mediaId: waMediaId, caption: caption || undefined, filename: media.filename },
-        creds
+        creds,
+        { replyToWamid: quoted?.whatsappMessageId }
       );
       if (wamid) {
         await prisma.message
@@ -326,7 +355,7 @@ export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: bo
 
   const message = await prisma.message.findUnique({
     where: { id: messageId },
-    include: { conversation: true },
+    include: { conversation: true, replyTo: { select: { whatsappMessageId: true } } },
   });
   // Only retry messages in the admin's own clinic.
   if (!message || message.conversation.clinicId !== ctx.clinic.id) {
@@ -343,6 +372,8 @@ export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: bo
   try {
     const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
     if (!creds) return { ok: false };
+    // Re-deliver with the same quote the original send carried.
+    const options = { replyToWamid: message.replyTo?.whatsappMessageId };
 
     const mediaMeta = (message.metadata as AgentMessageMetadata | null)?.media;
     if (mediaMeta?.storagePath) {
@@ -358,12 +389,13 @@ export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: bo
       await sendMediaMessage(
         recipient,
         { kind, mediaId: waMediaId, caption: mediaMeta.caption, filename: mediaMeta.filename },
-        creds
+        creds,
+        options
       );
       return { ok: true };
     }
 
-    await sendTextMessage(recipient, message.content, creds);
+    await sendTextMessage(recipient, message.content, creds, options);
     return { ok: true };
   } catch (err) {
     console.error("Failed to retry WhatsApp delivery:", err);
