@@ -9,15 +9,10 @@ import { useLoadMore } from "@/hooks/use-load-more";
 import { HistoryFilters, useHistoryFilters } from "./history-filters";
 import { InfiniteScroll } from "@/components/ui/infinite-scroll";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
-import { formatSlotDate } from "@/lib/slot-time";
+import { formatSlotDate, visitDate } from "@/lib/slot-time";
 import { Badge } from "@/components/ui/badge";
 
 export type PastVisit = PatientAppointment & { hasRecord: boolean };
-
-/** The visit's day: the slot's date, or the booking date for queue bookings. */
-export function visitDate(appt: Pick<PatientAppointment, "slot" | "bookingDate">): Date | null {
-  return appt.slot?.date ?? appt.bookingDate;
-}
 
 // The patient's completed visits on the clinic home page — filtered in the
 // database by doctor and date range; the first page is server-rendered, the

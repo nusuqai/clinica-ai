@@ -230,6 +230,7 @@ async function runWebReplyCore(ctx: AgentContext): Promise<WebReplyOutcome | nul
     usage: gen.usage ?? {
       promptTokens: 0,
       completionTokens: 0,
+      cachedInputTokens: 0,
       totalTokens: 0,
       model: DEFAULT_MODEL,
     },

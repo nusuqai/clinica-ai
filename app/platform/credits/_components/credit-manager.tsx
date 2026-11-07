@@ -15,7 +15,6 @@ import { unitsSchema, type UnitsValues } from "@/lib/validations/platform";
 
 interface Props {
   clinicId: string;
-  currentMarkup: number;
   currentLowUnitsThreshold: number;
 }
 

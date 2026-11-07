@@ -102,7 +102,13 @@ export async function describeImage(input: {
   const description = extractOutputText(json);
   const u =
     (json.usage as
-      { input_tokens?: number; output_tokens?: number; total_tokens?: number } | undefined) ?? {};
+      | {
+          input_tokens?: number;
+          output_tokens?: number;
+          total_tokens?: number;
+          input_tokens_details?: { cached_tokens?: number };
+        }
+      | undefined) ?? {};
   const model = typeof json.model === "string" ? json.model : VISION_MODEL;
 
   return {
@@ -110,6 +116,7 @@ export async function describeImage(input: {
     usage: {
       promptTokens: u.input_tokens ?? 0,
       completionTokens: u.output_tokens ?? 0,
+      cachedInputTokens: u.input_tokens_details?.cached_tokens ?? 0,
       totalTokens: u.total_tokens ?? 0,
       model,
     },

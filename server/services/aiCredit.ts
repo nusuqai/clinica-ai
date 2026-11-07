@@ -1,35 +1,33 @@
 import "server-only";
-import { Prisma, AiLedgerType, AiUnitLedgerType, AiUsageKind } from "@prisma/client";
+import { Prisma, AiUnitLedgerType, AiUsageKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendClinicLowUnitsAlert } from "@/lib/email/send-transactional";
 import type { TokenUsage } from "@/agent/types";
 
 /**
- * Per-clinic AI metering — the money path AND the unit path.
+ * Per-clinic AI metering — units for the clinic, raw USD cost for the platform.
  *
- * TWO METERS, ONE OF THEM PREPAID (see the ClinicAiCredit schema comment):
  *   - UNITS are what a clinic is granted, sees, and spends. One agent reply
- *     costs exactly one unit, however many tokens it burned; transcription and
- *     TTS cost none. This is the only meter that gates the agent.
- *   - USD is pure telemetry: the real marked-up cost of every reply,
- *     transcription and TTS call, computed by `computeCost` below. Nobody tops
- *     it up — it only accrues — so it can never stop a clinic from replying.
- * They move together in one transaction so they can never disagree about
- * whether a reply happened.
+ *     costs exactly one unit, however many tokens it burned; transcription, TTS
+ *     and image extraction cost none. This is the only meter, and the only
+ *     thing that gates the agent.
+ *   - USD is telemetry only: every reply, transcription, TTS and extraction
+ *     call logs its real OpenAI list cost (`rawCost`, see `computeCost`) on its
+ *     AiUsageLog row, so the platform can see what a unit costs to serve. It is
+ *     never charged to anyone and never gates anything.
  *
- * MONEY SAFETY (read before editing):
- *   - Every amount here is a Prisma.Decimal (decimal.js). JS floats never touch a
- *     rate, cost, markup or balance. `Number()` is only ever applied at the UI
+ * SAFETY (read before editing):
+ *   - Every USD amount here is a Prisma.Decimal (decimal.js). JS floats never
+ *     touch a rate or cost. `Number()` is only ever applied at the UI
  *     serialization boundary, never in this file. (Units are exact integers, so
- *     they are the one thing here that is safe as a plain `number`.)
- *   - The AiCreditLedger / AiUnitLedger are the sources of truth;
- *     `ClinicAiCredit.balance` and `.unitBalance` are denormalized caches. Every
- *     change happens inside one transaction that locks the credit row
- *     (SELECT … FOR UPDATE), mutates the balance, and appends a ledger row — so
- *     SUM(ledger.amount) always equals the cached balance.
+ *     they are safe as a plain `number`.)
+ *   - AiUnitLedger is the source of truth; `ClinicAiCredit.unitBalance` is a
+ *     denormalized cache. Every change happens inside one transaction that locks
+ *     the credit row (SELECT … FOR UPDATE), moves the balance, and appends a
+ *     ledger row — so SUM(ledger.amount) always equals the cached balance.
  *   - Charging is idempotent via AiUsageLog @@unique([messageId, kind]): a
  *     webhook redelivery that re-charges the same reply rolls the whole txn
- *     back, units included.
+ *     back, unit included.
  */
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -37,8 +35,8 @@ const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 /**
  * What one agent reply costs a clinic, in units. Flat by design: the clinic
  * pays per answered message and never has to reason about tokens — the variable
- * real cost lands on the platform's USD ledger instead. Voice does not change
- * it; transcription and TTS are charged in USD only.
+ * real cost is only logged (rawCost) for the platform. Voice does not change
+ * it; transcription and TTS cost no unit.
  */
 export const UNITS_PER_REPLY = 1;
 
@@ -57,25 +55,43 @@ export interface UnitAlert {
 }
 
 const TOKENS_PER_MILLION = D(1_000_000);
-const DEFAULT_MARKUP = D("1.5");
 
-/** OpenAI list prices in USD per 1,000,000 tokens (as of 2026). Snapshotted onto
- *  each usage log so historical cost stays correct when these change. */
-const PRICING: Record<string, { inputPerM: Prisma.Decimal; outputPerM: Prisma.Decimal }> = {
+interface TokenRate {
+  inputPerM: Prisma.Decimal;
+  /** Prompt-cache reads (the cached share of input_tokens) — a steep discount. */
+  cachedInputPerM: Prisma.Decimal;
+  outputPerM: Prisma.Decimal;
+}
+
+/** OpenAI Standard-tier list prices in USD per 1,000,000 tokens, from
+ *  developers.openai.com/api/docs/pricing (checked 2026-10-16). Snapshotted onto
+ *  each usage log so historical cost stays correct when these change.
+ *
+ *  gpt-5.6 rates are the short-context (≤272K input tokens per request) tier;
+ *  the agent's requests stay well under that. Not modelled: the >272K tier and
+ *  the 10% regional/data-residency uplift (we call the global endpoint). */
+const PRICING: Record<string, TokenRate> = {
   // GPT-5.6 reasoning family. Reasoning (thinking) tokens are billed as output
   // tokens and are already included in the reply's output_tokens count, so no
   // separate handling is needed here.
-  "gpt-5.6-luna": { inputPerM: D("0.2"), outputPerM: D("1.2") },
-  "gpt-5.6-terra": { inputPerM: D("2"), outputPerM: D("12") },
-  "gpt-4o": { inputPerM: D("2.5"), outputPerM: D("10") },
-  "gpt-4o-mini": { inputPerM: D("0.15"), outputPerM: D("0.6") },
-  "gpt-4.1": { inputPerM: D("2"), outputPerM: D("8") },
-  "gpt-4.1-mini": { inputPerM: D("0.4"), outputPerM: D("1.6") },
-  "gpt-4.1-nano": { inputPerM: D("0.1"), outputPerM: D("0.4") },
+  "gpt-5.6-sol": { inputPerM: D("4"), cachedInputPerM: D("0.4"), outputPerM: D("20") },
+  "gpt-5.6-terra": { inputPerM: D("2"), cachedInputPerM: D("0.2"), outputPerM: D("12") },
+  "gpt-5.6-luna": { inputPerM: D("0.2"), cachedInputPerM: D("0.02"), outputPerM: D("1.2") },
+  "gpt-4o": { inputPerM: D("2.5"), cachedInputPerM: D("1.25"), outputPerM: D("10") },
+  "gpt-4o-mini": { inputPerM: D("0.15"), cachedInputPerM: D("0.075"), outputPerM: D("0.6") },
+  "gpt-4.1": { inputPerM: D("2"), cachedInputPerM: D("0.5"), outputPerM: D("8") },
+  "gpt-4.1-mini": { inputPerM: D("0.4"), cachedInputPerM: D("0.1"), outputPerM: D("1.6") },
+  "gpt-4.1-nano": { inputPerM: D("0.1"), cachedInputPerM: D("0.025"), outputPerM: D("0.4") },
 };
 
-/** Used when a model isn't in the table — never bill an unknown model as free. */
-const FALLBACK_RATE = { inputPerM: D("2.5"), outputPerM: D("10") };
+/** Used when a model isn't in the table — never bill an unknown model as free.
+ *  Cache reads at the full input rate: without a known discount, err toward
+ *  over- rather than under-counting cost. */
+const FALLBACK_RATE: TokenRate = {
+  inputPerM: D("2.5"),
+  cachedInputPerM: D("2.5"),
+  outputPerM: D("10"),
+};
 
 /** Transcription (speech-to-text) list prices in USD per MINUTE of audio. */
 const TRANSCRIBE_PRICING: Record<string, Prisma.Decimal> = {
@@ -108,33 +124,48 @@ function ttsRate(model: string): Prisma.Decimal {
   return key ? TTS_PRICING[key] : FALLBACK_TTS_PER_M_CHARS;
 }
 
-function rateFor(model: string): { inputPerM: Prisma.Decimal; outputPerM: Prisma.Decimal } {
-  // Provider may report a dated variant (e.g. "gpt-4o-2024-08-06"); match on prefix.
+function rateFor(model: string): TokenRate {
+  // Provider may report a dated variant (e.g. "gpt-4o-2024-08-06"); match on the
+  // LONGEST prefix, so "gpt-4o-mini-2024-07-18" is gpt-4o-mini, not gpt-4o.
   if (PRICING[model]) return PRICING[model];
-  const key = Object.keys(PRICING).find((k) => model.startsWith(k));
+  const key = Object.keys(PRICING)
+    .filter((k) => model.startsWith(k))
+    .sort((a, b) => b.length - a.length)[0];
   return key ? PRICING[key] : FALLBACK_RATE;
 }
 
 export interface CostBreakdown {
   rawCost: Prisma.Decimal;
-  chargedCost: Prisma.Decimal;
   inputRatePerM: Prisma.Decimal;
+  cachedInputRatePerM: Prisma.Decimal;
   outputRatePerM: Prisma.Decimal;
+  /** Cache-read count clamped to promptTokens — what was actually billed at the
+   *  cached rate, and what the usage log should record. */
+  cachedInputTokens: number;
 }
 
-/** Raw OpenAI cost + marked-up charged cost for a turn. Decimal only. */
-export function computeCost(usage: TokenUsage, markup: Prisma.Decimal): CostBreakdown {
+/**
+ * Raw OpenAI list cost for a turn. Decimal only.
+ *
+ * promptTokens INCLUDES the cached share: cached tokens go at the cached rate,
+ * the rest at the ordinary input rate. Completions go at output. (Same formula
+ * as LangSmith's cost.)
+ */
+export function computeCost(usage: TokenUsage): CostBreakdown {
   const rate = rateFor(usage.model);
+  const cachedInputTokens = Math.min(Math.max(usage.cachedInputTokens ?? 0, 0), usage.promptTokens);
+  const uncachedInputTokens = usage.promptTokens - cachedInputTokens;
   const rawCost = rate.inputPerM
-    .mul(usage.promptTokens)
-    .div(TOKENS_PER_MILLION)
-    .plus(rate.outputPerM.mul(usage.completionTokens).div(TOKENS_PER_MILLION));
-  const chargedCost = rawCost.mul(markup);
+    .mul(uncachedInputTokens)
+    .plus(rate.cachedInputPerM.mul(cachedInputTokens))
+    .plus(rate.outputPerM.mul(usage.completionTokens))
+    .div(TOKENS_PER_MILLION);
   return {
     rawCost,
-    chargedCost,
     inputRatePerM: rate.inputPerM,
+    cachedInputRatePerM: rate.cachedInputPerM,
     outputRatePerM: rate.outputPerM,
+    cachedInputTokens,
   };
 }
 
@@ -159,7 +190,6 @@ export interface ClinicAiStatus {
   /** Clinic-facing meter: replies remaining. The ONLY prepaid meter. */
   unitBalance: number;
   lowUnitsThreshold: number;
-  markup: Prisma.Decimal;
   /**
    * Hard gate: the agent replies only when the clinic has a unit left to spend.
    * Units are the only thing a clinic is granted, so they are the only thing
@@ -224,7 +254,6 @@ export async function getClinicAiStatus(clinicId: string): Promise<ClinicAiStatu
       imageAutoReplyEnabled: true,
       unitBalance: true,
       lowUnitsThreshold: true,
-      markup: true,
     },
   });
   return {
@@ -234,15 +263,14 @@ export async function getClinicAiStatus(clinicId: string): Promise<ClinicAiStatu
     imageAutoReplyEnabled: row.imageAutoReplyEnabled,
     unitBalance: row.unitBalance,
     lowUnitsThreshold: row.lowUnitsThreshold,
-    markup: row.markup,
     sufficient: row.unitBalance >= UNITS_PER_REPLY,
     lowUnits: row.unitBalance <= row.lowUnitsThreshold,
   };
 }
 
 /**
- * Charges one agent reply: ONE UNIT off the clinic's meter and its real cost off
- * the platform's USD balance, atomically, in the same transaction.
+ * Charges one agent reply: ONE UNIT off the clinic's meter, plus a usage log of
+ * its real USD cost (telemetry), atomically, in the same transaction.
  *
  * This is the ONLY place a unit is ever spent, and it is reached only from the
  * agent runner after an AGENT message has been persisted — which is exactly what
@@ -251,10 +279,9 @@ export async function getClinicAiStatus(clinicId: string): Promise<ClinicAiStatu
  * never comes near this function, so it costs the clinic nothing.
  *
  * The credit row is locked FOR UPDATE first so concurrent turns for the same
- * clinic serialize and both `balanceAfter` values are exact. The markup is read
- * under that lock so a mid-turn markup edit can't split the cost. Either balance
- * may dip slightly negative on the turn that spent the last of it — that's
- * accepted; the next turn is blocked by the `sufficient` gate.
+ * clinic serialize and `balanceAfter` is exact. The unit balance may dip
+ * slightly negative on the turn that spent the last of it — that's accepted;
+ * the next turn is blocked by the `sufficient` gate.
  *
  * Idempotent: a duplicate (messageId, kind) violates the unique index and rolls
  * the whole txn back — the unit with it, so a redelivered webhook can never
@@ -272,26 +299,21 @@ export async function chargeUsage(args: {
   const { clinicId, sessionId, messageId, usage } = args;
 
   return prisma.$transaction(async (tx) => {
-    // (1) Lock the credit row and read the CURRENT markup under the lock.
-    const locked = await tx.$queryRaw<{ markup: Prisma.Decimal }[]>`
-      SELECT "markup" FROM "clinic_ai_credits"
+    // (1) Lock the credit row so concurrent turns for this clinic serialize.
+    await tx.$queryRaw`
+      SELECT "id" FROM "clinic_ai_credits"
       WHERE "clinicId" = ${clinicId}::uuid
       FOR UPDATE`;
-    const markup = locked[0]?.markup ?? DEFAULT_MARKUP;
 
-    // (2) Compute cost (Decimal only).
-    const { rawCost, chargedCost, inputRatePerM, outputRatePerM } = computeCost(usage, markup);
+    // (2) Compute the raw cost (Decimal only) — telemetry, not charged.
+    const { rawCost, inputRatePerM, cachedInputRatePerM, outputRatePerM, cachedInputTokens } =
+      computeCost(usage);
 
-    // (3) Atomic decrement of BOTH meters; the returned values are
-    //     post-decrement. One update, so the two can never diverge.
+    // (3) Atomic unit decrement; the returned values are post-decrement.
     const credit = await tx.clinicAiCredit.update({
       where: { clinicId },
-      data: {
-        balance: { decrement: chargedCost },
-        unitBalance: { decrement: UNITS_PER_REPLY },
-      },
+      data: { unitBalance: { decrement: UNITS_PER_REPLY } },
       select: {
-        balance: true,
         unitBalance: true,
         lowUnitsThreshold: true,
         lowUnitsNotifiedAt: true,
@@ -309,29 +331,18 @@ export async function chargeUsage(args: {
         model: usage.model,
         promptTokens: usage.promptTokens,
         completionTokens: usage.completionTokens,
+        cachedInputTokens,
         totalTokens: usage.totalTokens,
         inputRatePerM,
+        cachedInputRatePerM,
         outputRatePerM,
         rawCost,
-        markup,
-        chargedCost,
         unitsCharged: UNITS_PER_REPLY,
       },
       select: { id: true },
     });
 
-    // (5) Append the USAGE ledger entry (source of truth), signed negative.
-    await tx.aiCreditLedger.create({
-      data: {
-        clinicId,
-        type: AiLedgerType.USAGE,
-        amount: chargedCost.neg(),
-        balanceAfter: credit.balance,
-        usageId: usageRow.id,
-      },
-    });
-
-    // (6) The same entry on the unit ledger, linked to the same usage row — so
+    // (5) The unit ledger entry (source of truth), linked to the usage row — so
     //     every unit a clinic spent points at the reply that spent it.
     await tx.aiUnitLedger.create({
       data: {
@@ -343,7 +354,7 @@ export async function chargeUsage(args: {
       },
     });
 
-    // (7) Claim the platform alert, still under the row lock taken in (1).
+    // (6) Claim the platform alert, still under the row lock taken in (1).
     //     Claiming here — rather than checking after the commit — is what makes
     //     the email fire exactly once per crossing: concurrent turns for the
     //     same clinic serialize on this row, so only one of them can find the
@@ -406,98 +417,56 @@ export async function notifyUnitAlert(clinicId: string, alert: UnitAlert): Promi
 }
 
 /**
- * Shared money path for a non-token (audio) charge — transcription or TTS.
- * Mirrors `chargeUsage`: locks the credit row, reads the markup under the lock,
- * decrements the balance, and appends a usage log + a signed-negative ledger
- * row in one transaction. Idempotent on (messageId, kind): a webhook redelivery
- * that re-charges the same audio rolls the whole txn back.
+ * Logs a non-token (audio) call — transcription or TTS — as its own usage row.
+ * Idempotent on (messageId, kind): a webhook redelivery that logs the same audio
+ * again fails the unique and is swallowed by the caller.
  *
- * USD ONLY — no unit is spent here. A voice conversation costs the clinic the
- * same one unit per answer as a text one; understanding the question and
- * speaking the answer are costs the platform absorbs on its own ledger.
+ * No unit is spent here. A voice conversation costs the clinic the same one
+ * unit per answer as a text one; understanding the question and speaking the
+ * answer are costs the platform absorbs — logged here as rawCost only.
  *
  * For audio rows the token columns are null and `audioSeconds` carries the
  * length; the per-unit list rate is snapshotted in `inputRatePerM` (per-minute
  * for transcription, per-1M-chars for TTS) so historical cost stays correct.
  */
-async function chargeAudioUsage(args: {
+async function logAudioUsage(args: {
   clinicId: string;
   sessionId: string | null;
   messageId: string | null;
   kind: AiUsageKind;
-  ledgerType: AiLedgerType;
   model: string;
   audioSeconds: number | null;
   ratePerM: Prisma.Decimal;
   rawCost: Prisma.Decimal;
 }): Promise<void> {
-  const {
-    clinicId,
-    sessionId,
-    messageId,
-    kind,
-    ledgerType,
-    model,
-    audioSeconds,
-    ratePerM,
-    rawCost,
-  } = args;
+  const { clinicId, sessionId, messageId, kind, model, audioSeconds, ratePerM, rawCost } = args;
 
-  await prisma.$transaction(async (tx) => {
-    const locked = await tx.$queryRaw<{ markup: Prisma.Decimal }[]>`
-      SELECT "markup" FROM "clinic_ai_credits"
-      WHERE "clinicId" = ${clinicId}::uuid
-      FOR UPDATE`;
-    const markup = locked[0]?.markup ?? DEFAULT_MARKUP;
-
-    const chargedCost = rawCost.mul(markup);
-
-    const credit = await tx.clinicAiCredit.update({
-      where: { clinicId },
-      data: { balance: { decrement: chargedCost } },
-      select: { balance: true },
-    });
-
-    const usageRow = await tx.aiUsageLog.create({
-      data: {
-        clinicId,
-        sessionId,
-        messageId,
-        kind,
-        model,
-        audioSeconds: audioSeconds ?? null,
-        // Audio rows are not token-shaped.
-        promptTokens: null,
-        completionTokens: null,
-        totalTokens: null,
-        inputRatePerM: ratePerM,
-        outputRatePerM: D(0),
-        rawCost,
-        markup,
-        chargedCost,
-        // Explicit, though it is also the column default: audio never costs the
-        // clinic a unit. Keeps unit reporting a plain SUM over this column.
-        unitsCharged: 0,
-      },
-      select: { id: true },
-    });
-
-    await tx.aiCreditLedger.create({
-      data: {
-        clinicId,
-        type: ledgerType,
-        amount: chargedCost.neg(),
-        balanceAfter: credit.balance,
-        usageId: usageRow.id,
-      },
-    });
+  await prisma.aiUsageLog.create({
+    data: {
+      clinicId,
+      sessionId,
+      messageId,
+      kind,
+      model,
+      audioSeconds: audioSeconds ?? null,
+      // Audio rows are not token-shaped.
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      inputRatePerM: ratePerM,
+      outputRatePerM: D(0),
+      rawCost,
+      // Explicit, though it is also the column default: audio never costs the
+      // clinic a unit. Keeps unit reporting a plain SUM over this column.
+      unitsCharged: 0,
+    },
   });
 }
 
 /**
- * Charges transcription of one inbound voice message, as its own ledger line
- * (type TRANSCRIPTION), separate from the agent reply. `messageId` is the
- * inbound patient message; `audioSeconds` is the billed audio length.
+ * Logs transcription of one inbound voice message, as its own usage row (kind
+ * TRANSCRIPTION), separate from the agent reply. `messageId` is the inbound
+ * patient message; `audioSeconds` is the billed audio length.
  */
 export async function chargeTranscription(args: {
   clinicId: string;
@@ -509,12 +478,11 @@ export async function chargeTranscription(args: {
   const seconds = args.audioSeconds && args.audioSeconds > 0 ? args.audioSeconds : 1;
   const ratePerMin = transcribeRate(args.model);
   const rawCost = ratePerMin.mul(seconds).div(SECONDS_PER_MINUTE);
-  await chargeAudioUsage({
+  await logAudioUsage({
     clinicId: args.clinicId,
     sessionId: args.sessionId,
     messageId: args.messageId,
     kind: AiUsageKind.TRANSCRIPTION,
-    ledgerType: AiLedgerType.TRANSCRIPTION,
     model: args.model,
     audioSeconds: args.audioSeconds,
     ratePerM: ratePerMin,
@@ -523,9 +491,9 @@ export async function chargeTranscription(args: {
 }
 
 /**
- * Charges a synthesized (TTS) voice reply, as its own ledger line (type TTS),
- * separate from the agent reply's token charge. `messageId` is the agent reply
- * message; billed per character of spoken text.
+ * Logs a synthesized (TTS) voice reply, as its own usage row (kind TTS),
+ * separate from the agent reply's token usage. `messageId` is the agent reply
+ * message; costed per character of spoken text.
  */
 export async function chargeTts(args: {
   clinicId: string;
@@ -539,12 +507,11 @@ export async function chargeTts(args: {
   const ratePerM = ttsRate(args.model);
   // TOKENS_PER_MILLION is just 1,000,000 — reused here as chars-per-million.
   const rawCost = ratePerM.mul(chars).div(TOKENS_PER_MILLION);
-  await chargeAudioUsage({
+  await logAudioUsage({
     clinicId: args.clinicId,
     sessionId: args.sessionId,
     messageId: args.messageId,
     kind: AiUsageKind.TTS,
-    ledgerType: AiLedgerType.TTS,
     model: args.model,
     audioSeconds: args.audioSeconds,
     ratePerM,
@@ -553,14 +520,14 @@ export async function chargeTts(args: {
 }
 
 /**
- * Charges the one-time vision call that describes an inbound image (issue #52),
- * as its own ledger line (type EXTRACTION), separate from the agent reply.
- * `messageId` is the inbound patient image message; billed on the vision call's
+ * Logs the one-time vision call that describes an inbound image (issue #52), as
+ * its own usage row (kind EXTRACTION), separate from the agent reply.
+ * `messageId` is the inbound patient image message; costed on the vision call's
  * own token usage (image tokens are already inside `promptTokens`).
  *
- * Token-shaped like a reply, but USD ONLY — no unit is spent (the platform
- * absorbs the cost of understanding the patient, same as transcription/TTS).
- * Idempotent on (messageId, EXTRACTION): a redelivery rolls the whole txn back.
+ * Token-shaped like a reply, but no unit is spent (the platform absorbs the
+ * cost of understanding the patient, same as transcription/TTS). Idempotent on
+ * (messageId, EXTRACTION): a redelivery fails the unique.
  */
 export async function chargeExtraction(args: {
   clinicId: string;
@@ -569,52 +536,27 @@ export async function chargeExtraction(args: {
   usage: TokenUsage;
 }): Promise<void> {
   const { clinicId, sessionId, messageId, usage } = args;
+  const { rawCost, inputRatePerM, cachedInputRatePerM, outputRatePerM, cachedInputTokens } =
+    computeCost(usage);
 
-  await prisma.$transaction(async (tx) => {
-    const locked = await tx.$queryRaw<{ markup: Prisma.Decimal }[]>`
-      SELECT "markup" FROM "clinic_ai_credits"
-      WHERE "clinicId" = ${clinicId}::uuid
-      FOR UPDATE`;
-    const markup = locked[0]?.markup ?? DEFAULT_MARKUP;
-
-    const { rawCost, chargedCost, inputRatePerM, outputRatePerM } = computeCost(usage, markup);
-
-    const credit = await tx.clinicAiCredit.update({
-      where: { clinicId },
-      data: { balance: { decrement: chargedCost } },
-      select: { balance: true },
-    });
-
-    const usageRow = await tx.aiUsageLog.create({
-      data: {
-        clinicId,
-        sessionId,
-        messageId,
-        kind: AiUsageKind.EXTRACTION,
-        model: usage.model,
-        promptTokens: usage.promptTokens,
-        completionTokens: usage.completionTokens,
-        totalTokens: usage.totalTokens,
-        inputRatePerM,
-        outputRatePerM,
-        rawCost,
-        markup,
-        chargedCost,
-        // Vision never costs the clinic a unit — only the reply it feeds does.
-        unitsCharged: 0,
-      },
-      select: { id: true },
-    });
-
-    await tx.aiCreditLedger.create({
-      data: {
-        clinicId,
-        type: AiLedgerType.EXTRACTION,
-        amount: chargedCost.neg(),
-        balanceAfter: credit.balance,
-        usageId: usageRow.id,
-      },
-    });
+  await prisma.aiUsageLog.create({
+    data: {
+      clinicId,
+      sessionId,
+      messageId,
+      kind: AiUsageKind.EXTRACTION,
+      model: usage.model,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      cachedInputTokens,
+      totalTokens: usage.totalTokens,
+      inputRatePerM,
+      cachedInputRatePerM,
+      outputRatePerM,
+      rawCost,
+      // Vision never costs the clinic a unit — only the reply it feeds does.
+      unitsCharged: 0,
+    },
   });
 }
 
@@ -629,8 +571,7 @@ export function isDuplicateChargeError(err: unknown): boolean {
  * Decimal, because a unit is indivisible.
  *
  * Units are the only thing a clinic is ever granted: there is deliberately no
- * USD counterpart to this function. The dollar side is never topped up or
- * adjusted by hand — it only ever accrues what replies actually cost, as
+ * USD counterpart to this function. USD is only ever logged per call, as
  * telemetry (see chargeUsage).
  */
 async function moveUnits(
@@ -716,15 +657,6 @@ export async function setClinicLowUnitsThreshold(
     where: { clinicId },
     update: { lowUnitsThreshold: threshold },
     create: { clinicId, lowUnitsThreshold: threshold },
-  });
-}
-
-/** Platform admin: set the per-clinic markup multiplier. */
-export async function setClinicMarkup(clinicId: string, markup: Prisma.Decimal): Promise<void> {
-  await prisma.clinicAiCredit.upsert({
-    where: { clinicId },
-    update: { markup },
-    create: { clinicId, markup },
   });
 }
 
