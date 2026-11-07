@@ -1,10 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { Prisma } from "@prisma/client";
 import { requirePlatformAdmin } from "@/lib/auth";
 import {
-  setClinicMarkup,
   topUpClinicUnits,
   adjustClinicUnits,
   setClinicLowUnitsThreshold,
@@ -13,21 +11,6 @@ import {
 const CREDITS_PATH = "/platform/credits";
 
 type ActionError = { ok: false; reason: "error"; message: string };
-
-/** Parses a user-entered decimal (the pricing markup) — never through a JS
- *  float. Rejects empty / non-numeric input so bad values never reach the
- *  cost calculation. */
-function parseDecimal(raw: string): Prisma.Decimal | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  try {
-    const d = new Prisma.Decimal(trimmed);
-    if (!d.isFinite()) return null;
-    return d;
-  } catch {
-    return null;
-  }
-}
 
 /** Parses a unit count. Units are indivisible, so anything fractional or
  *  non-numeric is rejected outright rather than rounded into the ledger. */
@@ -111,25 +94,6 @@ export async function setClinicLowUnitsThresholdAction(input: {
     return { ok: true, threshold };
   } catch (err) {
     console.error("Failed to set clinic low-units threshold:", err);
-    return { ok: false, reason: "error", message: "تعذر تنفيذ العملية." };
-  }
-}
-
-export async function setClinicMarkupAction(input: {
-  clinicId: string;
-  markup: string;
-}): Promise<{ ok: true; markup: string } | ActionError> {
-  await requirePlatformAdmin();
-  const markup = parseDecimal(input.markup);
-  if (!markup || markup.lt(1)) {
-    return { ok: false, reason: "error", message: "المضاعف يجب ألا يقل عن 1." };
-  }
-  try {
-    await setClinicMarkup(input.clinicId, markup);
-    revalidatePath(CREDITS_PATH);
-    return { ok: true, markup: markup.toFixed(4) };
-  } catch (err) {
-    console.error("Failed to set clinic markup:", err);
     return { ok: false, reason: "error", message: "تعذر تنفيذ العملية." };
   }
 }

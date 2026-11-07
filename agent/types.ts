@@ -148,8 +148,11 @@ export interface AgentMessageMetadata {
  * `model` is the model name the provider actually billed, snapshotted per turn.
  */
 export interface TokenUsage {
+  /** All input tokens, INCLUDING the cached share below. */
   promptTokens: number;
   completionTokens: number;
+  /** Input tokens read from OpenAI's prompt cache (billed ~0.1x input). */
+  cachedInputTokens: number;
   totalTokens: number;
   model: string;
 }
