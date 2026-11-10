@@ -169,3 +169,15 @@ export async function saveWhatsappConfig(
   });
   return { webhookToken, verifyToken };
 }
+
+/**
+ * Disconnects a clinic from WhatsApp by deleting its config row. This frees its
+ * `phoneNumberId` (unique across clinics) so the same number can be connected
+ * to another clinic. The old webhook URL stops resolving immediately, and
+ * reconnecting later issues a fresh webhook/verify token pair. Conversations
+ * and message history are untouched. Returns false if there was nothing to remove.
+ */
+export async function deleteWhatsappConfig(clinicId: string): Promise<boolean> {
+  const { count } = await prisma.whatsappConfig.deleteMany({ where: { clinicId } });
+  return count > 0;
+}

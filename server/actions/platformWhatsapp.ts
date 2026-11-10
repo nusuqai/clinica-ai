@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { requirePlatformAdmin } from "@/lib/auth";
-import { getClinicWhatsappCredentials, saveWhatsappConfig } from "@/lib/meta/whatsapp-config";
+import { Prisma } from "@prisma/client";
+import {
+  deleteWhatsappConfig,
+  getClinicWhatsappCredentials,
+  saveWhatsappConfig,
+} from "@/lib/meta/whatsapp-config";
 import {
   listMessageTemplates,
   createMessageTemplate,
@@ -51,12 +56,39 @@ export async function saveClinicWhatsappConfigAction(input: {
     revalidatePath(WHATSAPP_PATH);
     return { ok: true, webhookToken, verifyToken };
   } catch (err) {
+    // phoneNumberId is unique across clinics: point at the fix, not the stack.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return {
+        ok: false,
+        reason: "error",
+        message: "رقم الواتساب هذا مربوط بعيادة أخرى. افصله من تلك العيادة أولًا ثم أعد المحاولة.",
+      };
+    }
     console.error("Failed to save WhatsApp config:", err);
     return {
       ok: false,
       reason: "error",
       message: err instanceof Error ? err.message : "تعذّر حفظ الإعدادات.",
     };
+  }
+}
+
+/**
+ * Unlinks the clinic's WhatsApp number (deletes its config) so the number can be
+ * connected to a different clinic. Returns `{ error }` on failure so the confirm
+ * dialog can show it in place.
+ */
+export async function disconnectClinicWhatsappAction(input: {
+  clinicId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requirePlatformAdmin();
+  try {
+    await deleteWhatsappConfig(input.clinicId);
+    revalidatePath(WHATSAPP_PATH);
+    return { ok: true };
+  } catch (err) {
+    console.error("Failed to disconnect WhatsApp:", err);
+    return { ok: false, error: "تعذّر فصل رقم الواتساب." };
   }
 }
 

@@ -3,8 +3,12 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, KeyRound, Copy, Check } from "lucide-react";
-import { saveClinicWhatsappConfigAction } from "@/server/actions/platformWhatsapp";
+import { Save, KeyRound, Copy, Check, Unlink } from "lucide-react";
+import {
+  disconnectClinicWhatsappAction,
+  saveClinicWhatsappConfigAction,
+} from "@/server/actions/platformWhatsapp";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { WhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -82,6 +86,31 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
     }
   });
 
+  const confirm = useConfirm();
+  const handleDisconnect = async () => {
+    setMessage(null);
+    const done = await confirm({
+      title: "فصل رقم الواتساب",
+      description: (
+        <>
+          فصل الرقم <span dir="ltr">{form.getValues("phoneNumberId")}</span> عن هذه العيادة؟
+        </>
+      ),
+      warning:
+        "ستتوقف العيادة عن استقبال وإرسال رسائل واتساب فورًا، ويمكن بعدها ربط الرقم بعيادة أخرى. المحادثات السابقة تبقى كما هي.",
+      confirmText: "فصل الرقم",
+      onConfirm: async () => {
+        const res = await disconnectClinicWhatsappAction({ clinicId });
+        return res.ok ? res : { error: res.error };
+      },
+    });
+    if (!done) return;
+    form.reset({ phoneNumberId: "", wabaId: "", accessToken: "" });
+    setHasToken(false);
+    setTokens(null);
+    setMessage({ ok: true, text: "تم فصل الرقم. يمكنك الآن ربطه بعيادة أخرى." });
+  };
+
   const webhookUrl = tokens ? `${appUrl}/api/meta/whatsapp/webhook/${tokens.webhookToken}` : "";
 
   return (
@@ -130,10 +159,24 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
             </p>
           )}
 
-          <Button type="submit" loading={saving}>
-            {!saving && <Save />}
-            حفظ
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" loading={saving}>
+              {!saving && <Save />}
+              حفظ
+            </Button>
+            {tokens && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDisconnect}
+                disabled={saving}
+                className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30"
+              >
+                <Unlink />
+                فصل الرقم
+              </Button>
+            )}
+          </div>
         </form>
 
         {tokens && (

@@ -292,6 +292,13 @@ export function ConversationList({
                     )}
                   </div>
 
+                  {/* Skip when the name already fell back to the phone itself. */}
+                  {conv.contactPhone && conv.contactPhone !== conv.contactName && (
+                    <p className="truncate font-sans text-[11px] text-muted-foreground/80">
+                      <span dir="ltr">{conv.contactPhone}</span>
+                    </p>
+                  )}
+
                   <div className="mt-0.5 flex items-center gap-1.5">
                     <p className="min-w-0 flex-1 truncate font-sans text-xs text-muted-foreground">
                       {conv.lastMessage ?? ""}
