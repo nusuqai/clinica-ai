@@ -6,6 +6,8 @@ interface FooterSectionProps {
   tagline?: string;
   loginHref?: string;
   registerHref?: string;
+  /** Label of the #doctors link — "الطبيب" on a solo-doctor clinic. */
+  doctorsLabel?: string;
 }
 
 export function FooterSection({
@@ -13,6 +15,7 @@ export function FooterSection({
   tagline = "منصة العيادة الذكية — احجز مواعيدك مع أفضل الأطباء بسهولة وأمان",
   loginHref = "/login",
   registerHref = "/register",
+  doctorsLabel = "الأطباء",
 }: FooterSectionProps = {}) {
   return (
     <footer className="bg-primary">
@@ -47,7 +50,7 @@ export function FooterSection({
               href="#doctors"
               className="font-sans text-sm text-white/50 transition-colors hover:text-accent"
             >
-              الأطباء
+              {doctorsLabel}
             </a>
           </div>
 

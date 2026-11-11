@@ -39,6 +39,8 @@ interface DashboardShellProps {
   permissions?: Permission[];
   /** Overrides the sidebar's role badge — a STAFF member's custom role name. */
   roleLabel?: string | null;
+  /** Admin dashboard only — the clinic is a solo-doctor clinic (Clinic.kind). */
+  soloDoctor?: boolean;
 }
 
 export default function DashboardShell({
@@ -54,6 +56,7 @@ export default function DashboardShell({
   isClinicAdmin = true,
   permissions = [],
   roleLabel: roleLabelOverride = null,
+  soloDoctor = false,
   initialUnresolvedEscalationConversationIds = [],
   userId = "",
   initialNeedsMeCount = 0,
@@ -61,7 +64,8 @@ export default function DashboardShell({
   // Each clinic is served from its own subdomain, so the nav config's hrefs
   // ("/admin", "/dashboard", "/" …) are already correct as-is — no clinic
   // prefix to apply.
-  const navItems = role === "admin" ? visibleAdminNav(permissions, isClinicAdmin) : navConfig[role];
+  const navItems =
+    role === "admin" ? visibleAdminNav(permissions, isClinicAdmin, soloDoctor) : navConfig[role];
   const { label: defaultRoleLabel, pageTitle } = roleMeta[role];
   const roleLabel = roleLabelOverride || defaultRoleLabel;
   // Escalation alerts (bell, toast, sound) belong to whoever handles the inbox.

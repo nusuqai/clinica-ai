@@ -15,6 +15,7 @@ import SpecialtySelect, {
   type SpecialtyOption,
 } from "@/app/(clinic)/admin/doctors/_components/specialty-select";
 import { Alert } from "@/components/ui/alert";
+import { CURRENCY_LABEL } from "@/lib/currency";
 
 interface ProfileFormProps {
   fullName: string;
@@ -96,7 +97,7 @@ export default function ProfileForm({
           type="number"
           control={form.control}
           name="consultationFee"
-          label="رسوم الاستشارة (ر.س)"
+          label={`رسوم الاستشارة (${CURRENCY_LABEL})`}
           min="0"
           step="0.01"
           placeholder="150"

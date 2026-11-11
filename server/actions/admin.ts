@@ -20,6 +20,7 @@ import { normalizePhone, isValidPhone } from "@/lib/phone";
 import { pageRequest, offsetRequest } from "@/lib/pagination";
 import type { BranchScope } from "@/lib/branch-scope";
 import * as Scope from "@/server/services/branchScope";
+import * as IntakeService from "@/server/services/patient-intake";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
@@ -263,6 +264,16 @@ export async function updatePatientProfileAction(userId: string, formData: FormD
   if (!result.ok) return { error: result.error };
   revalidatePath("/admin/patients/[id]", "page");
   revalidatePath("/admin/patients", "page");
+  return { success: true as const };
+}
+
+/** Create / edit a patient's intake file — part of the medical record. */
+export async function updatePatientIntakeAction(patientId: string, values: unknown) {
+  const clinicId = await requirePerm("medical_records");
+  const result = await IntakeService.saveStaffPatientIntake(clinicId, patientId, values);
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/admin/patients/[id]", "page");
+  revalidatePath("/doctor/patients/[id]", "page");
   return { success: true as const };
 }
 

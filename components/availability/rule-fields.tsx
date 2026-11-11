@@ -208,8 +208,10 @@ function ModeFields({
         options={MODE_OPTIONS}
         className="sm:col-span-2"
         hint={
-          mode === AvailabilityMode.ARRIVAL_BASED &&
-          "يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور (يسجّل الاستقبال وصوله)."
+          mode === AvailabilityMode.ORDER_BASED
+            ? "بمجرد أن يحجز المريض يحصل على رقم دوره، ونُخبره بالوقت المتوقع لكشفه تقريباً، ويمكنه متابعة كم تبقّى على دوره من خلالنا."
+            : mode === AvailabilityMode.ARRIVAL_BASED &&
+              "يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور (يسجّل الاستقبال وصوله)."
         }
       />
 

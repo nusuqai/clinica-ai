@@ -23,7 +23,14 @@ const FEATURES = [
   },
 ];
 
-export function FeaturesSection() {
+const SOLO_FIRST_FEATURE = {
+  icon: ShieldCheck,
+  title: "طبيب موثوق",
+  description: "بيانات الطبيب المهنية معتمدة ومتحقق منها.",
+};
+
+export function FeaturesSection({ solo = false }: { solo?: boolean }) {
+  const features = solo ? [SOLO_FIRST_FEATURE, ...FEATURES.slice(1)] : FEATURES;
   return (
     <section className="bg-white px-6 py-20">
       <div className="mx-auto max-w-7xl">
@@ -35,7 +42,7 @@ export function FeaturesSection() {
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {FEATURES.map((feature) => {
+          {features.map((feature) => {
             const Icon = feature.icon;
             return (
               <div

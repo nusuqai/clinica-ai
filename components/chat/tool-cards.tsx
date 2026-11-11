@@ -13,6 +13,7 @@ import {
 import { AppointmentStatus } from "@prisma/client";
 import type { ClientToolCall } from "./types";
 import { Alert } from "@/components/ui/alert";
+import { formatFee } from "@/lib/currency";
 
 // ── shared layout ────────────────────────────────────────────────────────────
 
@@ -89,7 +90,7 @@ function DoctorListCard({ result }: { result: R }) {
             <p className="text-[11px] text-muted-foreground">{String(d.specialty)}</p>
           </div>
           {d.fee != null && (
-            <span className="text-[11px] font-medium text-accent">{String(d.fee)} ج.م</span>
+            <span className="text-[11px] font-medium text-accent">{formatFee(d.fee)}</span>
           )}
         </div>
       ))}

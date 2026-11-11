@@ -31,6 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ListCardSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { PendingNavigationProvider, PendingSwap } from "@/components/general/pending-navigation";
+import { formatFee } from "@/lib/currency";
 
 const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
@@ -138,12 +139,12 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
               )}
               {doctor.examinationFee && (
                 <span className="font-sans text-sm text-muted-foreground">
-                  {String(doctor.examinationFee)} ر.س / كشف
+                  {formatFee(doctor.examinationFee)} / كشف
                 </span>
               )}
               {doctor.consultationFee && (
                 <span className="font-sans text-sm text-muted-foreground">
-                  {String(doctor.consultationFee)} ر.س / استشارة
+                  {formatFee(doctor.consultationFee)} / استشارة
                 </span>
               )}
               {doctor.yearsOfExperience != null && (

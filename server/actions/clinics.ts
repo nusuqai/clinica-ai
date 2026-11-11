@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { ClinicRequestStatus, Role, type Prisma } from "@prisma/client";
+import { ClinicKind, ClinicRequestStatus, Role, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -9,6 +9,7 @@ import { findAuthUserIdByEmail } from "@/lib/supabase/auth-users";
 import { paginate, pageRequest } from "@/lib/pagination";
 import { ensureClinicAiCredit } from "@/server/services/aiCredit";
 import { seedDefaultClinicRoles } from "@/server/services/team";
+import { setClinicKind } from "@/server/services/clinic-kind";
 import { registerClinicDomain } from "@/lib/vercel/domains";
 import { sendClinicApprovedInvite, sendClinicCreatedInvite } from "@/lib/email/send-auth-email";
 import { sendRequestReceived, sendClinicRejected } from "@/lib/email/send-transactional";
@@ -51,6 +52,7 @@ export async function clinicsPageAction(
           primaryColor: true,
           accentColor: true,
           isActive: true,
+          kind: true,
           _count: { select: { members: true, doctors: true } },
         },
         ...args,
@@ -382,6 +384,10 @@ export async function createClinic(formData: FormData) {
           logoUrl: (formData.get("logoUrl") as string)?.trim() || null,
           primaryColor: (formData.get("primaryColor") as string)?.trim() || null,
           accentColor: (formData.get("accentColor") as string)?.trim() || null,
+          kind:
+            formData.get("kind") === ClinicKind.SOLO_DOCTOR
+              ? ClinicKind.SOLO_DOCTOR
+              : ClinicKind.CENTER,
         },
       });
       // Every clinic must have at least one branch.
@@ -455,4 +461,21 @@ export async function updateClinic(clinicId: string, formData: FormData) {
   } catch (e) {
     return { error: e instanceof Error ? e.message : "فشل تحديث العيادة" };
   }
+}
+
+/**
+ * Switch a clinic between CENTER and SOLO_DOCTOR. Platform admin only — clinic
+ * admins never change their own kind. Data is untouched (the solo doctor is an
+ * ordinary Doctor row); only presentation and agent behaviour follow the flag.
+ */
+export async function setClinicKindAction(clinicId: string, kind: ClinicKind) {
+  await requirePlatform();
+  if (kind !== ClinicKind.CENTER && kind !== ClinicKind.SOLO_DOCTOR)
+    return { error: "نوع العيادة غير صالح" };
+  const res = await setClinicKind(clinicId, kind);
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/platform/clinics");
+  // The clinic's landing page and dashboard both render differently per kind.
+  revalidatePath("/", "layout");
+  return { success: true as const };
 }

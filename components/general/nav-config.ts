@@ -95,9 +95,22 @@ export const roleMeta: Record<"doctor" | "admin", { label: string; pageTitle: st
 
 /** The admin-dashboard items a member may see: everything for the clinic ADMIN,
     otherwise only what their role's permissions open. */
-export function visibleAdminNav(permissions: readonly Permission[], isClinicAdmin: boolean) {
-  if (isClinicAdmin) return navConfig.admin;
-  return navConfig.admin.filter((item) => {
+// A solo-doctor clinic has one doctor and no specialty catalogue to manage (the
+// doctor form creates the specialty inline): drop that page, singular label.
+function soloAdminNav(items: NavItem[]): NavItem[] {
+  return items
+    .filter((item) => item.href !== "/admin/specialties")
+    .map((item) => (item.href === "/admin/doctors" ? { ...item, label: "الطبيب" } : item));
+}
+
+export function visibleAdminNav(
+  permissions: readonly Permission[],
+  isClinicAdmin: boolean,
+  soloDoctor = false
+) {
+  const items = soloDoctor ? soloAdminNav(navConfig.admin) : navConfig.admin;
+  if (isClinicAdmin) return items;
+  return items.filter((item) => {
     if (item.adminOnly) return false;
     if (!item.permission) return true;
     const needed = Array.isArray(item.permission) ? item.permission : [item.permission];
