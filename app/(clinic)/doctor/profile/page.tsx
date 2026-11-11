@@ -7,6 +7,7 @@ import ProfileForm from "./_components/profile-form";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { formatFee } from "@/lib/currency";
 
 export default async function DoctorProfilePage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
@@ -56,7 +57,7 @@ export default async function DoctorProfilePage() {
               {doctor.consultationFee && (
                 <span className="flex items-center gap-1 font-sans text-xs text-muted-foreground">
                   <DollarSign className="h-3.5 w-3.5" />
-                  {String(doctor.consultationFee)} ر.س
+                  {formatFee(doctor.consultationFee)}
                 </span>
               )}
               <Badge variant={doctor.isActive ? "success" : "neutral"}>

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Role } from "@prisma/client";
+import { ClinicKind, Role } from "@prisma/client";
 import { can, requireClinicMember, roleHome } from "@/lib/auth";
 import { isDashboardRole } from "@/lib/permissions";
 import DashboardShell from "@/components/general/dashboard-shell";
@@ -46,6 +46,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       isClinicAdmin={isClinicAdmin}
       permissions={ctx.permissions}
       roleLabel={isClinicAdmin ? null : (ctx.roleName ?? "موظف")}
+      soloDoctor={ctx.clinic.kind === ClinicKind.SOLO_DOCTOR}
     >
       {children}
     </DashboardShell>

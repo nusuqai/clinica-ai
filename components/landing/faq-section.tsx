@@ -28,7 +28,26 @@ const FAQS = [
   },
 ];
 
-export function FAQSection() {
+// Single-doctor clinic: same questions, no "pick a doctor / another doctor".
+const SOLO_FAQS = [
+  {
+    question: "كيف أحجز موعداً؟",
+    answer: 'اضغط "احجز موعد" في قسم الطبيب، ثم اختر اليوم المتاح والوقت الذي يناسبك، وأكّد الحجز.',
+  },
+  FAQS[1],
+  {
+    question: "هل الحجز مجاني؟",
+    answer: "الحجز عبر الموقع مجاني بالكامل، وتُدفع رسوم الكشف مباشرة في العيادة.",
+  },
+  {
+    question: "ماذا لو لم تظهر مواعيد متاحة؟",
+    answer:
+      "يعني ذلك أنه لا توجد أوقات متاحة حالياً ضمن الفترة القادمة، حاول التحقق لاحقاً أو تواصل مع العيادة.",
+  },
+];
+
+export function FAQSection({ solo = false }: { solo?: boolean }) {
+  const faqs = solo ? SOLO_FAQS : FAQS;
   return (
     <section className="bg-white px-6 py-20">
       <div className="mx-auto max-w-3xl">
@@ -42,7 +61,7 @@ export function FAQSection() {
         </div>
 
         <Accordion type="single" collapsible defaultValue="0" className="flex flex-col gap-3">
-          {FAQS.map((faq, i) => (
+          {faqs.map((faq, i) => (
             <AccordionItem
               key={faq.question}
               value={String(i)}

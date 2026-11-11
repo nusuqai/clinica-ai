@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
+import { formatFee } from "@/lib/currency";
 
 export type PublicDoctor = Awaited<ReturnType<typeof publicDoctorsPageAction>>["items"][number];
 
@@ -203,7 +204,9 @@ export function DoctorsClient({
                       <DollarSign className="h-4 w-4 shrink-0 text-accent" />
                       <span className="font-sans text-sm">
                         رسوم الكشف:{" "}
-                        <span className="font-medium text-text">{doctor.consultationFee} جنيه</span>
+                        <span className="font-medium text-text">
+                          {formatFee(doctor.consultationFee)}
+                        </span>
                       </span>
                     </div>
                   )}

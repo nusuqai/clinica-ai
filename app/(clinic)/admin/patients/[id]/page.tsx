@@ -18,7 +18,10 @@ import RecordTimeline from "@/components/medical/record-timeline";
 import RecordRevisions from "@/components/medical/record-revisions";
 import AppointmentAttachments from "@/components/appointments/appointment-attachments";
 import AdminRecordModal from "@/components/medical/admin-record-modal";
+import PatientIntakeCard from "@/components/medical/patient-intake-card";
+import { getPatientIntake } from "@/server/services/patient-intake";
 import EditPatientModal from "./_components/edit-patient-modal";
+import EditIntakeModal from "./_components/edit-intake-modal";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -46,12 +49,13 @@ export default async function UserDetailPage({ params }: PageProps) {
   // Completed visits without a record feed the admin's "add record" form —
   // admins may only document a visit that actually happened.
   const isPatient = canViewRecords;
-  const [records, recordableVisits] = isPatient
+  const [records, recordableVisits, intake] = isPatient
     ? await Promise.all([
         listPatientRecords({ clinicId: clinic.id, patientId: id }),
         listRecordableVisits(clinic.id, id),
+        getPatientIntake(clinic.id, id),
       ])
-    : [[], []];
+    : [[], [], null];
 
   // Files attached to those visits, so each record shows its own attachments
   // (lab results, x-rays, documents) inline alongside the clinical details.
@@ -143,7 +147,33 @@ export default async function UserDetailPage({ params }: PageProps) {
         </div>
       </Card>
 
-      {/* Clinical history — only for members who may manage medical records. */}
+      {/* Intake file + clinical history — only for members who may manage
+          medical records. */}
+      {isPatient && (
+        <section className="mt-6">
+          <PatientIntakeCard
+            intake={intake}
+            action={
+              <EditIntakeModal
+                patientId={user.id}
+                patientName={user.fullName}
+                initial={
+                  intake && {
+                    fullName: intake.fullName,
+                    age: intake.age,
+                    weight: intake.weight,
+                    address: intake.address,
+                    medicalConditions: intake.medicalConditions,
+                    smokingStatus: intake.smokingStatus,
+                    previousSurgeries: intake.previousSurgeries,
+                  }
+                }
+              />
+            }
+          />
+        </section>
+      )}
+
       {isPatient && (
         <section className="mt-8">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

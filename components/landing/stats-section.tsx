@@ -1,13 +1,20 @@
-import { Users, CheckCircle, Clock3, Smile } from "lucide-react";
+import { Users, CheckCircle, Clock3, Smile, Award } from "lucide-react";
 
 interface Props {
   doctorCount: number;
   appointmentCount: number;
+  /** Solo-doctor clinic: years of experience replace the doctor count. */
+  solo?: { yearsOfExperience: number | null } | null;
 }
 
-export function StatsSection({ doctorCount, appointmentCount }: Props) {
+export function StatsSection({ doctorCount, appointmentCount, solo = null }: Props) {
+  const first = !solo
+    ? [{ icon: Users, value: `${doctorCount}+`, label: "طبيب متخصص" }]
+    : solo.yearsOfExperience != null
+      ? [{ icon: Award, value: `${solo.yearsOfExperience}+`, label: "سنة خبرة" }]
+      : [];
   const stats = [
-    { icon: Users, value: `${doctorCount}+`, label: "طبيب متخصص" },
+    ...first,
     { icon: CheckCircle, value: `${appointmentCount}+`, label: "موعد مكتمل" },
     { icon: Clock3, value: "24/7", label: "حجز إلكتروني" },
     { icon: Smile, value: "98%", label: "رضا المرضى" },
@@ -15,7 +22,11 @@ export function StatsSection({ doctorCount, appointmentCount }: Props) {
 
   return (
     <section className="bg-primary px-6 py-16">
-      <div className="mx-auto grid max-w-6xl grid-cols-2 gap-6 lg:grid-cols-4">
+      <div
+        className={`mx-auto grid max-w-6xl grid-cols-2 gap-6 ${
+          stats.length === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"
+        }`}
+      >
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (

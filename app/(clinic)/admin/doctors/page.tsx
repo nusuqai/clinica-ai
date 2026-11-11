@@ -1,7 +1,9 @@
 import { Suspense } from "react";
+import { ClinicKind } from "@prisma/client";
 import { requirePermission } from "@/lib/auth";
 import { branchesInScope, listBranches } from "@/server/services/branches";
 import { listSpecialtyOptions } from "@/server/services/specialties";
+import { countActiveDoctors } from "@/server/services/clinic-kind";
 import { doctorsPageAction } from "@/server/actions/admin";
 import PageHeader from "@/components/admin/page-header";
 import { Await } from "@/components/general/await";
@@ -24,9 +26,13 @@ export default async function AdminDoctorsPage({ searchParams }: PageProps) {
   // table stream in behind Suspense fallbacks keyed by the filters.
   const doctorsPromise = doctorsPageAction(filters, 1);
   const filtersKey = JSON.stringify(filters);
-  const [branchRows, specialties] = await Promise.all([
+  // Solo-doctor clinic: exactly one active doctor — the add button is offered
+  // only while there is none (the service enforces it either way).
+  const isSolo = clinic.kind === ClinicKind.SOLO_DOCTOR;
+  const [branchRows, specialties, activeDoctors] = await Promise.all([
     listBranches(clinic.id, { activeOnly: true }).then((rows) => branchesInScope(rows, scope)),
     listSpecialtyOptions(clinic.id),
+    isSolo ? countActiveDoctors(clinic.id) : Promise.resolve(0),
   ]);
   const branches = branchRows.map((b) => ({
     id: b.id,
@@ -73,17 +79,32 @@ export default async function AdminDoctorsPage({ searchParams }: PageProps) {
     <PendingNavigationProvider>
       <div>
         <PageHeader
-          title="الأطباء"
+          title={isSolo ? "الطبيب" : "الأطباء"}
           subtitle={
-            <PendingSwap fallback={<Skeleton className="h-4 w-16" />}>
-              <Suspense key={filtersKey} fallback={<Skeleton className="h-4 w-16" />}>
-                <Await promise={doctorsPromise}>{(doctors) => `${doctors.total} طبيب`}</Await>
-              </Suspense>
-            </PendingSwap>
+            isSolo ? (
+              "عيادة طبيب واحد"
+            ) : (
+              <PendingSwap fallback={<Skeleton className="h-4 w-16" />}>
+                <Suspense key={filtersKey} fallback={<Skeleton className="h-4 w-16" />}>
+                  <Await promise={doctorsPromise}>{(doctors) => `${doctors.total} طبيب`}</Await>
+                </Suspense>
+              </PendingSwap>
+            )
           }
-          action={<AddDoctorModal branches={branches} specialties={specialties} />}
+          action={
+            !isSolo || activeDoctors === 0 ? (
+              <AddDoctorModal branches={branches} specialties={specialties} />
+            ) : null
+          }
         />
-        <FilterBar fields={filterFields} />
+        {isSolo ? (
+          <p className="mb-4 rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+            هذه عيادة طبيب واحد: تعرض الصفحة الرئيسية والمساعد الذكي هذا الطبيب وحده. لإضافة أطباء
+            آخرين تواصل مع إدارة المنصة لتحويل العيادة إلى مركز طبي.
+          </p>
+        ) : (
+          <FilterBar fields={filterFields} />
+        )}
         <PendingSwap fallback={<TableSkeleton columns={5} rows={7} />}>
           <Suspense key={filtersKey} fallback={<TableSkeleton columns={5} rows={7} />}>
             <Await promise={doctorsPromise}>

@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { authorizePatientHistory } from "@/server/services/treatmentAccess";
 import { listPatientRecords } from "@/server/services/treatments";
 import RecordTimeline from "@/components/medical/record-timeline";
+import PatientIntakeCard from "@/components/medical/patient-intake-card";
+import { getPatientIntake } from "@/server/services/patient-intake";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
@@ -22,9 +24,10 @@ export default async function DoctorPatientHistoryPage({ params }: PageProps) {
   const access = await authorizePatientHistory(id);
   if (!access.ok) notFound();
 
-  const [patient, records] = await Promise.all([
+  const [patient, records, intake] = await Promise.all([
     prisma.profile.findUnique({ where: { id }, select: { fullName: true, phone: true } }),
     listPatientRecords({ clinicId: access.clinicId, patientId: id }),
+    getPatientIntake(access.clinicId, id),
   ]);
   if (!patient) notFound();
 
@@ -57,6 +60,10 @@ export default async function DoctorPatientHistoryPage({ params }: PageProps) {
           </div>
         </div>
       </Card>
+
+      <div className="mb-6">
+        <PatientIntakeCard intake={intake} />
+      </div>
 
       <h2 className="mb-4 font-heading text-lg font-bold text-foreground">السجل العلاجي</h2>
       <RecordTimeline

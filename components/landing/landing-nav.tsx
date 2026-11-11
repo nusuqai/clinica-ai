@@ -62,6 +62,8 @@ interface LandingNavProps {
   registerHref?: string;
   /** Clinic logo shown instead of the default icon, when provided. */
   logoUrl?: string | null;
+  /** Label of the #doctors link — "الطبيب" on a solo-doctor clinic. */
+  doctorsLabel?: string;
 }
 
 export function LandingNav({
@@ -74,12 +76,13 @@ export function LandingNav({
   loginHref = "/login",
   registerHref = "/register",
   logoUrl = null,
+  doctorsLabel = "الأطباء",
 }: LandingNavProps) {
   const [scrolled, setScrolled] = useState(false);
 
   const links = [
     ...(isAuthenticated && isPatient ? [{ href: "#my-appointments", label: "مواعيدي" }] : []),
-    { href: "#doctors", label: "الأطباء" },
+    { href: "#doctors", label: doctorsLabel },
     { href: "#book", label: "احجز موعد" },
   ];
 

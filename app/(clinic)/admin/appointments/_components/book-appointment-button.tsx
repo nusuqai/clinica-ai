@@ -41,7 +41,8 @@ export default function BookAppointmentButton({ doctors }: { doctors: BookableDo
   const [selected, setSelected] = useState<PatientOption | null>(null);
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
-  const [doctorId, setDoctorId] = useState("");
+  // One bookable doctor (e.g. a solo-doctor clinic) → nothing to pick.
+  const [doctorId, setDoctorId] = useState(doctors.length === 1 ? doctors[0].id : "");
 
   // Debounced patient search.
   useEffect(() => {
@@ -70,7 +71,7 @@ export default function BookAppointmentButton({ doctors }: { doctors: BookableDo
     setSelected(null);
     setNewName("");
     setNewPhone("");
-    setDoctorId("");
+    setDoctorId(doctors.length === 1 ? doctors[0].id : "");
   }
 
   const doctor = doctors.find((d) => d.id === doctorId) ?? null;

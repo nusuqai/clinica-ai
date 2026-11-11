@@ -39,7 +39,7 @@ export const registerSchema = z
   });
 export type RegisterInput = z.input<typeof registerSchema>;
 
-export const OTP_LENGTH = 8;
+export const OTP_LENGTH = 6;
 
 export const verifyOtpSchema = z.object({
   email,
