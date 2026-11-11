@@ -1,8 +1,11 @@
-import { AppointmentStatus, Role } from "@prisma/client";
+import { AppointmentStatus, ClinicKind, Role } from "@prisma/client";
 import Link from "next/link";
 import { getClinicContext, getCurrentUser, roleHome, type ClinicSummary } from "@/lib/auth";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
+import { getSoloDoctor } from "@/server/services/clinic-kind";
+import { doctorSubtitle } from "@/lib/doctor-title";
+import { SoloDoctorSection } from "@/components/landing/solo-doctor-section";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { HeroSection } from "@/components/landing/hero-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
@@ -41,8 +44,13 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
   const isPatient = ctx?.role === Role.PATIENT;
   const dashboardHref = ctx ? roleHome(ctx.role) : loginHref;
 
+  // A solo-doctor clinic presents its one doctor instead of a center: no doctor
+  // grid, specialty filters or doctor count.
+  const isSolo = clinic.kind === ClinicKind.SOLO_DOCTOR;
+
   // ── Data (scoped to THIS clinic) ────────────────────────────────────────────
   const [
+    soloDoctor,
     doctorStats,
     firstDoctors,
     appointmentCount,
@@ -52,9 +60,11 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
     myRecords,
     myHistoryDoctors,
   ] = await Promise.all([
+    isSolo ? getSoloDoctor(clinic.id) : Promise.resolve(null),
     // Counts for the stats + specialty sections; the doctor cards are paged.
-    DoctorService.activeDoctorStats(clinic.id),
-    publicDoctorsPageAction({}, 1),
+    // Neither is shown on a solo clinic.
+    isSolo ? Promise.resolve(null) : DoctorService.activeDoctorStats(clinic.id),
+    isSolo ? Promise.resolve(null) : publicDoctorsPageAction({}, 1),
     // Only the number is shown — count, don't load every completed visit.
     AppointmentService.countAppointments(clinic.id, { status: AppointmentStatus.COMPLETED }),
     // A signed-in patient of THIS clinic also sees their own bookings here —
@@ -78,8 +88,18 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
     ? { doctorName: myUpcoming[0].doctor.profile.fullName, when: describeWhen(myUpcoming[0]) }
     : null;
 
-  const doctorCount = doctorStats.count;
-  const specialties = doctorStats.bySpecialty;
+  const doctorCount = doctorStats?.count ?? 0;
+  const specialties = doctorStats?.bySpecialty ?? [];
+  const soloSubtitle = soloDoctor ? doctorSubtitle(soloDoctor.title, soloDoctor.specialty) : null;
+  const solo = isSolo
+    ? {
+        doctorName: soloDoctor?.fullName ?? null,
+        subtitle: soloSubtitle,
+        yearsOfExperience: soloDoctor?.yearsOfExperience ?? null,
+      }
+    : null;
+  const doctorsLabel = isSolo ? "الطبيب" : "الأطباء";
+  const appointmentsHref = isPatient ? `${dashboardHref}/appointments` : undefined;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -93,6 +113,7 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
         homeHref="/"
         loginHref={loginHref}
         registerHref={registerHref}
+        doctorsLabel={doctorsLabel}
       />
 
       {/* Quick jump to the staff dashboard for a doctor/admin viewing the landing.
@@ -117,6 +138,7 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
           isAuthenticated={isAuthenticated}
           clinicName={clinic.name}
           nextAppointment={nextAppointment}
+          solo={solo}
         />
 
         {myUpcoming && myStats && myPastVisits && myRecords && (
@@ -130,31 +152,49 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
           />
         )}
 
-        <HowItWorksSection />
+        <HowItWorksSection solo={isSolo} />
 
         <section className="bg-background px-6 py-20">
           <div className="mx-auto max-w-7xl">
-            <DoctorsClient
-              initial={firstDoctors}
-              specialties={specialties}
-              isAuthenticated={isAuthenticated}
-              isPatient={isPatient}
-              appointmentsHref={isPatient ? `${dashboardHref}/appointments` : undefined}
-              loginHref={loginHref}
-              registerHref={registerHref}
-            />
+            {isSolo ? (
+              <SoloDoctorSection
+                doctor={soloDoctor}
+                isAuthenticated={isAuthenticated}
+                isPatient={isPatient}
+                appointmentsHref={appointmentsHref}
+                loginHref={loginHref}
+                registerHref={registerHref}
+              />
+            ) : (
+              firstDoctors && (
+                <DoctorsClient
+                  initial={firstDoctors}
+                  specialties={specialties}
+                  isAuthenticated={isAuthenticated}
+                  isPatient={isPatient}
+                  appointmentsHref={appointmentsHref}
+                  loginHref={loginHref}
+                  registerHref={registerHref}
+                />
+              )
+            )}
           </div>
         </section>
 
-        <FeaturesSection />
-        <SpecialtiesSection specialties={specialties} />
-        <StatsSection doctorCount={doctorCount} appointmentCount={appointmentCount} />
-        <FAQSection />
+        <FeaturesSection solo={isSolo} />
+        {!isSolo && <SpecialtiesSection specialties={specialties} />}
+        <StatsSection doctorCount={doctorCount} appointmentCount={appointmentCount} solo={solo} />
+        <FAQSection solo={isSolo} />
       </main>
 
       <FooterSection
         brandName={clinic.name}
-        tagline={`${clinic.name} — احجز موعدك مع أطبائنا بسهولة وأمان`}
+        tagline={
+          isSolo
+            ? `${clinic.name} — احجز موعدك ${soloDoctor ? `مع د. ${soloDoctor.fullName} ` : ""}بسهولة وأمان`
+            : `${clinic.name} — احجز موعدك مع أطبائنا بسهولة وأمان`
+        }
+        doctorsLabel={doctorsLabel}
         loginHref={loginHref}
         registerHref={registerHref}
       />

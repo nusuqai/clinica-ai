@@ -11,6 +11,8 @@ import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import * as TreatmentService from "@/server/services/treatments";
+import * as IntakeService from "@/server/services/patient-intake";
+import { INTAKE_REQUIRED_ERROR, type IntakeValues } from "@/lib/patient-intake";
 import { pageRequest, mapPage } from "@/lib/pagination";
 
 // ─── Profile mutations ────────────────────────────────────────────────────────
@@ -232,6 +234,29 @@ export async function getOrderBookingInfoAction(
   };
 }
 
+// ─── Patient intake file ──────────────────────────────────────────────────────
+
+/**
+ * Does the signed-in patient still owe this clinic their intake file? The
+ * booking modal asks for it on the confirm step of the first booking.
+ */
+export async function myIntakeStatusAction(): Promise<{ required: boolean; fullName: string }> {
+  const ctx = await getClinicContext();
+  if (!ctx || ctx.role !== Role.PATIENT) return { required: false, fullName: "" };
+  const has = await IntakeService.hasPatientIntake(ctx.clinic.id, ctx.user.id);
+  return { required: !has, fullName: ctx.user.profile.fullName ?? "" };
+}
+
+export async function saveMyIntakeAction(
+  values: IntakeValues
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getClinicContext();
+  if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
+  if (ctx.role !== Role.PATIENT) return { ok: false, error: "هذه الخدمة للمرضى فقط" };
+  const res = await IntakeService.savePatientIntake(ctx.clinic.id, ctx.user.id, values);
+  return res.ok ? { ok: true } : { ok: false, error: res.error };
+}
+
 // ─── Patient mutations ────────────────────────────────────────────────────────
 
 export async function bookOrderAppointmentAction(
@@ -247,6 +272,9 @@ export async function bookOrderAppointmentAction(
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
   if (ctx.role !== Role.PATIENT) return { ok: false, error: "هذه الخدمة للمرضى فقط" };
+  // First booking at this clinic needs the patient's intake file.
+  if (!(await IntakeService.hasPatientIntake(ctx.clinic.id, ctx.user.id)))
+    return { ok: false, error: INTAKE_REQUIRED_ERROR };
 
   const result = await QueueService.bookOrderAppointment(ctx.user.id, doctorId, new Date(dateStr), {
     notes: patientNotes,
@@ -272,6 +300,9 @@ export async function bookAppointmentAction(
   if (ctx.role !== Role.PATIENT) {
     return { ok: false, error: "هذه الخدمة للمرضى فقط" };
   }
+  // First booking at this clinic needs the patient's intake file.
+  if (!(await IntakeService.hasPatientIntake(ctx.clinic.id, ctx.user.id)))
+    return { ok: false, error: INTAKE_REQUIRED_ERROR };
 
   const result = await AppointmentService.createAppointment(ctx.user.id, slotId, patientNotes);
 

@@ -1,6 +1,9 @@
-import { Channel, PhoneType, Role, SocialPlatform } from "@prisma/client";
+import { Channel, ClinicKind, PhoneType, Role, SocialPlatform } from "@prisma/client";
 import type { AgentContext, AgentPersona } from "./types";
 import { getClinicInfo, type ClinicInfo } from "@/server/services/clinicInfo";
+import { getSoloDoctor, type SoloDoctor } from "@/server/services/clinic-kind";
+import { doctorSubtitle } from "@/lib/doctor-title";
+import { CURRENCY_LABEL, formatFee } from "@/lib/currency";
 
 // Fallback used only if the clinic record can't be loaded (e.g. DB hiccup);
 // normally the agent identifies itself with the clinic's real name.
@@ -53,6 +56,38 @@ function buildClinicIdentity(clinic: ClinicInfo | null): {
   return { name: clinic.name, lines };
 }
 
+const doctorsInfo = (solo: boolean) =>
+  solo ? "معلومات الطبيب وتخصصه" : "قائمة الأطباء وتخصصاتهم";
+
+// Solo-doctor clinic (Clinic.kind = SOLO_DOCTOR): the clinic IS one doctor. The
+// agent never asks which doctor / specialty, and gets the doctor's id up front
+// so the booking tools need no lookup. The doctor list / specialty tools are withheld
+// in agent/tools/index.ts.
+function buildSoloDoctorLines(doctor: SoloDoctor | null): string[] {
+  if (!doctor) {
+    return [
+      "هذه عيادة خاصة بطبيب واحد، لكن لم تُضف بيانات الطبيب بعد؛ إذا رغب المستخدم في الحجز فأخبره بلطف أن الحجز غير متاح حالياً واقترح التواصل مع العيادة.",
+    ];
+  }
+  const subtitle = doctorSubtitle(doctor.title, doctor.specialty);
+  const facts = [
+    doctor.yearsOfExperience != null && `سنوات الخبرة: ${doctor.yearsOfExperience}`,
+    doctor.examinationFee != null && `سعر الكشف: ${formatFee(doctor.examinationFee)}`,
+    doctor.consultationFee != null && `سعر الاستشارة: ${formatFee(doctor.consultationFee)}`,
+    `يكشف على الأطفال: ${doctor.acceptsChildren ? "نعم" : "لا"}`,
+    `يحتاج حجزاً مسبقاً: ${doctor.requiresAdvanceBooking ? "نعم" : "لا"}`,
+    doctor.qualifications?.trim() && `المؤهلات: ${doctor.qualifications.trim()}`,
+    doctor.expertiseAreas?.trim() && `مجالات الخبرة: ${doctor.expertiseAreas.trim()}`,
+    doctor.bio?.trim() && `نبذة: ${doctor.bio.trim()}`,
+    doctor.branches.length > 0 &&
+      `الفروع التي يعمل بها: ${doctor.branches.map((b) => b.name).join("، ")}`,
+  ].filter(Boolean);
+  return [
+    `هذه عيادة خاصة بالطبيب د. ${doctor.fullName}${subtitle ? ` (${subtitle})` : ""} وحده، ولا يوجد بها أطباء آخرون؛ كل المواعيد والاستفسارات تخصّه. معرّف الطبيب (doctorId) هو ${doctor.id} — وهو معرّف صحيح من النظام، فاستخدمه مباشرةً مع أدوات المواعيد وساعات العمل. لا تسأل المستخدم عن الطبيب أو التخصص الذي يريده، ولا تتحدث عن «أطبائنا» أو «اختيار طبيب». إذا كانت حالة المستخدم خارج تخصص الطبيب فأوضح له تخصص الطبيب بلطف دون أن تَعِده بطبيب آخر.`,
+    `بيانات الطبيب (اعتمد عليها عند السؤال عنه أو عن الأسعار): ${facts.join("، ")}.`,
+  ];
+}
+
 // Opening identity lines. With an AI employee assigned to the session the agent
 // introduces itself by that name and follows the clinic-written persona; the
 // persona shapes tone only — the rules further down always win.
@@ -78,11 +113,15 @@ function buildAgentIdentity(clinicName: string, agent: AgentPersona | null | und
   return lines;
 }
 
-const BOOKING_FLOW =
-  "عند رغبة المستخدم بالحجز: لا تسأله عن تاريخ محدد مباشرة ولا تفترض مواعيد. أولاً استخدم get_doctor_working_hours لعرض أيام وساعات عمل الطبيب والفرع الذي يداوم فيه كل يوم، دعه يختار يوماً يعمل فيه الطبيب فعلاً، ثم استخدم get_doctor_availability لعرض ما هو متاح في ذلك اليوم. لاحظ نظام الجدولة (mode): إن كان slot فاعرض الفترات (slots) بأوقاتها ليختار واحدة واحجز بـ book_appointment. وإن كان order (نظام الدور) فلا توجد أوقات ثابتة؛ أخبر المستخدم بعدد الأماكن المتبقية ورقم دوره القادم والوقت المتوقع لكشفه (expectedTime) إن توفّر، واحجز بـ book_order_appointment (بدون slotId) — سيحصل على رقم دور، ومع تفعيل التتبّع يمكنه معرفة الدور الجاري الآن ومدة الانتظار التقديرية. وإن كان arrival (أسبقية الحضور) فهو يحجز مكاناً فقط بلا رقم؛ احجز بـ book_order_appointment (بدون slotId) وأوضح له أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور (من يصل أولاً يأخذ رقماً أسبق) — لا تَعِده برقم أو وقت محدّد الآن. وإذا سأل لاحقاً «ما هو دوري؟» فاستخدم list_my_appointments: في أسبقية الحضور إن لم يكن قد وصل بعد (arrived=false) فذكّره أن الرقم يُعطى عند الوصول، وإن كان قد وصل (arrived=true) فاذكر رقمه والدور الجاري ومدة الانتظار إن توفّرت. لا يُسمح للمريض بأكثر من موعد واحد قائم (قيد الانتظار أو مؤكَّد) مع الطبيب نفسه؛ فإذا رفضت الأداة الحجز لهذا السبب، أوضح له ذلك واطلب منه إتمام موعده الحالي أو إلغاءه قبل حجز موعد جديد مع الطبيب نفسه (يمكنه الحجز مع طبيب آخر). بعد إتمام الحجز أو إعادة الجدولة، اعرض للمستخدم كل تفاصيل الموعد كما أعادتها الأداة تماماً (اسم الطبيب، الفرع، التاريخ، والوقت أو رقم الدور والوقت المتوقع، والسعر إن وُجد) للتأكيد، واعتمد على قيم الأداة لا على ذاكرتك حتى ينتبه المستخدم لأي خطأ.";
+const bookingFlow = (solo: boolean) =>
+  `عند رغبة المستخدم بالحجز: لا تسأله عن تاريخ محدد مباشرة ولا تفترض مواعيد. أولاً استخدم get_doctor_working_hours لعرض أيام وساعات عمل الطبيب والفرع الذي يداوم فيه كل يوم، دعه يختار يوماً يعمل فيه الطبيب فعلاً، ثم استخدم get_doctor_availability لعرض ما هو متاح في ذلك اليوم. لاحظ نظام الجدولة (mode): إن كان slot فاعرض الفترات (slots) بأوقاتها ليختار واحدة واحجز بـ book_appointment. وإن كان order (نظام الدور) فلا توجد أوقات ثابتة؛ أخبر المستخدم بعدد الأماكن المتبقية ورقم دوره القادم والوقت المتوقع لكشفه (expectedTime) إن توفّر، واحجز بـ book_order_appointment (بدون slotId) — سيحصل على رقم دور، ومع تفعيل التتبّع يمكنه معرفة الدور الجاري الآن ومدة الانتظار التقديرية. وإن كان arrival (أسبقية الحضور) فهو يحجز مكاناً فقط بلا رقم؛ احجز بـ book_order_appointment (بدون slotId) وأوضح له أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور (من يصل أولاً يأخذ رقماً أسبق) — لا تَعِده برقم أو وقت محدّد الآن. وإذا سأل لاحقاً «ما هو دوري؟» فاستخدم list_my_appointments: في أسبقية الحضور إن لم يكن قد وصل بعد (arrived=false) فذكّره أن الرقم يُعطى عند الوصول، وإن كان قد وصل (arrived=true) فاذكر رقمه والدور الجاري ومدة الانتظار إن توفّرت. لا يُسمح للمريض بأكثر من موعد واحد قائم (قيد الانتظار أو مؤكَّد) مع الطبيب نفسه؛ فإذا رفضت الأداة الحجز لهذا السبب، أوضح له ذلك واطلب منه إتمام موعده الحالي أو إلغاءه قبل حجز موعد جديد مع الطبيب نفسه${solo ? "" : " (يمكنه الحجز مع طبيب آخر)"}. بعد إتمام الحجز أو إعادة الجدولة، اعرض للمستخدم كل تفاصيل الموعد كما أعادتها الأداة تماماً (اسم الطبيب، الفرع، التاريخ، والوقت أو رقم الدور والوقت المتوقع، والسعر إن وُجد) للتأكيد، واعتمد على قيم الأداة لا على ذاكرتك حتى ينتبه المستخدم لأي خطأ.`;
 
-const BRANCH_INFO_GUIDE =
-  "لدى العيادة فروع؛ عند سؤال المستخدم عن العنوان أو الموقع أو الخريطة أو الهاتف أو ساعات العمل أو أيام العطلة أو موقف السيارات أو أقرب معلم أو كيفية الوصول، استخدم list_branches ثم get_branch_info لجلب التفاصيل، واستخدم get_clinic_info للأرقام العامة وحسابات التواصل. عند عرض طبيب، يمكنك ذكر سنوات خبرته، وسعر الكشف وسعر الاستشارة، وهل يكشف على الأطفال (acceptsChildren)، وهل يحتاج حجزاً مسبقاً (requiresAdvanceBooking). إذا سأل مريض عن طبيب أطفال أو للكشف على طفل، رشّح طبيباً قيمته acceptsChildren = true. للبحث عن طبيب حسب التخصص: استخدم list_specialties أولاً لمعرفة التخصصات المتاحة ومعرّفاتها، ثم search_doctors_by_specialty بمعرّف التخصص (specialtyId) للحصول على نتائج دقيقة.";
+const branchInfoGuide = (solo: boolean) =>
+  `لدى العيادة فروع؛ عند سؤال المستخدم عن العنوان أو الموقع أو الخريطة أو الهاتف أو ساعات العمل أو أيام العطلة أو موقف السيارات أو أقرب معلم أو كيفية الوصول، استخدم list_branches ثم get_branch_info لجلب التفاصيل، واستخدم get_clinic_info للأرقام العامة وحسابات التواصل. عند عرض طبيب، يمكنك ذكر سنوات خبرته، وسعر الكشف وسعر الاستشارة، وهل يكشف على الأطفال (acceptsChildren)، وهل يحتاج حجزاً مسبقاً (requiresAdvanceBooking).${
+    solo
+      ? " إذا سأل عن الكشف على طفل فأجب حسب قيمة acceptsChildren لطبيب العيادة."
+      : " إذا سأل مريض عن طبيب أطفال أو للكشف على طفل، رشّح طبيباً قيمته acceptsChildren = true. للبحث عن طبيب حسب التخصص: استخدم list_specialties أولاً لمعرفة التخصصات المتاحة ومعرّفاتها، ثم search_doctors_by_specialty بمعرّف التخصص (specialtyId) للحصول على نتائج دقيقة."
+  }`;
 
 // How the agent works with the paged list tools: filters the user already gave
 // are applied without asking; a broad (unfiltered) request makes the tool
@@ -103,19 +142,23 @@ const LIST_RULES = [
 ].join("\n");
 
 // Handling replies to the automated appointment messages (reminders / feedback).
+// First booking at a clinic needs the patient intake file (lib/patient-intake.ts).
+const INTAKE_GUIDE =
+  "قبل أول حجز للمريض في هذه العيادة يجب استكمال «ملف المريض». إذا ردّت أداة الحجز بـ needsIntake=true، فاشرح له بلطف أن هذا أول حجز له ويلزم بعض البيانات، ثم اسأله الأسئلة الواردة في questions (يمكنك جمع أكثر من سؤال في الرسالة الواحدة)، واحفظ إجاباته بأداة save_patient_intake كما قالها، ثم أعد محاولة الحجز نفسه مباشرةً. واسأله كذلك «الكشف بخصوص إيه؟» وضع إجابته في notes عند الحجز — فهي جزء من ملاحظات الموعد وليست من ملف المريض. لا تطلب هذه البيانات من مريض لديه ملف بالفعل.";
+
 const APPOINTMENT_REPLY_GUIDE =
   "إذا ردّ المريض بما يفيد تأكيد موعده (مثل ضغط زر «تأكيد» أو كتابة «نعم»/«أؤكد») بعد رسالة تذكير الحجز، فاستخدم أداة confirm_appointment لتحويل حالة موعده من قيد الانتظار إلى مؤكَّد؛ الأداة تستنتج الموعد المعلّق تلقائياً فلا حاجة لطلب معرّف الموعد منه. وإذا أرسل المريض تقييماً أو رأياً عن زيارته بعد اكتمالها (تقييم رقمي من 1 إلى 5 و/أو تعليق)، فاستخدم أداة submit_appointment_feedback لتسجيله على آخر موعد مكتمل — دون طلب معرّف الموعد. اشكر المريض بإيجاز بعد التأكيد أو تسجيل التقييم.";
 
-const TEAM_MEMBER_GUIDE = `أنت تتحدث مع أحد أعضاء فريق العيادة (إداري أو طبيب). يمكنك فقط تزويده بالمعلومات العامة: الأطباء وتخصصاتهم، مواعيد العمل والفترات المتاحة، ومعلومات الفروع والعيادة. لا تملك أدوات لتنفيذ أي إجراء إداري أو طبي نيابةً عنه؛ إذا طلب إجراءً كهذا فأخبره بلطف أن ينفّذه من لوحة التحكم. ${BRANCH_INFO_GUIDE}`;
+const teamMemberGuide = (solo: boolean) => `أنت تتحدث مع أحد أعضاء فريق العيادة (إداري أو طبيب). يمكنك فقط تزويده بالمعلومات العامة: ${solo ? "الطبيب وتخصصه" : "الأطباء وتخصصاتهم"}، مواعيد العمل والفترات المتاحة، ومعلومات الفروع والعيادة. لا تملك أدوات لتنفيذ أي إجراء إداري أو طبي نيابةً عنه؛ إذا طلب إجراءً كهذا فأخبره بلطف أن ينفّذه من لوحة التحكم. ${branchInfoGuide(solo)}`;
 
-const ROLE_GUIDE: Record<Role, string> = {
-  [Role.PATIENT]: `أنت تتحدث مع مريض. يمكنك مساعدته في: البحث عن طبيب، عرض مواعيد العمل والفترات المتاحة، حجز/إلغاء/إعادة جدولة موعد، عرض مواعيده، وتحديث بياناته، ومعرفة معلومات الفروع والعيادة. ${BRANCH_INFO_GUIDE} ${BOOKING_FLOW} ${APPOINTMENT_REPLY_GUIDE} أكّد التفاصيل قبل تنفيذ أي إجراء.`,
+const roleGuide = (solo: boolean): Record<Role, string> => ({
+  [Role.PATIENT]: `أنت تتحدث مع مريض. يمكنك مساعدته في: ${solo ? "" : "البحث عن طبيب، "}عرض مواعيد العمل والفترات المتاحة، حجز/إلغاء/إعادة جدولة موعد، عرض مواعيده، وتحديث بياناته، ومعرفة معلومات الفروع والعيادة. ${branchInfoGuide(solo)} ${bookingFlow(solo)} ${INTAKE_GUIDE} ${APPOINTMENT_REPLY_GUIDE} أكّد التفاصيل قبل تنفيذ أي إجراء.`,
   // Team members and doctors have no assistant of their own (they work from
   // their dashboards) — the agent only informs them, it never acts for them.
-  [Role.DOCTOR]: TEAM_MEMBER_GUIDE,
-  [Role.STAFF]: TEAM_MEMBER_GUIDE,
-  [Role.ADMIN]: TEAM_MEMBER_GUIDE,
-};
+  [Role.DOCTOR]: teamMemberGuide(solo),
+  [Role.STAFF]: teamMemberGuide(solo),
+  [Role.ADMIN]: teamMemberGuide(solo),
+});
 
 // How a WhatsApp patient can get website/dashboard access: they give their email
 // in chat, we attach it to their existing account and email a set-password link.
@@ -126,19 +169,23 @@ const WEB_LOGIN_CLAIM_GUIDE =
 // contact whose WhatsApp profile name we could resolve is provisioned as a PATIENT
 // automatically before the agent runs, so it never reaches this branch). Here we
 // still need to ask for the name, then register via `register_in_clinic`.
-const unknownWhatsAppGuide = `رقم هاتف هذا الشخص على واتساب غير مسجّل لدينا بعد ولم نتمكن من معرفة اسمه من واتساب. رحّب به وقدّم له المعلومات العامة إن سأل (قائمة الأطباء وتخصصاتهم، مواعيد العمل، الفترات المتاحة، ومعلومات الفروع عبر list_branches وget_branch_info وget_clinic_info). وإذا رغب في الحجز أو استخدام خدمات العيادة، اسأله أولاً عن اسمه الكامل، ثم استخدم أداة register_in_clinic ومرّر الاسم في الحقل name لتسجيله كمريض — سيُنشأ له حساب تلقائياً من رقم هاتفه دون الحاجة إلى زيارة الموقع — ثم أخبره بجملة واحدة أنه أصبح الآن مسجّلاً لدى العيادة، وأنه يمكنه متابعة طلبه (سيُفعّل الحجز في رسالته التالية). ${WEB_LOGIN_CLAIM_GUIDE} ${BOOKING_FLOW}`;
+const unknownWhatsAppGuide = (solo: boolean) => `رقم هاتف هذا الشخص على واتساب غير مسجّل لدينا بعد ولم نتمكن من معرفة اسمه من واتساب. رحّب به وقدّم له المعلومات العامة إن سأل (${doctorsInfo(solo)}، مواعيد العمل، الفترات المتاحة، ومعلومات الفروع عبر list_branches وget_branch_info وget_clinic_info). وإذا رغب في الحجز أو استخدام خدمات العيادة، اسأله أولاً عن اسمه الكامل، ثم استخدم أداة register_in_clinic ومرّر الاسم في الحقل name لتسجيله كمريض — سيُنشأ له حساب تلقائياً من رقم هاتفه دون الحاجة إلى زيارة الموقع — ثم أخبره بجملة واحدة أنه أصبح الآن مسجّلاً لدى العيادة، وأنه يمكنه متابعة طلبه (سيُفعّل الحجز في رسالته التالية). ${WEB_LOGIN_CLAIM_GUIDE} ${bookingFlow(solo)}`;
 
 // Case 2: the contact already has an account, but is not a member of THIS
 // clinic. The agent can register them here directly via `register_in_clinic`.
-const EXISTING_ACCOUNT_NOT_MEMBER_GUIDE = `هذا الشخص لديه حساب لدينا بالفعل، لكنه غير مسجّل في هذه العيادة تحديداً. رحّب به وقدّم له المعلومات العامة إن سأل (قائمة الأطباء وتخصصاتهم، مواعيد العمل، الفترات المتاحة). وإذا رغب في الحجز أو استخدام خدمات هذه العيادة، استخدم أداة register_in_clinic لتسجيله كمريض في هذه العيادة باستخدام حسابه الحالي، ثم أخبره أنه أصبح مسجّلاً وأنه يمكنه الآن متابعة طلبه (سيتم تفعيل الحجز في رسالته التالية). لا تطلب منه الذهاب إلى الموقع. ${WEB_LOGIN_CLAIM_GUIDE} ${BOOKING_FLOW}`;
+const existingAccountNotMemberGuide = (solo: boolean) => `هذا الشخص لديه حساب لدينا بالفعل، لكنه غير مسجّل في هذه العيادة تحديداً. رحّب به وقدّم له المعلومات العامة إن سأل (${doctorsInfo(solo)}، مواعيد العمل، الفترات المتاحة). وإذا رغب في الحجز أو استخدام خدمات هذه العيادة، استخدم أداة register_in_clinic لتسجيله كمريض في هذه العيادة باستخدام حسابه الحالي، ثم أخبره أنه أصبح مسجّلاً وأنه يمكنه الآن متابعة طلبه (سيتم تفعيل الحجز في رسالته التالية). لا تطلب منه الذهاب إلى الموقع. ${WEB_LOGIN_CLAIM_GUIDE} ${bookingFlow(solo)}`;
 
-const GUEST_WEB_GUIDE = `أنت تتحدث مع زائر لم يسجّل الدخول بعد. رحّب به وقدّم له معلومات عامة إن سأل: قائمة الأطباء وتخصصاتهم، ومواعيد عملهم، والفترات المتاحة، ومعلومات الفروع (العنوان، الهاتف، ساعات العمل، الموقف، كيفية الوصول) عبر list_branches وget_branch_info وget_clinic_info. لا يمكنك حجز أو إلغاء أو تعديل أي موعد له لأنه لا يملك حساباً — إذا رغب بالحجز، أخبره بلطف أنه يحتاج أولاً لإنشاء حساب أو تسجيل الدخول من الموقع، ثم يمكنه العودة لإتمام الحجز. ${BOOKING_FLOW}`;
+const guestWebGuide = (solo: boolean) => `أنت تتحدث مع زائر لم يسجّل الدخول بعد. رحّب به وقدّم له معلومات عامة إن سأل: ${doctorsInfo(solo)}، ومواعيد ${solo ? "عمله" : "عملهم"}، والفترات المتاحة، ومعلومات الفروع (العنوان، الهاتف، ساعات العمل، الموقف، كيفية الوصول) عبر list_branches وget_branch_info وget_clinic_info. لا يمكنك حجز أو إلغاء أو تعديل أي موعد له لأنه لا يملك حساباً — إذا رغب بالحجز، أخبره بلطف أنه يحتاج أولاً لإنشاء حساب أو تسجيل الدخول من الموقع، ثم يمكنه العودة لإتمام الحجز. ${bookingFlow(solo)}`;
 
 export async function buildSystemPrompt(ctx: AgentContext): Promise<string> {
   // Load the real clinic so the agent identifies itself as that clinic (name,
   // description, phones, socials) rather than a generic product name.
   const clinic = await getClinicInfo(ctx.clinicId).catch(() => null);
   const identity = buildClinicIdentity(clinic);
+  const solo = clinic?.kind === ClinicKind.SOLO_DOCTOR;
+  const soloLines = solo
+    ? buildSoloDoctorLines(await getSoloDoctor(ctx.clinicId).catch(() => null))
+    : [];
   // For an unidentified contact (role null): on WhatsApp, an existing account
   // that just isn't a member of this clinic (Case 2, actorId set) can be
   // registered here directly; a brand-new number (Case 1) is sent to the
@@ -146,21 +193,22 @@ export async function buildSystemPrompt(ctx: AgentContext): Promise<string> {
   let unknownGuide: string;
   if (ctx.channel === Channel.WHATSAPP) {
     unknownGuide = ctx.actorId
-      ? EXISTING_ACCOUNT_NOT_MEMBER_GUIDE
-      : unknownWhatsAppGuide;
+      ? existingAccountNotMemberGuide(solo)
+      : unknownWhatsAppGuide(solo);
   } else {
-    unknownGuide = GUEST_WEB_GUIDE;
+    unknownGuide = guestWebGuide(solo);
   }
   // A WhatsApp patient can also claim website access via claim_web_login.
   const claimSuffix =
     ctx.channel === Channel.WHATSAPP && ctx.role === Role.PATIENT
       ? " " + WEB_LOGIN_CLAIM_GUIDE
       : "";
-  const guide = (ctx.role ? ROLE_GUIDE[ctx.role] : unknownGuide) + claimSuffix;
+  const guide = (ctx.role ? roleGuide(solo)[ctx.role] : unknownGuide) + claimSuffix;
   const now = new Date();
   return [
     ...buildAgentIdentity(identity.name, ctx.agent),
     ...identity.lines,
+    ...soloLines,
     ctx.actorName ? `اسم المستخدم: ${ctx.actorName}.` : "",
     guide,
     `التاريخ والوقت الحالي: ${now.toLocaleString("ar-EG", { dateStyle: "full", timeStyle: "short" })} (ISO: ${now.toISOString()}).`,
@@ -170,6 +218,7 @@ export async function buildSystemPrompt(ctx: AgentContext): Promise<string> {
     "- قبل أي إجراء يغيّر البيانات (حجز، إلغاء، تأكيد، حذف، تعديل) تأكّد أنك جمعت المعلومات الصحيحة.",
     LIST_RULES,
     "- ردّ دائماً باللغة العربية وبأسلوب موجز وودود.",
+    `- كل الأسعار (سعر الكشف، سعر الاستشارة) بال${CURRENCY_LABEL}؛ عند ذكر أي سعر اكتب العملة «${CURRENCY_LABEL}» ولا تستخدم الريال أو أي عملة أخرى.`,
     "- إذا لم تستطع تنفيذ الطلب أو طلب المستخدم موظفاً بشرياً، استخدم أداة escalate_to_human إن كانت متاحة.",
     // Pairs with quotePreamble in server/services/agentRunner.ts.
     "- إذا بدأت رسالة المستخدم بـ «[↩︎ ردًّا على …: «نص»]» فهو يردّ على تلك الرسالة تحديداً: افهم الضمائر والإشارات في كلامه («غيّره»، «هذا الموعد»، «نعم») على أنها تعود إلى النص المقتبس، حتى لو كانت تلك الرسالة قديمة أو ليست آخر ما قيل. لا تكرّر هذا الوسم في ردّك.",

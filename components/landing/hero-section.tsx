@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Calendar, Users, CheckCircle, ArrowLeft } from "lucide-react";
+import { Calendar, Users, CheckCircle, ArrowLeft, Award } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface HeroSectionProps {
@@ -16,6 +16,15 @@ interface HeroSectionProps {
    * the full "my appointments" section.
    */
   nextAppointment?: { doctorName: string; when: string } | null;
+  /**
+   * Solo-doctor clinic: the hero presents its one doctor instead of a center.
+   * doctorName is null while the admin hasn't added the doctor yet.
+   */
+  solo?: {
+    doctorName: string | null;
+    subtitle: string | null;
+    yearsOfExperience: number | null;
+  } | null;
 }
 
 export function HeroSection({
@@ -24,6 +33,7 @@ export function HeroSection({
   isAuthenticated,
   clinicName,
   nextAppointment = null,
+  solo = null,
 }: HeroSectionProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -68,14 +78,22 @@ export function HeroSection({
         >
           احجز موعدك مع
           <br />
-          <span className="text-accent">أفضل الأطباء</span>
+          <span className="text-accent">
+            {solo
+              ? solo.doctorName
+                ? `د. ${solo.doctorName}`
+                : (clinicName ?? "طبيبك")
+              : "أفضل الأطباء"}
+          </span>
         </h1>
 
         {/* Subheading */}
         <p className="mx-auto mt-6 max-w-2xl font-sans text-lg leading-relaxed text-white/60">
-          {clinicName
-            ? `${clinicName} تجمعك بأطبائها المتخصصين. احجز موعدك في ثوانٍ واستمتع بتجربة رعاية صحية متطورة.`
-            : "ClinicaAI تجمعك بأطباء متخصصين في مختلف التخصصات. احجز موعدك في ثوانٍ واستمتع بتجربة رعاية صحية متطورة."}
+          {solo
+            ? `${solo.subtitle ? `${solo.subtitle}. ` : ""}احجز موعدك في ثوانٍ واستمتع بتجربة رعاية صحية متطورة.`
+            : clinicName
+              ? `${clinicName} تجمعك بأطبائها المتخصصين. احجز موعدك في ثوانٍ واستمتع بتجربة رعاية صحية متطورة.`
+              : "ClinicaAI تجمعك بأطباء متخصصين في مختلف التخصصات. احجز موعدك في ثوانٍ واستمتع بتجربة رعاية صحية متطورة."}
         </p>
 
         {/* CTA buttons */}
@@ -95,7 +113,7 @@ export function HeroSection({
             variant="outline"
             className="h-auto gap-2 rounded-xl border-white/20 bg-transparent px-7 py-3.5 text-[length:inherit] text-white transition-all hover:border-accent/50 hover:bg-white/5"
           >
-            <a href="#doctors">تصفح الأطباء</a>
+            <a href="#doctors">{solo ? "عن الطبيب" : "تصفح الأطباء"}</a>
           </Button>
         </div>
 
@@ -123,14 +141,33 @@ export function HeroSection({
         )}
 
         {/* Stats */}
-        <div className="mx-auto mt-16 grid max-w-2xl grid-cols-3 gap-3 sm:gap-6">
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-5 backdrop-blur-sm">
-            <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/20">
-              <Users className="h-5 w-5 text-accent" />
+        {/* Solo clinic: years of experience instead of a doctor count (dropped
+            when unknown — "1+ doctors" reads like an empty center). */}
+        <div
+          className={`mx-auto mt-16 grid max-w-2xl gap-3 sm:gap-6 ${
+            solo && solo.yearsOfExperience == null ? "grid-cols-2" : "grid-cols-3"
+          }`}
+        >
+          {!solo && (
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-5 backdrop-blur-sm">
+              <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/20">
+                <Users className="h-5 w-5 text-accent" />
+              </div>
+              <div className="font-heading text-2xl font-bold text-white">{doctorCount}+</div>
+              <div className="mt-0.5 font-sans text-xs text-white/50">طبيب متخصص</div>
             </div>
-            <div className="font-heading text-2xl font-bold text-white">{doctorCount}+</div>
-            <div className="mt-0.5 font-sans text-xs text-white/50">طبيب متخصص</div>
-          </div>
+          )}
+          {solo && solo.yearsOfExperience != null && (
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-5 backdrop-blur-sm">
+              <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/20">
+                <Award className="h-5 w-5 text-accent" />
+              </div>
+              <div className="font-heading text-2xl font-bold text-white">
+                {solo.yearsOfExperience}+
+              </div>
+              <div className="mt-0.5 font-sans text-xs text-white/50">سنة خبرة</div>
+            </div>
+          )}
 
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-5 backdrop-blur-sm">
             <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/20">

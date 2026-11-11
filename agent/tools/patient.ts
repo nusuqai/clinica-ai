@@ -5,6 +5,8 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
+import * as IntakeService from "@/server/services/patient-intake";
+import { INTAKE_FIELDS, INTAKE_REQUIRED_ERROR } from "@/lib/patient-intake";
 import type { AgentContext } from "@/agent/types";
 import { pageRequest } from "@/lib/pagination";
 import {
@@ -52,8 +54,17 @@ async function appointmentCard(appointmentId: string) {
   };
 }
 
+// Returned by the booking tools while the patient has no intake file at this
+// clinic: the agent collects the answers, calls save_patient_intake, then books.
+const INTAKE_REQUIRED_RESULT = {
+  error: INTAKE_REQUIRED_ERROR,
+  needsIntake: true,
+  questions: INTAKE_FIELDS.map((f) => f.question),
+};
+
 export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
   const patientId = ctx.actorId!;
+  const needsIntake = async () => !(await IntakeService.hasPatientIntake(ctx.clinicId, patientId));
 
   return [
     jsonTool(
@@ -67,6 +78,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ slotId, notes }) => {
+        if (await needsIntake()) return INTAKE_REQUIRED_RESULT;
         const res = await AppointmentService.createAppointment(
           patientId,
           slotId,
@@ -92,6 +104,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ doctorId, date, notes }) => {
+        if (await needsIntake()) return INTAKE_REQUIRED_RESULT;
         const res = await QueueService.bookOrderAppointment(
           patientId,
           doctorId,
@@ -250,6 +263,29 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
             expectedTime: a.expectedTime,
           })),
         };
+      },
+    ),
+    jsonTool(
+      {
+        name: "save_patient_intake",
+        description:
+          "احفظ ملف المريض الحالي لدى هذه العيادة (مطلوب قبل أول حجز). اسأل المريض الأسئلة كلها واحفظ إجاباته كما قالها نصّاً. سبب الكشف ليس هنا: مرّره في notes عند الحجز.",
+        schema: z.object({
+          fullName: z.string().describe("الاسم ثلاثي"),
+          age: z.string().describe("السن"),
+          weight: z.string().describe("الوزن"),
+          address: z.string().describe("العنوان"),
+          medicalConditions: z.string().describe("الأمراض السابقة أو المزمنة (أو «لا يوجد»)"),
+          smokingStatus: z.string().describe("مدخن أم غير مدخن"),
+          previousSurgeries: z
+            .string()
+            .describe("العمليات الجراحية السابقة ونوعها وتاريخها (أو «لا يوجد»)"),
+        }),
+      },
+      async (input) => {
+        const res = await IntakeService.savePatientIntake(ctx.clinicId, patientId, input);
+        if (!res.ok) return { error: res.error };
+        return { saved: true };
       },
     ),
     jsonTool(

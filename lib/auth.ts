@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { clinicUrl } from "@/lib/clinic-url";
 import { getTenantSlug } from "@/lib/tenant";
-import { Role } from "@prisma/client";
+import { ClinicKind, Role } from "@prisma/client";
 import { PERMISSIONS, PERMISSION_HOME, permissionsFor, type Permission } from "@/lib/permissions";
 
 // Centralized auth/tenancy helpers. Identity lives on Profile; the per-clinic
@@ -33,6 +33,8 @@ export type ClinicSummary = {
   logoUrl: string | null;
   primaryColor: string | null;
   accentColor: string | null;
+  /** CENTER or SOLO_DOCTOR — drives the landing page, agent and admin UI. */
+  kind: ClinicKind;
 };
 
 export type ClinicContext = {
@@ -61,6 +63,7 @@ const clinicSelect = {
   logoUrl: true,
   primaryColor: true,
   accentColor: true,
+  kind: true,
 } as const;
 
 // ─── Identity ───────────────────────────────────────────────────────────────

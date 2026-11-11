@@ -8,14 +8,27 @@ import { patientTools } from "./patient";
 import { escalationTool } from "./escalation";
 import { registerInClinicTool } from "./registration";
 import { claimWebLoginTool } from "./claim";
+import { isSoloClinic } from "@/server/services/clinic-kind";
+
+// A solo-doctor clinic has one doctor, so there is nothing to list or search
+// by specialty — withheld so the model never starts a "which doctor / which
+// specialty?" flow (list_doctors offers specialties as filter choices). The
+// doctor's id and profile are in the system prompt instead (agent/prompts.ts).
+const SOLO_HIDDEN_TOOLS = new Set([
+  "list_doctors",
+  "list_specialties",
+  "search_doctors_by_specialty",
+]);
 
 /**
  * Returns EXACTLY the tools the actor's role may use. Out-of-role tools are
  * never constructed, so the model cannot see or call them.
  */
 export async function getToolsForRole(ctx: AgentContext): Promise<DynamicStructuredTool[]> {
+  const solo = await isSoloClinic(ctx.clinicId).catch(() => false);
+  const common = commonTools(ctx.clinicId).filter((t) => !solo || !SOLO_HIDDEN_TOOLS.has(t.name));
   const base = [
-    ...commonTools(ctx.clinicId),
+    ...common,
     ...knowledgeTools(ctx.clinicId),
     escalationTool(ctx),
   ];

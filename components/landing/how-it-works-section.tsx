@@ -18,7 +18,15 @@ const STEPS = [
   },
 ];
 
-export function HowItWorksSection() {
+const SOLO_FIRST_STEP = {
+  icon: Stethoscope,
+  title: "تعرّف على طبيبك",
+  description: "اطّلع على تخصص الطبيب وخبراته وأسعار الكشف قبل الحجز.",
+};
+
+/** `solo`: a single-doctor clinic — there is no doctor to choose. */
+export function HowItWorksSection({ solo = false }: { solo?: boolean }) {
+  const steps = solo ? [SOLO_FIRST_STEP, ...STEPS.slice(1)] : STEPS;
   return (
     <section className="bg-muted px-6 py-20">
       <div className="mx-auto max-w-7xl">
@@ -32,7 +40,7 @@ export function HowItWorksSection() {
         </div>
 
         <div className="grid gap-8 sm:grid-cols-3">
-          {STEPS.map((step, i) => {
+          {steps.map((step, i) => {
             const Icon = step.icon;
             return (
               <div key={step.title} className="relative flex flex-col items-center text-center">

@@ -4,12 +4,13 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createClinic, updateClinic } from "@/server/actions/clinics";
+import { createClinic, setClinicKindAction, updateClinic } from "@/server/actions/clinics";
 import { clinicHost, clinicOrigin } from "@/lib/clinic-url";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Card } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toFormData } from "@/lib/form-data";
 import {
   createClinicSchema,
@@ -27,7 +28,44 @@ const EMPTY_CLINIC: CreateClinicValues = {
   logoUrl: "",
   primaryColor: "",
   accentColor: "",
+  kind: "CENTER",
 };
+
+type Kind = CreateClinicValues["kind"];
+
+const KIND_OPTIONS: { value: Kind; label: string }[] = [
+  { value: "CENTER", label: "مركز طبي" },
+  { value: "SOLO_DOCTOR", label: "عيادة طبيب واحد" },
+];
+
+/** CENTER / SOLO_DOCTOR picker. Radix single toggle can be cleared — ignore that. */
+function KindPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: Kind;
+  onChange: (kind: Kind) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      size="sm"
+      value={value}
+      disabled={disabled}
+      onValueChange={(v) => v && v !== value && onChange(v as Kind)}
+      className="justify-start"
+    >
+      {KIND_OPTIONS.map((o) => (
+        <ToggleGroupItem key={o.value} value={o.value} className="px-3">
+          {o.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+  );
+}
 
 export function CreateClinicForm() {
   const router = useRouter();
@@ -53,10 +91,23 @@ export function CreateClinicForm() {
   });
 
   const { control } = form;
+  const kind = form.watch("kind");
   return (
     <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={handleSubmit} noValidate>
       <FormField control={control} name="name" placeholder="اسم العيادة" required />
       <FormField control={control} name="slug" placeholder="المعرّف (اختياري)" dir="ltr" />
+
+      {/* Kind — a solo clinic serves exactly one doctor (added later by the clinic admin) */}
+      <div className="flex flex-col gap-1.5 sm:col-span-2">
+        <span className="text-xs font-medium text-muted-foreground">نوع العيادة</span>
+        <KindPicker value={kind} onChange={(k) => form.setValue("kind", k)} />
+        {kind === "SOLO_DOCTOR" && (
+          <p className="text-xs text-muted-foreground">
+            عيادة لطبيب واحد فقط: يضيف مدير العيادة بيانات الطبيب، وتعرض الصفحة الرئيسية والمساعد
+            الذكي هذا الطبيب وحده.
+          </p>
+        )}
+      </div>
 
       {/* Managing admin — the account set up as this clinic's ADMIN */}
       <FormField control={control} name="adminName" placeholder="اسم مدير العيادة" required />
@@ -113,6 +164,7 @@ interface ClinicCardProps {
     primaryColor: string | null;
     accentColor: string | null;
     isActive: boolean;
+    kind: Kind;
     _count: { members: number; doctors: number };
   };
 }
@@ -122,6 +174,20 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [kindError, setKindError] = useState<string | null>(null);
+  const [kindNotice, setKindNotice] = useState(false);
+
+  const changeKind = (kind: Kind) =>
+    start(async () => {
+      setKindError(null);
+      setKindNotice(false);
+      const res = await setClinicKindAction(clinic.id, kind);
+      if (res && "error" in res && res.error) setKindError(res.error);
+      else {
+        setKindNotice(true);
+        router.refresh();
+      }
+    });
 
   const form = useForm<UpdateClinicValues>({
     resolver: zodResolver(updateClinicSchema),
@@ -179,6 +245,17 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
       <p className="mb-3 text-xs text-muted-foreground">
         {clinic._count.members} عضو · {clinic._count.doctors} طبيب
       </p>
+
+      <div className="mb-3 flex flex-col gap-1.5">
+        <KindPicker value={clinic.kind} onChange={changeKind} disabled={pending} />
+        {kindError && <span className="text-xs text-red-600">{kindError}</span>}
+        {kindNotice && (
+          <span className="text-xs text-amber-700">
+            تم تغيير نوع العيادة. راجع وصف العيادة ومستندات المعرفة وقوالب واتساب، فقد تذكر صيغة
+            النوع السابق.
+          </span>
+        )}
+      </div>
 
       <form
         className="grid grid-cols-1 gap-2"

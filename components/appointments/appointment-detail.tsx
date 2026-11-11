@@ -28,6 +28,7 @@ import type { AttachmentView } from "@/server/services/attachments";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { formatFee } from "@/lib/currency";
 
 // The full page for one appointment — shared by the doctor, admin and patient
 // routes. They differ only in `canEdit` (staff may write the clinical record +
@@ -122,7 +123,7 @@ export default function AppointmentDetail({
             )}
             {(appt.doctor.examinationFee != null || appt.doctor.consultationFee != null) && (
               <Row icon={Banknote} label="سعر الكشف">
-                {appt.doctor.examinationFee != null ? `${appt.doctor.examinationFee} جنيه` : "—"}
+                {appt.doctor.examinationFee != null ? formatFee(appt.doctor.examinationFee) : "—"}
               </Row>
             )}
             {appt.patientNotes && (

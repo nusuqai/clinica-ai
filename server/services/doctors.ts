@@ -9,6 +9,13 @@ import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
 import { QUEUE_MODES, isQueueMode } from "@/lib/availability/modes";
 import {
+  assertCanActivateDoctor,
+  isSoloClinic,
+  SoloDoctorError,
+  SOLO_DOCTOR_LIMIT_ERROR,
+  SOLO_SPECIALTY_REQUIRED_ERROR,
+} from "./clinic-kind";
+import {
   AppointmentStatus,
   AvailabilityMode,
   Role,
@@ -524,31 +531,38 @@ export async function createDoctor(
   input: CreateDoctorInput
 ): Promise<Result<{ id: string; fullName: string }>> {
   try {
-    const doctor = await prisma.doctor.create({
-      data: {
-        clinicId: input.clinicId,
-        fullName: input.fullName,
-        phone: input.phone || null,
-        title: input.title ?? null,
-        qualifications: input.qualifications || null,
-        expertiseAreas: input.expertiseAreas || null,
-        specialtyId: input.specialtyId ?? null,
-        bio: input.bio ?? null,
-        yearsOfExperience: input.yearsOfExperience ?? null,
-        examinationFee: input.examinationFee ?? null,
-        consultationFee: input.consultationFee ?? null,
-        requiresAdvanceBooking: input.requiresAdvanceBooking ?? true,
-        acceptsChildren: input.acceptsChildren ?? false,
-        isActive: true,
-        ...(input.branchIds?.length && {
-          branches: {
-            create: [...new Set(input.branchIds)].map((branchId) => ({
-              branchId,
-              clinicId: input.clinicId,
-            })),
-          },
-        }),
-      },
+    // Solo clinic: one active doctor, and it must carry a specialty.
+    if (!input.specialtyId && (await isSoloClinic(input.clinicId)))
+      return err(SOLO_SPECIALTY_REQUIRED_ERROR);
+    const doctor = await prisma.$transaction(async (tx) => {
+      const blocked = await assertCanActivateDoctor(tx, input.clinicId);
+      if (blocked) throw new SoloDoctorError(blocked);
+      return tx.doctor.create({
+        data: {
+          clinicId: input.clinicId,
+          fullName: input.fullName,
+          phone: input.phone || null,
+          title: input.title ?? null,
+          qualifications: input.qualifications || null,
+          expertiseAreas: input.expertiseAreas || null,
+          specialtyId: input.specialtyId ?? null,
+          bio: input.bio ?? null,
+          yearsOfExperience: input.yearsOfExperience ?? null,
+          examinationFee: input.examinationFee ?? null,
+          consultationFee: input.consultationFee ?? null,
+          requiresAdvanceBooking: input.requiresAdvanceBooking ?? true,
+          acceptsChildren: input.acceptsChildren ?? false,
+          isActive: true,
+          ...(input.branchIds?.length && {
+            branches: {
+              create: [...new Set(input.branchIds)].map((branchId) => ({
+                branchId,
+                clinicId: input.clinicId,
+              })),
+            },
+          }),
+        },
+      });
     });
     return ok({ id: doctor.id, fullName: doctor.fullName });
   } catch (e) {
@@ -567,6 +581,16 @@ export async function createDoctorAccount(
   input: CreateDoctorAccountInput
 ): Promise<Result<{ id: string; fullName: string }>> {
   const admin = createAdminClient();
+
+  // Solo clinic: fail fast, before an auth account is created for nothing. The
+  // locked re-check inside the transaction below is the real guard.
+  if (await isSoloClinic(input.clinicId)) {
+    if (!input.specialtyId) return err(SOLO_SPECIALTY_REQUIRED_ERROR);
+    const active = await prisma.doctor.count({
+      where: { clinicId: input.clinicId, isActive: true },
+    });
+    if (active > 0) return err(SOLO_DOCTOR_LIMIT_ERROR);
+  }
 
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
     email: input.email,
@@ -604,6 +628,8 @@ export async function createDoctorAccount(
     }
 
     const doctor = await prisma.$transaction(async (tx) => {
+      const blocked = await assertCanActivateDoctor(tx, input.clinicId);
+      if (blocked) throw new SoloDoctorError(blocked);
       await tx.clinicMember.upsert({
         where: { userId_clinicId: { userId, clinicId: input.clinicId } },
         update: { role: Role.DOCTOR },
@@ -641,6 +667,7 @@ export async function createDoctorAccount(
     return ok({ id: doctor.id, fullName: doctor.fullName });
   } catch (e) {
     await admin.auth.admin.deleteUser(userId);
+    if (e instanceof SoloDoctorError) return err(e.message);
     const msg = e instanceof Error ? e.message : "خطأ غير متوقع";
     return err(`فشل إنشاء حساب الطبيب: ${msg}`);
   }
@@ -694,6 +721,8 @@ export async function updateDoctor(input: UpdateDoctorInput): Promise<Result<voi
       select: { id: true },
     });
     if (!owned) return err("الطبيب غير موجود");
+    if (input.specialtyId === null && (await isSoloClinic(input.clinicId)))
+      return err(SOLO_SPECIALTY_REQUIRED_ERROR);
     await prisma.$transaction(async (tx) => {
       await tx.doctor.update({
         where: { id: input.doctorId },
@@ -759,11 +788,21 @@ export async function setDoctorActive(
 ): Promise<Result<void>> {
   try {
     // #38: when a clinic is given, only flip a doctor that belongs to it.
-    const res = await prisma.doctor.updateMany({
-      where: { id: doctorId, ...(clinicId ? { clinicId } : {}) },
-      data: { isActive },
+    const found = await prisma.$transaction(async (tx) => {
+      const doctor = await tx.doctor.findFirst({
+        where: { id: doctorId, ...(clinicId ? { clinicId } : {}) },
+        select: { clinicId: true },
+      });
+      if (!doctor) return false;
+      // Solo clinic: activating is refused while another doctor is active.
+      if (isActive) {
+        const blocked = await assertCanActivateDoctor(tx, doctor.clinicId, doctorId);
+        if (blocked) throw new SoloDoctorError(blocked);
+      }
+      await tx.doctor.update({ where: { id: doctorId }, data: { isActive } });
+      return true;
     });
-    if (res.count === 0) return err("الطبيب غير موجود");
+    if (!found) return err("الطبيب غير موجود");
     return ok(undefined);
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل تحديث حالة الطبيب");

@@ -36,6 +36,7 @@ export const createClinicSchema = z.object({
   adminName: z.string().trim().min(1, "أدخل اسم مدير العيادة."),
   adminEmail: email,
   adminPhone: z.string().trim(),
+  kind: z.enum(["CENTER", "SOLO_DOCTOR"]),
 });
 export type CreateClinicValues = z.infer<typeof createClinicSchema>;
 

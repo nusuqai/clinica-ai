@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
-import { X, Clock, CheckCircle, AlertCircle, LogIn, Users } from "lucide-react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { X, Clock, CheckCircle, AlertCircle, LogIn, Users, ClipboardList } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -13,7 +14,10 @@ import {
   getAvailableDaysAction,
   getAvailableSlotsAction,
   getOrderBookingInfoAction,
+  myIntakeStatusAction,
+  saveMyIntakeAction,
 } from "@/server/actions/patient";
+import { EMPTY_INTAKE, INTAKE_FIELDS, intakeSchema, type IntakeValues } from "@/lib/patient-intake";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +30,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { formatFee } from "@/lib/currency";
 
 interface Doctor {
   id: string;
@@ -135,6 +140,33 @@ export function BookAppointmentModal({
   const [bookedArrival, setBookedArrival] = useState(false);
   const [bookingError, setBookingError] = useState("");
 
+  // First booking at this clinic: the patient fills their intake file on the
+  // confirm step (the booking actions refuse without it). Not for staff
+  // booking on a patient's behalf (onBook).
+  const [intakeRequired, setIntakeRequired] = useState(false);
+  const intakeForm = useForm<IntakeValues>({
+    resolver: zodResolver(intakeSchema),
+    defaultValues: EMPTY_INTAKE,
+    mode: "onTouched",
+  });
+  useEffect(() => {
+    if (needsAuth || onBehalf) return;
+    let cancelled = false;
+    myIntakeStatusAction()
+      .then((status) => {
+        if (cancelled || !status.required) return;
+        setIntakeRequired(true);
+        intakeForm.reset({ ...EMPTY_INTAKE, fullName: status.fullName });
+      })
+      .catch(() => {
+        // Unknown → leave it to the booking action, which re-checks.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsAuth, onBehalf]);
+
   // Load the doctor's available days once, up-front. Only dates + mode — each
   // day's slots/queue are loaded lazily on open so opening the list stays fast.
   useEffect(() => {
@@ -198,6 +230,19 @@ export function BookAppointmentModal({
     setBookingError("");
     startTransition(async () => {
       const notes = notesForm.getValues("notes").trim();
+      // Save the intake file first; the booking actions require it.
+      if (!onBook && intakeRequired) {
+        if (!(await intakeForm.trigger())) {
+          setBookingError("برجاء استكمال جميع بيانات ملف المريض");
+          return;
+        }
+        const saved = await saveMyIntakeAction(intakeForm.getValues());
+        if (!saved.ok) {
+          setBookingError(saved.error ?? "تعذّر حفظ ملف المريض");
+          return;
+        }
+        setIntakeRequired(false);
+      }
       if (onBook) {
         const res = await onBook(selection, notes);
         if (res.ok) {
@@ -495,12 +540,39 @@ export function BookAppointmentModal({
                     <div className="flex items-center justify-between">
                       <span className="font-sans text-sm text-text/70">رسوم الكشف</span>
                       <span className="font-sans text-sm font-semibold text-accent">
-                        {doctor.fee} جنيه
+                        {formatFee(doctor.fee)}
                       </span>
                     </div>
                   )}
                 </div>
               </div>
+
+              {intakeRequired && (
+                <div className="flex flex-col gap-4 rounded-xl border border-accent/30 bg-accent/5 p-4">
+                  <div>
+                    <p className="flex items-center gap-2 font-heading text-sm font-bold text-text">
+                      <ClipboardList className="h-4 w-4 text-accent" />
+                      ملف المريض
+                    </p>
+                    <p className="mt-1 font-sans text-xs leading-relaxed text-text/60">
+                      لأنه أول حجز لك لدينا، برجاء استكمال البيانات التالية ليطّلع عليها الطبيب.
+                    </p>
+                  </div>
+                  {INTAKE_FIELDS.map((f) => (
+                    <FormField
+                      key={f.key}
+                      type={f.multiline ? "textarea" : "text"}
+                      {...(f.multiline ? { rows: 2 } : {})}
+                      label={f.question}
+                      labelClassName="text-text"
+                      control={intakeForm.control}
+                      name={f.key}
+                      required
+                      controlClassName="bg-white text-text placeholder:text-text/30 focus-visible:border-accent focus-visible:ring-accent/20"
+                    />
+                  ))}
+                </div>
+              )}
 
               <FormField
                 type="textarea"
@@ -513,7 +585,7 @@ export function BookAppointmentModal({
                 control={notesForm.control}
                 name="notes"
                 rows={3}
-                placeholder="اكتب أي أعراض أو معلومات تريد إبلاغ الطبيب بها..."
+                placeholder="الكشف بخصوص إيه؟ اكتب الأعراض أو أي معلومات تريد إبلاغ الطبيب بها..."
                 controlClassName="px-4 py-3 text-text placeholder:text-text/30 focus-visible:border-accent focus-visible:ring-accent/20"
               />
 
@@ -678,6 +750,10 @@ function QueueBox({
       <div className="rounded-lg bg-accent/5 px-3 py-2.5">
         <p className="font-sans text-sm text-text">
           سيكون دورك رقم <span className="font-bold text-accent">{info.nextOrderNumber}</span>
+        </p>
+        <p className="mt-1 font-sans text-xs leading-relaxed text-text/70">
+          بمجرد الحجز تحصل على رقم دورك، ونُخبرك بالوقت المتوقع لكشفك تقريباً، ويمكنك متابعة كم
+          تبقّى على دورك من خلالنا.
         </p>
         <div className="mt-1 flex flex-col gap-0.5 font-sans text-xs text-text/60">
           {info.expectedTime && (
