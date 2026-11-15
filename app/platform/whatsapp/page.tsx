@@ -60,13 +60,18 @@ export default async function PlatformWhatsappPage() {
                 >
                   {c.config ? "متصل" : "غير متصل"}
                 </span>
-                {c.config && (
+                {c.config?.provider === "META_CLOUD" && (
                   <div className="text-right">
                     <p className="font-sans text-xs text-muted-foreground">Phone Number ID</p>
                     <p className="font-semibold text-foreground" dir="ltr">
                       {c.config.phoneNumberId}
                     </p>
                   </div>
+                )}
+                {c.config?.provider === "EVOLUTION" && (
+                  <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-600">
+                    واتساب ويب (Evolution)
+                  </span>
                 )}
               </div>
             </div>

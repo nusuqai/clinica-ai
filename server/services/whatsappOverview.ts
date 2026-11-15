@@ -1,6 +1,10 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import type { WhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
+import {
+  WHATSAPP_STATUS_SELECT,
+  toStatus,
+  type WhatsappConfigStatus,
+} from "@/lib/meta/whatsapp-config";
 
 /**
  * Every clinic's WhatsApp connection state in one query, for the platform
@@ -32,16 +36,7 @@ export async function getPlatformWhatsappOverview(): Promise<PlatformWhatsappOve
       id: true,
       name: true,
       slug: true,
-      whatsappConfig: {
-        select: {
-          phoneNumberId: true,
-          wabaId: true,
-          accessTokenCipher: true,
-          webhookToken: true,
-          verifyToken: true,
-          updatedAt: true,
-        },
-      },
+      whatsappConfig: { select: WHATSAPP_STATUS_SELECT },
     },
     orderBy: { name: "asc" },
   });
@@ -50,17 +45,8 @@ export async function getPlatformWhatsappOverview(): Promise<PlatformWhatsappOve
     clinicId: c.id,
     name: c.name,
     slug: c.slug,
-    config: c.whatsappConfig
-      ? {
-          phoneNumberId: c.whatsappConfig.phoneNumberId,
-          wabaId: c.whatsappConfig.wabaId,
-          // Presence only — the cipher itself stops here.
-          hasToken: c.whatsappConfig.accessTokenCipher.length > 0,
-          webhookToken: c.whatsappConfig.webhookToken,
-          verifyToken: c.whatsappConfig.verifyToken,
-          updatedAt: c.whatsappConfig.updatedAt,
-        }
-      : null,
+    // toStatus keeps only the cipher's presence — the cipher itself stops here.
+    config: c.whatsappConfig ? toStatus(c.whatsappConfig) : null,
   }));
 
   return {

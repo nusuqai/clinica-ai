@@ -1,8 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, SenderType, MessageDelivery, type Role, type Prisma } from "@prisma/client";
-import { downloadMedia } from "@/lib/meta/whatsapp";
-import type { WhatsAppCredentials } from "@/lib/meta/whatsapp";
+import { downloadWhatsAppMedia, type WhatsAppTransport } from "@/lib/whatsapp/transport";
 import type {
   UnsupportedMediaType,
   ArchivedMediaKind,
@@ -184,7 +183,7 @@ export async function handleUnsupportedWhatsAppMessage(
   conversationId: string,
   contact: WhatsAppContact,
   media: UnsupportedMediaType,
-  creds: WhatsAppCredentials
+  creds: WhatsAppTransport
 ): Promise<void> {
   const conv = await loadConversation(conversationId);
   if (!conv) return;
@@ -711,7 +710,7 @@ export async function handleWhatsAppMessage(
   userText: string,
   /** Meta message id — enables read receipts and the typing indicator. */
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppTransport,
   /** The wamid the patient quoted (swipe-to-reply), if any. */
   quotedWamid: string | null = null
 ): Promise<void> {
@@ -767,7 +766,7 @@ export async function handleWhatsAppVoiceMessage(
   contact: WhatsAppContact,
   voice: { mediaId: string; mimeType: string },
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppTransport,
   /** The wamid the patient quoted (swipe-to-reply), if any. */
   quotedWamid: string | null = null
 ): Promise<void> {
@@ -790,7 +789,7 @@ export async function handleWhatsAppVoiceMessage(
   let sttModel = "";
   let voiceMeta: VoiceMessageMetadata | null = null;
   try {
-    const media = await downloadMedia(voice.mediaId, creds.accessToken);
+    const media = await downloadWhatsAppMedia(creds, voice.mediaId);
     const stored = await uploadPatientMedia({
       clinicId,
       conversationId,
@@ -868,7 +867,7 @@ export async function handleWhatsAppImageMessage(
   contact: WhatsAppContact,
   image: { mediaId: string; mimeType: string; caption?: string },
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppTransport,
   /** The wamid the patient quoted (swipe-to-reply), if any. */
   quotedWamid: string | null = null
 ): Promise<void> {
@@ -885,7 +884,7 @@ export async function handleWhatsAppImageMessage(
   let bytes: Buffer | null = null;
   let stored: { path: string; contentType: string; size: number } | null = null;
   try {
-    const media = await downloadMedia(image.mediaId, creds.accessToken);
+    const media = await downloadWhatsAppMedia(creds, image.mediaId);
     bytes = media.bytes;
     stored = await uploadPatientMedia({
       clinicId,
@@ -1017,7 +1016,7 @@ export async function handleWhatsAppMediaMessage(
     caption?: string;
   },
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppTransport,
   /** The wamid the patient quoted (swipe-to-reply), if any. */
   quotedWamid: string | null = null
 ): Promise<void> {
@@ -1029,7 +1028,7 @@ export async function handleWhatsAppMediaMessage(
 
   let stored: { path: string; contentType: string; size: number } | null = null;
   try {
-    const dl = await downloadMedia(media.mediaId, creds.accessToken);
+    const dl = await downloadWhatsAppMedia(creds, media.mediaId);
     stored = await uploadPatientMedia({
       clinicId,
       conversationId,
@@ -1081,7 +1080,7 @@ export async function handleWhatsAppStructuredMessage(
   contact: WhatsAppContact,
   structured: { structuredKind: StructuredKind; data: unknown; summary: string },
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppTransport,
   /** The wamid the patient quoted (swipe-to-reply), if any. */
   quotedWamid: string | null = null
 ): Promise<void> {

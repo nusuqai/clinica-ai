@@ -44,11 +44,21 @@ export default async function WhatsAppStatusPage() {
           {config && (
             <dl className="space-y-3 border-t border-border pt-4">
               <div>
-                <dt className="font-sans text-xs text-muted-foreground">Phone Number ID</dt>
-                <dd className="font-sans text-sm text-foreground" dir="ltr">
-                  {config.phoneNumberId}
+                <dt className="font-sans text-xs text-muted-foreground">طريقة الاتصال</dt>
+                <dd className="font-sans text-sm text-foreground">
+                  {config.provider === "EVOLUTION"
+                    ? "واتساب ويب (غير رسمي)"
+                    : "واتساب الرسمي (Cloud API)"}
                 </dd>
               </div>
+              {config.provider === "META_CLOUD" && (
+                <div>
+                  <dt className="font-sans text-xs text-muted-foreground">Phone Number ID</dt>
+                  <dd className="font-sans text-sm text-foreground" dir="ltr">
+                    {config.phoneNumberId}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="font-sans text-xs text-muted-foreground">آخر تحديث</dt>
                 <dd className="font-sans text-sm text-foreground" dir="ltr">

@@ -60,7 +60,7 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
     initialConfig
       ? {
           webhookToken: initialConfig.webhookToken,
-          verifyToken: initialConfig.verifyToken,
+          verifyToken: initialConfig.verifyToken ?? "",
         }
       : null
   );

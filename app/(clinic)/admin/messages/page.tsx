@@ -16,6 +16,7 @@ import {
 } from "@/server/services/inbox";
 import { listTeamMembers } from "@/server/services/team";
 import { aiAgentNames } from "@/server/services/aiAgents";
+import { getClinicWhatsappProvider, hasServiceWindow } from "@/lib/whatsapp/transport";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -42,7 +43,7 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
   // before the reads below, so the list/counter already reflect it.
   if (id) await acknowledgeAssignment(id, user.id).catch(() => {});
 
-  const [conversations, selectedConversation, team, agentNames, labels, teammates] =
+  const [conversations, selectedConversation, team, agentNames, labels, teammates, waProvider] =
     await Promise.all([
       getConversations(clinic.id, { query: q, channel, show, label }, user.id),
       id ? getConversationDetail(id, clinic.id, user.id) : Promise.resolve(null),
@@ -50,6 +51,7 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
       aiAgentNames(clinic.id),
       listMyLabels(clinic.id, user.id),
       listInboxTeammates(clinic.id),
+      getClinicWhatsappProvider(clinic.id),
     ]);
   // Only read the thread once the conversation is confirmed to be this clinic's.
   const [messages, internalNotes] = selectedConversation
@@ -89,6 +91,7 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
           labels={labels}
           teammates={teammates}
           requestedId={id ?? null}
+          whatsappHasWindow={hasServiceWindow(waProvider)}
         />
       </Suspense>
     </div>

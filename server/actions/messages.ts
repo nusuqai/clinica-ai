@@ -5,15 +5,18 @@ import { after } from "next/server";
 import { Channel, SenderType, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { can, getClinicContext } from "@/lib/auth";
-import {
-  sendTextMessage,
-  sendTemplateMessage,
-  sendMediaMessage,
-  uploadMedia,
-  type WhatsAppRecipient,
-} from "@/lib/meta/whatsapp";
+import { sendTemplateMessage } from "@/lib/meta/whatsapp";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
+import {
+  getClinicWhatsappProvider,
+  getClinicWhatsappTransport,
+  hasServiceWindow,
+  sendWhatsAppMedia,
+  sendWhatsAppText,
+  sendWhatsAppVoice,
+  type WhatsAppAddress,
+} from "@/lib/whatsapp/transport";
 import {
   createPatientMediaUploadUrl,
   downloadPatientMedia,
@@ -39,7 +42,7 @@ function whatsappRecipient(conversation: {
   channel: Channel;
   whatsappPhone: string | null;
   whatsappUserId: string | null;
-}): WhatsAppRecipient | null {
+}): WhatsAppAddress | null {
   if (conversation.channel !== Channel.WHATSAPP) return null;
   if (!conversation.whatsappPhone && !conversation.whatsappUserId) return null;
   return {
@@ -83,6 +86,16 @@ async function lastInboundAt(conversationId: string): Promise<Date | null> {
 }
 
 /**
+ * True when free-form messages can't reach this WhatsApp contact: Meta's 24-hour
+ * window has closed. Evolution (WhatsApp Web) has no such window, so it never
+ * blocks there.
+ */
+async function whatsappWindowClosed(clinicId: string, conversationId: string): Promise<boolean> {
+  if (!hasServiceWindow(await getClinicWhatsappProvider(clinicId))) return false;
+  return !isWithinWhatsappWindow(await lastInboundAt(conversationId));
+}
+
+/**
  * The inbox renders each reply optimistically and needs to tell "never saved"
  * apart from "saved but undelivered", so this action reports every expected
  * failure as a value instead of throwing.
@@ -115,9 +128,11 @@ export async function sendAdminReply(
   // contact who's been silent for 24h. The inbox disables the box in this case,
   // but a stale client or a direct call must be rejected before we persist a
   // reply that could never be delivered.
-  if (conversation.channel === Channel.WHATSAPP) {
-    const within = isWithinWhatsappWindow(await lastInboundAt(conversationId));
-    if (!within) return { ok: false, reason: "outside_window" };
+  if (
+    conversation.channel === Channel.WHATSAPP &&
+    (await whatsappWindowClosed(ctx.clinic.id, conversationId))
+  ) {
+    return { ok: false, reason: "outside_window" };
   }
 
   let message;
@@ -158,10 +173,10 @@ export async function sendAdminReply(
   const recipient = whatsappRecipient(conversation);
   if (recipient) {
     try {
-      const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
-      if (!creds) throw new Error("WhatsApp is not configured for this clinic");
-      const wamid = await sendTextMessage(recipient, content, creds, {
-        replyToWamid: quoted?.whatsappMessageId,
+      const transport = await getClinicWhatsappTransport(ctx.clinic.id);
+      if (!transport) throw new Error("WhatsApp is not configured for this clinic");
+      const wamid = await sendWhatsAppText(transport, recipient, content, {
+        replyToId: quoted?.whatsappMessageId,
       });
       // Record the wamid so a patient's reaction can attach to this reply.
       if (wamid) {
@@ -215,10 +230,11 @@ export async function createStaffMediaUpload(
     select: { id: true, channel: true },
   });
   if (!conversation) return { ok: false, reason: "not_found" };
-  if (conversation.channel === Channel.WHATSAPP) {
-    if (!isWithinWhatsappWindow(await lastInboundAt(conversationId))) {
-      return { ok: false, reason: "outside_window" };
-    }
+  if (
+    conversation.channel === Channel.WHATSAPP &&
+    (await whatsappWindowClosed(ctx.clinic.id, conversationId))
+  ) {
+    return { ok: false, reason: "outside_window" };
   }
 
   try {
@@ -267,10 +283,11 @@ export async function sendAdminMediaReply(
   if (!media.path.startsWith(`${ctx.clinic.id}/${conversationId}/`)) {
     return { ok: false, reason: "forbidden" };
   }
-  if (conversation.channel === Channel.WHATSAPP) {
-    if (!isWithinWhatsappWindow(await lastInboundAt(conversationId))) {
-      return { ok: false, reason: "outside_window" };
-    }
+  if (
+    conversation.channel === Channel.WHATSAPP &&
+    (await whatsappWindowClosed(ctx.clinic.id, conversationId))
+  ) {
+    return { ok: false, reason: "outside_window" };
   }
 
   // Read the bytes back for the WhatsApp relay + the stored size. A missing
@@ -324,14 +341,19 @@ export async function sendAdminMediaReply(
   const recipient = whatsappRecipient(conversation);
   if (recipient) {
     try {
-      const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
-      if (!creds) throw new Error("WhatsApp is not configured for this clinic");
-      const waMediaId = await uploadMedia(creds, bytes, baseMime, media.filename ?? "attachment");
-      const wamid = await sendMediaMessage(
+      const transport = await getClinicWhatsappTransport(ctx.clinic.id);
+      if (!transport) throw new Error("WhatsApp is not configured for this clinic");
+      const wamid = await sendWhatsAppMedia(
+        transport,
         recipient,
-        { kind, mediaId: waMediaId, caption: caption || undefined, filename: media.filename },
-        creds,
-        { replyToWamid: quoted?.whatsappMessageId }
+        {
+          kind,
+          bytes,
+          mimeType: baseMime,
+          caption: caption || undefined,
+          filename: media.filename,
+        },
+        { replyToId: quoted?.whatsappMessageId }
       );
       if (wamid) {
         await prisma.message
@@ -383,20 +405,19 @@ export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: bo
   }
 
   try {
-    const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
-    if (!creds) return { ok: false };
+    const transport = await getClinicWhatsappTransport(ctx.clinic.id);
+    if (!transport) return { ok: false };
     // Re-deliver with the same quote the original send carried.
-    const options = { replyToWamid: message.replyTo?.whatsappMessageId };
+    const options = { replyToId: message.replyTo?.whatsappMessageId };
 
     const voiceMeta = (message.metadata as AgentMessageMetadata | null)?.voice;
     if (message.senderType === SenderType.ADMIN && voiceMeta?.storagePath) {
       const bytes = await downloadPatientMedia(voiceMeta.storagePath);
       if (!bytes) return { ok: false };
-      const waMediaId = await uploadMedia(creds, bytes, voiceMeta.mimeType, "voice.ogg");
-      await sendMediaMessage(
+      await sendWhatsAppVoice(
+        transport,
         recipient,
-        { kind: "audio", mediaId: waMediaId, voice: isOggOpus(voiceMeta.mimeType) },
-        creds,
+        { bytes, mimeType: voiceMeta.mimeType },
         options
       );
       return { ok: true };
@@ -406,23 +427,22 @@ export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: bo
     if (mediaMeta?.storagePath) {
       const bytes = await downloadPatientMedia(mediaMeta.storagePath);
       if (!bytes) return { ok: false };
-      const kind = outboundMediaKind(mediaMeta.mimeType);
-      const waMediaId = await uploadMedia(
-        creds,
-        bytes,
-        mediaMeta.mimeType,
-        mediaMeta.filename ?? "attachment"
-      );
-      await sendMediaMessage(
+      await sendWhatsAppMedia(
+        transport,
         recipient,
-        { kind, mediaId: waMediaId, caption: mediaMeta.caption, filename: mediaMeta.filename },
-        creds,
+        {
+          kind: outboundMediaKind(mediaMeta.mimeType),
+          bytes,
+          mimeType: mediaMeta.mimeType,
+          caption: mediaMeta.caption,
+          filename: mediaMeta.filename,
+        },
         options
       );
       return { ok: true };
     }
 
-    await sendTextMessage(recipient, message.content, creds, options);
+    await sendWhatsAppText(transport, recipient, message.content, options);
     return { ok: true };
   } catch (err) {
     console.error("Failed to retry WhatsApp delivery:", err);
@@ -573,12 +593,6 @@ export async function setSessionAiEnabled(sessionId: string, enabled: boolean): 
   revalidatePath("/admin/messages", "page");
 }
 
-/** WhatsApp only renders OGG/Opus as a voice note (with the waveform). */
-function isOggOpus(mime: string): boolean {
-  const base = mime.split(";")[0].trim().toLowerCase();
-  return base === "audio/ogg" || base === "audio/opus";
-}
-
 /** Staff placeholder content until the transcript lands — keeps the agent's
  *  history (and the inbox preview) meaningful in the meantime. */
 const STAFF_VOICE_PLACEHOLDER = "[رسالة صوتية من الفريق]";
@@ -607,10 +621,11 @@ export async function sendAdminVoiceReply(
     return { ok: false, reason: "forbidden" };
   }
   if (!voice.mimeType.toLowerCase().startsWith("audio/")) return { ok: false, reason: "forbidden" };
-  if (conversation.channel === Channel.WHATSAPP) {
-    if (!isWithinWhatsappWindow(await lastInboundAt(conversationId))) {
-      return { ok: false, reason: "outside_window" };
-    }
+  if (
+    conversation.channel === Channel.WHATSAPP &&
+    (await whatsappWindowClosed(ctx.clinic.id, conversationId))
+  ) {
+    return { ok: false, reason: "outside_window" };
   }
 
   const bytes = await downloadPatientMedia(voice.path);
@@ -663,14 +678,13 @@ export async function sendAdminVoiceReply(
   const recipient = whatsappRecipient(conversation);
   if (recipient) {
     try {
-      const creds = await getClinicWhatsappCredentials(clinicId);
-      if (!creds) throw new Error("WhatsApp is not configured for this clinic");
-      const waMediaId = await uploadMedia(creds, bytes, baseMime, "voice.ogg");
-      const wamid = await sendMediaMessage(
+      const transport = await getClinicWhatsappTransport(clinicId);
+      if (!transport) throw new Error("WhatsApp is not configured for this clinic");
+      const wamid = await sendWhatsAppVoice(
+        transport,
         recipient,
-        { kind: "audio", mediaId: waMediaId, voice: isOggOpus(baseMime) },
-        creds,
-        { replyToWamid: quoted?.whatsappMessageId }
+        { bytes, mimeType: baseMime },
+        { replyToId: quoted?.whatsappMessageId }
       );
       if (wamid) {
         await prisma.message
@@ -782,7 +796,7 @@ export async function sendQuickReply(
     if (!conversation) return { ok: false, reason: "not_found" };
     if (
       conversation.channel === Channel.WHATSAPP &&
-      !isWithinWhatsappWindow(await lastInboundAt(conversationId))
+      (await whatsappWindowClosed(ctx.clinic.id, conversationId))
     ) {
       return { ok: false, reason: "outside_window" };
     }

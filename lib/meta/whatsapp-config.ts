@@ -1,5 +1,6 @@
 import "server-only";
 import crypto from "crypto";
+import { WhatsappProvider } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/secret-box";
 
@@ -33,23 +34,32 @@ export interface WebhookConfig extends ClinicWhatsappCredentials {
 /** Non-secret view for the admin settings UI. The webhook token + verify token
  *  ARE shown (the clinic must copy them into Meta); the access token is not. */
 export interface WhatsappConfigStatus {
-  phoneNumberId: string;
-  wabaId: string;
+  /** Which connection this clinic uses. The Meta fields below are null for
+   *  EVOLUTION; `evolutionInstanceName` is null for META_CLOUD. */
+  provider: WhatsappProvider;
+  phoneNumberId: string | null;
+  wabaId: string | null;
+  evolutionInstanceName: string | null;
   /** Whether a token is stored — the token itself is never sent to the client. */
   hasToken: boolean;
   /** Unguessable token for this clinic's callback URL. */
   webhookToken: string;
   /** Verify token the clinic types into Meta's webhook config. */
-  verifyToken: string;
+  verifyToken: string | null;
   updatedAt: Date;
 }
 
+/** Meta credentials from a config row — null unless it is a complete
+ *  META_CLOUD row (an EVOLUTION clinic has no Meta credentials). */
 function toCredentials(row: {
   clinicId: string;
-  phoneNumberId: string;
-  wabaId: string;
-  accessTokenCipher: string;
-}): ClinicWhatsappCredentials {
+  provider: WhatsappProvider;
+  phoneNumberId: string | null;
+  wabaId: string | null;
+  accessTokenCipher: string | null;
+}): ClinicWhatsappCredentials | null {
+  if (row.provider !== WhatsappProvider.META_CLOUD) return null;
+  if (!row.phoneNumberId || !row.wabaId || !row.accessTokenCipher) return null;
   return {
     clinicId: row.clinicId,
     phoneNumberId: row.phoneNumberId,
@@ -58,7 +68,13 @@ function toCredentials(row: {
   };
 }
 
-/** Credentials for a clinic, or null if it has not been configured yet. */
+/**
+ * Meta Cloud API credentials for a clinic, or null if it is not connected
+ * through Meta (not configured, or connected through Evolution instead). The
+ * Meta-only features — templates, appointment reminders — gate on this; plain
+ * sends go through `getClinicWhatsappTransport` (lib/whatsapp/transport.ts),
+ * which covers both providers.
+ */
 export async function getClinicWhatsappCredentials(
   clinicId: string
 ): Promise<ClinicWhatsappCredentials | null> {
@@ -73,8 +89,9 @@ export async function getClinicWhatsappCredentials(
  */
 export async function getWebhookConfigByToken(webhookToken: string): Promise<WebhookConfig | null> {
   const row = await prisma.whatsappConfig.findUnique({ where: { webhookToken } });
-  if (!row) return null;
-  return { ...toCredentials(row), verifyToken: row.verifyToken };
+  const creds = row ? toCredentials(row) : null;
+  if (!row || !creds || !row.verifyToken) return null;
+  return { ...creds, verifyToken: row.verifyToken };
 }
 
 /** Non-secret status for the settings page. */
@@ -83,20 +100,40 @@ export async function getWhatsappConfigStatus(
 ): Promise<WhatsappConfigStatus | null> {
   const row = await prisma.whatsappConfig.findUnique({
     where: { clinicId },
-    select: {
-      phoneNumberId: true,
-      wabaId: true,
-      accessTokenCipher: true,
-      webhookToken: true,
-      verifyToken: true,
-      updatedAt: true,
-    },
+    select: WHATSAPP_STATUS_SELECT,
   });
-  if (!row) return null;
+  return row ? toStatus(row) : null;
+}
+
+/** The columns `toStatus` needs — never the decrypted token. */
+export const WHATSAPP_STATUS_SELECT = {
+  provider: true,
+  phoneNumberId: true,
+  wabaId: true,
+  evolutionInstanceName: true,
+  accessTokenCipher: true,
+  webhookToken: true,
+  verifyToken: true,
+  updatedAt: true,
+} as const;
+
+/** Non-secret status view of a config row (the cipher stops here). */
+export function toStatus(row: {
+  provider: WhatsappProvider;
+  phoneNumberId: string | null;
+  wabaId: string | null;
+  evolutionInstanceName: string | null;
+  accessTokenCipher: string | null;
+  webhookToken: string;
+  verifyToken: string | null;
+  updatedAt: Date;
+}): WhatsappConfigStatus {
   return {
+    provider: row.provider,
     phoneNumberId: row.phoneNumberId,
     wabaId: row.wabaId,
-    hasToken: row.accessTokenCipher.length > 0,
+    evolutionInstanceName: row.evolutionInstanceName,
+    hasToken: !!row.accessTokenCipher,
     webhookToken: row.webhookToken,
     verifyToken: row.verifyToken,
     updatedAt: row.updatedAt,
@@ -110,8 +147,16 @@ export interface SaveWhatsappConfigInput {
   accessToken?: string;
 }
 
+/** Thrown when a clinic already uses the OTHER provider — one at a time. */
+export class WhatsappProviderConflictError extends Error {
+  constructor() {
+    super("This clinic is connected through another WhatsApp provider — disconnect it first");
+    this.name = "WhatsappProviderConflictError";
+  }
+}
+
 /** URL-safe, unguessable token for a clinic's callback URL (~192 bits). */
-function generateWebhookToken(): string {
+export function generateWebhookToken(): string {
   return crypto.randomBytes(24).toString("base64url");
 }
 
@@ -136,8 +181,14 @@ export async function saveWhatsappConfig(
 
   const existing = await prisma.whatsappConfig.findUnique({
     where: { clinicId },
-    select: { webhookToken: true, verifyToken: true },
+    select: { provider: true, webhookToken: true, verifyToken: true },
   });
+
+  // One provider per clinic: switching from Evolution means disconnecting it
+  // first (which also logs the WhatsApp Web session out).
+  if (existing && existing.provider !== WhatsappProvider.META_CLOUD) {
+    throw new WhatsappProviderConflictError();
+  }
 
   if (!existing && !token) {
     throw new Error("An access token is required to configure WhatsApp");
@@ -152,7 +203,8 @@ export async function saveWhatsappConfig(
         ...(token ? { accessTokenCipher: encryptSecret(token) } : {}),
       },
     });
-    return existing;
+    // A META_CLOUD row always carries a verify token (set on creation).
+    return { webhookToken: existing.webhookToken, verifyToken: existing.verifyToken ?? "" };
   }
 
   const webhookToken = generateWebhookToken();
@@ -160,6 +212,7 @@ export async function saveWhatsappConfig(
   await prisma.whatsappConfig.create({
     data: {
       clinicId,
+      provider: WhatsappProvider.META_CLOUD,
       phoneNumberId,
       wabaId,
       accessTokenCipher: encryptSecret(token!),

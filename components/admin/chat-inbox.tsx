@@ -116,6 +116,10 @@ interface ChatInboxProps {
   /** The conversation id the server rendered for (null = none) — tells a
    *  still-loading thread apart from one that doesn't exist. */
   requestedId: string | null;
+  /** The clinic's WhatsApp goes through the official Cloud API, whose 24-hour
+   *  window blocks free-form replies. False for Evolution (WhatsApp Web), which
+   *  can message a contact at any time. */
+  whatsappHasWindow: boolean;
 }
 
 /** Reads an image file's pixel dimensions in the browser (null if not an image
@@ -177,6 +181,7 @@ export default function ChatInbox({
   labels: initialLabels,
   teammates,
   requestedId,
+  whatsappHasWindow,
 }: ChatInboxProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -823,7 +828,7 @@ export default function ChatInbox({
   // each tick. Web conversations are never gated.
   void nowTs;
   const isOutsideWindow =
-    isWhatsapp && !isWithinWhatsappWindow(selectedConversation?.lastInboundAt);
+    isWhatsapp && whatsappHasWindow && !isWithinWhatsappWindow(selectedConversation?.lastInboundAt);
 
   const patchPending = useCallback((clientId: string, patch: Partial<PendingMessage>) => {
     setPending((prev) => prev.map((p) => (p.clientId === clientId ? { ...p, ...patch } : p)));

@@ -10,7 +10,8 @@ export default async function WhatsAppAutomationPage() {
   return (
     <div>
       <PageHeader title="التذكيرات والمتابعة والتقييم" />
-      <AppointmentAutomation configured={!!config} />
+      {/* Reminders are approved Meta templates — only the official API has them. */}
+      <AppointmentAutomation configured={config?.provider === "META_CLOUD"} />
     </div>
   );
 }

@@ -344,29 +344,42 @@ model ClinicSocial {
 // the shared secret. The access token is encrypted at rest (AES-256-GCM, see
 // lib/crypto/secret-box.ts); the other values are low-sensitivity config the
 // clinic itself must copy into Meta.
+//
+// A clinic connects through ONE provider, picked by the platform admin:
+// META_CLOUD (official Cloud API — the Meta columns below are set) or EVOLUTION
+// (unofficial WhatsApp Web via a self-hosted Evolution API — only
+// `evolutionInstanceName` is set).
 model WhatsappConfig {
-  id                String   @id @default(uuid()) @db.Uuid
-  clinicId          String   @unique @db.Uuid
-  // WhatsApp sender id ("Phone number ID" in the Meta dashboard).
-  phoneNumberId     String   @unique
-  // WhatsApp Business Account id — needed to list/create message templates.
-  wabaId            String
-  // System-user access token, encrypted. Never selected into client code raw.
-  accessTokenCipher String
+  id                    String           @id @default(uuid()) @db.Uuid
+  clinicId              String           @unique @db.Uuid
+  provider              WhatsappProvider @default(META_CLOUD)
+  // META_CLOUD: WhatsApp sender id ("Phone number ID" in the Meta dashboard).
+  phoneNumberId         String?          @unique
+  // META_CLOUD: WhatsApp Business Account id — needed to list/create templates.
+  wabaId                String?
+  // META_CLOUD: system-user access token, encrypted. Never selected into client code raw.
+  accessTokenCipher     String?
+  // EVOLUTION: the instance name on the Evolution server (one per clinic).
+  evolutionInstanceName String?          @unique
   // Unguessable token embedded in this clinic's unique callback URL
-  // (…/api/meta/whatsapp/webhook/{webhookToken}). Routes inbound events to the
-  // clinic and, in lieu of app-secret signature verification, gates the
-  // endpoint. Rotatable independently of the clinic's identity.
-  webhookToken      String   @unique
-  // The verify token this clinic types into Meta's webhook config; checked on
-  // the GET verification handshake.
-  verifyToken       String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  // (…/api/meta/whatsapp/webhook/{token} or …/api/evolution/webhook/{token}).
+  // Routes inbound events to the clinic and, in lieu of signature
+  // verification, gates the endpoint.
+  webhookToken          String           @unique
+  // META_CLOUD: the verify token this clinic types into Meta's webhook config;
+  // checked on the GET verification handshake.
+  verifyToken           String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
 
   clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
   @@map("whatsapp_configs")
+}
+
+enum WhatsappProvider {
+  META_CLOUD
+  EVOLUTION
 }
 
 // Membership join table: a Profile belongs to a Clinic with a role. The unique

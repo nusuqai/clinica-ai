@@ -4,10 +4,18 @@ import { revalidatePath } from "next/cache";
 import { requirePlatformAdmin } from "@/lib/auth";
 import { Prisma } from "@prisma/client";
 import {
+  WhatsappProviderConflictError,
   deleteWhatsappConfig,
   getClinicWhatsappCredentials,
   saveWhatsappConfig,
 } from "@/lib/meta/whatsapp-config";
+import {
+  disconnectEvolution,
+  getEvolutionStatus,
+  startEvolutionConnection,
+  type EvolutionStatus,
+} from "@/lib/evolution/config";
+import { getClinicWhatsappProvider } from "@/lib/whatsapp/transport";
 import {
   listMessageTemplates,
   createMessageTemplate,
@@ -56,6 +64,9 @@ export async function saveClinicWhatsappConfigAction(input: {
     revalidatePath(WHATSAPP_PATH);
     return { ok: true, webhookToken, verifyToken };
   } catch (err) {
+    if (err instanceof WhatsappProviderConflictError) {
+      return { ok: false, reason: "error", message: PROVIDER_CONFLICT_MESSAGE };
+    }
     // phoneNumberId is unique across clinics: point at the fix, not the stack.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return {
@@ -83,12 +94,71 @@ export async function disconnectClinicWhatsappAction(input: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   await requirePlatformAdmin();
   try {
-    await deleteWhatsappConfig(input.clinicId);
+    // Evolution also needs its WhatsApp Web session logged out on the server.
+    if ((await getClinicWhatsappProvider(input.clinicId)) === "EVOLUTION") {
+      await disconnectEvolution(input.clinicId);
+    } else {
+      await deleteWhatsappConfig(input.clinicId);
+    }
     revalidatePath(WHATSAPP_PATH);
     return { ok: true };
   } catch (err) {
     console.error("Failed to disconnect WhatsApp:", err);
     return { ok: false, error: "تعذّر فصل رقم الواتساب." };
+  }
+}
+
+// ─── Evolution (unofficial WhatsApp Web) ─────────────────────────────────────
+
+const PROVIDER_CONFLICT_MESSAGE =
+  "هذه العيادة مربوطة بطريقة اتصال أخرى. افصل الاتصال الحالي أولًا ثم أعد المحاولة.";
+
+/**
+ * Starts linking a phone to the clinic through Evolution: returns a fresh QR
+ * (and a pairing code when `phone` is given). Re-running it restarts linking.
+ */
+export async function startClinicEvolutionAction(input: {
+  clinicId: string;
+  phone?: string;
+}): Promise<{ ok: true; qrDataUrl: string | null; pairingCode: string | null } | ActionError> {
+  await requirePlatformAdmin();
+  const phone = input.phone?.replace(/\D/g, "") || undefined;
+  try {
+    const qr = await startEvolutionConnection(input.clinicId, phone);
+    revalidatePath(WHATSAPP_PATH);
+    return { ok: true, ...qr };
+  } catch (err) {
+    if (err instanceof WhatsappProviderConflictError) {
+      return { ok: false, reason: "error", message: PROVIDER_CONFLICT_MESSAGE };
+    }
+    console.error("Failed to start Evolution connection:", err);
+    return {
+      ok: false,
+      reason: "error",
+      message:
+        err instanceof Error
+          ? `تعذّر الاتصال بخادم Evolution: ${err.message}`
+          : "تعذّر الاتصال بخادم Evolution.",
+    };
+  }
+}
+
+/** Live link status, polled by the settings panel while it is open. */
+export async function getClinicEvolutionStatusAction(input: {
+  clinicId: string;
+}): Promise<{ ok: true; status: EvolutionStatus } | ActionError> {
+  await requirePlatformAdmin();
+  try {
+    const status = await getEvolutionStatus(input.clinicId);
+    if (!status) return { ok: false, reason: "not_configured" };
+    return { ok: true, status };
+  } catch (err) {
+    console.error("Failed to read Evolution status:", err);
+    return {
+      ok: false,
+      reason: "error",
+      message: err instanceof Error ? err.message : "تعذّر قراءة حالة الاتصال.",
+    };
   }
 }
 
