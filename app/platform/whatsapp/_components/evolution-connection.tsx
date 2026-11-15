@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { QrCode, RefreshCw, Smartphone, Unlink, TriangleAlert } from "lucide-react";
+import { History, QrCode, RefreshCw, Smartphone, Unlink, TriangleAlert } from "lucide-react";
 import {
   disconnectClinicWhatsappAction,
   getClinicEvolutionStatusAction,
   startClinicEvolutionAction,
+  syncClinicEvolutionHistoryAction,
 } from "@/server/actions/platformWhatsapp";
 import type { EvolutionStatus } from "@/lib/evolution/config";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -91,6 +92,22 @@ export default function EvolutionConnection({ clinicId, configured: initialConfi
     setStatus(null);
     setPairingCode(null);
     setMessage({ ok: true, text: "تم فصل الرقم." });
+  };
+
+  const [syncing, setSyncing] = useState(false);
+  const syncHistory = async () => {
+    setSyncing(true);
+    setMessage(null);
+    const res = await syncClinicEvolutionHistoryAction({ clinicId });
+    setSyncing(false);
+    setMessage(
+      res.ok
+        ? {
+            ok: true,
+            text: "بدأت مزامنة محادثات آخر 90 يوماً في الخلفية — ستظهر في صندوق الرسائل خلال دقائق.",
+          }
+        : { ok: false, text: res.message ?? "تعذّر بدء المزامنة." }
+    );
   };
 
   const linked = status?.state === "open";
@@ -182,6 +199,18 @@ export default function EvolutionConnection({ clinicId, configured: initialConfi
             <Button type="button" onClick={start} loading={busy}>
               {!busy && (configured ? <RefreshCw /> : <Smartphone />)}
               {configured ? "إعادة توليد الرمز" : "ابدأ الربط"}
+            </Button>
+          )}
+          {linked && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={syncHistory}
+              loading={syncing}
+              disabled={busy}
+            >
+              {!syncing && <History />}
+              مزامنة المحادثات (آخر 90 يوماً)
             </Button>
           )}
           {configured && (

@@ -149,7 +149,7 @@ export async function processInboundWhatsApp(
  * we look up by BSUID first (the stable, always-present-going-forward key), fall
  * back to the legacy phone key, and backfill whichever identifier was missing.
  */
-async function resolveConversation(
+export async function resolveConversation(
   clinicId: string,
   { phone, userId, name }: { phone: string | null; userId: string | null; name: string }
 ) {
@@ -177,7 +177,8 @@ async function resolveConversation(
         channel: Channel.WHATSAPP,
         whatsappPhone: phone,
         whatsappUserId: userId,
-        whatsappName: name,
+        // A thread opened by the clinic's own message has no contact name yet.
+        whatsappName: name || phone,
       },
     });
     console.log(`[wa-debug] conversation CREATED id=${conversation.id}`);

@@ -161,13 +161,25 @@ const isLidJid = (j: string | undefined) => !!j?.endsWith("@lid");
 /** Digits of a phone JID ("2010…@s.whatsapp.net" or "2010…:12@s.whatsapp.net"). */
 const jidPhone = (j: string) => j.split("@")[0].split(":")[0];
 
-/** One `data` object of a messages.upsert event → envelope, or null to skip. */
-function toEnvelope(data: Obj, instanceName: string): InboundEnvelope | null {
+/**
+ * One Baileys message record (a messages.upsert `data` object, or a row from
+ * Evolution's message store) → envelope plus who sent it and when. Null for
+ * anything that isn't a 1:1 chat.
+ */
+export interface EvolutionRecord {
+  envelope: InboundEnvelope;
+  /** Sent from the clinic's own phone (or echoed from our API sends). */
+  fromMe: boolean;
+  /** When WhatsApp says it was sent, if present. */
+  sentAt: Date | null;
+}
+
+export function parseEvolutionRecord(data: Obj, instanceName: string): EvolutionRecord | null {
   const key = obj(data.key);
-  if (!key || key.fromMe === true) return null; // our own sends echo back here
-  const messageId = str(key.id);
-  const remoteJid = str(key.remoteJid);
-  if (!messageId || !remoteJid) return null;
+  const messageId = str(key?.id);
+  const remoteJid = str(key?.remoteJid);
+  if (!key || !messageId || !remoteJid) return null;
+  const fromMe = key.fromMe === true;
 
   // 1:1 chats only — groups (@g.us), status broadcasts and channels are ignored.
   // Newer WhatsApp addresses many contacts by a privacy "LID" (…@lid), with the
@@ -184,15 +196,22 @@ function toEnvelope(data: Obj, instanceName: string): InboundEnvelope | null {
 
   const message = unwrap(obj(data.message) ?? {});
   const type = contentType(message);
+  const ts = Number(data.messageTimestamp);
 
   return {
-    phone,
-    userId,
-    name: str(data.pushName)?.trim() || phone || userId || "WhatsApp",
-    messageId,
-    quotedWamid: type ? quotedId(message[type]) : null,
-    phoneNumberId: instanceName,
-    message: classify(type, message, messageId),
+    fromMe,
+    sentAt: Number.isFinite(ts) && ts > 0 ? new Date(ts * 1000) : null,
+    envelope: {
+      phone,
+      userId,
+      // On the clinic's own messages pushName is the CLINIC's name — never use it
+      // as the contact's name.
+      name: fromMe ? "" : str(data.pushName)?.trim() || phone || userId || "WhatsApp",
+      messageId,
+      quotedWamid: type ? quotedId(message[type]) : null,
+      phoneNumberId: instanceName,
+      message: classify(type, message, messageId),
+    },
   };
 }
 
@@ -201,14 +220,14 @@ export function evolutionEventName(payload: Obj): string {
   return (str(payload.event) ?? "").toLowerCase().replace(/\./g, "_");
 }
 
-/** Flattens a messages.upsert event into envelopes (data may be one or many). */
-export function parseEvolutionMessages(payload: Obj): InboundEnvelope[] {
+/** Flattens a messages.upsert event into records (data may be one or many). */
+export function parseEvolutionMessages(payload: Obj): EvolutionRecord[] {
   if (evolutionEventName(payload) !== "messages_upsert") return [];
   const instanceName = str(payload.instance) ?? "";
   const items = Array.isArray(payload.data) ? payload.data : [payload.data];
   return items
     .map((d) => obj(d))
     .filter((d): d is Obj => !!d)
-    .map((d) => toEnvelope(d, instanceName))
-    .filter((e): e is InboundEnvelope => e !== null);
+    .map((d) => parseEvolutionRecord(d, instanceName))
+    .filter((r): r is EvolutionRecord => r !== null);
 }

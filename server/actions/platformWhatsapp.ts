@@ -16,6 +16,7 @@ import {
   type EvolutionStatus,
 } from "@/lib/evolution/config";
 import { getClinicWhatsappProvider } from "@/lib/whatsapp/transport";
+import { inngest } from "@/lib/inngest/client";
 import {
   listMessageTemplates,
   createMessageTemplate,
@@ -159,6 +160,27 @@ export async function getClinicEvolutionStatusAction(input: {
       reason: "error",
       message: err instanceof Error ? err.message : "تعذّر قراءة حالة الاتصال.",
     };
+  }
+}
+
+/**
+ * Queues an import of the clinic's last 90 days of 1:1 chats from the linked
+ * phone into the inbox (runs in the background; safe to repeat — already
+ * imported messages are skipped).
+ */
+export async function syncClinicEvolutionHistoryAction(input: {
+  clinicId: string;
+}): Promise<{ ok: true } | ActionError> {
+  await requirePlatformAdmin();
+  if ((await getClinicWhatsappProvider(input.clinicId)) !== "EVOLUTION") {
+    return { ok: false, reason: "not_configured" };
+  }
+  try {
+    await inngest.send({ name: "whatsapp/history.import", data: { clinicId: input.clinicId } });
+    return { ok: true };
+  } catch (err) {
+    console.error("Failed to queue WhatsApp history import:", err);
+    return { ok: false, reason: "error", message: "تعذّر بدء المزامنة." };
   }
 }
 

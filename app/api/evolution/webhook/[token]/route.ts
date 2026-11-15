@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getEvolutionConfigByToken } from "@/lib/evolution/config";
 import { evolutionEventName, parseEvolutionMessages } from "@/lib/evolution/inbound";
 import { processInboundWhatsApp } from "@/server/services/whatsappIngest";
+import { recordPhoneMessage } from "@/server/services/evolutionSync";
+import { prisma } from "@/lib/prisma";
+import { inngest } from "@/lib/inngest/client";
+
+/** WhatsApp pushes history to a newly linked phone in the background — give it
+ *  a few minutes before importing. */
+const AUTO_IMPORT_DELAY_SECONDS = 180;
 
 export const runtime = "nodejs";
 
@@ -42,29 +49,61 @@ export async function POST(
   if (event === "connection_update") {
     const state = (payload.data as { state?: string } | undefined)?.state;
     console.log(`[evolution] clinic ${config.clinicId} connection → ${state}`);
+    if (state === "open") await autoImportHistory(config.clinicId);
     return NextResponse.json({ ok: true });
   }
 
-  const envelopes = parseEvolutionMessages(payload);
+  const records = parseEvolutionMessages(payload);
   if (process.env.NODE_ENV !== "production") {
     console.log(
-      `[evolution] ${event}: ${envelopes.length} envelope(s)`,
-      envelopes.map((e) => ({ phone: e.phone, userId: e.userId, kind: e.message.kind }))
+      `[evolution] ${event}: ${records.length} record(s)`,
+      records.map((r) => ({
+        fromMe: r.fromMe,
+        phone: r.envelope.phone,
+        userId: r.envelope.userId,
+        kind: r.envelope.message.kind,
+      }))
     );
   }
 
   const transport = { provider: "EVOLUTION", ...config } as const;
-  for (const envelope of envelopes) {
+  for (const record of records) {
     try {
-      await processInboundWhatsApp(envelope, transport);
+      if (record.fromMe) {
+        // Typed on the clinic's phone (or an echo of our own send).
+        await recordPhoneMessage(config.clinicId, config.instanceName, record);
+      } else {
+        await processInboundWhatsApp(record.envelope, transport);
+      }
     } catch (e) {
       // One bad message must not abort the rest of the batch.
       console.error(
-        `[evolution] failed to process message ${envelope.messageId} (${envelope.message.kind}):`,
+        `[evolution] failed to process message ${record.envelope.messageId} (${record.envelope.message.kind}):`,
         e
       );
     }
   }
 
   return NextResponse.json({ ok: true });
+}
+
+/**
+ * First link of a phone → import its recent chats once. Reconnects (server
+ * restarts, phone back online) also report "open", so skip clinics that have
+ * imported before; the platform console's "sync" button re-runs it on demand.
+ */
+async function autoImportHistory(clinicId: string): Promise<void> {
+  const imported = await prisma.message.findFirst({
+    where: { clinicId, metadata: { path: ["imported"], equals: true } },
+    select: { id: true },
+  });
+  if (imported) return;
+  try {
+    await inngest.send({
+      name: "whatsapp/history.import",
+      data: { clinicId, delaySeconds: AUTO_IMPORT_DELAY_SECONDS },
+    });
+  } catch (err) {
+    console.error("[evolution] failed to queue history import:", err);
+  }
 }

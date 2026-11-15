@@ -17,4 +17,14 @@ export interface AppointmentNotifyData {
   recordId?: string;
 }
 
+/**
+ * Payload for importing an Evolution (WhatsApp Web) clinic's past chats into the
+ * inbox. `delaySeconds` lets the auto-import after linking wait for WhatsApp to
+ * finish pushing history to the new device.
+ */
+export interface WhatsappHistoryImportData {
+  clinicId: string;
+  delaySeconds?: number;
+}
+
 export const inngest = new Inngest({ id: "clinica-ai" });

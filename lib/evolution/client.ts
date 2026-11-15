@@ -317,3 +317,49 @@ export async function downloadMessageMedia(
     mimeType: res.mimetype || "application/octet-stream",
   };
 }
+
+// ─── Stored history (for importing past chats) ───────────────────────────────
+
+/** 1:1 chats on the linked phone (groups, broadcasts and channels excluded). */
+export async function listDirectChats(instanceName: string): Promise<string[]> {
+  const res = await evo<Array<{ remoteJid?: string }>>(
+    "POST",
+    `/chat/findChats/${enc(instanceName)}`,
+    {}
+  );
+  return (Array.isArray(res) ? res : [])
+    .map((c) => c.remoteJid ?? "")
+    .filter((j) => j.endsWith("@s.whatsapp.net") || j.endsWith("@lid"));
+}
+
+export interface StoredMessagesPage {
+  /** Raw Baileys message records, newest first. */
+  records: Record<string, unknown>[];
+  pages: number;
+}
+
+/**
+ * One page of a chat's stored messages since `since`, newest first. Evolution
+ * keeps what the phone synced when it linked (DATABASE_SAVE_DATA_HISTORIC).
+ */
+export async function findChatMessages(
+  instanceName: string,
+  remoteJid: string,
+  since: Date,
+  page: number,
+  pageSize = 200
+): Promise<StoredMessagesPage> {
+  const res = await evo<{ messages?: { records?: Record<string, unknown>[]; pages?: number } }>(
+    "POST",
+    `/chat/findMessages/${enc(instanceName)}`,
+    {
+      where: {
+        key: { remoteJid },
+        messageTimestamp: { gte: since.toISOString(), lte: new Date().toISOString() },
+      },
+      page,
+      offset: pageSize,
+    }
+  );
+  return { records: res.messages?.records ?? [], pages: res.messages?.pages ?? 0 };
+}
