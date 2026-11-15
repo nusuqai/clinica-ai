@@ -126,3 +126,48 @@ export function buildTemplateVariables(
 ): string[] {
   return variableMap.map((token) => context[token as AppointmentToken] ?? "");
 }
+
+// ─── Custom (free-text) templates — Evolution / WhatsApp Web clinics ────────
+//
+// A clinic on Evolution has no Meta account, so nothing to approve: it writes
+// its own message, with NAMED placeholders such as {{patient_name}}, stored as
+// the binding's `bodyText` under the sentinel template name below. The sender
+// fills the names from the same token context and sends plain text.
+
+/** `templateName` marking a binding as clinic-written text, not a Meta template. */
+export const CUSTOM_TEMPLATE_NAME = "__custom__";
+
+export function isCustomTemplate(templateName: string): boolean {
+  return templateName === CUSTOM_TEMPLATE_NAME;
+}
+
+/** Longest body WhatsApp accepts in one text message. */
+export const CUSTOM_TEMPLATE_MAX_LENGTH = 4096;
+
+/** `{{name}}` placeholders, tolerant of inner whitespace. */
+const NAMED_PLACEHOLDER = /\{\{\s*([a-z_]+)\s*\}\}/g;
+
+/** Placeholder names in a custom text that aren't known tokens (empty = valid). */
+export function unknownCustomTokens(text: string): string[] {
+  const known = new Set<string>(APPOINTMENT_TOKENS);
+  const unknown = new Set<string>();
+  for (const [, name] of text.matchAll(NAMED_PLACEHOLDER)) {
+    if (!known.has(name)) unknown.add(name);
+  }
+  return [...unknown];
+}
+
+/**
+ * Fills a custom text's `{{token}}` placeholders. `resolve` maps each token to
+ * its value — the appointment's real data when sending, or a bracketed label
+ * for the admin preview.
+ */
+export function fillCustomTemplate(
+  text: string,
+  resolve: (token: AppointmentToken) => string
+): string {
+  const known = new Set<string>(APPOINTMENT_TOKENS);
+  return text.replace(NAMED_PLACEHOLDER, (match, name: string) =>
+    known.has(name) ? resolve(name as AppointmentToken) : match
+  );
+}

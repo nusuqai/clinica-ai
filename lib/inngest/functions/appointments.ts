@@ -2,13 +2,22 @@ import "server-only";
 import { AppointmentStatus, Channel, SenderType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { inngest, type AppointmentNotifyData } from "@/lib/inngest/client";
-import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
-import { sendTemplateMessage, WhatsAppApiError, type WhatsAppRecipient } from "@/lib/meta/whatsapp";
+import { sendTemplateMessage, WhatsAppApiError } from "@/lib/meta/whatsapp";
+import { EvolutionApiError } from "@/lib/evolution/client";
+import {
+  getClinicWhatsappTransport,
+  sendWhatsAppText,
+  type WhatsAppAddress,
+  type WhatsAppTransport,
+} from "@/lib/whatsapp/transport";
 import { effectiveEndUtc, effectiveStartUtc } from "@/lib/appointment-timing";
 import {
   buildTemplateVariables,
   buildTokenContext,
   buildFollowUpTokenContext,
+  fillCustomTemplate,
+  isCustomTemplate,
+  type AppointmentToken,
 } from "@/lib/appointment-templates";
 import { fillTemplate } from "@/lib/meta/template-render";
 
@@ -307,7 +316,7 @@ export const appointmentsSweep = inngest.createFunction(
 function conversationRecipient(conv: {
   whatsappPhone: string | null;
   whatsappUserId: string | null;
-}): WhatsAppRecipient | null {
+}): WhatsAppAddress | null {
   if (!conv.whatsappPhone && !conv.whatsappUserId) return null;
   return { phone: conv.whatsappPhone, userId: conv.whatsappUserId };
 }
@@ -375,6 +384,74 @@ function renderBindingText(
     binding.footerText.trim(),
   ].filter(Boolean);
   return parts.join("\n\n");
+}
+
+type AutomationBinding = {
+  templateName: string;
+  languageCode: string;
+  bodyText: string;
+  headerText: string;
+  footerText: string;
+};
+
+/**
+ * The text the patient receives (Evolution) / sees in the inbox thread (both):
+ * a clinic-written custom text has its {{token}} names filled from `context`;
+ * a Meta template is rendered from its snapshot with the ordered variables.
+ */
+function renderAutomationText(
+  binding: AutomationBinding,
+  variables: string[],
+  context: Record<AppointmentToken, string>,
+  fallback: string
+): string {
+  if (isCustomTemplate(binding.templateName)) {
+    return fillCustomTemplate(binding.bodyText, (t) => context[t]).trim() || fallback;
+  }
+  return renderBindingText(binding, variables, fallback);
+}
+
+/**
+ * True when a binding can't be delivered over this clinic's connection at all:
+ * a clinic-written text has no approved Meta template behind it, so the
+ * official API (which refuses free text outside the 24h window) can't send it.
+ */
+function bindingUnsendable(transport: WhatsAppTransport, binding: AutomationBinding): boolean {
+  return transport.provider === "META_CLOUD" && isCustomTemplate(binding.templateName);
+}
+
+/**
+ * Sends one automation message over the clinic's connection: an approved
+ * template on the official API, plain text on Evolution (no templates, no 24h
+ * window — a leftover Meta binding is sent as its rendered text). Returns the
+ * provider message id.
+ */
+async function sendAutomationMessage(
+  transport: WhatsAppTransport,
+  recipient: WhatsAppAddress,
+  binding: AutomationBinding,
+  variables: string[],
+  text: string
+): Promise<string | null> {
+  if (transport.provider === "EVOLUTION") {
+    return sendWhatsAppText(transport, recipient, text);
+  }
+  return sendTemplateMessage(
+    recipient,
+    { name: binding.templateName, languageCode: binding.languageCode, variables },
+    transport
+  );
+}
+
+/**
+ * A rejection that will never succeed on retry (unknown template, number not on
+ * WhatsApp) — mark handled instead of re-queuing. Network errors, rate limits
+ * and a disconnected Evolution instance stay retryable.
+ */
+function isPermanentSendError(err: unknown): err is Error {
+  if (err instanceof WhatsAppApiError) return !err.isOutsideServiceWindow;
+  if (err instanceof EvolutionApiError) return err.status === 400;
+  return false;
 }
 
 export const appointmentNotify = inngest.createFunction(
@@ -450,8 +527,9 @@ async function sendAppointmentNotify(
   });
   if (!binding || !binding.enabled) return "no_binding";
 
-  const creds = await getClinicWhatsappCredentials(clinicId);
-  if (!creds) return "no_creds";
+  const transport = await getClinicWhatsappTransport(clinicId);
+  if (!transport) return "no_creds";
+  if (bindingUnsendable(transport, binding)) return "no_binding";
 
   const thread = await getWhatsappThread(clinicId, appt.patient);
   const recipient = thread ? conversationRecipient(thread) : null;
@@ -459,19 +537,16 @@ async function sendAppointmentNotify(
 
   const context = buildTokenContext(appt);
   const variables = buildTemplateVariables(binding.variableMap, context);
+  const text = renderAutomationText(binding, variables, context, PURPOSE_LABEL[purpose]);
 
   // Kept so a patient who quotes (or taps a button on) this template links back to it.
   let wamid: string | null = null;
   try {
-    wamid = await sendTemplateMessage(
-      recipient,
-      { name: binding.templateName, languageCode: binding.languageCode, variables },
-      { phoneNumberId: creds.phoneNumberId, accessToken: creds.accessToken }
-    );
+    wamid = await sendAutomationMessage(transport, recipient, binding, variables, text);
   } catch (err) {
-    // A permanent Meta rejection (unknown template, bad number) will never
+    // A permanent rejection (unknown template, bad number) will never
     // succeed on retry — mark it handled so we stop re-queuing it, and log.
-    if (err instanceof WhatsAppApiError && !err.isOutsideServiceWindow) {
+    if (isPermanentSendError(err)) {
       await markHandled(appointmentId, purpose);
       console.error(`appointment/notify permanent failure (${appointmentId}):`, err.message);
       return "send_failed_permanent";
@@ -489,7 +564,7 @@ async function sendAppointmentNotify(
         conversationId: thread.id,
         whatsappMessageId: wamid,
         senderType: SenderType.AGENT,
-        content: renderBindingText(binding, variables, PURPOSE_LABEL[purpose]),
+        content: text,
         metadata: {
           automation: purpose,
           appointmentId,
@@ -569,8 +644,9 @@ async function sendFollowUpReminder(recordId: string, clinicId: string): Promise
   });
   if (!binding || !binding.enabled) return "no_binding";
 
-  const creds = await getClinicWhatsappCredentials(clinicId);
-  if (!creds) return "no_creds";
+  const transport = await getClinicWhatsappTransport(clinicId);
+  if (!transport) return "no_creds";
+  if (bindingUnsendable(transport, binding)) return "no_binding";
 
   const thread = await getWhatsappThread(clinicId, record.patient);
   const recipient = thread ? conversationRecipient(thread) : null;
@@ -578,17 +654,14 @@ async function sendFollowUpReminder(recordId: string, clinicId: string): Promise
 
   const context = buildFollowUpTokenContext(record);
   const variables = buildTemplateVariables(binding.variableMap, context);
+  const text = renderAutomationText(binding, variables, context, PURPOSE_LABEL.FOLLOWUP_REMINDER);
 
   // Kept so a patient who quotes (or taps a button on) this template links back to it.
   let wamid: string | null = null;
   try {
-    wamid = await sendTemplateMessage(
-      recipient,
-      { name: binding.templateName, languageCode: binding.languageCode, variables },
-      { phoneNumberId: creds.phoneNumberId, accessToken: creds.accessToken }
-    );
+    wamid = await sendAutomationMessage(transport, recipient, binding, variables, text);
   } catch (err) {
-    if (err instanceof WhatsAppApiError && !err.isOutsideServiceWindow) {
+    if (isPermanentSendError(err)) {
       await markFollowUpHandled(recordId);
       console.error(`follow-up reminder permanent failure (${recordId}):`, err.message);
       return "send_failed_permanent";
@@ -605,7 +678,7 @@ async function sendFollowUpReminder(recordId: string, clinicId: string): Promise
         conversationId: thread.id,
         whatsappMessageId: wamid,
         senderType: SenderType.AGENT,
-        content: renderBindingText(binding, variables, PURPOSE_LABEL.FOLLOWUP_REMINDER),
+        content: text,
         metadata: {
           automation: "FOLLOWUP_REMINDER",
           recordId,

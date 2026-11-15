@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm, useWatch, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -11,16 +11,26 @@ import {
   deleteAppointmentTemplateBindingAction,
   getAppointmentTemplateBindingsAction,
   saveAppointmentTemplateBindingAction,
+  saveCustomAppointmentTemplateAction,
   type AppointmentTemplateBinding,
 } from "@/server/actions/appointment-templates";
 import type { MessageTemplate } from "@/lib/meta/whatsapp";
-import { APPOINTMENT_TOKENS, APPOINTMENT_TOKEN_LABELS } from "@/lib/appointment-templates";
+import {
+  APPOINTMENT_TOKENS,
+  APPOINTMENT_TOKEN_LABELS,
+  CUSTOM_TEMPLATE_MAX_LENGTH,
+  fillCustomTemplate,
+  isCustomTemplate,
+} from "@/lib/appointment-templates";
 import { languageLabel } from "./languages";
 import WhatsappPreview from "./whatsapp-preview";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const TOKEN_OPTIONS = APPOINTMENT_TOKENS.map((t) => ({
@@ -56,7 +66,19 @@ const PURPOSES: PurposeMeta[] = [
   },
 ];
 
-export default function AppointmentAutomation({ configured }: { configured: boolean }) {
+/**
+ * Appointment automation settings. Official (Meta) clinics bind each purpose to
+ * an approved template; Evolution (WhatsApp Web) clinics have no templates to
+ * approve, so they write each message themselves with named fields.
+ */
+export default function AppointmentAutomation({
+  provider,
+}: {
+  /** The clinic's WhatsApp connection, or null when none is set up. */
+  provider: "META_CLOUD" | "EVOLUTION" | null;
+}) {
+  const configured = provider !== null;
+  const isEvolution = provider === "EVOLUTION";
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [bindings, setBindings] = useState<AppointmentTemplateBinding[]>([]);
   const [loading, setLoading] = useState(configured);
@@ -67,14 +89,17 @@ export default function AppointmentAutomation({ configured }: { configured: bool
     setLoading(true);
     setError(null);
     const [tRes, bRes] = await Promise.all([
-      listTemplatesAction(),
+      // Evolution has no Meta templates to list.
+      isEvolution ? Promise.resolve(null) : listTemplatesAction(),
       getAppointmentTemplateBindingsAction(),
     ]);
     setLoading(false);
-    if (tRes.ok) setTemplates(tRes.templates.filter((t) => t.status === "APPROVED"));
-    else setError(("message" in tRes && tRes.message) || "تعذّر تحميل القوالب.");
+    if (tRes) {
+      if (tRes.ok) setTemplates(tRes.templates.filter((t) => t.status === "APPROVED"));
+      else setError(("message" in tRes && tRes.message) || "تعذّر تحميل القوالب.");
+    }
     if (bRes.ok) setBindings(bRes.bindings);
-  }, [configured]);
+  }, [configured, isEvolution]);
 
   useEffect(() => {
     void load();
@@ -94,8 +119,9 @@ export default function AppointmentAutomation({ configured }: { configured: bool
   return (
     <div className="space-y-5">
       <p className="text-xs leading-relaxed text-muted-foreground">
-        اربط كل نوع رسالة بأحد قوالبك المعتمدة، وحدِّد أي بيانات الموعد تملأ كل متغيّر في القالب. لن
-        تُرسَل الرسائل التلقائية لنوعٍ ما إلا بعد ربط قالب مُفعّل له.
+        {isEvolution
+          ? "اكتب نص كل رسالة بنفسك وأدرج بيانات الموعد من الحقول المتاحة — لا تحتاج رسائل واتساب ويب إلى اعتماد من ميتا. لن تُرسَل الرسائل التلقائية لنوعٍ ما إلا بعد حفظ نص مُفعّل له."
+          : "اربط كل نوع رسالة بأحد قوالبك المعتمدة، وحدِّد أي بيانات الموعد تملأ كل متغيّر في القالب. لن تُرسَل الرسائل التلقائية لنوعٍ ما إلا بعد ربط قالب مُفعّل له."}
       </p>
 
       {loading ? (
@@ -105,18 +131,58 @@ export default function AppointmentAutomation({ configured }: { configured: bool
       ) : error ? (
         <p className="text-xs text-red-600">{error}</p>
       ) : (
-        PURPOSES.map((p) => (
-          <BindingCard
-            key={p.purpose}
-            meta={p}
-            templates={templates}
-            initial={bindings.find((b) => b.purpose === p.purpose) ?? null}
-            onSaved={load}
-          />
-        ))
+        PURPOSES.map((p) => {
+          const initial = bindings.find((b) => b.purpose === p.purpose) ?? null;
+          return isEvolution ? (
+            <CustomBindingCard
+              key={p.purpose}
+              meta={p}
+              // A leftover Meta binding (from before switching) isn't editable
+              // text — start that purpose blank.
+              initial={initial && isCustomTemplate(initial.templateName) ? initial : null}
+              onSaved={load}
+            />
+          ) : (
+            <BindingCard
+              key={p.purpose}
+              meta={p}
+              templates={templates}
+              initial={initial && !isCustomTemplate(initial.templateName) ? initial : null}
+              onSaved={load}
+            />
+          );
+        })
       )}
     </div>
   );
+}
+
+/** Timing is edited in DAYS before (follow-up), HOURS before (confirm
+ *  reminder), or MINUTES after completion (feedback). */
+function initialTiming(
+  purpose: AppointmentTemplatePurpose,
+  initial: AppointmentTemplateBinding | null
+): number {
+  if (purpose === "FOLLOWUP_REMINDER") {
+    return initial ? Math.max(1, Math.round(initial.leadMinutes / 1440)) : 3;
+  }
+  if (purpose === "CONFIRM_REMINDER") {
+    return initial ? Math.round(initial.leadMinutes / 60) : 24;
+  }
+  return initial?.delayMinutes ?? 120;
+}
+
+/** The lead/delay fields to save for an edited timing value. */
+function timingToMinutes(purpose: AppointmentTemplatePurpose, timing: number) {
+  if (purpose === "FOLLOWUP_REMINDER") return { leadMinutes: timing * 1440 };
+  if (purpose === "CONFIRM_REMINDER") return { leadMinutes: timing * 60 };
+  return { delayMinutes: timing };
+}
+
+function timingLabel(purpose: AppointmentTemplatePurpose): string {
+  if (purpose === "FOLLOWUP_REMINDER") return "يُرسَل قبل موعد المتابعة بـ (أيام)";
+  if (purpose === "CONFIRM_REMINDER") return "يُرسَل قبل الموعد بـ (ساعات)";
+  return "يُرسَل بعد اكتمال الزيارة بـ (دقائق)";
 }
 
 function templateKey(name: string, language: string) {
@@ -157,23 +223,13 @@ function BindingCard({
   const confirm = useConfirm();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Confirm reminder is edited in hours before the visit; follow-up in DAYS
-  // before the follow-up date; feedback in minutes after completion.
-  const initialTiming = isFollowUp
-    ? initial
-      ? Math.max(1, Math.round(initial.leadMinutes / 1440))
-      : 3
-    : isReminder
-      ? initial
-        ? Math.round(initial.leadMinutes / 60)
-        : 24
-      : (initial?.delayMinutes ?? 120);
+  const timing0 = initialTiming(meta.purpose, initial);
 
   const empty: BindingInput = {
     templateKey: "",
     variableMap: [],
     enabled: true,
-    timing: initialTiming,
+    timing: timing0,
   };
   const form = useForm<BindingInput, unknown, BindingValues>({
     resolver: zodResolver(bindingSchema(isReminder || isFollowUp ? 1 : 0)),
@@ -181,7 +237,7 @@ function BindingCard({
       templateKey: initial ? templateKey(initial.templateName, initial.languageCode) : "",
       variableMap: initial?.variableMap ?? [],
       enabled: initial?.enabled ?? true,
-      timing: initialTiming,
+      timing: timing0,
     },
   });
   const { control } = form;
@@ -213,8 +269,7 @@ function BindingCard({
         languageCode: template.language,
         variableMap,
         enabled,
-        leadMinutes: isFollowUp ? timing * 1440 : isReminder ? timing * 60 : undefined,
-        delayMinutes: isReminder || isFollowUp ? undefined : timing,
+        ...timingToMinutes(meta.purpose, timing),
       });
       if (res.ok) {
         setMsg({ ok: true, text: "تم الحفظ." });
@@ -299,11 +354,7 @@ function BindingCard({
           {/* Timing */}
           <div className="space-y-1.5">
             <Label className="text-xs font-medium text-foreground">
-              {isFollowUp
-                ? "يُرسَل قبل موعد المتابعة بـ (أيام)"
-                : isReminder
-                  ? "يُرسَل قبل الموعد بـ (ساعات)"
-                  : "يُرسَل بعد اكتمال الزيارة بـ (دقائق)"}
+              {timingLabel(meta.purpose)}
             </Label>
             <FormField
               control={control}
@@ -400,5 +451,177 @@ function TemplateDetails({
         />
       )}
     </>
+  );
+}
+
+/** Starter text per purpose, so an Evolution clinic isn't facing a blank box. */
+const CUSTOM_DEFAULTS: Record<AppointmentTemplatePurpose, string> = {
+  CONFIRM_REMINDER:
+    "مرحباً {{patient_name}} 👋\nنذكّرك بموعدك في {{clinic_name}} مع د. {{doctor_name}} يوم {{appointment_date}} الساعة {{appointment_time}}.\nبرجاء الرد بـ «تأكيد» أو «إلغاء».",
+  FEEDBACK_REQUEST:
+    "شكراً لزيارتك {{clinic_name}} يا {{patient_name}} 🌷\nيسعدنا معرفة رأيك في الخدمة — ما تقييمك من 1 إلى 5؟",
+  FOLLOWUP_REMINDER:
+    "مرحباً {{patient_name}} 👋\nحان موعد متابعتك مع د. {{doctor_name}} في {{clinic_name}} ({{appointment_date}}).\nرد على هذه الرسالة لحجز موعدك.",
+};
+
+/**
+ * Evolution (WhatsApp Web) version of a binding: the clinic writes the message
+ * itself, inserting named fields like {{patient_name}} that the sender fills
+ * from the appointment. No approval, no buttons — the patient's reply reaches
+ * the inbox and the AI agent like any other message.
+ */
+function CustomBindingCard({
+  meta,
+  initial,
+  onSaved,
+}: {
+  meta: PurposeMeta;
+  initial: AppointmentTemplateBinding | null;
+  onSaved: () => void;
+}) {
+  const [body, setBody] = useState(initial?.bodyText || CUSTOM_DEFAULTS[meta.purpose]);
+  const [enabled, setEnabled] = useState(initial?.enabled ?? true);
+  const [timing, setTiming] = useState(String(initialTiming(meta.purpose, initial)));
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const confirm = useConfirm();
+  const minTiming = meta.purpose === "FEEDBACK_REQUEST" ? 0 : 1;
+
+  /** Inserts {{token}} at the cursor (or appends), keeping focus in the box. */
+  const insertToken = (token: string) => {
+    const el = textareaRef.current;
+    const tag = `{{${token}}}`;
+    const start = el?.selectionStart ?? body.length;
+    const end = el?.selectionEnd ?? body.length;
+    setBody(body.slice(0, start) + tag + body.slice(end));
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start + tag.length, start + tag.length);
+    });
+  };
+
+  const save = async () => {
+    const n = Number(timing);
+    if (!Number.isInteger(n) || n < minTiming) {
+      setMsg({ ok: false, text: minTiming > 0 ? `${minTiming} على الأقل.` : "أدخل عدداً صحيحاً." });
+      return;
+    }
+    setSaving(true);
+    setMsg(null);
+    const res = await saveCustomAppointmentTemplateAction({
+      purpose: meta.purpose,
+      bodyText: body,
+      enabled,
+      ...timingToMinutes(meta.purpose, n),
+    });
+    setSaving(false);
+    if (res.ok) {
+      setMsg({ ok: true, text: "تم الحفظ." });
+      onSaved();
+    } else {
+      setMsg({ ok: false, text: ("message" in res && res.message) || "تعذّر الحفظ." });
+    }
+  };
+
+  const remove = async () => {
+    const removed = await confirm({
+      title: "حذف الرسالة",
+      description: <>هل تريد إيقاف «{meta.title}» وحذف نص الرسالة؟</>,
+      warning: "لن تُرسل هذه الرسائل للمرضى حتى تحفظ نصاً من جديد.",
+      confirmText: "حذف",
+      cancelText: "تراجع",
+      onConfirm: async () => {
+        const res = await deleteAppointmentTemplateBindingAction(meta.purpose);
+        if (!res.ok) return { error: res.message || "تعذّر الحذف." };
+      },
+    });
+    if (!removed) return;
+    setBody(CUSTOM_DEFAULTS[meta.purpose]);
+    setMsg(null);
+    onSaved();
+  };
+
+  const preview = fillCustomTemplate(body, (t) => `[${APPOINTMENT_TOKEN_LABELS[t]}]`);
+
+  return (
+    <Card className="space-y-4 p-5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {meta.icon}
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">{meta.title}</h2>
+            <p className="mt-0.5 max-w-md text-[11px] leading-relaxed text-muted-foreground">
+              {meta.purpose === "CONFIRM_REMINDER"
+                ? "يُرسَل قبل الموعد ليؤكّد المريض حجزه. اطلب منه الرد بـ «تأكيد» أو «إلغاء» — يصل رده للمساعد الذكي وصندوق الرسائل."
+                : meta.hint}
+            </p>
+          </div>
+        </div>
+        <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+          مُفعّل
+          <Switch checked={enabled} onCheckedChange={setEnabled} />
+        </label>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs font-medium text-foreground">نص الرسالة</Label>
+        <Textarea
+          ref={textareaRef}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={5}
+          maxLength={CUSTOM_TEMPLATE_MAX_LENGTH}
+        />
+        <div className="flex flex-wrap gap-1.5">
+          {TOKEN_OPTIONS.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => insertToken(t.value)}
+              className="rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:border-accent hover:text-foreground"
+            >
+              + {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium text-foreground">{timingLabel(meta.purpose)}</Label>
+        <Input
+          type="number"
+          min={minTiming}
+          value={timing}
+          onChange={(e) => setTiming(e.target.value)}
+          className="h-9 w-32"
+          dir="ltr"
+        />
+      </div>
+
+      {body.trim() && <WhatsappPreview bodyText={preview} />}
+
+      {msg && <p className={`text-xs ${msg.ok ? "text-green-600" : "text-red-600"}`}>{msg.text}</p>}
+
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" onClick={save} loading={saving}>
+          {!saving && <Save />}
+          حفظ
+        </Button>
+        {initial && (
+          <Button
+            type="button"
+            variant="ghost-destructive"
+            size="sm"
+            onClick={remove}
+            disabled={saving}
+            className="[&_svg]:size-3"
+          >
+            <Trash2 />
+            حذف
+          </Button>
+        )}
+      </div>
+    </Card>
   );
 }
