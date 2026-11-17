@@ -9,14 +9,17 @@ import {
   getClinicWhatsappCredentials,
   saveWhatsappConfig,
 } from "@/lib/meta/whatsapp-config";
-import {
-  disconnectEvolution,
-  getEvolutionStatus,
-  startEvolutionConnection,
-  type EvolutionStatus,
-} from "@/lib/evolution/config";
+import { disconnectEvolution } from "@/lib/evolution/config";
 import { getClinicWhatsappProvider } from "@/lib/whatsapp/transport";
-import { inngest } from "@/lib/inngest/client";
+import {
+  PROVIDER_CONFLICT_MESSAGE,
+  evolutionStatusFor,
+  queueEvolutionHistorySync,
+  startEvolutionFor,
+  type EvolutionStartResult,
+  type EvolutionStatusResult,
+  type EvolutionSyncResult,
+} from "@/server/services/evolutionConnection";
 import {
   listMessageTemplates,
   createMessageTemplate,
@@ -110,78 +113,34 @@ export async function disconnectClinicWhatsappAction(input: {
 }
 
 // ─── Evolution (unofficial WhatsApp Web) ─────────────────────────────────────
+// Thin platform-admin wrappers; the clinic's own page has its twins in
+// server/actions/whatsapp.ts. Both share server/services/evolutionConnection.ts.
 
-const PROVIDER_CONFLICT_MESSAGE =
-  "هذه العيادة مربوطة بطريقة اتصال أخرى. افصل الاتصال الحالي أولًا ثم أعد المحاولة.";
-
-/**
- * Starts linking a phone to the clinic through Evolution: returns a fresh QR
- * (and a pairing code when `phone` is given). Re-running it restarts linking.
- */
+/** Starts linking a phone (fresh QR, plus a pairing code when `phone` is given). */
 export async function startClinicEvolutionAction(input: {
   clinicId: string;
   phone?: string;
-}): Promise<{ ok: true; qrDataUrl: string | null; pairingCode: string | null } | ActionError> {
+}): Promise<EvolutionStartResult> {
   await requirePlatformAdmin();
-  const phone = input.phone?.replace(/\D/g, "") || undefined;
-  try {
-    const qr = await startEvolutionConnection(input.clinicId, phone);
-    revalidatePath(WHATSAPP_PATH);
-    return { ok: true, ...qr };
-  } catch (err) {
-    if (err instanceof WhatsappProviderConflictError) {
-      return { ok: false, reason: "error", message: PROVIDER_CONFLICT_MESSAGE };
-    }
-    console.error("Failed to start Evolution connection:", err);
-    return {
-      ok: false,
-      reason: "error",
-      message:
-        err instanceof Error
-          ? `تعذّر الاتصال بخادم Evolution: ${err.message}`
-          : "تعذّر الاتصال بخادم Evolution.",
-    };
-  }
+  const res = await startEvolutionFor(input.clinicId, input.phone);
+  if (res.ok) revalidatePath(WHATSAPP_PATH);
+  return res;
 }
 
 /** Live link status, polled by the settings panel while it is open. */
 export async function getClinicEvolutionStatusAction(input: {
   clinicId: string;
-}): Promise<{ ok: true; status: EvolutionStatus } | ActionError> {
+}): Promise<EvolutionStatusResult> {
   await requirePlatformAdmin();
-  try {
-    const status = await getEvolutionStatus(input.clinicId);
-    if (!status) return { ok: false, reason: "not_configured" };
-    return { ok: true, status };
-  } catch (err) {
-    console.error("Failed to read Evolution status:", err);
-    return {
-      ok: false,
-      reason: "error",
-      message: err instanceof Error ? err.message : "تعذّر قراءة حالة الاتصال.",
-    };
-  }
+  return evolutionStatusFor(input.clinicId);
 }
 
-/**
- * Queues an import of the clinic's last 90 days of 1:1 chats from the linked
- * phone into the inbox (runs in the background; safe to repeat — already
- * imported messages are skipped).
- */
+/** Queues the 90-day chat-history import into the inbox. */
 export async function syncClinicEvolutionHistoryAction(input: {
   clinicId: string;
-}): Promise<{ ok: true } | ActionError> {
+}): Promise<EvolutionSyncResult> {
   await requirePlatformAdmin();
-  if ((await getClinicWhatsappProvider(input.clinicId)) !== "EVOLUTION") {
-    return { ok: false, reason: "not_configured" };
-  }
-  try {
-    await inngest.send({ name: "whatsapp/history.import", data: { clinicId: input.clinicId } });
-    return { ok: true };
-  } catch (err) {
-    console.error("Failed to queue WhatsApp history import:", err);
-    return { ok: false, reason: "error", message: "تعذّر بدء المزامنة." };
-  }
+  return queueEvolutionHistorySync(input.clinicId);
 }
 
 // ─── Templates ───────────────────────────────────────────────────────────────

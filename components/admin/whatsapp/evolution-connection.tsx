@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { History, QrCode, RefreshCw, Smartphone, Unlink, TriangleAlert } from "lucide-react";
-import {
-  disconnectClinicWhatsappAction,
-  getClinicEvolutionStatusAction,
-  startClinicEvolutionAction,
-  syncClinicEvolutionHistoryAction,
-} from "@/server/actions/platformWhatsapp";
 import type { EvolutionStatus } from "@/lib/evolution/config";
+import type {
+  EvolutionDisconnectResult,
+  EvolutionStartResult,
+  EvolutionStatusResult,
+  EvolutionSyncResult,
+} from "@/server/services/evolutionConnection";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,8 +18,20 @@ import { Label } from "@/components/ui/label";
 /** How often to refresh the QR / link state while a phone is being linked. */
 const POLL_MS = 4000;
 
+/**
+ * What the panel calls, already scoped to one clinic — the platform console
+ * binds them to the clinic it is managing, the clinic's own page passes its
+ * self-service server actions (which use the caller's clinic).
+ */
+export interface EvolutionActions {
+  start: (phone?: string) => Promise<EvolutionStartResult>;
+  status: () => Promise<EvolutionStatusResult>;
+  sync: () => Promise<EvolutionSyncResult>;
+  disconnect: () => Promise<EvolutionDisconnectResult>;
+}
+
 interface Props {
-  clinicId: string;
+  actions: EvolutionActions;
   /** The clinic already has an Evolution config row (linked or mid-linking). */
   configured: boolean;
 }
@@ -29,7 +41,7 @@ interface Props {
  * phone by scanning a QR — or entering a pairing code — from WhatsApp → Linked
  * devices. No Meta app, no templates, no 24-hour window.
  */
-export default function EvolutionConnection({ clinicId, configured: initialConfigured }: Props) {
+export default function EvolutionConnection({ actions, configured: initialConfigured }: Props) {
   const [configured, setConfigured] = useState(initialConfigured);
   const [status, setStatus] = useState<EvolutionStatus | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
@@ -37,8 +49,9 @@ export default function EvolutionConnection({ clinicId, configured: initialConfi
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const { status: readStatus } = actions;
   const refresh = useCallback(async () => {
-    const res = await getClinicEvolutionStatusAction({ clinicId });
+    const res = await readStatus();
     if (res.ok) {
       setStatus(res.status);
       if (res.status.state === "open") setPairingCode(null);
@@ -48,7 +61,7 @@ export default function EvolutionConnection({ clinicId, configured: initialConfi
     } else {
       setMessage({ ok: false, text: res.message ?? "تعذّر قراءة حالة الاتصال." });
     }
-  }, [clinicId]);
+  }, [readStatus]);
 
   // Poll while linking; once linked, one read is enough.
   useEffect(() => {
@@ -62,7 +75,7 @@ export default function EvolutionConnection({ clinicId, configured: initialConfi
   const start = async () => {
     setBusy(true);
     setMessage(null);
-    const res = await startClinicEvolutionAction({ clinicId, phone: phone || undefined });
+    const res = await actions.start(phone || undefined);
     setBusy(false);
     if (!res.ok) {
       setMessage({ ok: false, text: res.message ?? "تعذّر بدء الربط." });
@@ -83,7 +96,7 @@ export default function EvolutionConnection({ clinicId, configured: initialConfi
         "ستتوقف العيادة عن استقبال وإرسال رسائل واتساب فورًا. المحادثات السابقة تبقى كما هي.",
       confirmText: "فصل الرقم",
       onConfirm: async () => {
-        const res = await disconnectClinicWhatsappAction({ clinicId });
+        const res = await actions.disconnect();
         return res.ok ? res : { error: res.error };
       },
     });
@@ -98,7 +111,7 @@ export default function EvolutionConnection({ clinicId, configured: initialConfi
   const syncHistory = async () => {
     setSyncing(true);
     setMessage(null);
-    const res = await syncClinicEvolutionHistoryAction({ clinicId });
+    const res = await actions.sync();
     setSyncing(false);
     setMessage(
       res.ok
@@ -116,7 +129,7 @@ export default function EvolutionConnection({ clinicId, configured: initialConfi
     <div>
       <h2 className="mb-3 flex items-center gap-2 font-sans text-sm font-semibold text-foreground">
         <QrCode className="h-4 w-4 text-accent" />
-        واتساب ويب (Evolution API — غير رسمي)
+        واتساب ويب (ربط غير رسمي)
       </h2>
       <Card className="space-y-4 p-5">
         <p className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">

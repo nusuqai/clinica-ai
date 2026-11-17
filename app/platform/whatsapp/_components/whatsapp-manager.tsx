@@ -1,10 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, Settings2 } from "lucide-react";
 import type { WhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
+import {
+  disconnectClinicWhatsappAction,
+  getClinicEvolutionStatusAction,
+  startClinicEvolutionAction,
+  syncClinicEvolutionHistoryAction,
+} from "@/server/actions/platformWhatsapp";
 import ConnectionConfig from "./connection-config";
-import EvolutionConnection from "./evolution-connection";
+import EvolutionConnection, {
+  type EvolutionActions,
+} from "@/components/admin/whatsapp/evolution-connection";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -48,8 +56,17 @@ export default function WhatsappManager({ clinicId, config, appUrl }: Props) {
       <TemplatesList clinicId={clinicId} disabled={config?.provider !== "META_CLOUD"} />
     </div>
   );
+  const evolutionActions = useMemo<EvolutionActions>(
+    () => ({
+      start: (phone) => startClinicEvolutionAction({ clinicId, phone }),
+      status: () => getClinicEvolutionStatusAction({ clinicId }),
+      sync: () => syncClinicEvolutionHistoryAction({ clinicId }),
+      disconnect: () => disconnectClinicWhatsappAction({ clinicId }),
+    }),
+    [clinicId]
+  );
   const evolutionPanel = (
-    <EvolutionConnection clinicId={clinicId} configured={config?.provider === "EVOLUTION"} />
+    <EvolutionConnection actions={evolutionActions} configured={config?.provider === "EVOLUTION"} />
   );
 
   return (

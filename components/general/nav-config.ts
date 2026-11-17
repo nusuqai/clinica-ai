@@ -70,7 +70,7 @@ export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
         },
         {
           href: "/admin/whatsapp/configuration",
-          label: "حالة الاتصال",
+          label: "اتصال واتساب",
           icon: KeyRound,
         },
       ],

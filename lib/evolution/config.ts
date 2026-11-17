@@ -3,6 +3,7 @@ import { WhatsappProvider } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { WhatsappProviderConflictError, generateWebhookToken } from "@/lib/meta/whatsapp-config";
 import {
+  EvolutionApiError,
   connectInstance,
   createInstance,
   destroyInstance,
@@ -118,7 +119,18 @@ export async function getEvolutionStatus(clinicId: string): Promise<EvolutionSta
     return null;
   }
   const name = row.evolutionInstanceName;
-  const state = await getConnectionState(name);
+  let state: ConnectionState;
+  try {
+    state = await getConnectionState(name);
+  } catch (err) {
+    // The instance is gone from the Evolution server (deleted there, or the row
+    // was made against another server): it's simply not linked — "start" again
+    // recreates it.
+    if (err instanceof EvolutionApiError && err.status === 404) {
+      return { state: "close", qrDataUrl: null, phone: null, profileName: null };
+    }
+    throw err;
+  }
   if (state === "open") {
     const owner = await getInstanceOwner(name).catch(() => ({ phone: null, profileName: null }));
     return { state, qrDataUrl: null, ...owner };
