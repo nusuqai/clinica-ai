@@ -1,4 +1,5 @@
 import "server-only";
+import { mergeConversations } from "@/server/services/conversationMerge";
 import { Channel } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
@@ -159,10 +160,25 @@ export async function resolveConversation(
         where: { clinicId_whatsappUserId: { clinicId, whatsappUserId: userId } },
       }))) ||
     null;
-  if (!conversation && phone) {
-    conversation = await prisma.conversation.findUnique({
-      where: { clinicId_whatsappPhone: { clinicId, whatsappPhone: phone } },
-    });
+  const byPhone = phone
+    ? await prisma.conversation.findUnique({
+        where: { clinicId_whatsappPhone: { clinicId, whatsappPhone: phone } },
+      })
+    : null;
+  if (conversation && byPhone && conversation.id !== byPhone.id) {
+    // The same person had two threads — one known by phone, one by hidden id
+    // (e.g. different clinic numbers saw them differently). This message carries
+    // both, so merge them into one conversation.
+    try {
+      const keptId = await mergeConversations(conversation.id, byPhone.id);
+      conversation = await prisma.conversation.findUnique({ where: { id: keptId } });
+    } catch (err) {
+      // Never lose the message over a failed merge — it'll be retried the next
+      // time this contact writes with both identifiers.
+      console.error("[wa] failed to merge duplicate conversations:", err);
+    }
+  } else if (!conversation) {
+    conversation = byPhone;
   }
   console.log(
     `[wa-debug] conversation lookup phone=${phone ?? "(hidden)"} userId=${userId ?? "(none)"} → ${
@@ -198,8 +214,8 @@ export async function resolveConversation(
         data: patch,
       });
     } catch (e) {
-      // A unique clash means the other identifier already belongs to a separate
-      // thread — keep the one we matched rather than fail the message.
+      // A unique clash here would mean the identifier belongs to another thread,
+      // which the merge above already handles — never fail the message for it.
       console.warn(`[wa-debug] conversation backfill skipped (unique clash):`, e);
     }
   }

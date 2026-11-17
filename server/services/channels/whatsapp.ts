@@ -57,6 +57,10 @@ export const whatsappAdapter: ChannelAdapter<WhatsAppTransport> = {
     return { phone: conversation.whatsappPhone, userId: conversation.whatsappUserId };
   },
 
+  numberOf(transport: WhatsAppTransport): string | null {
+    return transport.configId;
+  },
+
   async sendText(transport, to, text): Promise<DeliveryResult> {
     try {
       const id = await sendWhatsAppText(transport, to, text);

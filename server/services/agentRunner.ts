@@ -467,6 +467,7 @@ async function deliverPushReply<T>(args: {
 }): Promise<ReplyOutcome> {
   const { ctx, adapter, transport, recipient, wasVoice, processedIds } = args;
   const { clinicId, conversationId, sessionId } = ctx;
+  const sendingNumber = adapter.numberOf?.(transport) ?? null;
 
   const gen = await generateAgentReply(ctx);
   if (gen.kind === "skipped") return { kind: "skipped" };
@@ -512,7 +513,8 @@ async function deliverPushReply<T>(args: {
         reply,
         { toolCalls, ...(voiceMeta ? { voice: voiceMeta } : {}) },
         MessageDelivery.QUEUED,
-        aiAgentId
+        aiAgentId,
+        sendingNumber
       );
       await markMessagesProcessed(processedIds);
       await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage, aiAgentId });
@@ -555,7 +557,8 @@ async function deliverPushReply<T>(args: {
     reply,
     { toolCalls },
     MessageDelivery.QUEUED,
-    aiAgentId
+    aiAgentId,
+    sendingNumber
   );
   await markMessagesProcessed(processedIds);
   await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage, aiAgentId });
@@ -848,7 +851,16 @@ export async function handleWhatsAppVoiceMessage(
   if (!transcript) {
     // Couldn't understand the audio — notify + escalate, don't run the agent.
     await ensureOpenEscalation(clinicId, conversationId, sessionId, "voice_transcription_failed");
-    await persistAgentMessage(conversationId, sessionId, clinicId, VOICE_FAILED_NOTICE, null);
+    await persistAgentMessage(
+      conversationId,
+      sessionId,
+      clinicId,
+      VOICE_FAILED_NOTICE,
+      null,
+      MessageDelivery.SENT,
+      null,
+      creds.configId
+    );
     await whatsappAdapter.sendText(
       creds,
       { phone: contact.phone, userId: contact.userId },

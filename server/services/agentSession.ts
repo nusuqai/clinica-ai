@@ -170,7 +170,10 @@ export async function persistAgentMessage(
   deliveryStatus: MessageDelivery = MessageDelivery.SENT,
   /** The AI employee that wrote this reply (inbox attribution); null for
    *  system notices. */
-  aiAgentId: string | null = null
+  aiAgentId: string | null = null,
+  /** The clinic WhatsApp number it goes out from — set when saved, so even a
+   *  reply that fails to send belongs to its number (and branch). */
+  whatsappConfigId: string | null = null
 ): Promise<SessionMessage> {
   const m = await prisma.message.create({
     data: {
@@ -183,6 +186,7 @@ export async function persistAgentMessage(
       clinicId,
       deliveryStatus,
       aiAgentId,
+      whatsappConfigId,
     },
   });
   await touchConversation(conversationId);

@@ -64,6 +64,10 @@ export interface ChannelAdapter<T = unknown> {
   /** Build the recipient descriptor from the conversation row. */
   recipientOf(conversation: ConversationIdentity): ChannelRecipient;
 
+  /** The clinic WhatsApp number a transport sends from, for channels with
+   *  several — stamped on the reply as soon as it's saved. */
+  numberOf?(transport: T): string | null;
+
   /** Deliver a text reply. Must never throw. */
   sendText(transport: T, to: ChannelRecipient, text: string): Promise<DeliveryResult>;
 
