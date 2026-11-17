@@ -3,7 +3,7 @@ import { Channel } from "@prisma/client";
 import { WhatsAppApiError } from "@/lib/meta/whatsapp";
 import { EvolutionApiError } from "@/lib/evolution/client";
 import {
-  getClinicWhatsappTransport,
+  resolveWhatsappTransport,
   sendWhatsAppText,
   sendWhatsAppVoice,
   type WhatsAppTransport,
@@ -47,8 +47,10 @@ export const whatsappAdapter: ChannelAdapter<WhatsAppTransport> = {
   channel: Channel.WHATSAPP,
   capabilities: { voiceReply: true },
 
-  getTransport(clinicId: string): Promise<WhatsAppTransport | null> {
-    return getClinicWhatsappTransport(clinicId);
+  // The number the patient last wrote to (else the clinic's main number), so
+  // the reply lands in the chat they're in.
+  getTransport(clinicId: string, conversationId: string): Promise<WhatsAppTransport | null> {
+    return resolveWhatsappTransport(clinicId, conversationId);
   },
 
   recipientOf(conversation: ConversationIdentity): ChannelRecipient {
@@ -58,7 +60,7 @@ export const whatsappAdapter: ChannelAdapter<WhatsAppTransport> = {
   async sendText(transport, to, text): Promise<DeliveryResult> {
     try {
       const id = await sendWhatsAppText(transport, to, text);
-      return { delivered: true, providerMessageId: id };
+      return { delivered: true, providerMessageId: id, whatsappConfigId: transport.configId };
     } catch (err) {
       logFailure("reply", to, err);
       return { delivered: false, providerMessageId: null };
@@ -68,7 +70,7 @@ export const whatsappAdapter: ChannelAdapter<WhatsAppTransport> = {
   async sendVoice(transport, to, audio: OutboundAudio): Promise<DeliveryResult> {
     try {
       const id = await sendWhatsAppVoice(transport, to, audio);
-      return { delivered: true, providerMessageId: id };
+      return { delivered: true, providerMessageId: id, whatsappConfigId: transport.configId };
     } catch (err) {
       logFailure("voice reply (caller may fall back to text)", to, err);
       return { delivered: false, providerMessageId: null };

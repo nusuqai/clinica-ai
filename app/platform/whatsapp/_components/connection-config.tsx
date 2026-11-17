@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, KeyRound, Copy, Check, Unlink } from "lucide-react";
 import {
   disconnectClinicWhatsappAction,
+  getClinicNumberRemovalImpactAction,
   saveClinicWhatsappConfigAction,
 } from "@/server/actions/platformWhatsapp";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -89,16 +90,33 @@ export default function ConnectionConfig({ clinicId, initialConfig, appUrl }: Pr
   const confirm = useConfirm();
   const handleDisconnect = async () => {
     setMessage(null);
+    // Removing a number deletes every message that went through it.
+    const impact = initialConfig
+      ? await getClinicNumberRemovalImpactAction({ clinicId, configId: initialConfig.id })
+      : null;
+    if (impact && !impact.ok) {
+      setMessage({ ok: false, text: impact.error });
+      return;
+    }
+    const counts = impact?.ok ? impact.impact : null;
     const done = await confirm({
-      title: "فصل رقم الواتساب",
+      title: "فصل الرقم وحذف محادثاته",
       description: (
         <>
-          فصل الرقم <span dir="ltr">{form.getValues("phoneNumberId")}</span> عن هذه العيادة؟
+          فصل الرقم <span dir="ltr">{form.getValues("phoneNumberId")}</span> عن هذه العيادة وحذف{" "}
+          <strong>كل الرسائل التي مرّت عبره</strong>؟
         </>
       ),
       warning:
-        "ستتوقف العيادة عن استقبال وإرسال رسائل واتساب فورًا، ويمكن بعدها ربط الرقم بعيادة أخرى. المحادثات السابقة تبقى كما هي.",
-      confirmText: "فصل الرقم",
+        counts && counts.messages > 0
+          ? `سيُحذف نهائيًا ${counts.messages} رسالة في ${counts.conversations} محادثة` +
+            (counts.conversationsDeleted > 0
+              ? `، وتُحذف ${counts.conversationsDeleted} محادثة بالكامل`
+              : "") +
+            ". رسائل المرضى عبر أرقام العيادة الأخرى تبقى. لا يمكن التراجع."
+          : "ستتوقف العيادة عن استقبال وإرسال رسائل واتساب عبر هذا الرقم فورًا، ويمكن بعدها ربطه بعيادة أخرى.",
+      confirmPhrase: counts && counts.messages > 0 ? "حذف" : undefined,
+      confirmText: "حذف الرقم ومحادثاته",
       onConfirm: async () => {
         const res = await disconnectClinicWhatsappAction({ clinicId });
         return res.ok ? res : { error: res.error };

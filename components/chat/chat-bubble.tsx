@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageCircle, X, Send, Headset, Mic, Square, Trash2 } from "lucide-react";
 import ChatMessageView from "./chat-message";
 import { Button } from "@/components/ui/button";
@@ -62,6 +62,9 @@ function replyToFrom(m: WebChatMessage): ChatMessage["replyTo"] {
 // A guest's conversation isn't tied to an account, so its id is the browser's
 // only handle on it — persisted here so a reload doesn't start a new one.
 const GUEST_CONVERSATION_KEY = "clinica_guest_conversation_id";
+
+/** How often an open guest chat checks for staff replies. */
+const GUEST_POLL_MS = 10_000;
 
 export default function ChatBubble({ guest = false }: { guest?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -152,13 +155,16 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open]);
 
-  // Admin replies land in the DB straight from the inbox. Realtime payloads
-  // come back unauthorized for this role (empty row, 401 in `errors`), so we
-  // treat the event as a signal to refetch rather than trusting its content.
-  // Agent replies are already streamed in via send(), so only ADMIN messages
-  // need this path (deduped by id in case of overlap).
-  useRealtimeMessages(conversationId, () => {
-    getWebChatMessages().then((state) => {
+  // Admin replies land in the DB straight from the inbox. Agent replies are
+  // already streamed in via send(), so only ADMIN messages need fetching here
+  // (deduped by id in case of overlap).
+  const pullStaffReplies = useCallback(() => {
+    const load = guest
+      ? conversationId
+        ? getGuestChatMessages(conversationId)
+        : Promise.resolve(null)
+      : getWebChatMessages();
+    load.then((state) => {
       if (!state) return;
       setMessages((prev) => {
         const existingIds = new Set(prev.map((m) => m.id));
@@ -174,7 +180,19 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
         return newAdminMessages.length ? [...prev, ...newAdminMessages] : prev;
       });
     });
-  });
+  }, [guest, conversationId]);
+
+  // Signed-in users: Realtime (row-level security lets them see their own
+  // conversation) is used purely as a "something changed" signal to refetch.
+  useRealtimeMessages(guest ? null : conversationId, pullStaffReplies);
+
+  // Guests have no account, so Realtime can't authorize them — poll instead,
+  // only while the chat is open.
+  useEffect(() => {
+    if (!guest || !open || !conversationId) return;
+    const t = setInterval(pullStaffReplies, GUEST_POLL_MS);
+    return () => clearInterval(t);
+  }, [guest, open, conversationId, pullStaffReplies]);
 
   const patchAgent = (agentId: string, fn: (m: ChatMessage) => ChatMessage) =>
     setMessages((prev) => prev.map((m) => (m.id === agentId ? fn(m) : m)));

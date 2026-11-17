@@ -64,20 +64,32 @@ function placeholderContent(message: InboundWhatsAppMessage): string | null {
 // ─── History import ──────────────────────────────────────────────────────────
 
 /**
- * Imports one chat's messages since `since` into the clinic's inbox. Returns how
- * many new messages were written. Safe to re-run: already-imported (or live-
- * received) messages are skipped by their WhatsApp id.
+ * Imports one chat's messages since `since` into the clinic's inbox, tagged with
+ * the clinic number (`configId`) they went through. The patient's existing
+ * conversation is reused whichever number it started on, so chats from several
+ * numbers merge into one thread ordered by each message's real time. Returns how
+ * many new messages were written, and whether the whole chat got done —
+ * `shouldContinue` is checked before every page, so a stop request takes
+ * effect mid-chat. Safe to re-run: already-imported (or live-received)
+ * messages are skipped by their WhatsApp id.
  */
 export async function importChatHistory(
   clinicId: string,
+  configId: string,
   instanceName: string,
   remoteJid: string,
-  since: Date
-): Promise<number> {
+  since: Date,
+  shouldContinue: () => Promise<boolean> = async () => true
+): Promise<{ written: number; complete: boolean }> {
   let written = 0;
+  let complete = true;
   let conversationId: string | null = null;
 
   for (let page = 1; ; page++) {
+    if (!(await shouldContinue())) {
+      complete = false;
+      break;
+    }
     const { records, pages } = await findChatMessages(instanceName, remoteJid, since, page);
     const rows = records
       .map((r) => parseEvolutionRecord(r, instanceName))
@@ -110,6 +122,7 @@ export async function importChatHistory(
           senderType: record.fromMe ? SenderType.ADMIN : SenderType.USER,
           content,
           whatsappMessageId: record.envelope.messageId,
+          whatsappConfigId: configId,
           metadata: { imported: true, ...(record.fromMe ? { source: "phone" } : {}) },
           isRead: true,
           createdAt: record.sentAt ?? now,
@@ -140,7 +153,7 @@ export async function importChatHistory(
       });
     }
   }
-  return written;
+  return { written, complete };
 }
 
 // ─── Phone mirror (live) ─────────────────────────────────────────────────────
@@ -227,6 +240,7 @@ async function storePhoneMedia(
  */
 export async function recordPhoneMessage(
   clinicId: string,
+  configId: string,
   instanceName: string,
   record: EvolutionRecord
 ): Promise<void> {
@@ -257,6 +271,7 @@ export async function recordPhoneMessage(
       // With the file attached, the bubble shows it — keep only the caption.
       content: media ? caption : content,
       whatsappMessageId: envelope.messageId,
+      whatsappConfigId: configId,
       metadata: {
         source: "phone",
         ...(media ? { media } : {}),

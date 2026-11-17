@@ -1,245 +1,492 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { History, QrCode, RefreshCw, Smartphone, Unlink, TriangleAlert } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Building2, History, Pause, Play, RefreshCw, Smartphone, Star, Unlink } from "lucide-react";
 import type { EvolutionStatus } from "@/lib/evolution/config";
+import type { HistorySyncState } from "@/server/services/evolutionHistorySync";
 import type {
   EvolutionDisconnectResult,
   EvolutionStartResult,
   EvolutionStatusResult,
   EvolutionSyncResult,
+  RemovalImpactResult,
+  SetBranchResult,
+  SetPrimaryResult,
 } from "@/server/services/evolutionConnection";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /** How often to refresh the QR / link state while a phone is being linked. */
 const POLL_MS = 4000;
 
 /**
- * What the panel calls, already scoped to one clinic — the platform console
- * binds them to the clinic it is managing, the clinic's own page passes its
- * self-service server actions (which use the caller's clinic).
+ * What the number cards call, scoped to one clinic — the platform console binds
+ * them to the clinic it manages, the clinic's own page passes its self-service
+ * server actions (which use the caller's clinic). Every call names the number.
  */
-export interface EvolutionActions {
-  start: (phone?: string) => Promise<EvolutionStartResult>;
-  status: () => Promise<EvolutionStatusResult>;
-  sync: () => Promise<EvolutionSyncResult>;
-  disconnect: () => Promise<EvolutionDisconnectResult>;
+export interface WhatsappNumberActions {
+  /** `configId` null attaches a new number owned by `branchId` (null = clinic);
+   *  otherwise re-links that number. */
+  start: (
+    configId: string | null,
+    phone?: string,
+    branchId?: string | null
+  ) => Promise<EvolutionStartResult>;
+  status: (configId: string) => Promise<EvolutionStatusResult>;
+  /** Start the chat-history import: a fresh 90 days, or resume a stopped one. */
+  sync: (configId: string, mode: "fresh" | "resume") => Promise<EvolutionSyncResult>;
+  stopSync: (configId: string) => Promise<EvolutionSyncResult>;
+  disconnect: (configId: string) => Promise<EvolutionDisconnectResult>;
+  setPrimary: (configId: string) => Promise<SetPrimaryResult>;
+  /** What unlinking would delete — shown before confirming. */
+  impact: (configId: string) => Promise<RemovalImpactResult>;
+  /** Move a number to a branch, or make it clinic-level (null). */
+  setBranch: (configId: string, branchId: string | null) => Promise<SetBranchResult>;
 }
 
+/** A possible owner of a number: a branch, or the clinic itself (id null). */
+export interface NumberOwnerOption {
+  id: string | null;
+  name: string;
+}
+
+/** Select needs string values — the clinic-level owner travels as this. */
+const CLINIC_OWNER = "__clinic__";
+
 interface Props {
-  actions: EvolutionActions;
-  /** The clinic already has an Evolution config row (linked or mid-linking). */
-  configured: boolean;
+  actions: WhatsappNumberActions;
+  /** The number's id, or null for a new number not linked yet. */
+  configId: string | null;
+  isPrimary: boolean;
+  /** The number's phone as last recorded (shown until the live status loads). */
+  knownPhone: string | null;
+  /** A new number got its id (first QR generated). */
+  onStarted: (configId: string) => void;
+  /** The number was unlinked (or the card for a new one dismissed). */
+  onRemoved: () => void;
+  /** The number became the clinic's main number. */
+  onPrimary: () => void;
+  /** Owners this manager may give a number (clinic-level only if clinic-wide). */
+  owners: NumberOwnerOption[];
+  /** The number's current owner (branch id, or null = clinic-level). */
+  ownerId: string | null;
+  /** Clinic-wide managers only. */
+  canSetPrimary: boolean;
 }
 
 /**
- * Unofficial WhatsApp (WhatsApp Web through Evolution API): link the clinic's
- * phone by scanning a QR — or entering a pairing code — from WhatsApp → Linked
- * devices. No Meta app, no templates, no 24-hour window.
+ * One WhatsApp Web (Evolution) number of a clinic: link its phone by scanning a
+ * QR — or entering a pairing code — from WhatsApp → Linked devices, then sync
+ * its chat history, make it the main number, or unlink it.
  */
-export default function EvolutionConnection({ actions, configured: initialConfigured }: Props) {
-  const [configured, setConfigured] = useState(initialConfigured);
+export default function EvolutionConnection({
+  actions,
+  configId,
+  isPrimary,
+  knownPhone,
+  onStarted,
+  onRemoved,
+  onPrimary,
+  owners,
+  ownerId,
+  canSetPrimary,
+}: Props) {
+  const configured = configId !== null;
+  // A new number starts on the first owner offered (the clinic, when allowed).
+  const [owner, setOwner] = useState<string | null>(configId ? ownerId : (owners[0]?.id ?? null));
+  const ownerName = owners.find((o) => o.id === owner)?.name ?? "العيادة";
   const [status, setStatus] = useState<EvolutionStatus | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sync, setSync] = useState<HistorySyncState | null>(null);
+  const shownPhone = status?.phone ?? knownPhone;
+
+  // Parents pass inline callbacks; keep the poll from re-subscribing each render.
+  const onRemovedRef = useRef(onRemoved);
+  useEffect(() => {
+    onRemovedRef.current = onRemoved;
+  });
 
   const { status: readStatus } = actions;
   const refresh = useCallback(async () => {
-    const res = await readStatus();
+    if (!configId) return;
+    const res = await readStatus(configId);
     if (res.ok) {
       setStatus(res.status);
+      setSync(res.sync);
       if (res.status.state === "open") setPairingCode(null);
     } else if (res.reason === "not_configured") {
-      setConfigured(false);
-      setStatus(null);
+      // Removed elsewhere (another tab, or merged into a re-link of the same phone).
+      onRemovedRef.current();
     } else {
       setMessage({ ok: false, text: res.message ?? "تعذّر قراءة حالة الاتصال." });
     }
-  }, [readStatus]);
+  }, [configId, readStatus]);
 
-  // Poll while linking; once linked, one read is enough.
+  // Poll while linking or while a history sync runs (its progress); otherwise
+  // one read is enough.
+  const syncRunning = sync?.status === "RUNNING";
   useEffect(() => {
     if (!configured) return;
     void refresh();
-    if (status?.state === "open") return;
+    if (status?.state === "open" && !syncRunning) return;
     const t = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(t);
-  }, [configured, refresh, status?.state]);
+  }, [configured, refresh, status?.state, syncRunning]);
 
   const start = async () => {
     setBusy(true);
     setMessage(null);
-    const res = await actions.start(phone || undefined);
+    const res = await actions.start(configId, phone || undefined, configId ? undefined : owner);
     setBusy(false);
     if (!res.ok) {
       setMessage({ ok: false, text: res.message ?? "تعذّر بدء الربط." });
       return;
     }
-    setConfigured(true);
     setPairingCode(res.pairingCode);
     setStatus({ state: "connecting", qrDataUrl: res.qrDataUrl, phone: null, profileName: null });
+    if (!configId) onStarted(res.configId);
+  };
+
+  const [ownerBusy, setOwnerBusy] = useState(false);
+  const changeOwner = async (value: string) => {
+    const next = value === CLINIC_OWNER ? null : value;
+    if (!configId) return setOwner(next); // applied when linking starts
+    setOwnerBusy(true);
+    setMessage(null);
+    const res = await actions.setBranch(configId, next);
+    setOwnerBusy(false);
+    if (res.ok) {
+      setOwner(next);
+      setMessage({ ok: true, text: "تم نقل الرقم — محادثاته تتبعه." });
+    } else {
+      setMessage({ ok: false, text: res.error });
+    }
   };
 
   const confirm = useConfirm();
+  const [removing, setRemoving] = useState(false);
   const disconnect = async () => {
+    if (!configId) return onRemoved();
     setMessage(null);
+    setRemoving(true);
+    const impact = await actions.impact(configId);
+    setRemoving(false);
+    if (!impact.ok) {
+      setMessage({ ok: false, text: impact.error });
+      return;
+    }
+    const { messages, conversations, conversationsDeleted } = impact.impact;
+    const label = shownPhone ? `+${shownPhone}` : "هذا الرقم";
     const done = await confirm({
-      title: "فصل واتساب ويب",
-      description: "تسجيل خروج الهاتف المربوط وحذف الاتصال من هذه العيادة؟",
+      title: "فصل الرقم وحذف محادثاته",
+      description: (
+        <>
+          سيتم تسجيل خروج <span dir="ltr">{label}</span> وحذفه من العيادة، مع{" "}
+          <strong>كل الرسائل التي مرّت عبره</strong>.
+        </>
+      ),
       warning:
-        "ستتوقف العيادة عن استقبال وإرسال رسائل واتساب فورًا. المحادثات السابقة تبقى كما هي.",
-      confirmText: "فصل الرقم",
+        messages > 0
+          ? `سيُحذف نهائيًا ${messages} رسالة في ${conversations} محادثة` +
+            (conversationsDeleted > 0
+              ? `، وتُحذف ${conversationsDeleted} محادثة بالكامل لعدم بقاء رسائل فيها`
+              : "") +
+            ". رسائل المريض عبر أرقام العيادة الأخرى تبقى كما هي. لا يمكن التراجع."
+          : "لا توجد رسائل عبر هذا الرقم. لا يمكن التراجع.",
+      confirmText: "حذف الرقم ومحادثاته",
+      confirmPhrase: messages > 0 ? "حذف" : undefined,
       onConfirm: async () => {
-        const res = await actions.disconnect();
+        const res = await actions.disconnect(configId);
         return res.ok ? res : { error: res.error };
       },
     });
-    if (!done) return;
-    setConfigured(false);
-    setStatus(null);
-    setPairingCode(null);
-    setMessage({ ok: true, text: "تم فصل الرقم." });
+    if (done) onRemoved();
   };
 
-  const [syncing, setSyncing] = useState(false);
-  const syncHistory = async () => {
-    setSyncing(true);
+  const [primaryBusy, setPrimaryBusy] = useState(false);
+  const makePrimary = async () => {
+    if (!configId) return;
+    setPrimaryBusy(true);
     setMessage(null);
-    const res = await actions.sync();
-    setSyncing(false);
-    setMessage(
-      res.ok
-        ? {
-            ok: true,
-            text: "بدأت مزامنة محادثات آخر 90 يوماً في الخلفية — ستظهر في صندوق الرسائل خلال دقائق.",
-          }
-        : { ok: false, text: res.message ?? "تعذّر بدء المزامنة." }
-    );
+    const res = await actions.setPrimary(configId);
+    setPrimaryBusy(false);
+    if (res.ok) onPrimary();
+    else setMessage({ ok: false, text: res.error });
+  };
+
+  const [syncBusy, setSyncBusy] = useState(false);
+  const startSync = async (mode: "fresh" | "resume") => {
+    if (!configId) return;
+    setSyncBusy(true);
+    setMessage(null);
+    const res = await actions.sync(configId, mode);
+    setSyncBusy(false);
+    if (res.ok) setSync(res.state);
+    else setMessage({ ok: false, text: res.message ?? "تعذّر بدء المزامنة." });
+  };
+  const stopSync = async () => {
+    if (!configId) return;
+    setSyncBusy(true);
+    setMessage(null);
+    const res = await actions.stopSync(configId);
+    setSyncBusy(false);
+    if (res.ok) setSync(res.state);
+    else setMessage({ ok: false, text: res.message ?? "تعذّر إيقاف المزامنة." });
   };
 
   const linked = status?.state === "open";
 
   return (
-    <div>
-      <h2 className="mb-3 flex items-center gap-2 font-sans text-sm font-semibold text-foreground">
-        <QrCode className="h-4 w-4 text-accent" />
-        واتساب ويب (ربط غير رسمي)
-      </h2>
-      <Card className="space-y-4 p-5">
-        <p className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
-          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          اتصال غير رسمي عبر واتساب ويب: لا يحتاج حساب ميتا ولا قوالب، ويمكن المراسلة في أي وقت، لكن
-          واتساب قد يحظر الرقم عند الإرسال الآلي الكثيف. استخدم رقمًا مخصصًا للعيادة.
-        </p>
-
+    <Card className="space-y-4 p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-sans text-sm font-semibold text-foreground" dir="ltr">
+          {shownPhone ? `+${shownPhone}` : configured ? "رقم واتساب ويب" : "رقم جديد"}
+        </span>
+        {isPrimary && (
+          <span className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+            <Star className="h-3 w-3" />
+            الرقم الرئيسي
+          </span>
+        )}
         {configured && status && (
-          <div className="flex items-center gap-2 text-sm">
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                linked ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
-              }`}
-            >
-              {linked ? "مربوط" : status.state === "connecting" ? "بانتظار المسح" : "غير متصل"}
-            </span>
-            {linked && (
-              <span className="text-muted-foreground" dir="ltr">
-                {status.phone ? `+${status.phone}` : ""}
-                {status.profileName ? ` · ${status.profileName}` : ""}
-              </span>
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+              linked ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+            }`}
+          >
+            {linked ? "مربوط" : status.state === "connecting" ? "بانتظار المسح" : "غير متصل"}
+          </span>
+        )}
+        {linked && status?.profileName && (
+          <span className="text-xs text-muted-foreground">{status.profileName}</span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <Building2 className="h-3.5 w-3.5" />
+        <span>تابع لـ</span>
+        {owners.length > 1 || (owners.length === 1 && owners[0].id !== owner) ? (
+          <Select
+            value={owner ?? CLINIC_OWNER}
+            onValueChange={changeOwner}
+            disabled={ownerBusy || busy}
+          >
+            <SelectTrigger className="h-7 w-auto min-w-36 gap-2 px-2 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {owners.map((o) => (
+                <SelectItem
+                  key={o.id ?? CLINIC_OWNER}
+                  value={o.id ?? CLINIC_OWNER}
+                  className="text-xs"
+                >
+                  {o.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <span className="font-medium text-foreground">{ownerName}</span>
+        )}
+      </div>
+
+      {configured && !linked && (status?.qrDataUrl || pairingCode) && (
+        <div className="space-y-3">
+          <p className="font-sans text-xs text-muted-foreground">
+            على هاتف العيادة: واتساب ← الأجهزة المرتبطة ← ربط جهاز، ثم امسح الرمز.
+            {pairingCode && " أو اختر «الربط برقم الهاتف بدلًا من ذلك» وأدخل الكود."}
+          </p>
+          <div className="flex flex-wrap items-center gap-6">
+            {status?.qrDataUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={status.qrDataUrl}
+                alt="WhatsApp QR"
+                className="h-56 w-56 rounded-lg border border-border bg-white p-2"
+              />
+            )}
+            {pairingCode && (
+              <div>
+                <p className="font-sans text-xs text-muted-foreground">كود الربط</p>
+                <p className="font-mono text-2xl font-bold tracking-widest" dir="ltr">
+                  {pairingCode.length === 8
+                    ? `${pairingCode.slice(0, 4)}-${pairingCode.slice(4)}`
+                    : pairingCode}
+                </p>
+              </div>
             )}
           </div>
-        )}
-
-        {configured && !linked && (status?.qrDataUrl || pairingCode) && (
-          <div className="space-y-3">
-            <p className="font-sans text-xs text-muted-foreground">
-              على هاتف العيادة: واتساب ← الأجهزة المرتبطة ← ربط جهاز، ثم امسح الرمز.
-              {pairingCode && " أو اختر «الربط برقم الهاتف بدلًا من ذلك» وأدخل الكود."}
-            </p>
-            <div className="flex flex-wrap items-center gap-6">
-              {status?.qrDataUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={status.qrDataUrl}
-                  alt="WhatsApp QR"
-                  className="h-56 w-56 rounded-lg border border-border bg-white p-2"
-                />
-              )}
-              {pairingCode && (
-                <div>
-                  <p className="font-sans text-xs text-muted-foreground">كود الربط</p>
-                  <p className="font-mono text-2xl font-bold tracking-widest" dir="ltr">
-                    {pairingCode.length === 8
-                      ? `${pairingCode.slice(0, 4)}-${pairingCode.slice(4)}`
-                      : pairingCode}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {!linked && (
-          <div className="space-y-2">
-            <Label className="text-xs font-normal text-muted-foreground">
-              رقم هاتف العيادة (اختياري — للحصول على كود ربط بدل رمز QR)
-            </Label>
-            <Input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="مثال: 201001234567"
-              dir="ltr"
-              inputMode="tel"
-              className="max-w-xs"
-            />
-          </div>
-        )}
-
-        {message && (
-          <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
-            {message.text}
-          </p>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2">
-          {!linked && (
-            <Button type="button" onClick={start} loading={busy}>
-              {!busy && (configured ? <RefreshCw /> : <Smartphone />)}
-              {configured ? "إعادة توليد الرمز" : "ابدأ الربط"}
-            </Button>
-          )}
-          {linked && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={syncHistory}
-              loading={syncing}
-              disabled={busy}
-            >
-              {!syncing && <History />}
-              مزامنة المحادثات (آخر 90 يوماً)
-            </Button>
-          )}
-          {configured && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={disconnect}
-              disabled={busy}
-              className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30"
-            >
-              <Unlink />
-              فصل الرقم
-            </Button>
-          )}
         </div>
-      </Card>
+      )}
+
+      {!linked && (
+        <div className="space-y-2">
+          <Label className="text-xs font-normal text-muted-foreground">
+            رقم الهاتف (اختياري — للحصول على كود ربط بدل رمز QR)
+          </Label>
+          <Input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="مثال: 201001234567"
+            dir="ltr"
+            inputMode="tel"
+            className="max-w-xs"
+          />
+        </div>
+      )}
+
+      {linked && (
+        <HistorySyncPanel sync={sync} busy={syncBusy} onStart={startSync} onStop={stopSync} />
+      )}
+
+      {message && (
+        <p className={`text-xs ${message.ok ? "text-green-600" : "text-red-600"}`}>
+          {message.text}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {!linked && (
+          <Button type="button" onClick={start} loading={busy}>
+            {!busy && (configured ? <RefreshCw /> : <Smartphone />)}
+            {configured ? "إعادة توليد الرمز" : "ابدأ الربط"}
+          </Button>
+        )}
+        {configured && !isPrimary && canSetPrimary && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={makePrimary}
+            loading={primaryBusy}
+            disabled={busy}
+          >
+            {!primaryBusy && <Star />}
+            تعيين كرقم رئيسي
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          onClick={disconnect}
+          loading={removing}
+          disabled={busy}
+          className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30"
+        >
+          {!removing && <Unlink />}
+          {configured ? "فصل الرقم" : "إلغاء"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+const dateFmt = new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium", timeStyle: "short" });
+
+/**
+ * The chat-history import: progress + stop while running; when a previous sync
+ * stopped part-way, the choice to continue it or start the last 90 days over.
+ */
+function HistorySyncPanel({
+  sync,
+  busy,
+  onStart,
+  onStop,
+}: {
+  sync: HistorySyncState | null;
+  busy: boolean;
+  onStart: (mode: "fresh" | "resume") => void;
+  onStop: () => void;
+}) {
+  const progress =
+    sync && sync.totalChats > 0
+      ? `${sync.doneChats} من ${sync.totalChats} محادثة · ${sync.messagesImported} رسالة`
+      : null;
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-4">
+      <p className="flex items-center gap-2 font-sans text-sm font-semibold text-foreground">
+        <History className="h-4 w-4 text-accent" />
+        مزامنة المحادثات السابقة
+      </p>
+
+      {sync?.status === "RUNNING" ? (
+        <>
+          <p className="text-xs text-muted-foreground">
+            {progress ? `جارٍ المزامنة: ${progress}` : "جارٍ تجهيز قائمة المحادثات من الهاتف…"}
+          </p>
+          {sync.totalChats > 0 && (
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-accent transition-all"
+                style={{ width: `${Math.round((sync.doneChats / sync.totalChats) * 100)}%` }}
+              />
+            </div>
+          )}
+          <Button type="button" variant="outline" size="sm" onClick={onStop} loading={busy}>
+            {!busy && <Pause />}
+            إيقاف المزامنة
+          </Button>
+        </>
+      ) : sync?.resumable ? (
+        <>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {sync.status === "FAILED" ? "تعثّرت" : "توقفت"} المزامنة السابقة (بدأت{" "}
+            {dateFmt.format(new Date(sync.startedAt))})
+            {progress ? ` بعد ${progress}` : " قبل بدء نقل المحادثات"}. هل تريد متابعتها من حيث
+            توقفت، أم بدء مزامنة جديدة لآخر 90 يوماً؟
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={() => onStart("resume")} loading={busy}>
+              {!busy && <Play />}
+              متابعة المزامنة السابقة
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onStart("fresh")}
+              disabled={busy}
+            >
+              <RefreshCw />
+              بدء مزامنة جديدة (آخر 90 يوماً)
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {sync?.status === "COMPLETED" && sync.finishedAt
+              ? `اكتملت آخر مزامنة في ${dateFmt.format(new Date(sync.finishedAt))}${progress ? ` (${progress})` : ""}. `
+              : ""}
+            تنقل محادثات آخر 90 يوماً من هاتف العيادة إلى صندوق الرسائل، في الخلفية، ويمكنك إيقافها
+            في أي وقت.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onStart("fresh")}
+            loading={busy}
+          >
+            {!busy && <History />}
+            مزامنة المحادثات (آخر 90 يوماً)
+          </Button>
+        </>
+      )}
     </div>
   );
 }

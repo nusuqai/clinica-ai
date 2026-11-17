@@ -195,7 +195,11 @@ export async function handleUnsupportedWhatsAppMessage(
     sessionId,
     clinicId,
     media.placeholder,
-    profile?.id ?? null
+    profile?.id ?? null,
+    null,
+    null,
+    null,
+    creds.configId
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
@@ -535,6 +539,7 @@ async function deliverPushReply<T>(args: {
         delivered ? MessageDelivery.SENT : MessageDelivery.FAILED,
         {
           whatsappMessageId: voiceOut.providerMessageId ?? textOut?.providerMessageId ?? null,
+          whatsappConfigId: voiceOut.whatsappConfigId ?? textOut?.whatsappConfigId ?? null,
           incrementAttempts: true,
         }
       );
@@ -560,6 +565,7 @@ async function deliverPushReply<T>(args: {
     out.delivered ? MessageDelivery.SENT : MessageDelivery.FAILED,
     {
       whatsappMessageId: out.providerMessageId,
+      whatsappConfigId: out.whatsappConfigId,
       incrementAttempts: true,
     }
   );
@@ -597,7 +603,7 @@ export async function processDebouncedConversation(row: ClaimedConversation): Pr
     await finalizeIdle(conversationId);
     return;
   }
-  const transport = await adapter.getTransport(clinicId);
+  const transport = await adapter.getTransport(clinicId, conversationId);
   if (!transport) {
     console.warn(`[debounce] clinic ${clinicId} has no ${conv.channel} transport — idling`);
     await finalizeIdle(conversationId);
@@ -612,6 +618,7 @@ export async function processDebouncedConversation(row: ClaimedConversation): Pr
     if (out.delivered) {
       await markAgentDelivery(pending.id, MessageDelivery.SENT, {
         whatsappMessageId: out.providerMessageId,
+        whatsappConfigId: out.whatsappConfigId,
         incrementAttempts: true,
       });
       // A newer message may have arrived before this claim — requeue if so.
@@ -736,7 +743,8 @@ export async function handleWhatsAppMessage(
     profile?.id ?? null,
     null,
     messageId,
-    quotedWamid
+    quotedWamid,
+    creds.configId
   );
   console.log(
     `[wa-debug] user message STORED convId=${conversationId} sessionId=${sessionId} profileId=${profile?.id ?? "none"}`
@@ -822,7 +830,8 @@ export async function handleWhatsAppVoiceMessage(
     profile?.id ?? null,
     voiceMeta ? { voice: voiceMeta } : null,
     messageId,
-    quotedWamid
+    quotedWamid,
+    creds.configId
   );
 
   // Charge transcription (its own ledger line) whenever a model actually ran.
@@ -954,7 +963,8 @@ export async function handleWhatsAppImageMessage(
     profile?.id ?? null,
     mediaMeta ? { media: mediaMeta } : null,
     messageId,
-    quotedWamid
+    quotedWamid,
+    creds.configId
   );
 
   // The one-time vision call is its own USD-only ledger line (either mode).
@@ -1064,7 +1074,8 @@ export async function handleWhatsAppMediaMessage(
     profile?.id ?? null,
     mediaMeta ? { media: mediaMeta } : null,
     messageId,
-    quotedWamid
+    quotedWamid,
+    creds.configId
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
@@ -1102,7 +1113,8 @@ export async function handleWhatsAppStructuredMessage(
     profile?.id ?? null,
     { structured: structuredMeta },
     messageId,
-    quotedWamid
+    quotedWamid,
+    creds.configId
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");

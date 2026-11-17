@@ -4,21 +4,27 @@ import { revalidatePath } from "next/cache";
 import { requirePlatformAdmin } from "@/lib/auth";
 import { Prisma } from "@prisma/client";
 import {
-  WhatsappProviderConflictError,
   deleteWhatsappConfig,
   getClinicWhatsappCredentials,
   saveWhatsappConfig,
 } from "@/lib/meta/whatsapp-config";
-import { disconnectEvolution } from "@/lib/evolution/config";
-import { getClinicWhatsappProvider } from "@/lib/whatsapp/transport";
 import {
-  PROVIDER_CONFLICT_MESSAGE,
+  disconnectEvolutionFor,
   evolutionStatusFor,
-  queueEvolutionHistorySync,
+  setPrimaryFor,
   startEvolutionFor,
+  stopSyncFor,
+  syncHistoryFor,
+  type EvolutionDisconnectResult,
   type EvolutionStartResult,
   type EvolutionStatusResult,
   type EvolutionSyncResult,
+  type NumberManager,
+  type RemovalImpactResult,
+  type SetBranchResult,
+  type SetPrimaryResult,
+  removalImpactFor,
+  setBranchFor,
 } from "@/server/services/evolutionConnection";
 import {
   listMessageTemplates,
@@ -68,9 +74,6 @@ export async function saveClinicWhatsappConfigAction(input: {
     revalidatePath(WHATSAPP_PATH);
     return { ok: true, webhookToken, verifyToken };
   } catch (err) {
-    if (err instanceof WhatsappProviderConflictError) {
-      return { ok: false, reason: "error", message: PROVIDER_CONFLICT_MESSAGE };
-    }
     // phoneNumberId is unique across clinics: point at the fix, not the stack.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return {
@@ -89,21 +92,16 @@ export async function saveClinicWhatsappConfigAction(input: {
 }
 
 /**
- * Unlinks the clinic's WhatsApp number (deletes its config) so the number can be
- * connected to a different clinic. Returns `{ error }` on failure so the confirm
- * dialog can show it in place.
+ * Removes the clinic's official (Cloud API) number so it can be connected to a
+ * different clinic. Returns `{ error }` on failure so the confirm dialog can
+ * show it in place.
  */
 export async function disconnectClinicWhatsappAction(input: {
   clinicId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   await requirePlatformAdmin();
   try {
-    // Evolution also needs its WhatsApp Web session logged out on the server.
-    if ((await getClinicWhatsappProvider(input.clinicId)) === "EVOLUTION") {
-      await disconnectEvolution(input.clinicId);
-    } else {
-      await deleteWhatsappConfig(input.clinicId);
-    }
+    await deleteWhatsappConfig(input.clinicId);
     revalidatePath(WHATSAPP_PATH);
     return { ok: true };
   } catch (err) {
@@ -112,35 +110,103 @@ export async function disconnectClinicWhatsappAction(input: {
   }
 }
 
-// ─── Evolution (unofficial WhatsApp Web) ─────────────────────────────────────
+// ─── Numbers (WhatsApp Web via Evolution, + main number) ─────────────────────
 // Thin platform-admin wrappers; the clinic's own page has its twins in
 // server/actions/whatsapp.ts. Both share server/services/evolutionConnection.ts.
 
-/** Starts linking a phone (fresh QR, plus a pairing code when `phone` is given). */
+/** The platform console manages every number of any clinic. */
+function platformManager(clinicId: string): NumberManager {
+  return { clinicId, branchIds: null };
+}
+
+/** Links a phone: `configId` null attaches a new number, else re-links that one. */
 export async function startClinicEvolutionAction(input: {
   clinicId: string;
+  configId: string | null;
   phone?: string;
+  /** New numbers: the branch it belongs to (null = clinic-level). */
+  branchId?: string | null;
 }): Promise<EvolutionStartResult> {
   await requirePlatformAdmin();
-  const res = await startEvolutionFor(input.clinicId, input.phone);
+  const res = await startEvolutionFor(
+    platformManager(input.clinicId),
+    input.configId,
+    input.phone,
+    input.branchId ?? null
+  );
   if (res.ok) revalidatePath(WHATSAPP_PATH);
   return res;
 }
 
-/** Live link status, polled by the settings panel while it is open. */
+/** A number's live link status + sync progress, polled while its panel is open. */
 export async function getClinicEvolutionStatusAction(input: {
   clinicId: string;
+  configId: string;
 }): Promise<EvolutionStatusResult> {
   await requirePlatformAdmin();
-  return evolutionStatusFor(input.clinicId);
+  return evolutionStatusFor(platformManager(input.clinicId), input.configId);
 }
 
-/** Queues the 90-day chat-history import into the inbox. */
+/** Starts a number's chat-history import: a fresh 90 days, or resume a stopped one. */
 export async function syncClinicEvolutionHistoryAction(input: {
   clinicId: string;
+  configId: string;
+  mode: "fresh" | "resume";
 }): Promise<EvolutionSyncResult> {
   await requirePlatformAdmin();
-  return queueEvolutionHistorySync(input.clinicId);
+  return syncHistoryFor(platformManager(input.clinicId), input.configId, input.mode);
+}
+
+/** Stops a number's running chat-history import (progress is kept). */
+export async function stopClinicEvolutionHistoryAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<EvolutionSyncResult> {
+  await requirePlatformAdmin();
+  return stopSyncFor(platformManager(input.clinicId), input.configId);
+}
+
+/** Logs a WhatsApp Web number out and removes it from the clinic. */
+export async function disconnectClinicEvolutionAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<EvolutionDisconnectResult> {
+  await requirePlatformAdmin();
+  const res = await disconnectEvolutionFor(platformManager(input.clinicId), input.configId);
+  if (res.ok) revalidatePath(WHATSAPP_PATH);
+  return res;
+}
+
+/** Makes a number the clinic's main one. */
+export async function setClinicPrimaryNumberAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<SetPrimaryResult> {
+  await requirePlatformAdmin();
+  const res = await setPrimaryFor(platformManager(input.clinicId), input.configId);
+  if (res.ok) revalidatePath(WHATSAPP_PATH);
+  return res;
+}
+
+/** What unlinking a number would delete (for the confirm popup). */
+export async function getClinicNumberRemovalImpactAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<RemovalImpactResult> {
+  await requirePlatformAdmin();
+  return removalImpactFor(platformManager(input.clinicId), input.configId);
+}
+
+/** Moves a number to a branch, or makes it clinic-level (branchId null). */
+export async function setClinicNumberBranchAction(input: {
+  clinicId: string;
+  configId: string;
+  branchId: string | null;
+}): Promise<SetBranchResult> {
+  await requirePlatformAdmin();
+  const res = await setBranchFor(platformManager(input.clinicId), input.configId, input.branchId);
+  if (res.ok) revalidatePath(WHATSAPP_PATH);
+  return res;
 }
 
 // ─── Templates ───────────────────────────────────────────────────────────────

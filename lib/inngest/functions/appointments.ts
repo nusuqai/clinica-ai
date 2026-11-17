@@ -5,7 +5,7 @@ import { inngest, type AppointmentNotifyData } from "@/lib/inngest/client";
 import { sendTemplateMessage, WhatsAppApiError } from "@/lib/meta/whatsapp";
 import { EvolutionApiError } from "@/lib/evolution/client";
 import {
-  getClinicWhatsappTransport,
+  resolveWhatsappTransport,
   sendWhatsAppText,
   type WhatsAppAddress,
   type WhatsAppTransport,
@@ -416,6 +416,25 @@ function renderAutomationText(
  * a clinic-written text has no approved Meta template behind it, so the
  * official API (which refuses free text outside the 24h window) can't send it.
  */
+/**
+ * The number an automated message goes out from: a number of the visit's
+ * branch (the one the patient last used there, else any of that branch's),
+ * else the number the patient last used, else the clinic's main number — always
+ * among the numbers that can deliver this binding (custom text → WhatsApp Web;
+ * an approved template → the official number).
+ */
+function automationTransport(
+  clinicId: string,
+  conversationId: string | null,
+  binding: AutomationBinding,
+  branchId: string | null
+): Promise<WhatsAppTransport | null> {
+  return resolveWhatsappTransport(clinicId, conversationId, {
+    only: isCustomTemplate(binding.templateName) ? "EVOLUTION" : "META_CLOUD",
+    preferBranchId: branchId,
+  });
+}
+
 function bindingUnsendable(transport: WhatsAppTransport, binding: AutomationBinding): boolean {
   return transport.provider === "META_CLOUD" && isCustomTemplate(binding.templateName);
 }
@@ -493,6 +512,7 @@ async function sendAppointmentNotify(
     where: { id: appointmentId },
     select: {
       id: true,
+      branchId: true,
       status: true,
       orderNumber: true,
       bookingDate: true,
@@ -527,11 +547,11 @@ async function sendAppointmentNotify(
   });
   if (!binding || !binding.enabled) return "no_binding";
 
-  const transport = await getClinicWhatsappTransport(clinicId);
+  const thread = await getWhatsappThread(clinicId, appt.patient);
+  const transport = await automationTransport(clinicId, thread?.id ?? null, binding, appt.branchId);
   if (!transport) return "no_creds";
   if (bindingUnsendable(transport, binding)) return "no_binding";
 
-  const thread = await getWhatsappThread(clinicId, appt.patient);
   const recipient = thread ? conversationRecipient(thread) : null;
   if (!recipient) return "no_recipient";
 
@@ -563,6 +583,7 @@ async function sendAppointmentNotify(
         clinicId,
         conversationId: thread.id,
         whatsappMessageId: wamid,
+        whatsappConfigId: transport.configId,
         senderType: SenderType.AGENT,
         content: text,
         metadata: {
@@ -600,6 +621,7 @@ async function sendFollowUpReminder(recordId: string, clinicId: string): Promise
     where: { id: recordId },
     select: {
       id: true,
+      branchId: true,
       followUpDate: true,
       followUpReminderSentAt: true,
       patient: { select: { id: true, fullName: true, phone: true } },
@@ -644,11 +666,16 @@ async function sendFollowUpReminder(recordId: string, clinicId: string): Promise
   });
   if (!binding || !binding.enabled) return "no_binding";
 
-  const transport = await getClinicWhatsappTransport(clinicId);
+  const thread = await getWhatsappThread(clinicId, record.patient);
+  const transport = await automationTransport(
+    clinicId,
+    thread?.id ?? null,
+    binding,
+    record.branchId
+  );
   if (!transport) return "no_creds";
   if (bindingUnsendable(transport, binding)) return "no_binding";
 
-  const thread = await getWhatsappThread(clinicId, record.patient);
   const recipient = thread ? conversationRecipient(thread) : null;
   if (!recipient) return "no_recipient";
 
@@ -677,6 +704,7 @@ async function sendFollowUpReminder(recordId: string, clinicId: string): Promise
         clinicId,
         conversationId: thread.id,
         whatsappMessageId: wamid,
+        whatsappConfigId: transport.configId,
         senderType: SenderType.AGENT,
         content: text,
         metadata: {

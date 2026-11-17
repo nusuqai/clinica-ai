@@ -12,7 +12,7 @@ import {
   CUSTOM_TEMPLATE_NAME,
   unknownCustomTokens,
 } from "@/lib/appointment-templates";
-import { getClinicWhatsappProvider } from "@/lib/whatsapp/transport";
+import { getClinicWhatsappProviders } from "@/lib/whatsapp/transport";
 
 /**
  * Admin actions for the appointment-automation template bindings
@@ -200,8 +200,8 @@ export async function saveCustomAppointmentTemplateAction(
   if (!auth.ok) return auth;
 
   // The official API only delivers approved templates outside the 24h window,
-  // so free text is an Evolution-only option.
-  if ((await getClinicWhatsappProvider(auth.ctx.clinic.id)) !== "EVOLUTION") {
+  // so free text needs at least one WhatsApp Web number to go out from.
+  if (!(await getClinicWhatsappProviders(auth.ctx.clinic.id)).includes("EVOLUTION")) {
     return { ok: false, reason: "not_configured" };
   }
 

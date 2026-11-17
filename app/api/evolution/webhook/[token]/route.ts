@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEvolutionConfigByToken } from "@/lib/evolution/config";
+import { adoptLinkedPhone, getEvolutionConfigByToken } from "@/lib/evolution/config";
+import { getInstanceOwner } from "@/lib/evolution/client";
 import { evolutionEventName, parseEvolutionMessages } from "@/lib/evolution/inbound";
 import { processInboundWhatsApp } from "@/server/services/whatsappIngest";
 import { recordPhoneMessage } from "@/server/services/evolutionSync";
 import { prisma } from "@/lib/prisma";
-import { inngest } from "@/lib/inngest/client";
+import { startHistorySync } from "@/server/services/evolutionHistorySync";
 
 /** WhatsApp pushes history to a newly linked phone in the background — give it
  *  a few minutes before importing. */
@@ -49,7 +50,10 @@ export async function POST(
   if (event === "connection_update") {
     const state = (payload.data as { state?: string } | undefined)?.state;
     console.log(`[evolution] clinic ${config.clinicId} connection → ${state}`);
-    if (state === "open") await autoImportHistory(config.clinicId);
+    if (state === "open") {
+      await recordOwnerPhone(config.clinicId, config.configId, config.instanceName);
+      await autoImportHistory(config.clinicId, config.configId);
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -71,7 +75,7 @@ export async function POST(
     try {
       if (record.fromMe) {
         // Typed on the clinic's phone (or an echo of our own send).
-        await recordPhoneMessage(config.clinicId, config.instanceName, record);
+        await recordPhoneMessage(config.clinicId, config.configId, config.instanceName, record);
       } else {
         await processInboundWhatsApp(record.envelope, transport);
       }
@@ -88,22 +92,43 @@ export async function POST(
 }
 
 /**
- * First link of a phone → import its recent chats once. Reconnects (server
- * restarts, phone back online) also report "open", so skip clinics that have
- * imported before; the platform console's "sync" button re-runs it on demand.
+ * Records which phone this number is (and merges an earlier link of the same
+ * phone into it — see adoptLinkedPhone). Best-effort: the status poll does it
+ * too.
  */
-async function autoImportHistory(clinicId: string): Promise<void> {
-  const imported = await prisma.message.findFirst({
-    where: { clinicId, metadata: { path: ["imported"], equals: true } },
-    select: { id: true },
-  });
-  if (imported) return;
+async function recordOwnerPhone(
+  clinicId: string,
+  configId: string,
+  instanceName: string
+): Promise<void> {
   try {
-    await inngest.send({
-      name: "whatsapp/history.import",
-      data: { clinicId, delaySeconds: AUTO_IMPORT_DELAY_SECONDS },
-    });
+    const { phone } = await getInstanceOwner(instanceName);
+    if (phone) await adoptLinkedPhone(clinicId, configId, phone);
   } catch (err) {
-    console.error("[evolution] failed to queue history import:", err);
+    console.error("[evolution] failed to record the linked phone:", err);
   }
+}
+
+/**
+ * First link of a number → import its recent chats once. Reconnects (server
+ * restarts, phone back online) also report "open", so skip numbers that have a
+ * sync on record (running, stopped, or done — staff decide what happens to it)
+ * or imported before syncs were tracked; the settings panel re-runs it on demand.
+ */
+async function autoImportHistory(clinicId: string, configId: string): Promise<void> {
+  const [sync, imported] = await Promise.all([
+    prisma.whatsappHistorySync.findUnique({
+      where: { whatsappConfigId: configId },
+      select: { id: true },
+    }),
+    prisma.message.findFirst({
+      where: { whatsappConfigId: configId, metadata: { path: ["imported"], equals: true } },
+      select: { id: true },
+    }),
+  ]);
+  if (sync || imported) return;
+  const res = await startHistorySync(clinicId, configId, "fresh", {
+    delaySeconds: AUTO_IMPORT_DELAY_SECONDS,
+  });
+  if (!res.ok) console.error("[evolution] failed to queue history import:", res.message);
 }

@@ -1,4 +1,10 @@
 import "server-only";
+import { lastUsedWhatsappConfigId } from "@/lib/whatsapp/transport";
+import {
+  conversationScopeWhere,
+  messageScopeWhere,
+  type InboxNumberScope,
+} from "@/lib/inbox-scope";
 import { prisma } from "@/lib/prisma";
 import { Channel, Role, SenderType, type Prisma } from "@prisma/client";
 import { personSearch, phoneDigits } from "./_search";
@@ -120,6 +126,8 @@ export interface MessageItem {
   replyTo?: MessageReplyPreview;
   /** Staff notes on this message the viewer can see (private ones only theirs). */
   notes?: MessageNoteItem[];
+  /** The clinic WhatsApp number it came in on / went out from, when known. */
+  whatsappConfigId?: string | null;
 }
 
 export interface MessageNoteItem {
@@ -157,6 +165,12 @@ export interface ConversationDetail {
    *  the 24-hour customer-service window: free-form replies are only allowed
    *  while `now - lastInboundAt < 24h`. Null if the contact never wrote. */
   lastInboundAt: Date | null;
+  /** The clinic number the patient last wrote to (else last used at all) — the
+   *  inbox's default "send from" number. Null when none is recorded. */
+  lastWhatsappConfigId: string | null;
+  /** The contact's last inbound message time per clinic number (ISO), for the
+   *  official number's own 24-hour window. */
+  lastInboundAtByNumber: Record<string, string>;
   /** Inbox utilities, from the viewer's point of view. */
   pinned: boolean;
   labelIds: string[];
@@ -193,7 +207,8 @@ export interface ConversationFilters {
 // Combined with AND so they never collide with the base OR (customer vs staff).
 function conversationFilterWhere(
   f: ConversationFilters,
-  viewerId: string | null
+  viewerId: string | null,
+  scope: InboxNumberScope = null
 ): Prisma.ConversationWhereInput[] {
   const where: Prisma.ConversationWhereInput[] = [];
   const q = f.query?.trim();
@@ -210,7 +225,11 @@ function conversationFilterWhere(
   }
   if (f.channel && f.channel in Channel) where.push({ channel: f.channel as Channel });
   if (f.show === "unread") {
-    where.push({ messages: { some: { isRead: false, senderType: SenderType.USER } } });
+    where.push({
+      messages: {
+        some: { isRead: false, senderType: SenderType.USER, ...messageScopeWhere(scope) },
+      },
+    });
   }
   if (f.show === "escalated") where.push({ escalations: { some: { resolvedAt: null } } });
   if (viewerId) {
@@ -232,7 +251,9 @@ export async function getConversations(
   clinicId: string,
   filters: ConversationFilters = {},
   /** The signed-in team member — drives the per-user pins/labels/reminders. */
-  viewerId: string | null = null
+  viewerId: string | null = null,
+  /** Branch-limited staff: only their branches' numbers (see lib/inbox-scope). */
+  scope: InboxNumberScope = null
 ): Promise<ConversationSummary[]> {
   const baseWhere = await customerConversationWhere(clinicId);
   const now = new Date();
@@ -241,13 +262,19 @@ export async function getConversations(
   const me = viewerId ?? "00000000-0000-0000-0000-000000000000";
   const conversations = await prisma.conversation.findMany({
     where: {
-      AND: [baseWhere, { messages: { some: {} } }, ...conversationFilterWhere(filters, viewerId)],
+      AND: [
+        baseWhere,
+        { messages: { some: messageScopeWhere(scope) } },
+        ...conversationFilterWhere(filters, viewerId, scope),
+      ],
     },
     orderBy: { updatedAt: "desc" },
     include: {
       user: { select: { fullName: true, phone: true } },
       assignedTo: { select: { id: true, fullName: true } },
+      // The preview is the latest message the viewer may see.
       messages: {
+        where: messageScopeWhere(scope),
         orderBy: { createdAt: "desc" },
         take: 1,
       },
@@ -269,7 +296,9 @@ export async function getConversations(
       },
       _count: {
         select: {
-          messages: { where: { isRead: false, senderType: SenderType.USER } },
+          messages: {
+            where: { isRead: false, senderType: SenderType.USER, ...messageScopeWhere(scope) },
+          },
           escalations: { where: { resolvedAt: null } },
         },
       },
@@ -338,18 +367,29 @@ export function sortConversations(list: ConversationSummary[]): ConversationSumm
 
 /** How many conversations are waiting on this team member — the red counter on
  *  the "needs my response" filter. */
-export async function countNeedsMe(clinicId: string, viewerId: string): Promise<number> {
+export async function countNeedsMe(
+  clinicId: string,
+  viewerId: string,
+  scope: InboxNumberScope = null
+): Promise<number> {
   const baseWhere = await customerConversationWhere(clinicId);
-  return prisma.conversation.count({ where: { AND: [baseWhere, needsMeWhere(viewerId)] } });
+  return prisma.conversation.count({
+    where: { AND: [baseWhere, conversationScopeWhere(scope), needsMeWhere(viewerId)] },
+  });
 }
 
 /** Conversation IDs with at least one unresolved escalation — used to seed
  * the admin-wide alert state (sidebar bell) on first load. */
-export async function getUnresolvedEscalationConversationIds(clinicId: string): Promise<string[]> {
+export async function getUnresolvedEscalationConversationIds(
+  clinicId: string,
+  scope: InboxNumberScope = null
+): Promise<string[]> {
   const rows = await prisma.escalation.findMany({
     where: {
       resolvedAt: null,
-      conversation: await customerConversationWhere(clinicId),
+      conversation: {
+        AND: [await customerConversationWhere(clinicId), conversationScopeWhere(scope)],
+      },
     },
     select: { conversationId: true },
     distinct: ["conversationId"],
@@ -360,10 +400,12 @@ export async function getUnresolvedEscalationConversationIds(clinicId: string): 
 export async function getMessages(
   conversationId: string,
   /** The viewer — only their private notes (plus the team's) are attached. */
-  viewerId: string | null = null
+  viewerId: string | null = null,
+  /** Branch-limited staff see only their branches' part of the conversation. */
+  scope: InboxNumberScope = null
 ): Promise<MessageItem[]> {
   const messages = await prisma.message.findMany({
-    where: { conversationId },
+    where: { conversationId, ...messageScopeWhere(scope) },
     orderBy: { createdAt: "asc" },
     include: {
       notes: {
@@ -413,6 +455,7 @@ export async function getMessages(
       sessionId: m.sessionId,
       createdAt: m.createdAt,
       isRead: m.isRead,
+      whatsappConfigId: m.whatsappConfigId,
       ...(voice
         ? {
             voice: {
@@ -474,11 +517,15 @@ export async function getMessages(
 export async function getConversationDetail(
   id: string,
   clinicId: string,
-  viewerId: string | null = null
+  viewerId: string | null = null,
+  /** Branch-limited staff: null when the conversation has none of their part. */
+  scope: InboxNumberScope = null
 ): Promise<ConversationDetail | null> {
   const me = viewerId ?? "00000000-0000-0000-0000-000000000000";
   const c = await prisma.conversation.findFirst({
-    where: { id, ...(await customerConversationWhere(clinicId)) },
+    where: {
+      AND: [{ id }, await customerConversationWhere(clinicId), conversationScopeWhere(scope)],
+    },
     include: {
       user: { select: { fullName: true, phone: true } },
       assignedTo: { select: { id: true, fullName: true } },
@@ -496,7 +543,7 @@ export async function getConversationDetail(
         },
       },
       messages: {
-        where: { senderType: SenderType.USER },
+        where: { senderType: SenderType.USER, ...messageScopeWhere(scope) },
         orderBy: { createdAt: "desc" },
         take: 1,
         select: { createdAt: true },
@@ -505,9 +552,23 @@ export async function getConversationDetail(
   });
   if (!c) return null;
   const latestSession = c.sessions[0];
-  const [reminders, staffAlerts] = await Promise.all([
+  const [reminders, staffAlerts, lastWhatsappConfigId, inboundByNumber] = await Promise.all([
     listConversationReminders(c.id, me),
     listOpenConversationAlerts(c.id),
+    c.channel === Channel.WHATSAPP
+      ? lastUsedWhatsappConfigId(c.id, undefined, scope)
+      : Promise.resolve(null),
+    c.channel === Channel.WHATSAPP
+      ? prisma.message.groupBy({
+          by: ["whatsappConfigId"],
+          where: {
+            conversationId: c.id,
+            senderType: SenderType.USER,
+            whatsappConfigId: scope === null ? { not: null } : { in: [...scope] },
+          },
+          _max: { createdAt: true },
+        })
+      : Promise.resolve([]),
   ]);
   return {
     id: c.id,
@@ -530,6 +591,12 @@ export async function getConversationDetail(
       resolvedByName: e.resolvedBy?.fullName ?? null,
     })),
     lastInboundAt: c.messages[0]?.createdAt ?? null,
+    lastWhatsappConfigId,
+    lastInboundAtByNumber: Object.fromEntries(
+      inboundByNumber
+        .filter((g) => g.whatsappConfigId && g._max.createdAt)
+        .map((g) => [g.whatsappConfigId!, g._max.createdAt!.toISOString()])
+    ),
     pinned: c.pins.length > 0,
     labelIds: c.labels.map((l) => l.labelId),
     assignedTo: c.assignedTo ? { id: c.assignedTo.id, name: c.assignedTo.fullName } : null,
@@ -538,9 +605,18 @@ export async function getConversationDetail(
   };
 }
 
-export async function markConversationRead(conversationId: string): Promise<void> {
+export async function markConversationRead(
+  conversationId: string,
+  scope: InboxNumberScope = null
+): Promise<void> {
+  // Only what the viewer actually saw — another branch's unread stays unread.
   await prisma.message.updateMany({
-    where: { conversationId, isRead: false, senderType: SenderType.USER },
+    where: {
+      conversationId,
+      isRead: false,
+      senderType: SenderType.USER,
+      ...messageScopeWhere(scope),
+    },
     data: { isRead: true },
   });
 }

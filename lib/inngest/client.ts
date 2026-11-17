@@ -24,6 +24,10 @@ export interface AppointmentNotifyData {
  */
 export interface WhatsappHistoryImportData {
   clinicId: string;
+  /** The WhatsApp Web number (WhatsappConfig id) whose history is imported. */
+  configId: string;
+  /** The WhatsappHistorySync run this event drives; a stale run exits. */
+  runId: string;
   delaySeconds?: number;
 }
 

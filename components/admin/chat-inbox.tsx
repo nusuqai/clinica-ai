@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useState, useEffect, useMemo, useRef, useTransition, useCallback, Fragment } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -13,6 +20,7 @@ import {
   Reply,
   Lock,
   MessageCircle,
+  Phone,
 } from "lucide-react";
 import WhatsappTemplatePicker from "@/components/admin/whatsapp-template-picker";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
@@ -116,10 +124,17 @@ interface ChatInboxProps {
   /** The conversation id the server rendered for (null = none) — tells a
    *  still-loading thread apart from one that doesn't exist. */
   requestedId: string | null;
-  /** The clinic's WhatsApp goes through the official Cloud API, whose 24-hour
-   *  window blocks free-form replies. False for Evolution (WhatsApp Web), which
-   *  can message a contact at any time. */
-  whatsappHasWindow: boolean;
+  /** The clinic's WhatsApp numbers (main first). Staff pick which one a reply
+   *  goes out from; the official (Cloud API) one is gated by its 24-hour window,
+   *  WhatsApp Web numbers can message a contact at any time. */
+  whatsappNumbers: InboxWhatsappNumber[];
+}
+
+export interface InboxWhatsappNumber {
+  id: string;
+  provider: "META_CLOUD" | "EVOLUTION";
+  isPrimary: boolean;
+  label: string;
 }
 
 /** Reads an image file's pixel dimensions in the browser (null if not an image
@@ -167,6 +182,9 @@ function ThreadSkeleton() {
   );
 }
 
+/** While a history sync streams in, refresh the inbox at most this often. */
+const IMPORT_REFRESH_MS = 5000;
+
 export default function ChatInbox({
   conversations: initialConversations,
   selectedConversation: initialConversation,
@@ -181,11 +199,20 @@ export default function ChatInbox({
   labels: initialLabels,
   teammates,
   requestedId,
-  whatsappHasWindow,
+  whatsappNumbers,
 }: ChatInboxProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeId = searchParams.get("id");
+  // Which clinic number each message went through — labelled only when the
+  // clinic has several (a patient's chats with all of them share one thread).
+  const numberLabels = useMemo(
+    () =>
+      whatsappNumbers.length > 1
+        ? Object.fromEntries(whatsappNumbers.map((n) => [n.id, n.label]))
+        : ({} as Record<string, string>),
+    [whatsappNumbers]
+  );
   // List filters live in the URL; realtime refreshes reuse them.
   const filterQuery = searchParams.get("q") ?? "";
   const filterChannel = searchParams.get("channel") ?? "";
@@ -385,6 +412,7 @@ export default function ChatInbox({
           agentName: m.agentName,
           sessionId: m.sessionId,
           createdAt: m.createdAt,
+          numberLabel: m.whatsappConfigId ? (numberLabels[m.whatsappConfigId] ?? null) : null,
           voice: m.voice,
           media: m.media,
           structured: m.structured,
@@ -435,7 +463,16 @@ export default function ChatInbox({
       ...pendingNotes.filter((n) => n.key.startsWith(`${activeId}:`)),
     ];
     return [...serverItems, ...optimistic];
-  }, [threadReady, messages, internalNotes, pending, pendingNotes, activeId, currentUserName]);
+  }, [
+    threadReady,
+    messages,
+    internalNotes,
+    pending,
+    pendingNotes,
+    activeId,
+    currentUserName,
+    numberLabels,
+  ]);
 
   // Scroll to bottom when the thread changes.
   useEffect(() => {
@@ -560,8 +597,43 @@ export default function ChatInbox({
     if (dialog === "reminder") void loadListReminders(conv.id);
   };
 
+  // A WhatsApp history sync writes thousands of OLD messages in bursts. Patching
+  // the sidebar per row would float stale chats to the top, inflate counters and
+  // fire a server refresh per row (freezing the page) — so imported rows only
+  // schedule one quiet refresh every few seconds while they flow.
+  const importRefresh = useRef<{
+    timer: ReturnType<typeof setTimeout> | null;
+    thread: boolean;
+  }>({ timer: null, thread: false });
+  const importRefreshDeps = useRef({ refreshConversations, reloadThread, activeId });
+  importRefreshDeps.current = { refreshConversations, reloadThread, activeId };
+  const scheduleImportRefresh = useCallback((conversationId: string) => {
+    const pending = importRefresh.current;
+    if (conversationId === importRefreshDeps.current.activeId) pending.thread = true;
+    if (pending.timer) return;
+    pending.timer = setTimeout(() => {
+      pending.timer = null;
+      importRefreshDeps.current.refreshConversations();
+      if (pending.thread) {
+        pending.thread = false;
+        void importRefreshDeps.current.reloadThread({ messages: true });
+      }
+    }, IMPORT_REFRESH_MS);
+  }, []);
+  useEffect(() => {
+    const pending = importRefresh.current;
+    return () => {
+      if (pending.timer) clearTimeout(pending.timer);
+    };
+  }, []);
+
   const handleRealtimeMessage = useCallback(
     (row: RealtimeMessageRow) => {
+      if ((row.metadata as { imported?: boolean } | null)?.imported) {
+        scheduleImportRefresh(row.conversationId);
+        return;
+      }
+
       // Reconcile with this admin's own optimistic bubble, whichever arrives
       // first — this realtime event or deliver()'s own response. Matched by
       // conversation + content since the row doesn't carry the client id;
@@ -607,6 +679,7 @@ export default function ChatInbox({
               sessionId: row.sessionId,
               createdAt: parseDbTimestamp(row.createdAt),
               isRead: row.isRead,
+              whatsappConfigId: row.whatsappConfigId ?? null,
               ...(voice
                 ? {
                     voice: {
@@ -678,7 +751,15 @@ export default function ChatInbox({
         return [...head, updated, ...tail];
       });
     },
-    [activeId, refreshConversations, refreshNeedsMe, staffNames, agentNames, currentUserId]
+    [
+      activeId,
+      refreshConversations,
+      refreshNeedsMe,
+      scheduleImportRefresh,
+      staffNames,
+      agentNames,
+      currentUserId,
+    ]
   );
 
   // A message row changed after insert — a TTS agent reply gets its metadata.voice
@@ -823,12 +904,39 @@ export default function ChatInbox({
   };
 
   const isWhatsapp = selectedConversation?.channel === Channel.WHATSAPP;
+
+  // Which clinic number staff replies go out from. Defaults to the number this
+  // patient last wrote to, else the main number; a pick holds for the open
+  // conversation only.
+  const [sendFromPick, setSendFromPick] = useState<{ conversationId: string; id: string } | null>(
+    null
+  );
+  const defaultSendFrom =
+    selectedConversation?.lastWhatsappConfigId ??
+    whatsappNumbers.find((n) => n.isPrimary)?.id ??
+    whatsappNumbers[0]?.id ??
+    null;
+  const sendFromId =
+    sendFromPick &&
+    sendFromPick.conversationId === selectedConversation?.id &&
+    whatsappNumbers.some((n) => n.id === sendFromPick.id)
+      ? sendFromPick.id
+      : defaultSendFrom;
+  const sendFromNumber = whatsappNumbers.find((n) => n.id === sendFromId) ?? null;
+  // Read at send time by the (memoised) deliver callbacks.
+  const sendFromRef = useRef(sendFromId);
+  sendFromRef.current = sendFromId;
+
   // Outside the 24-hour window WhatsApp refuses free-form text; the admin must
-  // send an approved template instead. `nowTs` is read so this recomputes on
-  // each tick. Web conversations are never gated.
+  // send an approved template instead. Only the official number has the window,
+  // and it's per number: anchored on the patient's last message TO it. `nowTs`
+  // is read so this recomputes on each tick. Web conversations are never gated.
   void nowTs;
-  const isOutsideWindow =
-    isWhatsapp && whatsappHasWindow && !isWithinWhatsappWindow(selectedConversation?.lastInboundAt);
+  const windowApplies = sendFromNumber ? sendFromNumber.provider === "META_CLOUD" : true;
+  const windowAnchor = sendFromNumber
+    ? (selectedConversation?.lastInboundAtByNumber?.[sendFromNumber.id] ?? null)
+    : selectedConversation?.lastInboundAt;
+  const isOutsideWindow = isWhatsapp && windowApplies && !isWithinWhatsappWindow(windowAnchor);
 
   const patchPending = useCallback((clientId: string, patch: Partial<PendingMessage>) => {
     setPending((prev) => prev.map((p) => (p.clientId === clientId ? { ...p, ...patch } : p)));
@@ -859,7 +967,10 @@ export default function ChatInbox({
   const deliver = useCallback(
     async (clientId: string, conversationId: string, text: string, replyToId?: string) => {
       try {
-        settle(clientId, await sendAdminReply(conversationId, text, replyToId));
+        settle(
+          clientId,
+          await sendAdminReply(conversationId, text, replyToId, sendFromRef.current)
+        );
       } catch (err) {
         console.error("Failed to send admin reply:", err);
         patchPending(clientId, { status: "failed_sync" });
@@ -870,7 +981,7 @@ export default function ChatInbox({
 
   /** Uploads a browser file straight to Storage (signed URL) → its path. */
   const uploadToStorage = async (conversationId: string, file: File, mimeType: string) => {
-    const up = await createStaffMediaUpload(conversationId, mimeType);
+    const up = await createStaffMediaUpload(conversationId, mimeType, sendFromRef.current);
     if (!up.ok) return null;
     const supabase = createClient();
     const { error } = await supabase.storage
@@ -902,6 +1013,7 @@ export default function ChatInbox({
             width: media.width,
             height: media.height,
             replyToId,
+            whatsappConfigId: sendFromRef.current,
           })
         );
       } catch (err) {
@@ -930,6 +1042,7 @@ export default function ChatInbox({
             mimeType: "audio/ogg",
             durationSec: entry.voice.durationSec,
             replyToId: entry.replyTo?.id,
+            whatsappConfigId: sendFromRef.current,
           })
         );
       } catch (err) {
@@ -944,7 +1057,10 @@ export default function ChatInbox({
   const deliverQuickReply = useCallback(
     async (clientId: string, conversationId: string, quickReplyId: string, replyToId?: string) => {
       try {
-        settle(clientId, await sendQuickReply(conversationId, quickReplyId, replyToId));
+        settle(
+          clientId,
+          await sendQuickReply(conversationId, quickReplyId, replyToId, sendFromRef.current)
+        );
       } catch (err) {
         console.error("Failed to send quick reply:", err);
         patchPending(clientId, { status: "failed_sync" });
@@ -1423,6 +1539,36 @@ export default function ChatInbox({
                   ملاحظة داخلية للفريق
                 </button>
               </div>
+
+              {isWhatsapp && !internalMode && whatsappNumbers.length > 1 && sendFromId && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Phone className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>إرسال من</span>
+                  <Select
+                    value={sendFromId}
+                    onValueChange={(id) =>
+                      selectedConversation &&
+                      setSendFromPick({ conversationId: selectedConversation.id, id })
+                    }
+                  >
+                    <SelectTrigger className="h-7 w-auto min-w-40 gap-2 px-2 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {whatsappNumbers.map((n) => (
+                        <SelectItem key={n.id} value={n.id} className="text-xs">
+                          <span dir="auto">
+                            {n.label}
+                            {n.id === selectedConversation?.lastWhatsappConfigId
+                              ? " · آخر رقم راسله المريض"
+                              : ""}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {replyBlocked ? (
                 // Outside the 24-hour window WhatsApp refuses free-form text —
