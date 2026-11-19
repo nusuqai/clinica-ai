@@ -70,8 +70,9 @@ function placeholderContent(message: InboundWhatsAppMessage): string | null {
  * numbers merge into one thread ordered by each message's real time. Returns how
  * many new messages were written, and whether the whole chat got done —
  * `shouldContinue` is checked before every page, so a stop request takes
- * effect mid-chat. Safe to re-run: already-imported (or live-received)
- * messages are skipped by their WhatsApp id.
+ * effect mid-chat. Safe to re-run: messages the clinic already has (imported
+ * before, received live, or kept from an unlinked number) are skipped by their
+ * WhatsApp id.
  */
 export async function importChatHistory(
   clinicId: string,
@@ -106,16 +107,25 @@ export async function importChatHistory(
       }
       const convId = conversationId;
 
+      // Already stored? Checked across the whole clinic, not just this thread:
+      // after an unlink + re-link (or while two threads of one patient aren't
+      // merged yet) the same message may sit under another number/conversation.
+      // Keyed with the direction too, so a chat between two of the clinic's own
+      // numbers — one message id, sent by one, received by the other — keeps
+      // both sides.
       const ids = rows.map((r) => r.record.envelope.messageId);
       const existing = await prisma.message.findMany({
-        where: { conversationId: convId, whatsappMessageId: { in: ids } },
-        select: { whatsappMessageId: true },
+        where: { clinicId, whatsappMessageId: { in: ids } },
+        select: { whatsappMessageId: true, senderType: true },
       });
-      const seen = new Set(existing.map((m) => m.whatsappMessageId));
+      const key = (id: string, fromClinic: boolean) => `${fromClinic ? "out" : "in"}:${id}`;
+      const seen = new Set(
+        existing.map((m) => key(m.whatsappMessageId!, m.senderType !== SenderType.USER))
+      );
       const now = new Date();
 
       const data: Prisma.MessageCreateManyInput[] = rows
-        .filter((r) => !seen.has(r.record.envelope.messageId))
+        .filter((r) => !seen.has(key(r.record.envelope.messageId, r.record.fromMe)))
         .map(({ record, content }) => ({
           conversationId: convId,
           clinicId,

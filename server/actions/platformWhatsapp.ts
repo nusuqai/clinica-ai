@@ -9,12 +9,14 @@ import {
   saveWhatsappConfig,
 } from "@/lib/meta/whatsapp-config";
 import {
+  deleteNumberFor,
   disconnectEvolutionFor,
   evolutionStatusFor,
   setPrimaryFor,
   startEvolutionFor,
   stopSyncFor,
   syncHistoryFor,
+  type DeleteNumberResult,
   type EvolutionDisconnectResult,
   type EvolutionStartResult,
   type EvolutionStatusResult,
@@ -166,13 +168,24 @@ export async function stopClinicEvolutionHistoryAction(input: {
   return stopSyncFor(platformManager(input.clinicId), input.configId);
 }
 
-/** Logs a WhatsApp Web number out and removes it from the clinic. */
+/** Logs a WhatsApp Web number out; its conversations stay in the inbox. */
 export async function disconnectClinicEvolutionAction(input: {
   clinicId: string;
   configId: string;
 }): Promise<EvolutionDisconnectResult> {
   await requirePlatformAdmin();
   const res = await disconnectEvolutionFor(platformManager(input.clinicId), input.configId);
+  if (res.ok) revalidatePath(WHATSAPP_PATH);
+  return res;
+}
+
+/** Deletes a WhatsApp Web number for good, with its conversations. */
+export async function deleteClinicEvolutionNumberAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<DeleteNumberResult> {
+  await requirePlatformAdmin();
+  const res = await deleteNumberFor(platformManager(input.clinicId), input.configId);
   if (res.ok) revalidatePath(WHATSAPP_PATH);
   return res;
 }
@@ -188,7 +201,7 @@ export async function setClinicPrimaryNumberAction(input: {
   return res;
 }
 
-/** What unlinking a number would delete (for the confirm popup). */
+/** What deleting a number for good would delete (for the confirm popup). */
 export async function getClinicNumberRemovalImpactAction(input: {
   clinicId: string;
   configId: string;

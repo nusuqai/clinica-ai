@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, Settings2 } from "lucide-react";
 import type { WhatsappConfigStatus } from "@/lib/meta/whatsapp-config";
 import {
+  deleteClinicEvolutionNumberAction,
   disconnectClinicEvolutionAction,
   getClinicEvolutionStatusAction,
   getClinicNumberRemovalImpactAction,
@@ -61,6 +62,7 @@ export default function WhatsappManager({ clinicId, numbers, branches, appUrl }:
       sync: (configId, mode) => syncClinicEvolutionHistoryAction({ clinicId, configId, mode }),
       stopSync: (configId) => stopClinicEvolutionHistoryAction({ clinicId, configId }),
       disconnect: (configId) => disconnectClinicEvolutionAction({ clinicId, configId }),
+      remove: (configId) => deleteClinicEvolutionNumberAction({ clinicId, configId }),
       setPrimary: (configId) => setClinicPrimaryNumberAction({ clinicId, configId }),
       impact: (configId) => getClinicNumberRemovalImpactAction({ clinicId, configId }),
       setBranch: (configId, branchId) =>

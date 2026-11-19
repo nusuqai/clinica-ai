@@ -47,6 +47,8 @@ export interface WhatsappConfigStatus {
   isPrimary: boolean;
   /** The number's own phone, once known. */
   phone: string | null;
+  /** When it was unlinked — its conversations are kept; null = active. */
+  unlinkedAt: Date | null;
   /** The branch it belongs to; null = a clinic-level number. */
   branchId: string | null;
   branchName: string | null;
@@ -131,6 +133,7 @@ export const WHATSAPP_STATUS_SELECT = {
   provider: true,
   isPrimary: true,
   phone: true,
+  unlinkedAt: true,
   branchId: true,
   branch: { select: { name: true } },
   phoneNumberId: true,
@@ -148,6 +151,7 @@ export function toStatus(row: {
   provider: WhatsappProvider;
   isPrimary: boolean;
   phone: string | null;
+  unlinkedAt: Date | null;
   branchId: string | null;
   branch: { name: string } | null;
   phoneNumberId: string | null;
@@ -163,6 +167,7 @@ export function toStatus(row: {
     provider: row.provider,
     isPrimary: row.isPrimary,
     phone: row.phone,
+    unlinkedAt: row.unlinkedAt,
     branchId: row.branchId,
     branchName: row.branch?.name ?? null,
     phoneNumberId: row.phoneNumberId,
@@ -230,7 +235,7 @@ export async function saveWhatsappConfig(
 
   const webhookToken = generateWebhookToken();
   const verifyToken = generateVerifyToken();
-  const hasNumbers = await prisma.whatsappConfig.count({ where: { clinicId } });
+  const hasNumbers = await prisma.whatsappConfig.count({ where: { clinicId, unlinkedAt: null } });
   await prisma.whatsappConfig.create({
     data: {
       clinicId,
@@ -344,15 +349,16 @@ export async function deleteWhatsappConfig(clinicId: string): Promise<boolean> {
   return (await removeWhatsappNumber(clinicId, official.id)) !== null;
 }
 
-/** After a number is removed: if the clinic lost its main number, promote the oldest. */
+/** After a number is removed or unlinked: if the clinic lost its main number,
+ *  promote the oldest active one. */
 export async function ensurePrimaryNumber(clinicId: string): Promise<void> {
   const primary = await prisma.whatsappConfig.findFirst({
-    where: { clinicId, isPrimary: true },
+    where: { clinicId, isPrimary: true, unlinkedAt: null },
     select: { id: true },
   });
   if (primary) return;
   const oldest = await prisma.whatsappConfig.findFirst({
-    where: { clinicId },
+    where: { clinicId, unlinkedAt: null },
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
@@ -361,10 +367,11 @@ export async function ensurePrimaryNumber(clinicId: string): Promise<void> {
   }
 }
 
-/** Makes `configId` the clinic's main number. False if it isn't this clinic's. */
+/** Makes `configId` the clinic's main number. False if it isn't this clinic's
+ *  active number (an unlinked number can't send, so it can't be the main one). */
 export async function setPrimaryNumber(clinicId: string, configId: string): Promise<boolean> {
   const target = await prisma.whatsappConfig.findFirst({
-    where: { id: configId, clinicId },
+    where: { id: configId, clinicId, unlinkedAt: null },
     select: { id: true },
   });
   if (!target) return false;

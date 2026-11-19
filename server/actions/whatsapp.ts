@@ -6,12 +6,14 @@ import { canAny, getClinicContext, getPermittedContext, type ClinicContext } fro
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { listMessageTemplates, type MessageTemplate } from "@/lib/meta/whatsapp";
 import {
+  deleteNumberFor,
   disconnectEvolutionFor,
   evolutionStatusFor,
   setPrimaryFor,
   startEvolutionFor,
   stopSyncFor,
   syncHistoryFor,
+  type DeleteNumberResult,
   type EvolutionDisconnectResult,
   type EvolutionStartResult,
   type EvolutionStatusResult,
@@ -118,13 +120,23 @@ export async function stopEvolutionHistoryAction(configId: string): Promise<Evol
   return stopSyncFor(numberManager(ctx), configId);
 }
 
-/** Unlinks one of the clinic's WhatsApp Web numbers (never the official one). */
+/** Unlinks one of the clinic's WhatsApp Web numbers (never the official one);
+ *  its conversations stay in the inbox. */
 export async function disconnectEvolutionAction(
   configId: string
 ): Promise<EvolutionDisconnectResult> {
   const ctx = await getPermittedContext("whatsapp");
   if (!ctx) return { ok: false, error: NOT_ALLOWED };
   const res = await disconnectEvolutionFor(numberManager(ctx), configId);
+  if (res.ok) revalidatePath(CONFIGURATION_PATH);
+  return res;
+}
+
+/** Deletes one of the clinic's WhatsApp Web numbers for good, with its conversations. */
+export async function deleteEvolutionNumberAction(configId: string): Promise<DeleteNumberResult> {
+  const ctx = await getPermittedContext("whatsapp");
+  if (!ctx) return { ok: false, error: NOT_ALLOWED };
+  const res = await deleteNumberFor(numberManager(ctx), configId);
   if (res.ok) revalidatePath(CONFIGURATION_PATH);
   return res;
 }

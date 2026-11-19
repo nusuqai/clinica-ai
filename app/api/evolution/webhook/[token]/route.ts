@@ -112,21 +112,16 @@ async function recordOwnerPhone(
 /**
  * First link of a number → import its recent chats once. Reconnects (server
  * restarts, phone back online) also report "open", so skip numbers that have a
- * sync on record (running, stopped, or done — staff decide what happens to it)
- * or imported before syncs were tracked; the settings panel re-runs it on demand.
+ * sync on record (running, stopped, or done — staff decide what happens to it);
+ * the settings panel re-runs it on demand. Unlinking drops the sync record, so
+ * linking the phone again imports anew — skipping messages already stored.
  */
 async function autoImportHistory(clinicId: string, configId: string): Promise<void> {
-  const [sync, imported] = await Promise.all([
-    prisma.whatsappHistorySync.findUnique({
-      where: { whatsappConfigId: configId },
-      select: { id: true },
-    }),
-    prisma.message.findFirst({
-      where: { whatsappConfigId: configId, metadata: { path: ["imported"], equals: true } },
-      select: { id: true },
-    }),
-  ]);
-  if (sync || imported) return;
+  const sync = await prisma.whatsappHistorySync.findUnique({
+    where: { whatsappConfigId: configId },
+    select: { id: true },
+  });
+  if (sync) return;
   const res = await startHistorySync(clinicId, configId, "fresh", {
     delaySeconds: AUTO_IMPORT_DELAY_SECONDS,
   });

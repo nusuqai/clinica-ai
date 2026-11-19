@@ -2,10 +2,12 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import {
   EvolutionNumberNotFoundError,
-  disconnectEvolution,
+  deleteEvolutionNumber,
   getEvolutionStatus,
+  unlinkEvolutionNumber,
   startEvolutionConnection,
   type EvolutionStatus,
+  type UnlinkOutcome,
 } from "@/lib/evolution/config";
 import {
   numberRemovalImpact,
@@ -24,7 +26,7 @@ import {
 /**
  * Managing a clinic's WhatsApp numbers — link a new WhatsApp Web number,
  * re-link, check status, sync history, set its owner (clinic or branch), set the
- * main number, unlink — shared by both audiences that may do it: the platform
+ * main number, unlink (conversations kept), delete for good — shared by both audiences that may do it: the platform
  * console (any clinic) and the clinic's own WhatsApp page.
  *
  * Who manages what (`NumberManager`):
@@ -53,7 +55,9 @@ export type EvolutionStartResult =
 export type EvolutionStatusResult =
   { ok: true; status: EvolutionStatus; sync: HistorySyncState | null } | EvolutionActionError;
 export type EvolutionSyncResult = HistorySyncResult;
-export type EvolutionDisconnectResult = { ok: true } | { ok: false; error: string };
+export type EvolutionDisconnectResult =
+  { ok: true; outcome: UnlinkOutcome } | { ok: false; error: string };
+export type DeleteNumberResult = { ok: true } | { ok: false; error: string };
 export type SetPrimaryResult = { ok: true } | { ok: false; error: string };
 export type SetBranchResult = { ok: true } | { ok: false; error: string };
 export type RemovalImpactResult =
@@ -180,7 +184,7 @@ export async function stopSyncFor(
   }
 }
 
-/** What unlinking a number would delete — for the confirm popup. */
+/** What deleting a number for good would delete — for the confirm popup. */
 export async function removalImpactFor(
   manager: NumberManager,
   configId: string
@@ -189,18 +193,34 @@ export async function removalImpactFor(
   return { ok: true, impact: await numberRemovalImpact(manager.clinicId, configId) };
 }
 
-/** Logs a WhatsApp Web number out and removes it with its conversations. */
+/** Logs a WhatsApp Web number out; its conversations stay in the inbox. */
 export async function disconnectEvolutionFor(
   manager: NumberManager,
   configId: string
 ): Promise<EvolutionDisconnectResult> {
   if (!(await manageableNumber(manager, configId))) return { ok: false, error: NOT_YOURS };
   try {
-    const removed = await disconnectEvolution(manager.clinicId, configId);
-    return removed ? { ok: true } : { ok: false, error: "هذا الرقم غير مربوط بالعيادة." };
+    const outcome = await unlinkEvolutionNumber(manager.clinicId, configId);
+    return outcome ? { ok: true, outcome } : { ok: false, error: "هذا الرقم غير مربوط بالعيادة." };
   } catch (err) {
     console.error("Failed to disconnect WhatsApp:", err);
     return { ok: false, error: "تعذّر فصل رقم الواتساب." };
+  }
+}
+
+/** Deletes a WhatsApp Web number for good, with the conversations that went
+ *  through it (the separate, explicit action — unlinking keeps them). */
+export async function deleteNumberFor(
+  manager: NumberManager,
+  configId: string
+): Promise<DeleteNumberResult> {
+  if (!(await manageableNumber(manager, configId))) return { ok: false, error: NOT_YOURS };
+  try {
+    const removed = await deleteEvolutionNumber(manager.clinicId, configId);
+    return removed ? { ok: true } : { ok: false, error: "هذا الرقم غير مربوط بالعيادة." };
+  } catch (err) {
+    console.error("Failed to delete WhatsApp number:", err);
+    return { ok: false, error: "تعذّر حذف رقم الواتساب." };
   }
 }
 

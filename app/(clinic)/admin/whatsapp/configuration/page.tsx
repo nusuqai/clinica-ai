@@ -4,6 +4,7 @@ import PageHeader from "@/components/admin/page-header";
 import { getWhatsappNumbers } from "@/lib/meta/whatsapp-config";
 import { prisma } from "@/lib/prisma";
 import {
+  deleteEvolutionNumberAction,
   disconnectEvolutionAction,
   getEvolutionStatusAction,
   getNumberRemovalImpactAction,
@@ -95,6 +96,7 @@ export default async function WhatsAppConnectionPage() {
             sync: syncEvolutionHistoryAction,
             stopSync: stopEvolutionHistoryAction,
             disconnect: disconnectEvolutionAction,
+            remove: deleteEvolutionNumberAction,
             setPrimary: setPrimaryNumberAction,
             impact: getNumberRemovalImpactAction,
             setBranch: setNumberBranchAction,

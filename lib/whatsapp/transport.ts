@@ -69,10 +69,14 @@ type ConfigRow = {
   phoneNumberId: string | null;
   wabaId: string | null;
   accessTokenCipher: string | null;
+  unlinkedAt: Date | null;
 };
 
-/** A config row as a send transport, or null when it's incomplete. */
+/** A config row as a send transport, or null when it's incomplete or unlinked
+ *  (an unlinked number keeps its history but can't send — every lookup below
+ *  goes through here, so it is skipped everywhere). */
 export function toTransport(row: ConfigRow): WhatsAppTransport | null {
+  if (row.unlinkedAt) return null;
   if (row.provider === WhatsappProvider.EVOLUTION) {
     return row.evolutionInstanceName
       ? {
@@ -237,7 +241,7 @@ export async function getClinicWhatsappProviders(
   clinicId: string
 ): Promise<WhatsAppProviderName[]> {
   const rows = await prisma.whatsappConfig.findMany({
-    where: { clinicId },
+    where: { clinicId, unlinkedAt: null },
     select: { provider: true },
     distinct: ["provider"],
   });

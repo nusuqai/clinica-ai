@@ -61,7 +61,13 @@ export async function getEvolutionConfigByToken(
   webhookToken: string
 ): Promise<EvolutionWebhookConfig | null> {
   const row = await prisma.whatsappConfig.findUnique({ where: { webhookToken } });
-  if (!row || row.provider !== WhatsappProvider.EVOLUTION || !row.evolutionInstanceName) {
+  // An unlinked number's instance is gone; a late event for it is ignored.
+  if (
+    !row ||
+    row.provider !== WhatsappProvider.EVOLUTION ||
+    !row.evolutionInstanceName ||
+    row.unlinkedAt
+  ) {
     return null;
   }
   return { clinicId: row.clinicId, configId: row.id, instanceName: row.evolutionInstanceName };
@@ -90,6 +96,10 @@ export class EvolutionNumberNotFoundError extends Error {
  * Evolution instance is recreated from scratch so the QR / pairing code is
  * fresh. `number` (digits with country code) additionally requests a pairing
  * code. Returns the number's id with the QR.
+ *
+ * Re-linking an UNLINKED number brings it back as active right away (its kept
+ * conversations are its own again); if the phone scanned turns out to be a
+ * different one, adoptLinkedPhone splits the old conversations off first.
  */
 export async function startEvolutionConnection(
   clinicId: string,
@@ -102,9 +112,15 @@ export async function startEvolutionConnection(
   if (configId && !existing) throw new EvolutionNumberNotFoundError();
 
   let row = existing;
+  if (row?.unlinkedAt) {
+    await prisma.whatsappConfig.update({ where: { id: row.id }, data: { unlinkedAt: null } });
+    await ensurePrimaryNumber(clinicId);
+  }
   if (!row) {
     const id = randomUUID();
-    const hasNumbers = await prisma.whatsappConfig.count({ where: { clinicId } });
+    const hasNumbers = await prisma.whatsappConfig.count({
+      where: { clinicId, unlinkedAt: null },
+    });
     const created = await prisma.whatsappConfig.create({
       data: {
         id,
@@ -134,6 +150,15 @@ export async function startEvolutionConnection(
     // Don't leave a row pointing at an instance that was never created.
     if (!existing) {
       await prisma.whatsappConfig.delete({ where: { id: row.id } }).catch(() => {});
+      await ensurePrimaryNumber(clinicId);
+    } else if (existing.unlinkedAt) {
+      // The re-link never got going — leave the number unlinked as it was.
+      await prisma.whatsappConfig
+        .update({
+          where: { id: row.id },
+          data: { unlinkedAt: existing.unlinkedAt, isPrimary: false },
+        })
+        .catch(() => {});
       await ensurePrimaryNumber(clinicId);
     }
     throw err;
@@ -182,11 +207,18 @@ export async function getEvolutionStatus(
 }
 
 /**
- * Records which phone a number is linked to — and if the clinic already had
- * that same phone attached as another WhatsApp Web number (re-linked instead of
- * reconnected), merges the old one into this one: its messages move over (so
- * conversation history stays attributed to one number), it hands over "main
- * number" if it had it, and its instance + row are removed.
+ * Records which phone a number is linked to, keeping every number's history
+ * attributed to the phone it really went through:
+ *
+ *  - the number had a DIFFERENT phone before (re-linked by scanning another
+ *    phone) and has messages → those are split off to a new, unlinked number
+ *    for the old phone, so they keep their label and aren't passed off as the
+ *    new phone's;
+ *  - the clinic already has this same phone as another WhatsApp Web number
+ *    (an unlinked one, or a duplicate link) → that number is merged into this
+ *    one: its messages move over (a later history sync then only adds what's
+ *    missing), it hands over "main number" if it had it, and its instance + row
+ *    are removed.
  */
 export async function adoptLinkedPhone(
   clinicId: string,
@@ -195,6 +227,14 @@ export async function adoptLinkedPhone(
 ): Promise<void> {
   const digits = phone.replace(/\D/g, "");
   if (!digits) return;
+
+  const current = await prisma.whatsappConfig.findUnique({ where: { id: configId } });
+  if (!current || current.phone === digits) return;
+
+  if (current.phone) {
+    const hasMessages = await prisma.message.count({ where: { whatsappConfigId: configId } });
+    if (hasMessages > 0) await splitOffOldPhone(current);
+  }
   await prisma.whatsappConfig.update({ where: { id: configId }, data: { phone: digits } });
 
   const duplicates = await prisma.whatsappConfig.findMany({
@@ -210,7 +250,7 @@ export async function adoptLinkedPhone(
       where: { whatsappConfigId: old.id },
       data: { whatsappConfigId: configId },
     });
-    if (old.evolutionInstanceName) {
+    if (old.evolutionInstanceName && !old.unlinkedAt) {
       await destroyInstance(old.evolutionInstanceName).catch((err) =>
         console.error("[evolution] failed to remove merged instance:", err)
       );
@@ -223,16 +263,91 @@ export async function adoptLinkedPhone(
 }
 
 /**
- * Unlinks a number: logs its phone out, deletes its instance, then removes the
- * number together with its conversations (see removeWhatsappNumber). Its saved
- * history sync goes with it, which also makes a running import exit.
+ * Moves a number's messages to a new UNLINKED number for its previous phone
+ * (same branch), so a re-link with a different phone starts clean while the old
+ * phone's conversations stay in the inbox under their own label.
  */
-export async function disconnectEvolution(
+async function splitOffOldPhone(row: {
+  id: string;
+  clinicId: string;
+  phone: string | null;
+  branchId: string | null;
+}): Promise<void> {
+  const id = randomUUID();
+  await prisma.$transaction([
+    prisma.whatsappConfig.create({
+      data: {
+        id,
+        clinicId: row.clinicId,
+        provider: WhatsappProvider.EVOLUTION,
+        // Never created on the Evolution server; re-linking it creates it.
+        evolutionInstanceName: instanceNameFor(id),
+        webhookToken: generateWebhookToken(),
+        branchId: row.branchId,
+        phone: row.phone,
+        unlinkedAt: new Date(),
+      },
+    }),
+    prisma.message.updateMany({
+      where: { whatsappConfigId: row.id },
+      data: { whatsappConfigId: id },
+    }),
+    // The sync progress was for the old phone's chats.
+    prisma.whatsappHistorySync.deleteMany({ where: { whatsappConfigId: row.id } }),
+  ]);
+}
+
+export type UnlinkOutcome =
+  /** Unlinked; its conversations stay in the inbox. */
+  | "unlinked"
+  /** Nothing ever went through it (e.g. linking was abandoned) — removed. */
+  | "removed";
+
+/**
+ * Unlinks a number: logs its phone out and deletes its instance, but KEEPS the
+ * number with every message and conversation — it's stamped `unlinkedAt`, stops
+ * sending/receiving and stops being the main number. Its history-sync progress
+ * is dropped (which also makes a running import exit), so linking the phone
+ * again starts a fresh import that skips what's already stored. A number with
+ * no messages at all has nothing to keep and is removed outright.
+ */
+export async function unlinkEvolutionNumber(
+  clinicId: string,
+  configId: string
+): Promise<UnlinkOutcome | null> {
+  const row = await findEvolutionNumber(clinicId, configId);
+  if (!row) return null;
+  await destroyInstance(row.evolutionInstanceName);
+
+  const hasMessages = await prisma.message.count({ where: { whatsappConfigId: row.id } });
+  if (hasMessages === 0) {
+    await removeWhatsappNumber(clinicId, row.id);
+    return "removed";
+  }
+  if (!row.unlinkedAt) {
+    await prisma.$transaction([
+      prisma.whatsappConfig.update({
+        where: { id: row.id },
+        data: { unlinkedAt: new Date(), isPrimary: false },
+      }),
+      prisma.whatsappHistorySync.deleteMany({ where: { whatsappConfigId: row.id } }),
+    ]);
+    await ensurePrimaryNumber(clinicId);
+  }
+  return "unlinked";
+}
+
+/**
+ * Deletes a WhatsApp Web number for good, together with its conversations (see
+ * removeWhatsappNumber) — the explicit "delete permanently" action, separate
+ * from unlinking. Logs the phone out first if it's still linked.
+ */
+export async function deleteEvolutionNumber(
   clinicId: string,
   configId: string
 ): Promise<NumberRemovalImpact | null> {
   const row = await findEvolutionNumber(clinicId, configId);
   if (!row) return null;
-  await destroyInstance(row.evolutionInstanceName);
+  if (!row.unlinkedAt) await destroyInstance(row.evolutionInstanceName);
   return removeWhatsappNumber(clinicId, row.id);
 }

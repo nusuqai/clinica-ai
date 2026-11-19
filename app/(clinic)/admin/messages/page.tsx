@@ -101,11 +101,13 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
               id: n.id,
               provider: n.provider,
               isPrimary: n.isPrimary,
+              unlinked: n.unlinkedAt !== null,
               // Owner first — "which branch did this come through" is the point.
               label: [
                 n.branchName ?? "العيادة",
                 n.provider === "META_CLOUD" ? "الرسمي" : null,
                 n.phone ? `+${n.phone}` : n.provider === "EVOLUTION" ? "واتساب ويب" : null,
+                n.unlinkedAt ? "رقم مفصول" : null,
               ]
                 .filter(Boolean)
                 .join(" · "),

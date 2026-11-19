@@ -1,10 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, History, Pause, Play, RefreshCw, Smartphone, Star, Unlink } from "lucide-react";
+import {
+  Archive,
+  Building2,
+  History,
+  Link2,
+  Pause,
+  Play,
+  RefreshCw,
+  Smartphone,
+  Star,
+  Trash2,
+  Unlink,
+} from "lucide-react";
 import type { EvolutionStatus } from "@/lib/evolution/config";
 import type { HistorySyncState } from "@/server/services/evolutionHistorySync";
 import type {
+  DeleteNumberResult,
   EvolutionDisconnectResult,
   EvolutionStartResult,
   EvolutionStatusResult,
@@ -46,9 +59,12 @@ export interface WhatsappNumberActions {
   /** Start the chat-history import: a fresh 90 days, or resume a stopped one. */
   sync: (configId: string, mode: "fresh" | "resume") => Promise<EvolutionSyncResult>;
   stopSync: (configId: string) => Promise<EvolutionSyncResult>;
+  /** Log the phone out; the number's conversations stay in the inbox. */
   disconnect: (configId: string) => Promise<EvolutionDisconnectResult>;
+  /** Delete the number for good, with the conversations that went through it. */
+  remove: (configId: string) => Promise<DeleteNumberResult>;
   setPrimary: (configId: string) => Promise<SetPrimaryResult>;
-  /** What unlinking would delete — shown before confirming. */
+  /** What deleting for good would delete — shown before confirming. */
   impact: (configId: string) => Promise<RemovalImpactResult>;
   /** Move a number to a branch, or make it clinic-level (null). */
   setBranch: (configId: string, branchId: string | null) => Promise<SetBranchResult>;
@@ -68,12 +84,17 @@ interface Props {
   /** The number's id, or null for a new number not linked yet. */
   configId: string | null;
   isPrimary: boolean;
+  /** The number was unlinked: its conversations are kept, it can be re-linked
+   *  or deleted for good. */
+  unlinked: boolean;
   /** The number's phone as last recorded (shown until the live status loads). */
   knownPhone: string | null;
   /** A new number got its id (first QR generated). */
   onStarted: (configId: string) => void;
-  /** The number was unlinked (or the card for a new one dismissed). */
+  /** The number is gone (deleted, or the card for a new one dismissed). */
   onRemoved: () => void;
+  /** The number was unlinked or re-linked — reload the list. */
+  onChanged: () => void;
   /** The number became the clinic's main number. */
   onPrimary: () => void;
   /** Owners this manager may give a number (clinic-level only if clinic-wide). */
@@ -87,15 +108,18 @@ interface Props {
 /**
  * One WhatsApp Web (Evolution) number of a clinic: link its phone by scanning a
  * QR — or entering a pairing code — from WhatsApp → Linked devices, then sync
- * its chat history, make it the main number, or unlink it.
+ * its chat history, make it the main number, or unlink it. An unlinked number
+ * keeps its conversations and can be re-linked, or deleted for good.
  */
 export default function EvolutionConnection({
   actions,
   configId,
   isPrimary,
+  unlinked: unlinkedProp,
   knownPhone,
   onStarted,
   onRemoved,
+  onChanged,
   onPrimary,
   owners,
   ownerId,
@@ -111,6 +135,9 @@ export default function EvolutionConnection({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [sync, setSync] = useState<HistorySyncState | null>(null);
+  // Flips immediately on unlink / re-link, before the refreshed list arrives.
+  const [unlinked, setUnlinked] = useState(unlinkedProp);
+  useEffect(() => setUnlinked(unlinkedProp), [unlinkedProp]);
   const shownPhone = status?.phone ?? knownPhone;
 
   // Parents pass inline callbacks; keep the poll from re-subscribing each render.
@@ -139,12 +166,13 @@ export default function EvolutionConnection({
   // one read is enough.
   const syncRunning = sync?.status === "RUNNING";
   useEffect(() => {
-    if (!configured) return;
+    // An unlinked number has no live session to poll.
+    if (!configured || unlinked) return;
     void refresh();
     if (status?.state === "open" && !syncRunning) return;
     const t = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(t);
-  }, [configured, refresh, status?.state, syncRunning]);
+  }, [configured, unlinked, refresh, status?.state, syncRunning]);
 
   const start = async () => {
     setBusy(true);
@@ -158,6 +186,11 @@ export default function EvolutionConnection({
     setPairingCode(res.pairingCode);
     setStatus({ state: "connecting", qrDataUrl: res.qrDataUrl, phone: null, profileName: null });
     if (!configId) onStarted(res.configId);
+    else if (unlinked) {
+      // Re-linked: active again, its kept conversations are its own again.
+      setUnlinked(false);
+      onChanged();
+    }
   };
 
   const [ownerBusy, setOwnerBusy] = useState(false);
@@ -177,8 +210,45 @@ export default function EvolutionConnection({
   };
 
   const confirm = useConfirm();
-  const [removing, setRemoving] = useState(false);
+  const label = shownPhone ? `+${shownPhone}` : "هذا الرقم";
+
+  /** Log the phone out; its conversations stay. */
   const disconnect = async () => {
+    if (!configId) return onRemoved();
+    setMessage(null);
+    // Set inside the dialog's confirm callback.
+    const result: { outcome?: "unlinked" | "removed" } = {};
+    const done = await confirm({
+      title: "فصل الرقم",
+      description: (
+        <>
+          سيتم تسجيل خروج <span dir="ltr">{label}</span> من واتساب ويب، ولن يستقبل أو يرسل رسائل بعد
+          ذلك.
+        </>
+      ),
+      warning:
+        "المحادثات والرسائل التي مرّت عبره تبقى في صندوق الرسائل، مع الإشارة إلى أنها من رقم مفصول. " +
+        "عند ربط نفس الرقم مرة أخرى تُزامَن الرسائل الناقصة فقط دون تكرار.",
+      confirmText: "فصل الرقم",
+      onConfirm: async () => {
+        const res = await actions.disconnect(configId);
+        if (!res.ok) return { error: res.error };
+        result.outcome = res.outcome;
+        return res;
+      },
+    });
+    if (!done) return;
+    if (result.outcome === "removed") return onRemoved();
+    setUnlinked(true);
+    setStatus(null);
+    setPairingCode(null);
+    setSync(null);
+    onChanged();
+  };
+
+  /** Delete the number for good, with the conversations that went through it. */
+  const [removing, setRemoving] = useState(false);
+  const removeForGood = async () => {
     if (!configId) return onRemoved();
     setMessage(null);
     setRemoving(true);
@@ -189,12 +259,11 @@ export default function EvolutionConnection({
       return;
     }
     const { messages, conversations, conversationsDeleted } = impact.impact;
-    const label = shownPhone ? `+${shownPhone}` : "هذا الرقم";
     const done = await confirm({
-      title: "فصل الرقم وحذف محادثاته",
+      title: "حذف الرقم نهائيًا",
       description: (
         <>
-          سيتم تسجيل خروج <span dir="ltr">{label}</span> وحذفه من العيادة، مع{" "}
+          سيتم حذف <span dir="ltr">{label}</span> من العيادة مع{" "}
           <strong>كل الرسائل التي مرّت عبره</strong>.
         </>
       ),
@@ -209,7 +278,7 @@ export default function EvolutionConnection({
       confirmText: "حذف الرقم ومحادثاته",
       confirmPhrase: messages > 0 ? "حذف" : undefined,
       onConfirm: async () => {
-        const res = await actions.disconnect(configId);
+        const res = await actions.remove(configId);
         return res.ok ? res : { error: res.error };
       },
     });
@@ -247,7 +316,7 @@ export default function EvolutionConnection({
     else setMessage({ ok: false, text: res.message ?? "تعذّر إيقاف المزامنة." });
   };
 
-  const linked = status?.state === "open";
+  const linked = !unlinked && status?.state === "open";
 
   return (
     <Card className="space-y-4 p-5">
@@ -261,7 +330,13 @@ export default function EvolutionConnection({
             الرقم الرئيسي
           </span>
         )}
-        {configured && status && (
+        {unlinked && (
+          <span className="flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+            <Archive className="h-3 w-3" />
+            مفصول — المحادثات محفوظة
+          </span>
+        )}
+        {configured && !unlinked && status && (
           <span
             className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
               linked ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
@@ -304,7 +379,14 @@ export default function EvolutionConnection({
         )}
       </div>
 
-      {configured && !linked && (status?.qrDataUrl || pairingCode) && (
+      {unlinked && (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          محادثات هذا الرقم ما زالت في صندوق الرسائل. أعد ربطه بنفس الهاتف لاستئناف العمل عليه
+          ومزامنة الرسائل الناقصة فقط، أو احذفه نهائيًا مع محادثاته.
+        </p>
+      )}
+
+      {configured && !unlinked && !linked && (status?.qrDataUrl || pairingCode) && (
         <div className="space-y-3">
           <p className="font-sans text-xs text-muted-foreground">
             على هاتف العيادة: واتساب ← الأجهزة المرتبطة ← ربط جهاز، ثم امسح الرمز.
@@ -362,11 +444,11 @@ export default function EvolutionConnection({
       <div className="flex flex-wrap items-center gap-2">
         {!linked && (
           <Button type="button" onClick={start} loading={busy}>
-            {!busy && (configured ? <RefreshCw /> : <Smartphone />)}
-            {configured ? "إعادة توليد الرمز" : "ابدأ الربط"}
+            {!busy && (unlinked ? <Link2 /> : configured ? <RefreshCw /> : <Smartphone />)}
+            {unlinked ? "إعادة الربط" : configured ? "إعادة توليد الرمز" : "ابدأ الربط"}
           </Button>
         )}
-        {configured && !isPrimary && canSetPrimary && (
+        {configured && !unlinked && !isPrimary && canSetPrimary && (
           <Button
             type="button"
             variant="outline"
@@ -378,17 +460,30 @@ export default function EvolutionConnection({
             تعيين كرقم رئيسي
           </Button>
         )}
-        <Button
-          type="button"
-          variant="outline"
-          onClick={disconnect}
-          loading={removing}
-          disabled={busy}
-          className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30"
-        >
-          {!removing && <Unlink />}
-          {configured ? "فصل الرقم" : "إلغاء"}
-        </Button>
+        {unlinked ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={removeForGood}
+            loading={removing}
+            disabled={busy}
+            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30"
+          >
+            {!removing && <Trash2 />}
+            حذف نهائي
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={disconnect}
+            disabled={busy}
+            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30"
+          >
+            <Unlink />
+            {configured ? "فصل الرقم" : "إلغاء"}
+          </Button>
+        )}
       </div>
     </Card>
   );

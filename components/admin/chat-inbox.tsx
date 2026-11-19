@@ -134,6 +134,8 @@ export interface InboxWhatsappNumber {
   id: string;
   provider: "META_CLOUD" | "EVOLUTION";
   isPrimary: boolean;
+  /** Unlinked: its messages stay labelled in threads, but it can't send. */
+  unlinked: boolean;
   label: string;
 }
 
@@ -911,15 +913,21 @@ export default function ChatInbox({
   const [sendFromPick, setSendFromPick] = useState<{ conversationId: string; id: string } | null>(
     null
   );
+  // Unlinked numbers can't send — they're only labels on older messages.
+  const sendableNumbers = useMemo(
+    () => whatsappNumbers.filter((n) => !n.unlinked),
+    [whatsappNumbers]
+  );
+  const lastNumberId = selectedConversation?.lastWhatsappConfigId ?? null;
   const defaultSendFrom =
-    selectedConversation?.lastWhatsappConfigId ??
-    whatsappNumbers.find((n) => n.isPrimary)?.id ??
-    whatsappNumbers[0]?.id ??
+    (lastNumberId && sendableNumbers.some((n) => n.id === lastNumberId) ? lastNumberId : null) ??
+    sendableNumbers.find((n) => n.isPrimary)?.id ??
+    sendableNumbers[0]?.id ??
     null;
   const sendFromId =
     sendFromPick &&
     sendFromPick.conversationId === selectedConversation?.id &&
-    whatsappNumbers.some((n) => n.id === sendFromPick.id)
+    sendableNumbers.some((n) => n.id === sendFromPick.id)
       ? sendFromPick.id
       : defaultSendFrom;
   const sendFromNumber = whatsappNumbers.find((n) => n.id === sendFromId) ?? null;
@@ -1540,7 +1548,7 @@ export default function ChatInbox({
                 </button>
               </div>
 
-              {isWhatsapp && !internalMode && whatsappNumbers.length > 1 && sendFromId && (
+              {isWhatsapp && !internalMode && sendableNumbers.length > 1 && sendFromId && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Phone className="h-3.5 w-3.5 flex-shrink-0" />
                   <span>إرسال من</span>
@@ -1555,7 +1563,7 @@ export default function ChatInbox({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {whatsappNumbers.map((n) => (
+                      {sendableNumbers.map((n) => (
                         <SelectItem key={n.id} value={n.id} className="text-xs">
                           <span dir="auto">
                             {n.label}

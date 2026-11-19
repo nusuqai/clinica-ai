@@ -67,10 +67,10 @@ export async function getHistorySyncState(
   return row ? toState(row) : null;
 }
 
-/** Whether `configId` is one of the clinic's WhatsApp Web numbers. */
+/** Whether `configId` is one of the clinic's active (linked) WhatsApp Web numbers. */
 async function isEvolutionNumber(clinicId: string, configId: string): Promise<boolean> {
   const n = await prisma.whatsappConfig.count({
-    where: { id: configId, clinicId, provider: "EVOLUTION" },
+    where: { id: configId, clinicId, provider: "EVOLUTION", unlinkedAt: null },
   });
   return n > 0;
 }

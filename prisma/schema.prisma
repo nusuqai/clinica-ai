@@ -368,6 +368,13 @@ model WhatsappConfig {
   // learns it when the phone links. Shown in the inbox's number picker, and
   // how re-linking the same phone is recognised and merged.
   phone                 String?
+  // When the number was unlinked (WhatsApp Web logged out from the settings
+  // page). Null = an active number. An unlinked number keeps its messages and
+  // conversations — they stay in the inbox, labelled as an old number — but it
+  // can't send, receive or be the main number. Linking the same phone again
+  // (re-linking this row, or a new number that turns out to be this phone)
+  // brings it back; a later history sync only adds what's missing.
+  unlinkedAt            DateTime?
   // META_CLOUD: WhatsApp sender id ("Phone number ID" in the Meta dashboard).
   phoneNumberId         String?          @unique
   // META_CLOUD: WhatsApp Business Account id — needed to list/create templates.
@@ -1118,6 +1125,8 @@ model Message {
   @@index([sessionId])
   @@index([clinicId, createdAt])
   @@index([conversationId, whatsappMessageId])
+  // The history import's "already stored?" check, across the whole clinic.
+  @@index([clinicId, whatsappMessageId])
   @@index([conversationId, whatsappConfigId, createdAt])
   @@index([replyToId])
   // Serves the processor's "unprocessed user messages in this session" read and

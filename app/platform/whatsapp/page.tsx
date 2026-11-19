@@ -53,12 +53,14 @@ export default async function PlatformWhatsappPage() {
               <div className="flex flex-wrap items-center gap-4 text-sm">
                 <span
                   className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                    c.numbers.length > 0
+                    c.numbers.some((n) => !n.unlinkedAt)
                       ? "bg-emerald-500/10 text-emerald-600"
                       : "bg-muted text-muted-foreground"
                   }`}
                 >
-                  {c.numbers.length > 0 ? `${c.numbers.length} رقم متصل` : "غير متصل"}
+                  {c.numbers.some((n) => !n.unlinkedAt)
+                    ? `${c.numbers.filter((n) => !n.unlinkedAt).length} رقم متصل`
+                    : "غير متصل"}
                 </span>
                 {c.numbers.map((n) => (
                   <span
@@ -76,6 +78,7 @@ export default async function PlatformWhatsappPage() {
                         ? `+${n.phone}`
                         : "WhatsApp Web"}
                     {n.isPrimary ? " ★" : ""}
+                    {n.unlinkedAt ? " · مفصول" : ""}
                   </span>
                 ))}
               </div>

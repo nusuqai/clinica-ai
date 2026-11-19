@@ -40,14 +40,18 @@ export default function WhatsappNumbers({ actions, numbers, owners, canSetPrimar
   const [entries, setEntries] = useState<Entry[]>(() =>
     webNumbers.map((n) => ({ key: n.id, configId: n.id }))
   );
-  // Numbers that appeared server-side (another tab, a refresh) join the list.
+  // Keep the cards in step with the server: numbers that appeared (another tab,
+  // a split-off old phone) join; numbers that are gone (deleted elsewhere, or
+  // merged into a re-link of the same phone) leave. Unsaved new cards stay.
   useEffect(() => {
     setEntries((prev) => {
-      const known = new Set(prev.map((e) => e.configId));
+      const server = new Set(webNumbers.map((n) => n.id));
+      const kept = prev.filter((e) => e.configId === null || server.has(e.configId));
+      const known = new Set(kept.map((e) => e.configId));
       const added = webNumbers
         .filter((n) => !known.has(n.id))
         .map((n) => ({ key: n.id, configId: n.id }));
-      return added.length ? [...prev, ...added] : prev;
+      return added.length || kept.length !== prev.length ? [...kept, ...added] : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [numbers]);
@@ -73,6 +77,7 @@ export default function WhatsappNumbers({ actions, numbers, owners, canSetPrimar
     },
     [router]
   );
+  const changed = useCallback(() => router.refresh(), [router]);
   const madePrimary = useCallback(
     (configId: string) => {
       setPrimaryId(configId);
@@ -103,12 +108,14 @@ export default function WhatsappNumbers({ actions, numbers, owners, canSetPrimar
             actions={actions}
             configId={e.configId}
             isPrimary={!!e.configId && e.configId === primaryId}
+            unlinked={!!known?.unlinkedAt}
             knownPhone={known?.phone ?? null}
             owners={owners}
             ownerId={known?.branchId ?? null}
             canSetPrimary={canSetPrimary}
             onStarted={(id) => started(e.key, id)}
             onRemoved={() => removed(e.key)}
+            onChanged={changed}
             onPrimary={() => e.configId && madePrimary(e.configId)}
           />
         );
@@ -122,7 +129,8 @@ export default function WhatsappNumbers({ actions, numbers, owners, canSetPrimar
           </Button>
           {entries.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              محادثات المريض عبر أكثر من رقم تُدمج في محادثة واحدة مرتبة بالوقت.
+              محادثات المريض عبر أكثر من رقم تُدمج في محادثة واحدة مرتبة بالوقت. فصل الرقم لا يحذف
+              محادثاته.
             </p>
           )}
         </div>

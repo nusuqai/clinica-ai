@@ -55,6 +55,6 @@ export async function getPlatformWhatsappOverview(): Promise<PlatformWhatsappOve
 
   return {
     clinics: rows,
-    configuredCount: rows.filter((r) => r.numbers.length > 0).length,
+    configuredCount: rows.filter((r) => r.numbers.some((n) => !n.unlinkedAt)).length,
   };
 }
