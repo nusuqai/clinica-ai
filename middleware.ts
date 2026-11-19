@@ -48,6 +48,8 @@ const TENANT_ONLY_PREFIXES = [
 // Supabase session; it is secured by a CRON_SECRET bearer token in the handler.
 const PUBLIC_API_ROUTES = [
   "/api/meta/whatsapp/webhook",
+  // Evolution API (unofficial WhatsApp) — clinic identified + gated by URL token.
+  "/api/evolution/webhook",
   "/api/agent/chat",
   "/api/inngest",
   "/api/cron/process-debounce",

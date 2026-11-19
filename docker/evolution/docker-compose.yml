@@ -1,0 +1,70 @@
+# Local Evolution API (unofficial WhatsApp, Baileys) for development.
+#
+#   docker compose -f docker/evolution/docker-compose.yml up -d
+#   open http://localhost:8080/manager   (log in with AUTHENTICATION_API_KEY)
+#
+# Evolution keeps its own Postgres + Redis, separate from the app's Supabase DB.
+# Neither publishes a host port, so they don't clash with 5432 / 54322.
+name: clinica-evolution
+
+services:
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    # Lets the container reach `next dev` on the host via host.docker.internal (Linux).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SERVER_URL: http://localhost:8080
+      # Global admin key: creates/deletes instances. Must match EVOLUTION_API_KEY in .env.local.
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-dev-evolution-key}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      DEL_INSTANCE: "false"
+      LANGUAGE: en
+
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution@evolution-db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: clinica_evolution
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: clinica_evolution
+      CACHE_LOCAL_ENABLED: "false"
+
+      QRCODE_LIMIT: 30
+      LOG_LEVEL: ERROR,WARN,INFO,WEBHOOKS
+      LOG_BAILEYS: error
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      - evolution-db
+      - evolution-redis
+
+  evolution-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_pg:/var/lib/postgresql/data
+
+  evolution-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - evolution_redis:/data
+
+volumes:
+  evolution_instances:
+  evolution_pg:
+  evolution_redis:

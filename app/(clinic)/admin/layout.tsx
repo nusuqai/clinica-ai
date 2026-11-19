@@ -4,6 +4,7 @@ import { can, requireClinicMember, roleHome } from "@/lib/auth";
 import { isDashboardRole } from "@/lib/permissions";
 import DashboardShell from "@/components/general/dashboard-shell";
 import { countNeedsMe, getUnresolvedEscalationConversationIds } from "@/server/services/messages";
+import { inboxNumberScope } from "@/lib/inbox-scope";
 import { getClinicUnitSummary } from "@/server/services/aiCredit";
 
 // The admin dashboard is shared by the clinic ADMIN and its STAFF. The layout
@@ -17,9 +18,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // Only fetch what this member is allowed to see in the shell.
   const [initialUnresolvedEscalationConversationIds, units, initialNeedsMeCount] =
     await Promise.all([
-      can(ctx, "messages") ? getUnresolvedEscalationConversationIds(ctx.clinic.id) : [],
+      can(ctx, "messages")
+        ? inboxNumberScope(ctx).then((scope) =>
+            getUnresolvedEscalationConversationIds(ctx.clinic.id, scope)
+          )
+        : [],
       can(ctx, "agent") ? getClinicUnitSummary(ctx.clinic.id) : null,
-      can(ctx, "messages") ? countNeedsMe(ctx.clinic.id, ctx.user.id) : 0,
+      can(ctx, "messages")
+        ? inboxNumberScope(ctx).then((scope) => countNeedsMe(ctx.clinic.id, ctx.user.id, scope))
+        : 0,
     ]);
 
   return (

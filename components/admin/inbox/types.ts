@@ -123,6 +123,8 @@ export interface RenderedMessage {
   reaction?: MessageItem["reaction"];
   replyTo?: MessageItem["replyTo"];
   notes?: MessageItem["notes"];
+  /** Which clinic number it went through — set only when the clinic has several. */
+  numberLabel?: string | null;
 }
 
 /** A staff-only internal note interleaved in the thread. */

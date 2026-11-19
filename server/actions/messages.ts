@@ -1,19 +1,24 @@
 "use server";
 
+import type { ClinicContext } from "@/lib/auth";
+import { canAccessMessage, conversationScopeWhere, inboxNumberScope } from "@/lib/inbox-scope";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { Channel, SenderType, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { can, getClinicContext } from "@/lib/auth";
-import {
-  sendTextMessage,
-  sendTemplateMessage,
-  sendMediaMessage,
-  uploadMedia,
-  type WhatsAppRecipient,
-} from "@/lib/meta/whatsapp";
+import { sendTemplateMessage } from "@/lib/meta/whatsapp";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { isWithinWhatsappWindow } from "@/lib/meta/window";
+import {
+  hasServiceWindow,
+  resolveWhatsappTransport,
+  type WhatsAppTransport,
+  sendWhatsAppMedia,
+  sendWhatsAppText,
+  sendWhatsAppVoice,
+  type WhatsAppAddress,
+} from "@/lib/whatsapp/transport";
 import {
   createPatientMediaUploadUrl,
   downloadPatientMedia,
@@ -39,7 +44,7 @@ function whatsappRecipient(conversation: {
   channel: Channel;
   whatsappPhone: string | null;
   whatsappUserId: string | null;
-}): WhatsAppRecipient | null {
+}): WhatsAppAddress | null {
   if (conversation.channel !== Channel.WHATSAPP) return null;
   if (!conversation.whatsappPhone && !conversation.whatsappUserId) return null;
   return {
@@ -72,14 +77,61 @@ async function quotedMessage(
   });
 }
 
-/** The contact's last inbound message time — anchors the WhatsApp window. */
-async function lastInboundAt(conversationId: string): Promise<Date | null> {
+/** The contact's last inbound message time on one clinic number — anchors that
+ *  number's WhatsApp window (Meta's window is per business number). */
+async function lastInboundAt(
+  conversationId: string,
+  whatsappConfigId: string | null
+): Promise<Date | null> {
   const m = await prisma.message.findFirst({
-    where: { conversationId, senderType: SenderType.USER },
+    where: {
+      conversationId,
+      senderType: SenderType.USER,
+      ...(whatsappConfigId ? { whatsappConfigId } : {}),
+    },
     orderBy: { createdAt: "desc" },
     select: { createdAt: true },
   });
   return m?.createdAt ?? null;
+}
+
+/**
+ * The clinic number a staff message goes out from: the one picked in the inbox,
+ * else the one the patient last wrote to, else the clinic's main number — always
+ * among the numbers the sender may use (a branch-limited staff member: only their
+ * branches' numbers).
+ */
+async function staffTransport(
+  ctx: ClinicContext,
+  conversationId: string,
+  pickedConfigId?: string | null
+): Promise<WhatsAppTransport | null> {
+  return resolveWhatsappTransport(ctx.clinic.id, conversationId, {
+    preferredConfigId: pickedConfigId,
+    allowed: await inboxNumberScope(ctx),
+  });
+}
+
+/** In this clinic AND visible to the caller (branch-limited staff: their part). */
+async function visibleConversationWhere(ctx: ClinicContext, conversationId: string) {
+  return {
+    id: conversationId,
+    clinicId: ctx.clinic.id,
+    ...conversationScopeWhere(await inboxNumberScope(ctx)),
+  };
+}
+
+/**
+ * True when free-form messages can't reach this WhatsApp contact from
+ * `transport`'s number: Meta's 24-hour window on that number has closed.
+ * WhatsApp Web has no such window, so it never blocks there.
+ */
+async function whatsappWindowClosed(
+  conversationId: string,
+  transport: WhatsAppTransport | null
+): Promise<boolean> {
+  if (!hasServiceWindow(transport?.provider ?? null)) return false;
+  return !isWithinWhatsappWindow(await lastInboundAt(conversationId, transport?.configId ?? null));
 }
 
 /**
@@ -100,24 +152,33 @@ export async function sendAdminReply(
   conversationId: string,
   content: string,
   /** The message this reply quotes (picked in the inbox), if any. */
-  replyToId?: string | null
+  replyToId?: string | null,
+  /** The clinic number to send from (picked in the inbox); default: last used. */
+  whatsappConfigId?: string | null
 ): Promise<SendAdminReplyResult> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
   if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
 
   const conversation = await prisma.conversation.findFirst({
-    where: { id: conversationId, clinicId: ctx.clinic.id },
+    where: await visibleConversationWhere(ctx, conversationId),
   });
   if (!conversation) return { ok: false, reason: "not_found" };
+
+  const transport =
+    conversation.channel === Channel.WHATSAPP
+      ? await staffTransport(ctx, conversationId, whatsappConfigId)
+      : null;
 
   // Defend Meta's rule server-side: free-form text can't reach a WhatsApp
   // contact who's been silent for 24h. The inbox disables the box in this case,
   // but a stale client or a direct call must be rejected before we persist a
   // reply that could never be delivered.
-  if (conversation.channel === Channel.WHATSAPP) {
-    const within = isWithinWhatsappWindow(await lastInboundAt(conversationId));
-    if (!within) return { ok: false, reason: "outside_window" };
+  if (
+    conversation.channel === Channel.WHATSAPP &&
+    (await whatsappWindowClosed(conversationId, transport))
+  ) {
+    return { ok: false, reason: "outside_window" };
   }
 
   let message;
@@ -136,6 +197,7 @@ export async function sendAdminReply(
         isRead: true,
         clinicId: ctx.clinic.id,
         replyToId: quoted?.id ?? null,
+        whatsappConfigId: transport?.configId ?? null,
       },
     });
 
@@ -158,10 +220,9 @@ export async function sendAdminReply(
   const recipient = whatsappRecipient(conversation);
   if (recipient) {
     try {
-      const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
-      if (!creds) throw new Error("WhatsApp is not configured for this clinic");
-      const wamid = await sendTextMessage(recipient, content, creds, {
-        replyToWamid: quoted?.whatsappMessageId,
+      if (!transport) throw new Error("WhatsApp is not configured for this clinic");
+      const wamid = await sendWhatsAppText(transport, recipient, content, {
+        replyToId: quoted?.whatsappMessageId,
       });
       // Record the wamid so a patient's reaction can attach to this reply.
       if (wamid) {
@@ -204,21 +265,27 @@ export type CreateUploadResult =
 
 export async function createStaffMediaUpload(
   conversationId: string,
-  mimeType: string
+  mimeType: string,
+  /** The clinic number it will be sent from (picked in the inbox). */
+  whatsappConfigId?: string | null
 ): Promise<CreateUploadResult> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
   if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
 
   const conversation = await prisma.conversation.findFirst({
-    where: { id: conversationId, clinicId: ctx.clinic.id },
+    where: await visibleConversationWhere(ctx, conversationId),
     select: { id: true, channel: true },
   });
   if (!conversation) return { ok: false, reason: "not_found" };
-  if (conversation.channel === Channel.WHATSAPP) {
-    if (!isWithinWhatsappWindow(await lastInboundAt(conversationId))) {
-      return { ok: false, reason: "outside_window" };
-    }
+  if (
+    conversation.channel === Channel.WHATSAPP &&
+    (await whatsappWindowClosed(
+      conversationId,
+      await staffTransport(ctx, conversationId, whatsappConfigId)
+    ))
+  ) {
+    return { ok: false, reason: "outside_window" };
   }
 
   try {
@@ -251,6 +318,8 @@ export async function sendAdminMediaReply(
     height?: number;
     /** The message this attachment quotes (picked in the inbox), if any. */
     replyToId?: string | null;
+    /** The clinic number to send from (picked in the inbox); default: last used. */
+    whatsappConfigId?: string | null;
   }
 ): Promise<SendAdminReplyResult> {
   const ctx = await getClinicContext();
@@ -258,7 +327,7 @@ export async function sendAdminMediaReply(
   if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
 
   const conversation = await prisma.conversation.findFirst({
-    where: { id: conversationId, clinicId: ctx.clinic.id },
+    where: await visibleConversationWhere(ctx, conversationId),
   });
   if (!conversation) return { ok: false, reason: "not_found" };
 
@@ -267,10 +336,15 @@ export async function sendAdminMediaReply(
   if (!media.path.startsWith(`${ctx.clinic.id}/${conversationId}/`)) {
     return { ok: false, reason: "forbidden" };
   }
-  if (conversation.channel === Channel.WHATSAPP) {
-    if (!isWithinWhatsappWindow(await lastInboundAt(conversationId))) {
-      return { ok: false, reason: "outside_window" };
-    }
+  const transport =
+    conversation.channel === Channel.WHATSAPP
+      ? await staffTransport(ctx, conversationId, media.whatsappConfigId)
+      : null;
+  if (
+    conversation.channel === Channel.WHATSAPP &&
+    (await whatsappWindowClosed(conversationId, transport))
+  ) {
+    return { ok: false, reason: "outside_window" };
   }
 
   // Read the bytes back for the WhatsApp relay + the stored size. A missing
@@ -307,6 +381,7 @@ export async function sendAdminMediaReply(
         clinicId: ctx.clinic.id,
         metadata: { media: mediaMeta } as unknown as Prisma.InputJsonValue,
         replyToId: quoted?.id ?? null,
+        whatsappConfigId: transport?.configId ?? null,
       },
     });
     await prisma.escalation.updateMany({
@@ -324,14 +399,18 @@ export async function sendAdminMediaReply(
   const recipient = whatsappRecipient(conversation);
   if (recipient) {
     try {
-      const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
-      if (!creds) throw new Error("WhatsApp is not configured for this clinic");
-      const waMediaId = await uploadMedia(creds, bytes, baseMime, media.filename ?? "attachment");
-      const wamid = await sendMediaMessage(
+      if (!transport) throw new Error("WhatsApp is not configured for this clinic");
+      const wamid = await sendWhatsAppMedia(
+        transport,
         recipient,
-        { kind, mediaId: waMediaId, caption: caption || undefined, filename: media.filename },
-        creds,
-        { replyToWamid: quoted?.whatsappMessageId }
+        {
+          kind,
+          bytes,
+          mimeType: baseMime,
+          caption: caption || undefined,
+          filename: media.filename,
+        },
+        { replyToId: quoted?.whatsappMessageId }
       );
       if (wamid) {
         await prisma.message
@@ -370,8 +449,12 @@ export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: bo
     where: { id: messageId },
     include: { conversation: true, replyTo: { select: { whatsappMessageId: true } } },
   });
-  // Only retry messages in the admin's own clinic.
-  if (!message || message.conversation.clinicId !== ctx.clinic.id) {
+  // Only retry messages in the admin's own clinic — and part they may see.
+  if (
+    !message ||
+    message.conversation.clinicId !== ctx.clinic.id ||
+    !(await canAccessMessage(ctx, message.id))
+  ) {
     return { ok: false };
   }
 
@@ -383,20 +466,20 @@ export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: bo
   }
 
   try {
-    const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
-    if (!creds) return { ok: false };
+    // Re-deliver from the number it was meant to go out from.
+    const transport = await staffTransport(ctx, conversation.id, message.whatsappConfigId);
+    if (!transport) return { ok: false };
     // Re-deliver with the same quote the original send carried.
-    const options = { replyToWamid: message.replyTo?.whatsappMessageId };
+    const options = { replyToId: message.replyTo?.whatsappMessageId };
 
     const voiceMeta = (message.metadata as AgentMessageMetadata | null)?.voice;
     if (message.senderType === SenderType.ADMIN && voiceMeta?.storagePath) {
       const bytes = await downloadPatientMedia(voiceMeta.storagePath);
       if (!bytes) return { ok: false };
-      const waMediaId = await uploadMedia(creds, bytes, voiceMeta.mimeType, "voice.ogg");
-      await sendMediaMessage(
+      await sendWhatsAppVoice(
+        transport,
         recipient,
-        { kind: "audio", mediaId: waMediaId, voice: isOggOpus(voiceMeta.mimeType) },
-        creds,
+        { bytes, mimeType: voiceMeta.mimeType },
         options
       );
       return { ok: true };
@@ -406,23 +489,22 @@ export async function retryWhatsappDelivery(messageId: string): Promise<{ ok: bo
     if (mediaMeta?.storagePath) {
       const bytes = await downloadPatientMedia(mediaMeta.storagePath);
       if (!bytes) return { ok: false };
-      const kind = outboundMediaKind(mediaMeta.mimeType);
-      const waMediaId = await uploadMedia(
-        creds,
-        bytes,
-        mediaMeta.mimeType,
-        mediaMeta.filename ?? "attachment"
-      );
-      await sendMediaMessage(
+      await sendWhatsAppMedia(
+        transport,
         recipient,
-        { kind, mediaId: waMediaId, caption: mediaMeta.caption, filename: mediaMeta.filename },
-        creds,
+        {
+          kind: outboundMediaKind(mediaMeta.mimeType),
+          bytes,
+          mimeType: mediaMeta.mimeType,
+          caption: mediaMeta.caption,
+          filename: mediaMeta.filename,
+        },
         options
       );
       return { ok: true };
     }
 
-    await sendTextMessage(recipient, message.content, creds, options);
+    await sendWhatsAppText(transport, recipient, message.content, options);
     return { ok: true };
   } catch (err) {
     console.error("Failed to retry WhatsApp delivery:", err);
@@ -464,7 +546,7 @@ export async function sendWhatsappTemplate(
   if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
 
   const conversation = await prisma.conversation.findFirst({
-    where: { id: conversationId, clinicId: ctx.clinic.id },
+    where: await visibleConversationWhere(ctx, conversationId),
   });
   if (!conversation) return { ok: false, reason: "not_found" };
   const recipient = whatsappRecipient(conversation);
@@ -474,6 +556,9 @@ export async function sendWhatsappTemplate(
 
   const creds = await getClinicWhatsappCredentials(ctx.clinic.id);
   if (!creds) return { ok: false, reason: "not_configured" };
+  // A branch-limited sender can only use the official number if it's their branch's.
+  const scope = await inboxNumberScope(ctx);
+  if (scope && !scope.includes(creds.configId)) return { ok: false, reason: "not_configured" };
 
   let templateWamid: string | null = null;
   try {
@@ -503,6 +588,7 @@ export async function sendWhatsappTemplate(
         isRead: true,
         clinicId: ctx.clinic.id,
         whatsappMessageId: templateWamid,
+        whatsappConfigId: creds.configId,
       },
     });
     await prisma.escalation.updateMany({
@@ -540,7 +626,12 @@ export async function resolveMessageEscalation(escalationId: string): Promise<{ 
   if (!can(ctx, "messages")) return { ok: false };
 
   const result = await prisma.escalation.updateMany({
-    where: { id: escalationId, clinicId: ctx.clinic.id, resolvedAt: null },
+    where: {
+      id: escalationId,
+      clinicId: ctx.clinic.id,
+      resolvedAt: null,
+      conversation: conversationScopeWhere(await inboxNumberScope(ctx)),
+    },
     data: { resolvedAt: new Date(), resolvedById: ctx.user.id },
   });
   if (result.count === 0) return { ok: false };
@@ -556,7 +647,11 @@ export async function setSessionAiEnabled(sessionId: string, enabled: boolean): 
 
   // Scoped to the caller's clinic, and stamped with who flipped it.
   const updated = await prisma.chatSession.updateMany({
-    where: { id: sessionId, clinicId: ctx.clinic.id },
+    where: {
+      id: sessionId,
+      clinicId: ctx.clinic.id,
+      conversation: conversationScopeWhere(await inboxNumberScope(ctx)),
+    },
     data: { aiEnabled: enabled, aiToggledById: ctx.user.id, aiToggledAt: new Date() },
   });
   if (updated.count === 0) throw new Error("Not found");
@@ -573,12 +668,6 @@ export async function setSessionAiEnabled(sessionId: string, enabled: boolean): 
   revalidatePath("/admin/messages", "page");
 }
 
-/** WhatsApp only renders OGG/Opus as a voice note (with the waveform). */
-function isOggOpus(mime: string): boolean {
-  const base = mime.split(";")[0].trim().toLowerCase();
-  return base === "audio/ogg" || base === "audio/opus";
-}
-
 /** Staff placeholder content until the transcript lands — keeps the agent's
  *  history (and the inbox preview) meaningful in the meantime. */
 const STAFF_VOICE_PLACEHOLDER = "[رسالة صوتية من الفريق]";
@@ -593,24 +682,36 @@ const STAFF_VOICE_PLACEHOLDER = "[رسالة صوتية من الفريق]";
  */
 export async function sendAdminVoiceReply(
   conversationId: string,
-  voice: { path: string; mimeType: string; durationSec?: number | null; replyToId?: string | null }
+  voice: {
+    path: string;
+    mimeType: string;
+    durationSec?: number | null;
+    replyToId?: string | null;
+    /** The clinic number to send from (picked in the inbox); default: last used. */
+    whatsappConfigId?: string | null;
+  }
 ): Promise<SendAdminReplyResult> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
   if (!can(ctx, "messages")) return { ok: false, reason: "forbidden" };
 
   const conversation = await prisma.conversation.findFirst({
-    where: { id: conversationId, clinicId: ctx.clinic.id },
+    where: await visibleConversationWhere(ctx, conversationId),
   });
   if (!conversation) return { ok: false, reason: "not_found" };
   if (!voice.path.startsWith(`${ctx.clinic.id}/${conversationId}/`)) {
     return { ok: false, reason: "forbidden" };
   }
   if (!voice.mimeType.toLowerCase().startsWith("audio/")) return { ok: false, reason: "forbidden" };
-  if (conversation.channel === Channel.WHATSAPP) {
-    if (!isWithinWhatsappWindow(await lastInboundAt(conversationId))) {
-      return { ok: false, reason: "outside_window" };
-    }
+  const transport =
+    conversation.channel === Channel.WHATSAPP
+      ? await staffTransport(ctx, conversationId, voice.whatsappConfigId)
+      : null;
+  if (
+    conversation.channel === Channel.WHATSAPP &&
+    (await whatsappWindowClosed(conversationId, transport))
+  ) {
+    return { ok: false, reason: "outside_window" };
   }
 
   const bytes = await downloadPatientMedia(voice.path);
@@ -647,6 +748,7 @@ export async function sendAdminVoiceReply(
         clinicId,
         metadata: { voice: voiceMeta } as unknown as Prisma.InputJsonValue,
         replyToId: quoted?.id ?? null,
+        whatsappConfigId: transport?.configId ?? null,
       },
     });
     await prisma.escalation.updateMany({
@@ -663,14 +765,12 @@ export async function sendAdminVoiceReply(
   const recipient = whatsappRecipient(conversation);
   if (recipient) {
     try {
-      const creds = await getClinicWhatsappCredentials(clinicId);
-      if (!creds) throw new Error("WhatsApp is not configured for this clinic");
-      const waMediaId = await uploadMedia(creds, bytes, baseMime, "voice.ogg");
-      const wamid = await sendMediaMessage(
+      if (!transport) throw new Error("WhatsApp is not configured for this clinic");
+      const wamid = await sendWhatsAppVoice(
+        transport,
         recipient,
-        { kind: "audio", mediaId: waMediaId, voice: isOggOpus(baseMime) },
-        creds,
-        { replyToWamid: quoted?.whatsappMessageId }
+        { bytes, mimeType: baseMime },
+        { replyToId: quoted?.whatsappMessageId }
       );
       if (wamid) {
         await prisma.message
@@ -762,7 +862,9 @@ export async function sendAdminVoiceReply(
 export async function sendQuickReply(
   conversationId: string,
   quickReplyId: string,
-  replyToId?: string | null
+  replyToId?: string | null,
+  /** The clinic number to send from (picked in the inbox); default: last used. */
+  whatsappConfigId?: string | null
 ): Promise<SendAdminReplyResult> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, reason: "unauthorized" };
@@ -776,13 +878,16 @@ export async function sendQuickReply(
   let result: SendAdminReplyResult;
   if (qr.mediaPath && qr.mediaMimeType) {
     const conversation = await prisma.conversation.findFirst({
-      where: { id: conversationId, clinicId: ctx.clinic.id },
+      where: await visibleConversationWhere(ctx, conversationId),
       select: { id: true, channel: true },
     });
     if (!conversation) return { ok: false, reason: "not_found" };
     if (
       conversation.channel === Channel.WHATSAPP &&
-      !isWithinWhatsappWindow(await lastInboundAt(conversationId))
+      (await whatsappWindowClosed(
+        conversationId,
+        await staffTransport(ctx, conversationId, whatsappConfigId)
+      ))
     ) {
       return { ok: false, reason: "outside_window" };
     }
@@ -807,9 +912,10 @@ export async function sendQuickReply(
       width: qr.mediaWidth ?? undefined,
       height: qr.mediaHeight ?? undefined,
       replyToId,
+      whatsappConfigId,
     });
   } else {
-    result = await sendAdminReply(conversationId, qr.content, replyToId);
+    result = await sendAdminReply(conversationId, qr.content, replyToId, whatsappConfigId);
   }
 
   if (result.ok) {

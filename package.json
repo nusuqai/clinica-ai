@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "dotenv -e .env.local -- next dev",
+    "cron:dev": "dotenv -e .env.local -- node scripts/dev-debounce-cron.mjs",
     "dev:dev": "dotenv -e .env.dev -- next dev",
     "dev:prod": "dotenv -e .env.prod -- next dev",
     "build": "next build",

@@ -6,7 +6,13 @@ import { can, getClinicContext } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getClinicWhatsappCredentials } from "@/lib/meta/whatsapp-config";
 import { listMessageTemplates } from "@/lib/meta/whatsapp";
-import { APPOINTMENT_TOKENS } from "@/lib/appointment-templates";
+import {
+  APPOINTMENT_TOKENS,
+  CUSTOM_TEMPLATE_MAX_LENGTH,
+  CUSTOM_TEMPLATE_NAME,
+  unknownCustomTokens,
+} from "@/lib/appointment-templates";
+import { getClinicWhatsappProviders } from "@/lib/whatsapp/transport";
 
 /**
  * Admin actions for the appointment-automation template bindings
@@ -14,6 +20,10 @@ import { APPOINTMENT_TOKENS } from "@/lib/appointment-templates";
  * WhatsApp templates to a purpose (confirmation reminder / feedback request) and
  * records which token fills each `{{n}}` — the automation sweep is inert for a
  * purpose until an enabled binding exists.
+ *
+ * Official (Meta) clinics bind an approved template; Evolution (WhatsApp Web)
+ * clinics write their own text instead (`saveCustomAppointmentTemplateAction`),
+ * since there is no Meta account and nothing to approve.
  */
 
 const PATH = "/admin/whatsapp";
@@ -30,6 +40,8 @@ export interface AppointmentTemplateBinding {
   templateName: string;
   languageCode: string;
   variableMap: string[];
+  /** The template text — Meta's snapshot, or the clinic's own custom text. */
+  bodyText: string;
   enabled: boolean;
   leadMinutes: number;
   delayMinutes: number;
@@ -61,6 +73,7 @@ export async function getAppointmentTemplateBindingsAction(): Promise<
       templateName: r.templateName,
       languageCode: r.languageCode,
       variableMap: r.variableMap,
+      bodyText: r.bodyText,
       enabled: r.enabled,
       leadMinutes: r.leadMinutes,
       delayMinutes: r.delayMinutes,
@@ -160,6 +173,74 @@ export async function saveAppointmentTemplateBindingAction(
       delayMinutes,
       ...snapshot,
     },
+  });
+
+  revalidatePath(PATH, "page");
+  return { ok: true };
+}
+
+export interface SaveCustomBindingInput {
+  purpose: AppointmentTemplatePurpose;
+  /** The message, with named placeholders like {{patient_name}}. */
+  bodyText: string;
+  enabled: boolean;
+  leadMinutes?: number;
+  delayMinutes?: number;
+}
+
+/**
+ * Creates or updates a clinic-written reminder (Evolution clinics only). No
+ * approval step: the text is checked for length and unknown placeholders, then
+ * stored as the binding body under CUSTOM_TEMPLATE_NAME.
+ */
+export async function saveCustomAppointmentTemplateAction(
+  input: SaveCustomBindingInput
+): Promise<{ ok: true } | ActionError> {
+  const auth = await requireAdminClinic();
+  if (!auth.ok) return auth;
+
+  // The official API only delivers approved templates outside the 24h window,
+  // so free text needs at least one WhatsApp Web number to go out from.
+  if (!(await getClinicWhatsappProviders(auth.ctx.clinic.id)).includes("EVOLUTION")) {
+    return { ok: false, reason: "not_configured" };
+  }
+
+  const bodyText = input.bodyText.trim();
+  if (!bodyText) return { ok: false, reason: "error", message: "نص الرسالة مطلوب." };
+  if (bodyText.length > CUSTOM_TEMPLATE_MAX_LENGTH) {
+    return {
+      ok: false,
+      reason: "error",
+      message: `النص أطول من ${CUSTOM_TEMPLATE_MAX_LENGTH} حرفاً.`,
+    };
+  }
+  const unknown = unknownCustomTokens(bodyText);
+  if (unknown.length > 0) {
+    return {
+      ok: false,
+      reason: "error",
+      message: `حقول غير معروفة: ${unknown.map((t) => `{{${t}}}`).join("، ")}`,
+    };
+  }
+
+  const leadMinutes = Math.max(0, Math.round(input.leadMinutes ?? 1440));
+  const delayMinutes = Math.max(0, Math.round(input.delayMinutes ?? 120));
+  const data = {
+    templateName: CUSTOM_TEMPLATE_NAME,
+    languageCode: "ar",
+    variableMap: [],
+    bodyText,
+    headerText: "",
+    footerText: "",
+    enabled: input.enabled,
+    leadMinutes,
+    delayMinutes,
+  };
+
+  await prisma.clinicAppointmentTemplate.upsert({
+    where: { clinicId_purpose: { clinicId: auth.ctx.clinic.id, purpose: input.purpose } },
+    create: { clinicId: auth.ctx.clinic.id, purpose: input.purpose, ...data },
+    update: data,
   });
 
   revalidatePath(PATH, "page");

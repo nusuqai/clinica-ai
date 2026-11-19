@@ -36,6 +36,8 @@ export interface DeliveryResult {
   delivered: boolean;
   /** Provider message id (e.g. WhatsApp wamid), when one came back. */
   providerMessageId: string | null;
+  /** The clinic WhatsApp number it went out from, for channels with several. */
+  whatsappConfigId?: string | null;
 }
 
 /** A synthesized voice reply, ready to upload + send. */
@@ -54,12 +56,17 @@ export interface ChannelAdapter<T = unknown> {
   /** Capabilities that gate optional behaviour (e.g. spoken replies). */
   readonly capabilities: { readonly voiceReply: boolean };
 
-  /** Resolve the clinic's send credentials, or null if the channel isn't
+  /** Resolve the send credentials for a reply in this conversation (e.g. the
+   *  WhatsApp number the patient last used), or null if the channel isn't
    *  configured for this clinic (→ the processor idles the conversation). */
-  getTransport(clinicId: string): Promise<T | null>;
+  getTransport(clinicId: string, conversationId: string): Promise<T | null>;
 
   /** Build the recipient descriptor from the conversation row. */
   recipientOf(conversation: ConversationIdentity): ChannelRecipient;
+
+  /** The clinic WhatsApp number a transport sends from, for channels with
+   *  several — stamped on the reply as soon as it's saved. */
+  numberOf?(transport: T): string | null;
 
   /** Deliver a text reply. Must never throw. */
   sendText(transport: T, to: ChannelRecipient, text: string): Promise<DeliveryResult>;

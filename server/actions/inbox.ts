@@ -1,5 +1,6 @@
 "use server";
 
+import { conversationScopeWhere, inboxNumberScope, messageScopeWhere } from "@/lib/inbox-scope";
 import { NoteVisibility, StaffAlertKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getPermittedContext, type ClinicContext } from "@/lib/auth";
@@ -30,8 +31,13 @@ async function inboxContext(): Promise<ClinicContext | null> {
 }
 
 async function ownConversation(ctx: ClinicContext, conversationId: string) {
+  // In this clinic AND visible to the caller (branch-limited staff: their part).
   return prisma.conversation.findFirst({
-    where: { id: conversationId, clinicId: ctx.clinic.id },
+    where: {
+      id: conversationId,
+      clinicId: ctx.clinic.id,
+      ...conversationScopeWhere(await inboxNumberScope(ctx)),
+    },
     select: { id: true, assignedToId: true, updatedAt: true },
   });
 }
@@ -381,7 +387,11 @@ export async function addMessageNote(input: {
   const ctx = await inboxContext();
   if (!ctx) return fail("forbidden");
   const msg = await prisma.message.findFirst({
-    where: { id: input.messageId, clinicId: ctx.clinic.id },
+    where: {
+      id: input.messageId,
+      clinicId: ctx.clinic.id,
+      ...messageScopeWhere(await inboxNumberScope(ctx)),
+    },
     select: { id: true, conversationId: true },
   });
   if (!msg) return fail("not_found");
