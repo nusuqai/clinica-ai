@@ -154,6 +154,17 @@ export function MessageBubble({
             highlighted && "ring-2 ring-amber-400 ring-offset-2 ring-offset-background"
           )}
         >
+          {msg.numberLabel && (
+            <p
+              className={cn(
+                "mb-0.5 text-[10px] font-medium",
+                isOutgoing || isAgent ? "text-muted-foreground" : "text-white/75"
+              )}
+              dir="auto"
+            >
+              {isOutgoing || isAgent ? "أُرسلت من" : "وصلت إلى"} {msg.numberLabel}
+            </p>
+          )}
           {isAgent && (
             <p className="mb-0.5 text-[10px] font-medium text-accent">
               🤖 {msg.agentName ?? "المساعد الذكي"}

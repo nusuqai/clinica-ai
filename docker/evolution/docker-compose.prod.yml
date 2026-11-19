@@ -1,0 +1,92 @@
+# Production Evolution API (unofficial WhatsApp) — runs on a VPS, NOT on Vercel
+# (it holds long-lived WhatsApp Web sockets, which serverless can't).
+#
+# On the server, next to this file, create `.env` with:
+#   EVOLUTION_DOMAIN=evolution.example.com      # DNS A record → this server
+#   EVOLUTION_API_KEY=<long random secret>      # same value as on Vercel
+#   POSTGRES_PASSWORD=<long random secret>
+#
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Caddy terminates HTTPS (automatic Let's Encrypt) — only ports 80/443 are open.
+# Back up the `evolution_instances` and `evolution_pg` volumes: losing them logs
+# every clinic's phone out (each would have to scan a QR again).
+name: clinica-evolution
+
+services:
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    environment:
+      SERVER_URL: https://${EVOLUTION_DOMAIN}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?set EVOLUTION_API_KEY}
+      # Don't hand instance tokens to anyone listing instances.
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      DEL_INSTANCE: "false"
+      LANGUAGE: en
+
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@evolution-db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: clinica_evolution
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      # Needed: inbound media is downloaded by message id, and the chat-history
+      # import reads stored messages.
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_DATA_HISTORIC: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: clinica_evolution
+      CACHE_LOCAL_ENABLED: "false"
+
+      QRCODE_LIMIT: 30
+      LOG_LEVEL: ERROR,WARN,INFO
+      LOG_BAILEYS: error
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      - evolution-db
+      - evolution-redis
+
+  evolution-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_pg:/var/lib/postgresql/data
+
+  evolution-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - evolution_redis:/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      EVOLUTION_DOMAIN: ${EVOLUTION_DOMAIN:?set EVOLUTION_DOMAIN}
+    # Everything goes to Evolution, except its web Manager UI, which isn't needed
+    # in production (the platform console links phones).
+    command: >
+      sh -c 'printf "%s {\n  @manager path /manager*\n  respond @manager 404\n  reverse_proxy evolution:8080\n}\n" "$$EVOLUTION_DOMAIN" > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile'
+    volumes:
+      - caddy_data:/data
+    depends_on:
+      - evolution
+
+volumes:
+  evolution_instances:
+  evolution_pg:
+  evolution_redis:
+  caddy_data:

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { can, getClinicContext } from "@/lib/auth";
+import { inboxNumberScope, messageScopeWhere } from "@/lib/inbox-scope";
 import { getPatientMediaSignedUrl } from "@/lib/supabase/storage";
 import type { AgentMessageMetadata } from "@/agent/types";
 
@@ -28,7 +29,12 @@ export async function GET(
   }
 
   const message = await prisma.message.findFirst({
-    where: { id: messageId, clinicId: ctx.clinic.id },
+    // Branch-limited staff: only media from their branches' numbers.
+    where: {
+      id: messageId,
+      clinicId: ctx.clinic.id,
+      ...messageScopeWhere(await inboxNumberScope(ctx)),
+    },
     select: { metadata: true },
   });
   const meta = message?.metadata as AgentMessageMetadata | null;

@@ -53,24 +53,42 @@ export default async function PlatformWhatsappPage() {
               <div className="flex flex-wrap items-center gap-4 text-sm">
                 <span
                   className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                    c.config
+                    c.numbers.some((n) => !n.unlinkedAt)
                       ? "bg-emerald-500/10 text-emerald-600"
                       : "bg-muted text-muted-foreground"
                   }`}
                 >
-                  {c.config ? "متصل" : "غير متصل"}
+                  {c.numbers.some((n) => !n.unlinkedAt)
+                    ? `${c.numbers.filter((n) => !n.unlinkedAt).length} رقم متصل`
+                    : "غير متصل"}
                 </span>
-                {c.config && (
-                  <div className="text-right">
-                    <p className="font-sans text-xs text-muted-foreground">Phone Number ID</p>
-                    <p className="font-semibold text-foreground" dir="ltr">
-                      {c.config.phoneNumberId}
-                    </p>
-                  </div>
-                )}
+                {c.numbers.map((n) => (
+                  <span
+                    key={n.id}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                      n.provider === "META_CLOUD"
+                        ? "bg-sky-500/10 text-sky-600"
+                        : "bg-amber-500/10 text-amber-600"
+                    }`}
+                    dir="ltr"
+                  >
+                    {n.provider === "META_CLOUD"
+                      ? `Cloud API · ${n.phoneNumberId}`
+                      : n.phone
+                        ? `+${n.phone}`
+                        : "WhatsApp Web"}
+                    {n.isPrimary ? " ★" : ""}
+                    {n.unlinkedAt ? " · مفصول" : ""}
+                  </span>
+                ))}
               </div>
             </div>
-            <WhatsappManager clinicId={c.clinicId} config={c.config} appUrl={appUrl} />
+            <WhatsappManager
+              clinicId={c.clinicId}
+              numbers={c.numbers}
+              branches={c.branches}
+              appUrl={appUrl}
+            />
           </Card>
         ))}
         {overview.clinics.length === 0 && (

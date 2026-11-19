@@ -30,6 +30,8 @@ export interface RealtimeMessageRow {
   isRead: boolean;
   createdAt: string;
   clinicId: string;
+  /** The clinic WhatsApp number it came in on / went out from. */
+  whatsappConfigId?: string | null;
 }
 
 export function useRealtimeMessages(

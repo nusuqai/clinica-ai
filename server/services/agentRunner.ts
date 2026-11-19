@@ -1,8 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Channel, SenderType, MessageDelivery, type Role, type Prisma } from "@prisma/client";
-import { downloadMedia } from "@/lib/meta/whatsapp";
-import type { WhatsAppCredentials } from "@/lib/meta/whatsapp";
+import { downloadWhatsAppMedia, type WhatsAppTransport } from "@/lib/whatsapp/transport";
 import type {
   UnsupportedMediaType,
   ArchivedMediaKind,
@@ -184,7 +183,7 @@ export async function handleUnsupportedWhatsAppMessage(
   conversationId: string,
   contact: WhatsAppContact,
   media: UnsupportedMediaType,
-  creds: WhatsAppCredentials
+  creds: WhatsAppTransport
 ): Promise<void> {
   const conv = await loadConversation(conversationId);
   if (!conv) return;
@@ -196,7 +195,11 @@ export async function handleUnsupportedWhatsAppMessage(
     sessionId,
     clinicId,
     media.placeholder,
-    profile?.id ?? null
+    profile?.id ?? null,
+    null,
+    null,
+    null,
+    creds.configId
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
@@ -464,6 +467,7 @@ async function deliverPushReply<T>(args: {
 }): Promise<ReplyOutcome> {
   const { ctx, adapter, transport, recipient, wasVoice, processedIds } = args;
   const { clinicId, conversationId, sessionId } = ctx;
+  const sendingNumber = adapter.numberOf?.(transport) ?? null;
 
   const gen = await generateAgentReply(ctx);
   if (gen.kind === "skipped") return { kind: "skipped" };
@@ -509,7 +513,8 @@ async function deliverPushReply<T>(args: {
         reply,
         { toolCalls, ...(voiceMeta ? { voice: voiceMeta } : {}) },
         MessageDelivery.QUEUED,
-        aiAgentId
+        aiAgentId,
+        sendingNumber
       );
       await markMessagesProcessed(processedIds);
       await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage, aiAgentId });
@@ -536,6 +541,7 @@ async function deliverPushReply<T>(args: {
         delivered ? MessageDelivery.SENT : MessageDelivery.FAILED,
         {
           whatsappMessageId: voiceOut.providerMessageId ?? textOut?.providerMessageId ?? null,
+          whatsappConfigId: voiceOut.whatsappConfigId ?? textOut?.whatsappConfigId ?? null,
           incrementAttempts: true,
         }
       );
@@ -551,7 +557,8 @@ async function deliverPushReply<T>(args: {
     reply,
     { toolCalls },
     MessageDelivery.QUEUED,
-    aiAgentId
+    aiAgentId,
+    sendingNumber
   );
   await markMessagesProcessed(processedIds);
   await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage, aiAgentId });
@@ -561,6 +568,7 @@ async function deliverPushReply<T>(args: {
     out.delivered ? MessageDelivery.SENT : MessageDelivery.FAILED,
     {
       whatsappMessageId: out.providerMessageId,
+      whatsappConfigId: out.whatsappConfigId,
       incrementAttempts: true,
     }
   );
@@ -598,7 +606,7 @@ export async function processDebouncedConversation(row: ClaimedConversation): Pr
     await finalizeIdle(conversationId);
     return;
   }
-  const transport = await adapter.getTransport(clinicId);
+  const transport = await adapter.getTransport(clinicId, conversationId);
   if (!transport) {
     console.warn(`[debounce] clinic ${clinicId} has no ${conv.channel} transport — idling`);
     await finalizeIdle(conversationId);
@@ -613,6 +621,7 @@ export async function processDebouncedConversation(row: ClaimedConversation): Pr
     if (out.delivered) {
       await markAgentDelivery(pending.id, MessageDelivery.SENT, {
         whatsappMessageId: out.providerMessageId,
+        whatsappConfigId: out.whatsappConfigId,
         incrementAttempts: true,
       });
       // A newer message may have arrived before this claim — requeue if so.
@@ -711,7 +720,7 @@ export async function handleWhatsAppMessage(
   userText: string,
   /** Meta message id — enables read receipts and the typing indicator. */
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppTransport,
   /** The wamid the patient quoted (swipe-to-reply), if any. */
   quotedWamid: string | null = null
 ): Promise<void> {
@@ -737,7 +746,8 @@ export async function handleWhatsAppMessage(
     profile?.id ?? null,
     null,
     messageId,
-    quotedWamid
+    quotedWamid,
+    creds.configId
   );
   console.log(
     `[wa-debug] user message STORED convId=${conversationId} sessionId=${sessionId} profileId=${profile?.id ?? "none"}`
@@ -767,7 +777,7 @@ export async function handleWhatsAppVoiceMessage(
   contact: WhatsAppContact,
   voice: { mediaId: string; mimeType: string },
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppTransport,
   /** The wamid the patient quoted (swipe-to-reply), if any. */
   quotedWamid: string | null = null
 ): Promise<void> {
@@ -790,7 +800,7 @@ export async function handleWhatsAppVoiceMessage(
   let sttModel = "";
   let voiceMeta: VoiceMessageMetadata | null = null;
   try {
-    const media = await downloadMedia(voice.mediaId, creds.accessToken);
+    const media = await downloadWhatsAppMedia(creds, voice.mediaId);
     const stored = await uploadPatientMedia({
       clinicId,
       conversationId,
@@ -823,7 +833,8 @@ export async function handleWhatsAppVoiceMessage(
     profile?.id ?? null,
     voiceMeta ? { voice: voiceMeta } : null,
     messageId,
-    quotedWamid
+    quotedWamid,
+    creds.configId
   );
 
   // Charge transcription (its own ledger line) whenever a model actually ran.
@@ -840,7 +851,16 @@ export async function handleWhatsAppVoiceMessage(
   if (!transcript) {
     // Couldn't understand the audio — notify + escalate, don't run the agent.
     await ensureOpenEscalation(clinicId, conversationId, sessionId, "voice_transcription_failed");
-    await persistAgentMessage(conversationId, sessionId, clinicId, VOICE_FAILED_NOTICE, null);
+    await persistAgentMessage(
+      conversationId,
+      sessionId,
+      clinicId,
+      VOICE_FAILED_NOTICE,
+      null,
+      MessageDelivery.SENT,
+      null,
+      creds.configId
+    );
     await whatsappAdapter.sendText(
       creds,
       { phone: contact.phone, userId: contact.userId },
@@ -868,7 +888,7 @@ export async function handleWhatsAppImageMessage(
   contact: WhatsAppContact,
   image: { mediaId: string; mimeType: string; caption?: string },
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppTransport,
   /** The wamid the patient quoted (swipe-to-reply), if any. */
   quotedWamid: string | null = null
 ): Promise<void> {
@@ -885,7 +905,7 @@ export async function handleWhatsAppImageMessage(
   let bytes: Buffer | null = null;
   let stored: { path: string; contentType: string; size: number } | null = null;
   try {
-    const media = await downloadMedia(image.mediaId, creds.accessToken);
+    const media = await downloadWhatsAppMedia(creds, image.mediaId);
     bytes = media.bytes;
     stored = await uploadPatientMedia({
       clinicId,
@@ -955,7 +975,8 @@ export async function handleWhatsAppImageMessage(
     profile?.id ?? null,
     mediaMeta ? { media: mediaMeta } : null,
     messageId,
-    quotedWamid
+    quotedWamid,
+    creds.configId
   );
 
   // The one-time vision call is its own USD-only ledger line (either mode).
@@ -1017,7 +1038,7 @@ export async function handleWhatsAppMediaMessage(
     caption?: string;
   },
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppTransport,
   /** The wamid the patient quoted (swipe-to-reply), if any. */
   quotedWamid: string | null = null
 ): Promise<void> {
@@ -1029,7 +1050,7 @@ export async function handleWhatsAppMediaMessage(
 
   let stored: { path: string; contentType: string; size: number } | null = null;
   try {
-    const dl = await downloadMedia(media.mediaId, creds.accessToken);
+    const dl = await downloadWhatsAppMedia(creds, media.mediaId);
     stored = await uploadPatientMedia({
       clinicId,
       conversationId,
@@ -1065,7 +1086,8 @@ export async function handleWhatsAppMediaMessage(
     profile?.id ?? null,
     mediaMeta ? { media: mediaMeta } : null,
     messageId,
-    quotedWamid
+    quotedWamid,
+    creds.configId
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");
@@ -1081,7 +1103,7 @@ export async function handleWhatsAppStructuredMessage(
   contact: WhatsAppContact,
   structured: { structuredKind: StructuredKind; data: unknown; summary: string },
   messageId: string,
-  creds: WhatsAppCredentials,
+  creds: WhatsAppTransport,
   /** The wamid the patient quoted (swipe-to-reply), if any. */
   quotedWamid: string | null = null
 ): Promise<void> {
@@ -1103,7 +1125,8 @@ export async function handleWhatsAppStructuredMessage(
     profile?.id ?? null,
     { structured: structuredMeta },
     messageId,
-    quotedWamid
+    quotedWamid,
+    creds.configId
   );
 
   await escalateMessage(clinicId, conversationId, sessionId, userMsg.id, "media_needs_review");

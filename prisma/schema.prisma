@@ -177,7 +177,8 @@ model Clinic {
   appointments           Appointment[]
   conversations          Conversation[]
   requestsFulfilled      ClinicRequest[]             @relation("RequestCreatedClinic")
-  whatsappConfig         WhatsappConfig?
+  whatsappConfigs        WhatsappConfig[]
+  whatsappHistorySyncs   WhatsappHistorySync[]
   aiCredit               ClinicAiCredit?
   aiUsage                AiUsageLog[]
   aiUnitLedger           AiUnitLedger[]
@@ -264,6 +265,7 @@ model Branch {
   dayQueues         DoctorDayQueue[]
   treatmentRecords  TreatmentRecord[]
   staffMembers      ClinicMemberBranch[]
+  whatsappConfigs   WhatsappConfig[]
 
   @@index([clinicId])
   @@map("branches")
@@ -344,29 +346,107 @@ model ClinicSocial {
 // the shared secret. The access token is encrypted at rest (AES-256-GCM, see
 // lib/crypto/secret-box.ts); the other values are low-sensitivity config the
 // clinic itself must copy into Meta.
+//
+// A clinic connects through ONE provider, picked by the platform admin:
+// META_CLOUD (official Cloud API — the Meta columns below are set) or EVOLUTION
+// (unofficial WhatsApp Web via a self-hosted Evolution API — only
+// `evolutionInstanceName` is set).
+/// One WhatsApp number of a clinic. A clinic can attach several: at most one
+/// official (META_CLOUD, set up by support) plus any number of WhatsApp Web
+/// (EVOLUTION) numbers it links itself. Exactly one is the clinic's main number
+/// — the fallback sender when a conversation has no number of its own yet.
 model WhatsappConfig {
-  id                String   @id @default(uuid()) @db.Uuid
-  clinicId          String   @unique @db.Uuid
-  // WhatsApp sender id ("Phone number ID" in the Meta dashboard).
-  phoneNumberId     String   @unique
-  // WhatsApp Business Account id — needed to list/create message templates.
-  wabaId            String
-  // System-user access token, encrypted. Never selected into client code raw.
-  accessTokenCipher String
+  id                    String           @id @default(uuid()) @db.Uuid
+  clinicId              String           @db.Uuid
+  provider              WhatsappProvider @default(META_CLOUD)
+  isPrimary             Boolean          @default(false)
+  // The branch this number belongs to; null = a clinic-level number. Decides who
+  // sees its messages: clinic-wide staff see every number, branch-limited staff
+  // only their branches' numbers. A deleted branch's numbers become clinic-level.
+  branchId              String?          @db.Uuid
+  // The number's own phone (digits, with country code) once known — EVOLUTION
+  // learns it when the phone links. Shown in the inbox's number picker, and
+  // how re-linking the same phone is recognised and merged.
+  phone                 String?
+  // When the number was unlinked (WhatsApp Web logged out from the settings
+  // page). Null = an active number. An unlinked number keeps its messages and
+  // conversations — they stay in the inbox, labelled as an old number — but it
+  // can't send, receive or be the main number. Linking the same phone again
+  // (re-linking this row, or a new number that turns out to be this phone)
+  // brings it back; a later history sync only adds what's missing.
+  unlinkedAt            DateTime?
+  // META_CLOUD: WhatsApp sender id ("Phone number ID" in the Meta dashboard).
+  phoneNumberId         String?          @unique
+  // META_CLOUD: WhatsApp Business Account id — needed to list/create templates.
+  wabaId                String?
+  // META_CLOUD: system-user access token, encrypted. Never selected into client code raw.
+  accessTokenCipher     String?
+  // EVOLUTION: the instance name on the Evolution server (one per clinic).
+  evolutionInstanceName String?          @unique
   // Unguessable token embedded in this clinic's unique callback URL
-  // (…/api/meta/whatsapp/webhook/{webhookToken}). Routes inbound events to the
-  // clinic and, in lieu of app-secret signature verification, gates the
-  // endpoint. Rotatable independently of the clinic's identity.
-  webhookToken      String   @unique
-  // The verify token this clinic types into Meta's webhook config; checked on
-  // the GET verification handshake.
-  verifyToken       String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  // (…/api/meta/whatsapp/webhook/{token} or …/api/evolution/webhook/{token}).
+  // Routes inbound events to the clinic and, in lieu of signature
+  // verification, gates the endpoint.
+  webhookToken          String           @unique
+  // META_CLOUD: the verify token this clinic types into Meta's webhook config;
+  // checked on the GET verification handshake.
+  verifyToken           String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
 
-  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  clinic      Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  branch      Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  messages    Message[]
+  historySync WhatsappHistorySync?
 
+  @@index([clinicId])
+  @@index([branchId])
   @@map("whatsapp_configs")
+}
+
+/// A WhatsApp-Web number's latest chat-history import (Evolution only) — one
+/// row per number, overwritten by a fresh sync. Progress is saved after every
+/// chat so staff can stop a sync and later resume it where it stopped.
+model WhatsappHistorySync {
+  id               String            @id @default(uuid()) @db.Uuid
+  clinicId         String            @db.Uuid
+  whatsappConfigId String            @unique @db.Uuid
+  status           HistorySyncStatus
+  // Identifies the background run allowed to write progress; a resume or a
+  // fresh start gets a new one, so a stale run that's still winding down
+  // can't overwrite the new state.
+  runId            String            @db.Uuid
+  // Import messages sent after this moment (start time − 90 days).
+  since            DateTime
+  // The chats (remote JIDs) to import, fixed when the sync first lists them;
+  // null until listed.
+  chats            Json?
+  totalChats       Int               @default(0)
+  // Chats [0, nextIndex) are fully imported.
+  nextIndex        Int               @default(0)
+  messagesImported Int               @default(0)
+  error            String?
+  startedAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  finishedAt       DateTime?
+
+  clinic         Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  whatsappConfig WhatsappConfig @relation(fields: [whatsappConfigId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId])
+  @@map("whatsapp_history_syncs")
+}
+
+enum HistorySyncStatus {
+  RUNNING
+  STOPPED
+  COMPLETED
+  FAILED
+}
+
+enum WhatsappProvider {
+  META_CLOUD
+  EVOLUTION
 }
 
 // Membership join table: a Profile belongs to a Clinic with a role. The unique
@@ -1000,6 +1080,10 @@ model Message {
   // out over WhatsApp. Lets an inbound reaction (which references the reacted
   // message by wamid) be attached to the right message. Null for web messages.
   whatsappMessageId String?         @db.Text
+  // The clinic WhatsApp number this message came in on / went out from (a clinic
+  // can have several). Picks the default sender for a reply. Null for web
+  // messages and for WhatsApp messages from before numbers were tracked.
+  whatsappConfigId  String?         @db.Uuid
   isRead            Boolean         @default(false)
   createdAt         DateTime        @default(now())
   // Debounce bookkeeping. On an inbound USER message, null until the debounce
@@ -1024,22 +1108,26 @@ model Message {
   // Distinct from reactions, which attach to their target via metadata.
   replyToId         String?         @db.Uuid
 
-  aiAgent      AiAgent?      @relation(fields: [aiAgentId], references: [id], onDelete: SetNull)
-  replyTo      Message?      @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies      Message[]     @relation("MessageReplies")
-  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  conversation Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  session      ChatSession?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  sender       Profile?      @relation("SenderProfile", fields: [senderId], references: [id], onDelete: SetNull)
-  aiUsage      AiUsageLog[]
-  escalations  Escalation[]
-  notes        MessageNote[]
-  staffAlerts  StaffAlert[]
+  aiAgent        AiAgent?        @relation(fields: [aiAgentId], references: [id], onDelete: SetNull)
+  whatsappConfig WhatsappConfig? @relation(fields: [whatsappConfigId], references: [id], onDelete: SetNull)
+  replyTo        Message?        @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        Message[]       @relation("MessageReplies")
+  clinic         Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  session        ChatSession?    @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  sender         Profile?        @relation("SenderProfile", fields: [senderId], references: [id], onDelete: SetNull)
+  aiUsage        AiUsageLog[]
+  escalations    Escalation[]
+  notes          MessageNote[]
+  staffAlerts    StaffAlert[]
 
   @@index([conversationId])
   @@index([sessionId])
   @@index([clinicId, createdAt])
   @@index([conversationId, whatsappMessageId])
+  // The history import's "already stored?" check, across the whole clinic.
+  @@index([clinicId, whatsappMessageId])
+  @@index([conversationId, whatsappConfigId, createdAt])
   @@index([replyToId])
   // Serves the processor's "unprocessed user messages in this session" read and
   // the "is there an undelivered reply to resume" resume-check.

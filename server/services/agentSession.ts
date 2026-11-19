@@ -125,7 +125,9 @@ export async function persistUserMessage(
   /** The inbound WhatsApp message id (wamid), so a later reaction can attach. */
   whatsappMessageId: string | null = null,
   /** The wamid the patient quoted (WhatsApp `context.id`), linked as replyToId. */
-  quotedWamid: string | null = null
+  quotedWamid: string | null = null,
+  /** The clinic WhatsApp number it arrived on (WhatsappConfig id). */
+  whatsappConfigId: string | null = null
 ): Promise<SessionMessage> {
   const m = await prisma.message.create({
     data: {
@@ -137,6 +139,7 @@ export async function persistUserMessage(
       isRead: false,
       metadata: metadata ? (metadata as unknown as Prisma.InputJsonValue) : undefined,
       whatsappMessageId,
+      whatsappConfigId,
       replyToId: await resolveReplyToId(conversationId, quotedWamid),
       clinicId,
     },
@@ -167,7 +170,10 @@ export async function persistAgentMessage(
   deliveryStatus: MessageDelivery = MessageDelivery.SENT,
   /** The AI employee that wrote this reply (inbox attribution); null for
    *  system notices. */
-  aiAgentId: string | null = null
+  aiAgentId: string | null = null,
+  /** The clinic WhatsApp number it goes out from — set when saved, so even a
+   *  reply that fails to send belongs to its number (and branch). */
+  whatsappConfigId: string | null = null
 ): Promise<SessionMessage> {
   const m = await prisma.message.create({
     data: {
@@ -180,6 +186,7 @@ export async function persistAgentMessage(
       clinicId,
       deliveryStatus,
       aiAgentId,
+      whatsappConfigId,
     },
   });
   await touchConversation(conversationId);
@@ -235,7 +242,12 @@ export async function findUndeliveredAgentReply(conversationId: string): Promise
 export async function markAgentDelivery(
   messageId: string,
   status: MessageDelivery,
-  opts: { whatsappMessageId?: string | null; incrementAttempts?: boolean } = {}
+  opts: {
+    whatsappMessageId?: string | null;
+    /** The clinic WhatsApp number the reply went out from. */
+    whatsappConfigId?: string | null;
+    incrementAttempts?: boolean;
+  } = {}
 ): Promise<void> {
   await prisma.message
     .update({
@@ -243,6 +255,7 @@ export async function markAgentDelivery(
       data: {
         deliveryStatus: status,
         ...(opts.whatsappMessageId ? { whatsappMessageId: opts.whatsappMessageId } : {}),
+        ...(opts.whatsappConfigId ? { whatsappConfigId: opts.whatsappConfigId } : {}),
         ...(opts.incrementAttempts ? { sendAttempts: { increment: 1 } } : {}),
       },
     })

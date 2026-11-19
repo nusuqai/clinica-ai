@@ -74,7 +74,7 @@ export const PERMISSION_META: Record<
   },
   whatsapp: {
     label: "إدارة واتساب",
-    description: "التذكيرات ورسائل التقييم التلقائية وحالة الاتصال",
+    description: "التذكيرات ورسائل التقييم التلقائية، وربط رقم واتساب العيادة أو فصله",
     scope: "clinic",
   },
   clinic: {

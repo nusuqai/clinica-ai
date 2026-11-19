@@ -9,6 +9,26 @@ import {
   saveWhatsappConfig,
 } from "@/lib/meta/whatsapp-config";
 import {
+  deleteNumberFor,
+  disconnectEvolutionFor,
+  evolutionStatusFor,
+  setPrimaryFor,
+  startEvolutionFor,
+  stopSyncFor,
+  syncHistoryFor,
+  type DeleteNumberResult,
+  type EvolutionDisconnectResult,
+  type EvolutionStartResult,
+  type EvolutionStatusResult,
+  type EvolutionSyncResult,
+  type NumberManager,
+  type RemovalImpactResult,
+  type SetBranchResult,
+  type SetPrimaryResult,
+  removalImpactFor,
+  setBranchFor,
+} from "@/server/services/evolutionConnection";
+import {
   listMessageTemplates,
   createMessageTemplate,
   deleteMessageTemplate,
@@ -74,9 +94,9 @@ export async function saveClinicWhatsappConfigAction(input: {
 }
 
 /**
- * Unlinks the clinic's WhatsApp number (deletes its config) so the number can be
- * connected to a different clinic. Returns `{ error }` on failure so the confirm
- * dialog can show it in place.
+ * Removes the clinic's official (Cloud API) number so it can be connected to a
+ * different clinic. Returns `{ error }` on failure so the confirm dialog can
+ * show it in place.
  */
 export async function disconnectClinicWhatsappAction(input: {
   clinicId: string;
@@ -90,6 +110,116 @@ export async function disconnectClinicWhatsappAction(input: {
     console.error("Failed to disconnect WhatsApp:", err);
     return { ok: false, error: "تعذّر فصل رقم الواتساب." };
   }
+}
+
+// ─── Numbers (WhatsApp Web via Evolution, + main number) ─────────────────────
+// Thin platform-admin wrappers; the clinic's own page has its twins in
+// server/actions/whatsapp.ts. Both share server/services/evolutionConnection.ts.
+
+/** The platform console manages every number of any clinic. */
+function platformManager(clinicId: string): NumberManager {
+  return { clinicId, branchIds: null };
+}
+
+/** Links a phone: `configId` null attaches a new number, else re-links that one. */
+export async function startClinicEvolutionAction(input: {
+  clinicId: string;
+  configId: string | null;
+  phone?: string;
+  /** New numbers: the branch it belongs to (null = clinic-level). */
+  branchId?: string | null;
+}): Promise<EvolutionStartResult> {
+  await requirePlatformAdmin();
+  const res = await startEvolutionFor(
+    platformManager(input.clinicId),
+    input.configId,
+    input.phone,
+    input.branchId ?? null
+  );
+  if (res.ok) revalidatePath(WHATSAPP_PATH);
+  return res;
+}
+
+/** A number's live link status + sync progress, polled while its panel is open. */
+export async function getClinicEvolutionStatusAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<EvolutionStatusResult> {
+  await requirePlatformAdmin();
+  return evolutionStatusFor(platformManager(input.clinicId), input.configId);
+}
+
+/** Starts a number's chat-history import: a fresh 90 days, or resume a stopped one. */
+export async function syncClinicEvolutionHistoryAction(input: {
+  clinicId: string;
+  configId: string;
+  mode: "fresh" | "resume";
+}): Promise<EvolutionSyncResult> {
+  await requirePlatformAdmin();
+  return syncHistoryFor(platformManager(input.clinicId), input.configId, input.mode);
+}
+
+/** Stops a number's running chat-history import (progress is kept). */
+export async function stopClinicEvolutionHistoryAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<EvolutionSyncResult> {
+  await requirePlatformAdmin();
+  return stopSyncFor(platformManager(input.clinicId), input.configId);
+}
+
+/** Logs a WhatsApp Web number out; its conversations stay in the inbox. */
+export async function disconnectClinicEvolutionAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<EvolutionDisconnectResult> {
+  await requirePlatformAdmin();
+  const res = await disconnectEvolutionFor(platformManager(input.clinicId), input.configId);
+  if (res.ok) revalidatePath(WHATSAPP_PATH);
+  return res;
+}
+
+/** Deletes a WhatsApp Web number for good, with its conversations. */
+export async function deleteClinicEvolutionNumberAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<DeleteNumberResult> {
+  await requirePlatformAdmin();
+  const res = await deleteNumberFor(platformManager(input.clinicId), input.configId);
+  if (res.ok) revalidatePath(WHATSAPP_PATH);
+  return res;
+}
+
+/** Makes a number the clinic's main one. */
+export async function setClinicPrimaryNumberAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<SetPrimaryResult> {
+  await requirePlatformAdmin();
+  const res = await setPrimaryFor(platformManager(input.clinicId), input.configId);
+  if (res.ok) revalidatePath(WHATSAPP_PATH);
+  return res;
+}
+
+/** What deleting a number for good would delete (for the confirm popup). */
+export async function getClinicNumberRemovalImpactAction(input: {
+  clinicId: string;
+  configId: string;
+}): Promise<RemovalImpactResult> {
+  await requirePlatformAdmin();
+  return removalImpactFor(platformManager(input.clinicId), input.configId);
+}
+
+/** Moves a number to a branch, or makes it clinic-level (branchId null). */
+export async function setClinicNumberBranchAction(input: {
+  clinicId: string;
+  configId: string;
+  branchId: string | null;
+}): Promise<SetBranchResult> {
+  await requirePlatformAdmin();
+  const res = await setBranchFor(platformManager(input.clinicId), input.configId, input.branchId);
+  if (res.ok) revalidatePath(WHATSAPP_PATH);
+  return res;
 }
 
 // ─── Templates ───────────────────────────────────────────────────────────────

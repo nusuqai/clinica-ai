@@ -51,6 +51,11 @@ export interface ConfirmOptions {
   /** Red confirm button — the default, since most confirms guard a delete. */
   destructive?: boolean;
   /**
+   * For deletes that can't be undone and lose a lot: the person must type this
+   * exact text before the confirm button enables.
+   */
+  confirmPhrase?: string;
+  /**
    * Runs on confirm while the dialog shows a loading state. Resolve with
    * `{ error: string }` (the server actions' convention) or throw to keep the
    * dialog open with that message; anything else closes it and the confirm
@@ -81,6 +86,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [options, setOptions] = React.useState<ConfirmOptions | null>(null);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [typed, setTyped] = React.useState("");
   const resolver = React.useRef<((value: boolean) => void) | null>(null);
   const confirmButton = React.useRef<HTMLButtonElement>(null);
 
@@ -90,6 +96,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     setOptions(opts);
     setPending(false);
     setError(null);
+    setTyped("");
     return new Promise<boolean>((resolve) => {
       resolver.current = resolve;
     });
@@ -127,6 +134,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   }
 
   const destructive = options?.destructive ?? true;
+  const phrase = options?.confirmPhrase?.trim();
+  const phraseMissing = !!phrase && typed.trim() !== phrase;
 
   return (
     <ConfirmContext.Provider value={confirm}>
@@ -160,6 +169,25 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             </p>
           )}
 
+          {phrase && (
+            <label className="block space-y-1.5 text-sm text-muted-foreground">
+              <span>
+                للتأكيد اكتب{" "}
+                <span className="font-semibold text-foreground" dir="auto">
+                  {phrase}
+                </span>
+              </span>
+              <input
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                disabled={pending}
+                dir="auto"
+                autoComplete="off"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+          )}
+
           {error && (
             <p role="alert" className="font-sans text-sm text-red-600">
               {error}
@@ -176,6 +204,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
               ref={confirmButton}
               variant={destructive ? "destructive" : "default"}
               loading={pending}
+              disabled={phraseMissing}
               onClick={handleConfirm}
             >
               {options?.confirmText ?? (destructive ? "حذف" : "تأكيد")}

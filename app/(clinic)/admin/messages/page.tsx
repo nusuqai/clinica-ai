@@ -16,6 +16,8 @@ import {
 } from "@/server/services/inbox";
 import { listTeamMembers } from "@/server/services/team";
 import { aiAgentNames } from "@/server/services/aiAgents";
+import { getWhatsappNumbers } from "@/lib/meta/whatsapp-config";
+import { inboxNumberScope } from "@/lib/inbox-scope";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -42,19 +44,23 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
   // before the reads below, so the list/counter already reflect it.
   if (id) await acknowledgeAssignment(id, user.id).catch(() => {});
 
-  const [conversations, selectedConversation, team, agentNames, labels, teammates] =
+  // Branch-limited staff see (and send from) only their branches' numbers.
+  const scope = await inboxNumberScope(ctx);
+
+  const [conversations, selectedConversation, team, agentNames, labels, teammates, waNumbers] =
     await Promise.all([
-      getConversations(clinic.id, { query: q, channel, show, label }, user.id),
-      id ? getConversationDetail(id, clinic.id, user.id) : Promise.resolve(null),
+      getConversations(clinic.id, { query: q, channel, show, label }, user.id, scope),
+      id ? getConversationDetail(id, clinic.id, user.id, scope) : Promise.resolve(null),
       listTeamMembers(clinic.id),
       aiAgentNames(clinic.id),
       listMyLabels(clinic.id, user.id),
       listInboxTeammates(clinic.id),
+      getWhatsappNumbers(clinic.id),
     ]);
   // Only read the thread once the conversation is confirmed to be this clinic's.
   const [messages, internalNotes] = selectedConversation
     ? await Promise.all([
-        getMessages(selectedConversation.id, user.id),
+        getMessages(selectedConversation.id, user.id, scope),
         listInternalNotes(selectedConversation.id),
       ])
     : [[], []];
@@ -65,7 +71,7 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
 
   // Mark messages as read when admin opens a conversation
   if (selectedConversation) {
-    await markConversationRead(selectedConversation.id);
+    await markConversationRead(selectedConversation.id, scope);
   }
 
   return (
@@ -89,6 +95,23 @@ export default async function AdminMessagesPage({ searchParams }: PageProps) {
           labels={labels}
           teammates={teammates}
           requestedId={id ?? null}
+          whatsappNumbers={waNumbers
+            .filter((n) => scope === null || scope.includes(n.id))
+            .map((n) => ({
+              id: n.id,
+              provider: n.provider,
+              isPrimary: n.isPrimary,
+              unlinked: n.unlinkedAt !== null,
+              // Owner first — "which branch did this come through" is the point.
+              label: [
+                n.branchName ?? "العيادة",
+                n.provider === "META_CLOUD" ? "الرسمي" : null,
+                n.phone ? `+${n.phone}` : n.provider === "EVOLUTION" ? "واتساب ويب" : null,
+                n.unlinkedAt ? "رقم مفصول" : null,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            }))}
         />
       </Suspense>
     </div>
