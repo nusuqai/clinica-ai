@@ -403,6 +403,8 @@ export async function adminBookAppointmentAction(input: {
   orderNumber?: number | null;
 }> {
   const { clinicId, scope } = await requireScoped("appointments");
+  if (input.items && (!Array.isArray(input.items) || input.items.length > 20))
+    return { ok: false, error: "بيانات غير صالحة" };
   // Staff book only with doctors — and into slots / queues — of their branches.
   if (!(await Scope.doctorInScope(input.doctorId, clinicId, scope)))
     return { ok: false, error: DOCTOR_NOT_FOUND };

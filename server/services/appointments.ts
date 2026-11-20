@@ -273,6 +273,10 @@ export async function getPatientAppointments(
       slot: { select: { date: true, startTime: true, endTime: true } },
       branch: { select: { name: true } },
       doctor: doctorNameSelect,
+      items: {
+        orderBy: { sortOrder: "asc" },
+        select: { serviceName: true, quantity: true, patientPackageId: true },
+      },
       ...queueInfoInclude,
     },
     orderBy: [

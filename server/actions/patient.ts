@@ -11,6 +11,10 @@ import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
 import { expectedTimeAfter } from "@/lib/availability/queue-time";
 import * as BookingService from "@/server/services/booking";
+import { serviceNamesByDoctor } from "@/server/services/catalog";
+import * as CatalogService from "@/server/services/catalog";
+import * as PackageService from "@/server/services/packages";
+import { practitionerName } from "@/lib/doctor-title";
 import * as TreatmentService from "@/server/services/treatments";
 import * as IntakeService from "@/server/services/patient-intake";
 import { INTAKE_REQUIRED_ERROR, type IntakeValues } from "@/lib/patient-intake";
@@ -154,11 +158,14 @@ export async function publicDoctorsPageAction(
     { query: filters.query, specialtyId: filters.specialtyId, status: "active" },
     pageRequest(page, 12)
   );
-  // Only what the public cards show.
+  // Only what the public cards show — what each practitioner provides instead
+  // of a single "fee" (prices are per service, shown in the booking modal).
+  const services = await serviceNamesByDoctor(result.items.map((d) => d.id));
   return mapPage(result, (d) => ({
     id: d.id,
     specialty: d.specialty,
-    consultationFee: d.consultationFee,
+    title: d.title,
+    services: services.get(d.id) ?? [],
     profile: { fullName: d.profile.fullName, phone: d.profile.phone },
     _count: { appointments: d._count.appointments },
   }));
@@ -172,21 +179,30 @@ async function callerBranchScope(): Promise<BranchScope> {
   return (await getClinicContext())?.branchIds ?? null;
 }
 
+/** Only well-formed ids reach the queries. */
+const serviceIdList = (ids?: string[] | null) =>
+  ids?.filter((id) => /^[0-9a-f-]{36}$/i.test(id)).slice(0, 20) ?? null;
+
 export async function getAvailableDaysAction(
-  doctorId: string
+  doctorId: string,
+  serviceIds?: string[] | null
 ): Promise<DoctorService.AvailableDay[]> {
-  return DoctorService.getAvailableDaysForBooking(doctorId, 60, await callerBranchScope());
+  return DoctorService.getAvailableDaysForBooking(doctorId, 60, await callerBranchScope(), {
+    serviceIds: serviceIdList(serviceIds),
+  });
 }
 
 export async function getAvailableSlotsAction(
   doctorId: string,
-  dateStr: string
+  dateStr: string,
+  serviceIds?: string[] | null
 ): Promise<{ id: string; startTime: string; endTime: string }[]> {
   const date = new Date(dateStr);
   const slots = await DoctorService.getAvailableSlotsForBooking(
     doctorId,
     date,
-    await callerBranchScope()
+    await callerBranchScope(),
+    { serviceIds: serviceIdList(serviceIds) }
   );
   return slots.map((s) => ({
     id: s.id,
@@ -201,7 +217,8 @@ export async function getAvailableSlotsAction(
  */
 export async function getOrderBookingInfoAction(
   doctorId: string,
-  dateStr: string
+  dateStr: string,
+  serviceIds?: string[] | null
 ): Promise<{
   mode: "order" | "arrival";
   available: boolean;
@@ -211,13 +228,32 @@ export async function getOrderBookingInfoAction(
   estimatedDurationMin: number | null;
   expectedTime: string | null;
 } | null> {
-  const info = await QueueService.getOrderBookingInfo(
+  const ids = serviceIdList(serviceIds);
+  const [length, fit] = await Promise.all([
+    BookingService.visitMinutes(doctorId, ids),
+    BookingService.serviceFit(doctorId, ids),
+  ]);
+  const probe = await QueueService.getOrderBookingInfo(
     doctorId,
     new Date(dateStr),
     null,
     await callerBranchScope()
   );
+  if (!probe) return null;
+  const need = BookingService.lengthWith(length, probe.estimatedDurationMin ?? 15) ?? undefined;
+  const info = need
+    ? await QueueService.getOrderBookingInfo(
+        doctorId,
+        new Date(dateStr),
+        null,
+        await callerBranchScope(),
+        {
+          durationMin: need,
+        }
+      )
+    : probe;
   if (!info) return null;
+  if (fit && !fit(info.ruleId, info.branchId)) info.available = false;
   const arrival = info.mode === "ARRIVAL_BASED";
   const nextOrderNumber = info.booked + 1;
   return {
@@ -262,7 +298,8 @@ export async function saveMyIntakeAction(
 export async function bookOrderAppointmentAction(
   doctorId: string,
   dateStr: string,
-  patientNotes?: string
+  patientNotes?: string,
+  items?: BookingService.BookingItemRequest[]
 ): Promise<{
   ok: boolean;
   error?: string;
@@ -282,6 +319,7 @@ export async function bookOrderAppointmentAction(
     date: new Date(dateStr),
     notes: patientNotes,
     clinicId: ctx.clinic.id,
+    items: sanitizeItems(items),
   });
   if (!result.ok) return { ok: false, error: result.error };
 
@@ -295,9 +333,20 @@ export async function bookOrderAppointmentAction(
   };
 }
 
+/** Client-sent lines, reduced to their known fields. */
+function sanitizeItems(items?: BookingService.BookingItemRequest[] | null) {
+  if (!Array.isArray(items)) return undefined;
+  return items.slice(0, 20).map((i) => ({
+    serviceId: String(i.serviceId),
+    quantity: typeof i.quantity === "number" ? i.quantity : null,
+    patientPackageId: i.patientPackageId ? String(i.patientPackageId) : null,
+  }));
+}
+
 export async function bookAppointmentAction(
   slotId: string,
-  patientNotes?: string
+  patientNotes?: string,
+  items?: BookingService.BookingItemRequest[]
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
@@ -310,10 +359,48 @@ export async function bookAppointmentAction(
 
   const result = await AppointmentService.createAppointment(ctx.user.id, slotId, patientNotes, {
     clinicId: ctx.clinic.id,
+    items: sanitizeItems(items),
   });
 
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath("/");
+  return { ok: true };
+}
+
+// ─── Services & packages (landing page) ───────────────────────────────────────
+
+/** Practitioners who provide a service — the landing catalog's "book" button. */
+export async function publicServiceProvidersAction(serviceId: string) {
+  const clinic = await getHostClinic();
+  if (!clinic || !/^[0-9a-f-]{36}$/i.test(serviceId)) return [];
+  const providers = await CatalogService.listServiceProviders(clinic.id, serviceId);
+  return (providers ?? []).map((p) => ({
+    id: p.doctorId,
+    name: practitionerName(p.fullName, p.title),
+    specialty: p.specialty ?? "",
+    branches: p.branches.map((b) => b.name),
+  }));
+}
+
+/** The signed-in patient asks for a package (created unpaid; paid at the clinic). */
+export async function requestMyPackageAction(
+  packageId: string,
+  branchId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getClinicContext();
+  if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
+  if (ctx.role !== Role.PATIENT) return { ok: false, error: "هذه الخدمة للمرضى فقط" };
+  const res = await PackageService.purchasePackage({
+    clinicId: ctx.clinic.id,
+    patientId: ctx.user.id,
+    packageId: String(packageId),
+    branchId: String(branchId),
+    soldById: null,
+    paid: false,
+    note: "طلبها المريض من الموقع",
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath("/", "page");
   return { ok: true };
 }
