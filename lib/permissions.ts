@@ -14,6 +14,9 @@ export const PERMISSIONS = [
   "quick_replies",
   "appointments",
   "doctors",
+  "services",
+  "offers",
+  "patient_packages",
   "patients",
   "medical_records",
   "agent",
@@ -55,6 +58,23 @@ export const PERMISSION_META: Record<
   doctors: {
     label: "إدارة الأطباء",
     description: "إضافة وتعديل الأطباء، وضبط مواعيد العمل والفترات المتاحة",
+    scope: "branch",
+  },
+  services: {
+    label: "إدارة الخدمات والباقات",
+    description:
+      "التصنيفات والخدمات والباقات: الأسعار، المدة، الفروع التي تُقدَّم فيها ومن يقدّمها من الفريق الطبي",
+    scope: "branch",
+  },
+  offers: {
+    label: "إدارة العروض",
+    description:
+      "إضافة العروض والخصومات على الخدمات والباقات وإيقافها أو تعديلها، دون تغيير الأسعار الأساسية",
+    scope: "branch",
+  },
+  patient_packages: {
+    label: "إدارة باقات المرضى",
+    description: "بيع الباقات للمرضى، تأكيد الدفع، وتعديل الرصيد أو تمديد الباقة أو إلغاؤها",
     scope: "branch",
   },
   patients: {
@@ -125,6 +145,8 @@ export const PERMISSION_HOME: { permission: Permission; href: string }[] = [
   { permission: "appointments", href: "/admin/appointments" },
   { permission: "patients", href: "/admin/patients" },
   { permission: "doctors", href: "/admin/doctors" },
+  { permission: "services", href: "/admin/services" },
+  { permission: "offers", href: "/admin/services/offers" },
   { permission: "agent", href: "/admin/knowledge" },
   { permission: "whatsapp", href: "/admin/whatsapp/automation" },
   { permission: "clinic", href: "/admin/settings" },

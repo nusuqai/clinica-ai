@@ -68,8 +68,6 @@ function parseDoctorAttributes(formData: FormData) {
   return {
     title: parseDoctorTitle(formData),
     yearsOfExperience: num("yearsOfExperience"),
-    examinationFee: num("examinationFee"),
-    consultationFee: num("consultationFee"),
     requiresAdvanceBooking: formData.get("requiresAdvanceBooking") === "on",
     acceptsChildren: formData.get("acceptsChildren") === "on",
     branchIds: formData.getAll("branchIds").map(String).filter(Boolean),
@@ -215,8 +213,6 @@ export async function updateDoctorAction(formData: FormData) {
     specialtyId: specialtyRes.data,
     bio: (formData.get("bio") as string) || undefined,
     yearsOfExperience: attrs.yearsOfExperience ?? null,
-    examinationFee: attrs.examinationFee ?? null,
-    consultationFee: attrs.consultationFee ?? null,
     requiresAdvanceBooking: attrs.requiresAdvanceBooking,
     acceptsChildren: attrs.acceptsChildren,
     // Keeps the doctor's branches outside the member's scope untouched.

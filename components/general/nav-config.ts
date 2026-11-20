@@ -16,6 +16,7 @@ import {
   BellRing,
   ShieldCheck,
   HeartPulse,
+  Sparkles,
 } from "lucide-react";
 import type { NavItem } from "./sidebar";
 import type { Permission } from "@/lib/permissions";
@@ -39,6 +40,7 @@ export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
     { href: "/admin/team", label: "فريق العمل", icon: ShieldCheck, adminOnly: true },
     { href: "/admin/patients", label: "المرضى", icon: HeartPulse, permission: "patients" },
     { href: "/admin/doctors", label: "الأطباء", icon: Stethoscope, permission: "doctors" },
+    { href: "/admin/services", label: "الخدمات", icon: Sparkles, permission: "services" },
     { href: "/admin/specialties", label: "التخصصات", icon: Tags, permission: "clinic" },
     {
       href: "/admin/branches",

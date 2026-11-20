@@ -60,24 +60,6 @@ export function DoctorFormFields({
           min={0}
           placeholder={optionalHints ? "10" : undefined}
         />
-        <FormField
-          control={control}
-          name="examinationFee"
-          type="number"
-          label={`سعر الكشف${opt}`}
-          min={0}
-          step="0.01"
-          placeholder={optionalHints ? "200.00" : undefined}
-        />
-        <FormField
-          control={control}
-          name="consultationFee"
-          type="number"
-          label={`سعر الاستشارة${opt}`}
-          min={0}
-          step="0.01"
-          placeholder={optionalHints ? "150.00" : undefined}
-        />
       </div>
 
       {/* Flags */}

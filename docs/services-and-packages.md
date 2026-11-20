@@ -576,25 +576,21 @@ Each common pricing pattern maps onto the model without clinic-type-specific cod
 
 Branch: `feat/services-packages` (from `dev`).
 
-| #   | Step                                                                                          | Status                                                               |
-| --- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 1   | Schema + migration (`20261120000001_services_packages`) + practitioner titles                 | **Written, not yet applied to a DB.** `prisma validate` + `tsc` pass |
-| 2   | Categories, services, branches, practitioner assignment (admin)                               | todo                                                                 |
-| 3   | Offers                                                                                        | todo                                                                 |
-| 4   | Booking engine: items, consecutive slots, queue minutes cap, overlap guard                    | todo                                                                 |
-| 5   | Packages: sale, pending payment, balance, reserve/consume, no-show, expiry                    | todo                                                                 |
-| 6   | Completion modal                                                                              | todo                                                                 |
-| 7   | Permissions (`services`, `offers`, `patient_packages`)                                        | todo                                                                 |
-| 8   | AI agent tools + prompt                                                                       | todo                                                                 |
-| 9   | Web booking, patient portal, landing (incl. replacing hardcoded "د." with `practitionerName`) | todo                                                                 |
-| 10  | Clinic-type templates                                                                         | todo                                                                 |
-| 11  | Drop `Doctor.examinationFee` / `consultationFee`                                              | todo                                                                 |
+| #   | Step                                                                                          | Status                                                                                                                                                                                                                              |
+| --- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Schema + migration (`20261120000001_services_packages`) + practitioner titles                 | **Done** — applied to the local DB and data migration verified (2026-11-20)                                                                                                                                                         |
+| 2   | Categories, services, branches, practitioner assignment (admin)                               | **Done** — `/admin/services` (categories, services, branch scope + prices, tiers, practitioners), doctor page "الخدمات" tab, permission keys `services`/`offers`/`patient_packages`; fee inputs removed from the admin doctor forms |
+| 3   | Offers                                                                                        | todo                                                                                                                                                                                                                                |
+| 4   | Booking engine: items, consecutive slots, queue minutes cap, overlap guard                    | todo                                                                                                                                                                                                                                |
+| 5   | Packages: sale, pending payment, balance, reserve/consume, no-show, expiry                    | todo                                                                                                                                                                                                                                |
+| 6   | Completion modal                                                                              | todo                                                                                                                                                                                                                                |
+| 7   | Permissions (`services`, `offers`, `patient_packages`)                                        | todo                                                                                                                                                                                                                                |
+| 8   | AI agent tools + prompt                                                                       | todo                                                                                                                                                                                                                                |
+| 9   | Web booking, patient portal, landing (incl. replacing hardcoded "د." with `practitionerName`) | todo                                                                                                                                                                                                                                |
+| 10  | Clinic-type templates                                                                         | todo                                                                                                                                                                                                                                |
+| 11  | Drop `Doctor.examinationFee` / `consultationFee`                                              | todo                                                                                                                                                                                                                                |
 
-Next action for step 1: the local Supabase DB was on a very old schema, so it
-needs `npm run supabase:reset` then `npm run prisma:deploy` (both `.env.local`),
-then verify the data migration (كشف/استشارة services from fees, one item per
-appointment, slot occupancy) on a small local test clinic, then continue with
-step 2.
+Next action: step 3 (offers).
 
 Behavior change introduced in step 1: cancelling an appointment now frees its
 slot(s) (`Slot.heldById`); before, a cancelled booking kept the slot taken

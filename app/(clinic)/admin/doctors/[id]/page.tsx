@@ -10,8 +10,11 @@ import {
   Activity,
   Stethoscope,
   ListOrdered,
+  Sparkles,
 } from "lucide-react";
-import { requirePermission } from "@/lib/auth";
+import { can, requirePermission } from "@/lib/auth";
+import { listCategories, listDoctorServices, listServices } from "@/server/services/catalog";
+import DoctorServicesTab from "./_components/services-tab";
 import { getDoctor, listDoctorRules, getDoctorScheduleDays } from "@/server/services/doctors";
 import { branchesInScope, listBranches } from "@/server/services/branches";
 import type { BranchScope } from "@/lib/branch-scope";
@@ -31,11 +34,11 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ListCardSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { PendingNavigationProvider, PendingSwap } from "@/components/general/pending-navigation";
-import { formatFee } from "@/lib/currency";
 import { doctorTitleLabel } from "@/lib/doctor-title";
 
 const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
+  { key: "services", label: "الخدمات", icon: Sparkles },
   { key: "rules", label: "قواعد التوفر", icon: Activity },
   { key: "slots", label: "المواعيد المتاحة", icon: Stethoscope },
   { key: "queue", label: "الدور", icon: ListOrdered },
@@ -55,7 +58,8 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
     ? (tab as Tab)
     : "appointments";
 
-  const { clinic, branchIds: scope } = await requirePermission("doctors");
+  const ctx = await requirePermission("doctors");
+  const { clinic, branchIds: scope } = ctx;
   // A branch-limited member only reaches doctors who work at their branches,
   // and everything below (branch options, rules, days) is cut to those branches.
   const doctor = await getDoctor(id, clinic.id, scope);
@@ -138,16 +142,6 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
                   {doctor.profile.phone}
                 </span>
               )}
-              {doctor.examinationFee && (
-                <span className="font-sans text-sm text-muted-foreground">
-                  {formatFee(doctor.examinationFee)} / كشف
-                </span>
-              )}
-              {doctor.consultationFee && (
-                <span className="font-sans text-sm text-muted-foreground">
-                  {formatFee(doctor.consultationFee)} / استشارة
-                </span>
-              )}
               {doctor.yearsOfExperience != null && (
                 <span className="font-sans text-sm text-muted-foreground">
                   {doctor.yearsOfExperience} سنة خبرة
@@ -200,6 +194,7 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
         }))}
         skeletons={{
           appointments: <TableSkeleton columns={5} rows={6} />,
+          services: <ListCardSkeleton rows={5} />,
           rules: <ListCardSkeleton rows={4} />,
           slots: <ListCardSkeleton rows={5} />,
           queue: <ListCardSkeleton rows={4} />,
@@ -238,6 +233,17 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
             </PendingSwap>
           </PendingNavigationProvider>
         )}
+        {activeTab === "services" && (
+          <Suspense key="services" fallback={<ListCardSkeleton rows={5} />}>
+            <ServicesContent
+              doctorId={id}
+              doctorBranchIds={doctor.branchIds}
+              clinicId={clinic.id}
+              scope={scope}
+              canManageCatalog={can(ctx, "services")}
+            />
+          </Suspense>
+        )}
         {activeTab === "rules" && (
           <Suspense key="rules" fallback={<ListCardSkeleton rows={4} />}>
             <RulesContent
@@ -270,6 +276,36 @@ async function AppointmentsContent({
 }) {
   const initial = await appointmentsPageAction({ ...filters, doctorId }, 1);
   return <DoctorAppointmentsTab doctorId={doctorId} filters={filters} initial={initial} />;
+}
+
+async function ServicesContent({
+  doctorId,
+  doctorBranchIds,
+  clinicId,
+  scope,
+  canManageCatalog,
+}: {
+  doctorId: string;
+  doctorBranchIds: string[];
+  clinicId: string;
+  scope: BranchScope;
+  canManageCatalog: boolean;
+}) {
+  const [categories, services, assigned] = await Promise.all([
+    listCategories(clinicId),
+    listServices(clinicId, scope),
+    listDoctorServices(doctorId),
+  ]);
+  return (
+    <DoctorServicesTab
+      doctorId={doctorId}
+      doctorBranchIds={doctorBranchIds}
+      categories={categories}
+      services={services}
+      assigned={assigned}
+      canManageCatalog={canManageCatalog}
+    />
+  );
 }
 
 async function RulesContent({
