@@ -735,3 +735,71 @@ export async function serviceNamesByDoctor(doctorIds: string[]): Promise<Map<str
   for (const r of rows) map.set(r.doctorId, [...(map.get(r.doctorId) ?? []), r.service.name]);
   return map;
 }
+
+// ─── Clinic-type templates ────────────────────────────────────────────────────
+
+/**
+ * Create a template's categories and services that don't exist yet (by name,
+ * case-insensitive). Services are created inactive and unpriced.
+ */
+export async function applyCatalogTemplate(
+  clinicId: string,
+  key: string
+): Promise<Result<{ categories: number; services: number; skipped: number }>> {
+  const { CATALOG_TEMPLATES } = await import("@/lib/catalog-templates");
+  const template = CATALOG_TEMPLATES.find((t) => t.key === key);
+  if (!template) return err("القالب غير موجود");
+
+  const [existingCats, existingServices, lastCat, lastSvc] = await Promise.all([
+    prisma.category.findMany({ where: { clinicId }, select: { id: true, name: true } }),
+    prisma.service.findMany({ where: { clinicId }, select: { name: true } }),
+    prisma.category.aggregate({ where: { clinicId }, _max: { sortOrder: true } }),
+    prisma.service.aggregate({ where: { clinicId }, _max: { sortOrder: true } }),
+  ]);
+  const norm = (n: string) => n.trim().toLowerCase();
+  const catByName = new Map(existingCats.map((c) => [norm(c.name), c.id]));
+  const svcNames = new Set(existingServices.map((s) => norm(s.name)));
+  let catOrder = (lastCat._max.sortOrder ?? -1) + 1;
+  let svcOrder = (lastSvc._max.sortOrder ?? -1) + 1;
+  let categories = 0;
+  let services = 0;
+  let skipped = 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const cat of template.categories) {
+      let categoryId = catByName.get(norm(cat.name));
+      if (!categoryId) {
+        const created = await tx.category.create({
+          data: { clinicId, name: cat.name, sortOrder: catOrder++ },
+        });
+        categoryId = created.id;
+        catByName.set(norm(cat.name), categoryId);
+        categories++;
+      }
+      for (const sv of cat.services) {
+        if (svcNames.has(norm(sv.name))) {
+          skipped++;
+          continue;
+        }
+        await tx.service.create({
+          data: {
+            clinicId,
+            categoryId,
+            name: sv.name,
+            description: sv.description ?? null,
+            kind: sv.kind,
+            pricingType: sv.pricingType,
+            unitLabel: sv.unitLabel ?? null,
+            durationMin: sv.durationMin,
+            price: null,
+            isActive: false,
+            sortOrder: svcOrder++,
+          },
+        });
+        svcNames.add(norm(sv.name));
+        services++;
+      }
+    }
+  });
+  return ok({ categories, services, skipped });
+}

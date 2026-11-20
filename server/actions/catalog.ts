@@ -364,3 +364,14 @@ export async function cancelPatientPackageAction(input: unknown): Promise<Action
   if (patientId) refreshPatient(patientId);
   return { success: true };
 }
+
+// ─── Clinic-type templates (clinic-wide: all-branch members only) ─────────────
+
+export async function applyCatalogTemplateAction(key: string) {
+  const { clinicId, scope } = await requireScoped("services");
+  if (scope !== null) return { error: CLINIC_WIDE_ONLY };
+  const result = await Catalog.applyCatalogTemplate(clinicId, String(key));
+  if (!result.ok) return { error: result.error };
+  refresh();
+  return { success: true as const, ...result.data, error: undefined };
+}

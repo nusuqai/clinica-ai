@@ -520,7 +520,8 @@ Prompt flow:
 
 Dental · Aesthetic & derma · Nutrition · General · Physio. Applying a template
 creates its categories and typical services (kind, pricing type, unit, duration;
-**no prices**). Idempotent — existing names are skipped. Afterwards it is ordinary
+**no prices**), **inactive** until the clinic prices them, assigns practitioners and
+activates them. Idempotent — existing names are skipped. Afterwards it is ordinary
 editable data.
 
 ## 8. Background jobs
@@ -595,10 +596,10 @@ Branch: `feat/services-packages` (from `dev`).
 | 7   | Permissions (`services`, `offers`, `patient_packages`)                                        | **Done** — keys + branch scope enforced in every catalog / offer / package action (built with steps 2, 3, 5); RLS on the new tables (step 1); team role editor lists them automatically                                                                                                                                                                                                                                                                   |
 | 8   | AI agent tools + prompt                                                                       | **Done** — `agent/tools/services.ts` (search_services, get_service, list_service_providers, list_packages), patient list_my_packages + request_package, booking tools take `items` (+ patientPackageId), service-aware working hours / availability, doctor lists show services, booking card shows lines + total, chat cards for services / packages; prompt rewritten service-first (favourite practitioner, use package or pay, no «الكشف بخصوص إيه؟») |
 | 9   | Web booking, patient portal, landing (incl. replacing hardcoded "د." with `practitionerName`) | **Done** — booking modal (patient + admin dialog): services step → service-aware days/slots/queue → priced confirm (branch price, offer, pay from a package); landing: services & packages catalog (book a service → pick practitioner; request a package), patient \"باقاتي\", services on the patient's appointments, doctor cards / solo section show services; reports: service revenue, package sales / use, offer usage per branch                  |
-| 10  | Clinic-type templates                                                                         | todo                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 10  | Clinic-type templates                                                                         | **Done** — `lib/catalog-templates.ts` (general, dental, aesthetic & derma, nutrition, physio) applied from \"قوالب جاهزة\" on the Services page; idempotent; services created **inactive and unpriced** so nothing reaches patients before it is priced                                                                                                                                                                                                   |
 | 11  | Drop `Doctor.examinationFee` / `consultationFee`                                              | todo                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
-Next action: step 10 (clinic-type templates) then step 11 (drop the fee columns).
+Next action: step 11 (drop the fee columns).
 
 A booking that sends no services (only API callers now — the agent, the web
 modal and the admin dialog all send them) gets the practitioner's default line:

@@ -2,7 +2,17 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, FolderTree, MapPin, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import {
+  Clock,
+  FolderTree,
+  LayoutTemplate,
+  MapPin,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +24,7 @@ import { deleteServiceAction, setServiceActiveAction } from "@/server/actions/ca
 import { SERVICE_KIND_LABEL, durationText, servicePriceText } from "@/lib/catalog";
 import type { CategoryView, PractitionerOption, ServiceView } from "@/server/services/catalog";
 import CategoriesModal from "./categories-modal";
+import TemplatesModal from "./templates-modal";
 import ServiceFormModal, { type BranchOption } from "./service-form-modal";
 
 export default function ServicesManager({
@@ -36,6 +47,7 @@ export default function ServicesManager({
   const [isPending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ServiceView | null>(null);
   const [newCategoryId, setNewCategoryId] = useState("");
@@ -107,6 +119,12 @@ export default function ServicesManager({
             التصنيفات
           </Button>
         )}
+        {!limited && (
+          <Button variant="outline" onClick={() => setTemplatesOpen(true)}>
+            <LayoutTemplate />
+            قوالب جاهزة
+          </Button>
+        )}
         <Button onClick={() => openCreate()} disabled={activeCategories.length === 0}>
           <Plus />
           إضافة خدمة
@@ -121,10 +139,16 @@ export default function ServicesManager({
               : "ابدأ بإضافة تصنيف (مثال: ليزر، حشو، تغذية)، ثم أضف خدماتك داخله."}
           </p>
           {!limited && (
-            <Button className="mt-4" onClick={() => setCategoriesOpen(true)}>
-              <Plus />
-              إضافة تصنيف
-            </Button>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <Button onClick={() => setTemplatesOpen(true)}>
+                <LayoutTemplate />
+                ابدأ بقالب جاهز
+              </Button>
+              <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
+                <Plus />
+                إضافة تصنيف
+              </Button>
+            </div>
           )}
         </Card>
       ) : grouped.length === 0 ? (
@@ -239,6 +263,7 @@ export default function ServicesManager({
         </div>
       )}
 
+      {!limited && <TemplatesModal open={templatesOpen} onClose={() => setTemplatesOpen(false)} />}
       {!limited && (
         <CategoriesModal
           open={categoriesOpen}
