@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { OfferType, PricingType, ServiceKind } from "@prisma/client";
+import { CreditType, OfferType, PricingType, ServiceKind } from "@prisma/client";
 import { pricingUsesPrice, pricingUsesUnits } from "@/lib/catalog";
 
 // Schemas for the service catalog (docs/services-and-packages.md).
@@ -316,3 +316,88 @@ export const offerInputSchema = z
     },
   }));
 export type OfferInput = z.output<typeof offerInputSchema>;
+
+// ─── Packages ─────────────────────────────────────────────────────────────────
+
+export const packageInputSchema = z
+  .object({
+    categoryId: uuid,
+    name: z.string().trim().min(1, "أدخل اسم الباقة.").max(120, "الاسم طويل جداً."),
+    description: optionalText,
+    terms: optionalText,
+    agentNotes: optionalText,
+    price: money,
+    validityDays: z
+      .number()
+      .int("الصلاحية بالأيام يجب أن تكون رقماً صحيحاً.")
+      .min(1, "الصلاحية يوم واحد على الأقل.")
+      .max(3650, "الصلاحية طويلة جداً."),
+    allBranches: z.boolean(),
+    branches: z.array(z.object({ branchId: uuid, price: money.nullable() })).max(200),
+    /** Credit lines: units (pulses…) or sessions, each spendable on a category OR specific services. */
+    items: z
+      .array(
+        z.object({
+          creditType: z.enum(CreditType),
+          quantity: z
+            .number()
+            .int("الكمية يجب أن تكون رقماً صحيحاً.")
+            .min(1, "الكمية 1 على الأقل.")
+            .max(10_000_000),
+          categoryId: uuid.nullable(),
+          serviceIds: z.array(uuid).max(500),
+        })
+      )
+      .min(1, "أضف رصيداً واحداً على الأقل للباقة (وحدات أو جلسات).")
+      .max(20),
+  })
+  .superRefine((v, ctx) => {
+    v.items.forEach((item, i) => {
+      const hasCategory = item.categoryId != null;
+      const hasServices = item.serviceIds.length > 0;
+      if (hasCategory === hasServices)
+        ctx.addIssue({
+          code: "custom",
+          path: ["items", i],
+          message: "حدّد لكل رصيد تصنيفاً كاملاً أو خدمات بعينها يُستخدم فيها.",
+        });
+    });
+    if (new Set(v.branches.map((b) => b.branchId)).size !== v.branches.length)
+      ctx.addIssue({ code: "custom", path: ["branches"], message: "فرع مكرر." });
+  })
+  .transform((v) => ({
+    ...v,
+    items: v.items.map((i) => ({ ...i, serviceIds: [...new Set(i.serviceIds)] })),
+  }));
+export type PackageInput = z.output<typeof packageInputSchema>;
+
+/** Staff sells a package (or the patient requests one — then unpaid). */
+export const sellPackageSchema = z.object({
+  patientId: uuid,
+  packageId: uuid,
+  branchId: uuid,
+  paid: z.boolean(),
+  note: z.string().trim().max(500).optional(),
+});
+
+/** Manual balance change on one credit line (+ adds, − removes). */
+export const adjustBalanceSchema = z.object({
+  balanceId: uuid,
+  delta: z
+    .number()
+    .int("أدخل رقماً صحيحاً.")
+    .refine((n) => n !== 0, "أدخل قيمة غير صفرية."),
+  note: z.string().trim().min(1, "اذكر سبب التعديل.").max(500),
+});
+
+export const extendPackageSchema = z.object({
+  patientPackageId: uuid,
+  /** New last valid day, "YYYY-MM-DD". */
+  expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "تاريخ غير صالح."),
+  note: z.string().trim().min(1, "اذكر سبب التمديد.").max(500),
+});
+
+export const cancelPackageSchema = z.object({
+  patientPackageId: uuid,
+  note: z.string().trim().min(1, "اذكر سبب الإلغاء.").max(500),
+});

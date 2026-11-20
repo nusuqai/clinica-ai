@@ -7,7 +7,12 @@ import SectionTabs, { type SectionTab } from "./_components/section-tabs";
 export default async function ServicesSectionLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requirePermission(["services", "offers"]);
   const tabs: SectionTab[] = [
-    ...(can(ctx, "services") ? [{ href: "/admin/services", label: "الخدمات" }] : []),
+    ...(can(ctx, "services")
+      ? [
+          { href: "/admin/services", label: "الخدمات" },
+          { href: "/admin/services/packages", label: "الباقات" },
+        ]
+      : []),
     ...(can(ctx, "offers") ? [{ href: "/admin/services/offers", label: "العروض" }] : []),
   ];
   return (

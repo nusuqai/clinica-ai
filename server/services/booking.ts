@@ -6,6 +6,12 @@ import { pricingUsesUnits, tierForQuantity } from "@/lib/catalog";
 import { applyOffer, dayKey } from "@/lib/offers";
 import { isArrivalMode } from "@/lib/availability/modes";
 import { loadLiveOffers, offerForItem, type LiveOffer } from "./offers";
+import {
+  PackageCreditError,
+  packageLineFor,
+  releaseAppointmentPackages,
+  reserveAppointmentPackages,
+} from "./packages";
 import { getOrderRuleForDate, toDateOnly, type OrderBookingResult } from "./queue";
 import { ok, err, type Result } from "./_result";
 
@@ -114,7 +120,7 @@ export async function resolveBookingItems(
   rule: RuleContext,
   visitDay: string,
   requested: BookingItemRequest[] | null | undefined,
-  opts?: { offers?: LiveOffer[] }
+  opts?: { offers?: LiveOffer[]; patientId?: string; replacingAppointmentId?: string }
 ): Promise<Result<ResolvedBooking>> {
   let items = requested ?? [];
   if (items.length === 0) {
@@ -185,6 +191,46 @@ export async function resolveBookingItems(
       }
       default:
         basePrice = listPrice;
+    }
+
+    // Paid from one of the patient's packages: the line costs nothing now and
+    // takes no offer; the package's credit is reserved / consumed instead.
+    if (item.patientPackageId) {
+      if (!opts?.patientId) return err("الباقة غير متاحة");
+      const pkg = await packageLineFor({
+        clinicId: rule.clinicId,
+        patientId: opts.patientId,
+        patientPackageId: item.patientPackageId,
+        branchId: rule.branchId,
+        serviceId: s.id,
+        serviceName: s.name,
+        categoryId: s.categoryId,
+        visitDay,
+        replacingAppointmentId: opts.replacingAppointmentId,
+      });
+      if (!pkg.ok) return pkg;
+      lines.push({
+        serviceId: s.id,
+        serviceName: s.name,
+        categoryId: s.categoryId,
+        pricingType: s.pricingType,
+        unitLabel: s.unitLabel,
+        quantity,
+        basePrice,
+        offerId: null,
+        offerLabel: null,
+        discount: null,
+        unitPrice: 0,
+        total: 0,
+        durationMin:
+          doctorRow.durationMin ??
+          s.durationMin ??
+          rule.estimatedDurationMin ??
+          rule.slotDurationMin,
+        patientPackageId: item.patientPackageId,
+        balanceId: pkg.data.balanceId,
+      });
+      continue;
     }
 
     const match = offerForItem(offers, { serviceId: s.id, categoryId: s.categoryId }, basePrice);
@@ -405,7 +451,10 @@ export async function bookSlotAppointment(
         services: [],
       };
 
-  const resolved = await resolveBookingItems(rule, dayKey(slot.date), input.items);
+  const resolved = await resolveBookingItems(rule, dayKey(slot.date), input.items, {
+    patientId: input.patientId,
+    replacingAppointmentId: input.excludeAppointmentId,
+  });
   if (!resolved.ok) return resolved;
   const booking = resolved.data;
 
@@ -443,12 +492,15 @@ export async function bookSlotAppointment(
           items: { create: itemRows(slot.doctor.clinicId, slot.doctorId, booking.lines) },
         },
       });
-      // A reschedule onto overlapping slots first releases the old booking's hold.
+      // A reschedule first releases what the old booking holds that the new one
+      // needs: overlapping slots, and its reserved package sessions (the new
+      // visit reserves them again right below).
       if (input.excludeAppointmentId) {
         await tx.slot.updateMany({
           where: { heldById: input.excludeAppointmentId, id: { in: slotIds } },
           data: { heldById: null },
         });
+        await releaseAppointmentPackages(tx, input.excludeAppointmentId);
       }
       // Claim every slot atomically: Postgres re-checks `heldById IS NULL` after
       // taking each row lock, so a concurrent booking of any of them loses.
@@ -457,11 +509,13 @@ export async function bookSlotAppointment(
         data: { heldById: appt.id },
       });
       if (claimed.count !== slotIds.length) throw new SlotTakenError();
+      await reserveAppointmentPackages(tx, appt.id);
       return appt.id;
     });
     return ok({ id, slotIds, booking });
   } catch (e) {
     if (e instanceof SlotTakenError) return err("تم حجز هذا الموعد للتو. يرجى اختيار موعد آخر.");
+    if (e instanceof PackageCreditError) return err(e.message);
     return err(e instanceof Error ? e.message : "فشل حجز الموعد");
   }
 }
@@ -507,7 +561,8 @@ export async function bookQueueAppointment(
   const resolved = await resolveBookingItems(
     { ...rule, branchId, services: ruleServices },
     dayKey(day),
-    input.items
+    input.items,
+    { patientId: input.patientId }
   );
   if (!resolved.ok) return resolved;
   const booking = resolved.data;
@@ -576,6 +631,7 @@ export async function bookQueueAppointment(
           items: { create: itemRows(doctor.clinicId, input.doctorId, booking.lines) },
         },
       });
+      await reserveAppointmentPackages(tx, appt.id);
       return { capped: false as const, appt, orderNumber, after };
     });
 
@@ -596,6 +652,7 @@ export async function bookQueueAppointment(
       booking,
     });
   } catch (e) {
+    if (e instanceof PackageCreditError) return err(e.message);
     return err(e instanceof Error ? e.message : "فشل حجز الدور");
   }
 }
@@ -603,8 +660,8 @@ export async function bookQueueAppointment(
 // ─── Release (cancel / reschedule) ────────────────────────────────────────────
 
 /**
- * Give back what an appointment holds: its slots (slot days) and its booked
- * minutes (queue days). Called when it is cancelled. Idempotent: a second call
+ * Give back what an appointment holds: its slots (slot days), its booked
+ * minutes (queue days) and the package sessions it reserved. Called when it is cancelled. Idempotent: a second call
  * finds nothing held. The order counter itself is never rewound (a queue's
  * numbers stay unique).
  */
@@ -613,6 +670,7 @@ export async function releaseAppointmentHold(
   tx: Prisma.TransactionClient = prisma
 ): Promise<void> {
   await tx.slot.updateMany({ where: { heldById: appointmentId }, data: { heldById: null } });
+  await releaseAppointmentPackages(tx, appointmentId);
   const appt = await tx.appointment.findUnique({
     where: { id: appointmentId },
     select: { queueId: true, totalDurationMin: true, estimatedDurationMin: true },

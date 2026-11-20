@@ -6,6 +6,7 @@ import { AppointmentStatus, AvailabilityMode } from "@prisma/client";
 import { advanceQueueOnComplete, estimateWaitMinutes } from "./queue";
 import { expectedOrderTime, expectedTimeAfter, minutesAhead } from "@/lib/availability/queue-time";
 import { bookSlotAppointment, releaseAppointmentHold, type BookingItemRequest } from "./booking";
+import { settleSessionLines } from "./packages";
 import { isQueueMode } from "@/lib/availability/modes";
 import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { personSearch } from "./_search";
@@ -666,8 +667,11 @@ export async function updateAppointmentStatus(
           }),
         },
       });
-      // A cancelled visit gives its slots / queue minutes back.
+      // A cancelled visit gives its slots / queue minutes / package sessions back;
+      // a finished one (or a no-show) uses its reserved package sessions.
       if (status === AppointmentStatus.CANCELLED) await releaseAppointmentHold(appointmentId, tx);
+      if (status === AppointmentStatus.COMPLETED || status === AppointmentStatus.NO_SHOW)
+        await settleSessionLines(tx, appointmentId, status);
     });
     // Completing an order-based appointment advances the queue's "now serving".
     if (status === AppointmentStatus.COMPLETED) {

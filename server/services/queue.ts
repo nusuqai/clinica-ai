@@ -2,6 +2,7 @@ import "server-only";
 import { branchIdFilter, type BranchScope } from "@/lib/branch-scope";
 import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
+import { settleSessionLines } from "./packages";
 import { AppointmentStatus, AvailabilityMode, DayOfWeek, QueueCapType } from "@prisma/client";
 import { QUEUE_MODES, isArrivalMode } from "@/lib/availability/modes";
 
@@ -351,10 +352,14 @@ export async function completeCurrentAndAdvance(
         select: { id: true },
       });
       if (current) {
-        await prisma.appointment.update({
-          where: { id: current.id },
-          // completedAt anchors the post-visit feedback delay in the sweep.
-          data: { status: AppointmentStatus.COMPLETED, completedAt: new Date(), skippedAt: null },
+        await prisma.$transaction(async (tx) => {
+          await tx.appointment.update({
+            where: { id: current.id },
+            // completedAt anchors the post-visit feedback delay in the sweep.
+            data: { status: AppointmentStatus.COMPLETED, completedAt: new Date(), skippedAt: null },
+          });
+          // Package sessions reserved for the visit are used now.
+          await settleSessionLines(tx, current.id, "COMPLETED");
         });
         completedAppointmentId = current.id;
       }
