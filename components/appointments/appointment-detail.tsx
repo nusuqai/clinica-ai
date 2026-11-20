@@ -121,9 +121,9 @@ export default function AppointmentDetail({
                 <QueueValue appt={appt} />
               </Row>
             )}
-            {(appt.doctor.examinationFee != null || appt.doctor.consultationFee != null) && (
-              <Row icon={Banknote} label="سعر الكشف">
-                {appt.doctor.examinationFee != null ? formatFee(appt.doctor.examinationFee) : "—"}
+            {appt.items.length > 0 && (
+              <Row icon={Banknote} label="الخدمات">
+                <VisitItems appt={appt} />
               </Row>
             )}
             {appt.patientNotes && (
@@ -319,5 +319,58 @@ function QueueValue({ appt }: { appt: AppointmentDetailView }) {
         </span>
       )}
     </span>
+  );
+}
+
+/** The visit's service lines: booked price (with offer / package) and, once
+ *  completed, the actual quantity and final price. */
+function VisitItems({ appt }: { appt: AppointmentDetailView }) {
+  const done = appt.status === "COMPLETED";
+  const total = done ? appt.finalTotal : appt.estimatedTotal;
+  return (
+    <div className="space-y-1.5">
+      {appt.items.map((i) => {
+        const qty = done && i.finalQuantity != null ? i.finalQuantity : i.quantity;
+        const price = done && i.finalTotal != null ? i.finalTotal : i.total;
+        return (
+          <div key={i.id} className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <span>
+              {i.serviceName}
+              {i.unitLabel && qty > 1 ? ` · ${qty} ${i.unitLabel}` : ""}
+              {i.packageName && (
+                <span className="text-xs text-violet-700"> · من باقة {i.packageName}</span>
+              )}
+              {i.offerLabel && <span className="text-xs text-accent"> · {i.offerLabel}</span>}
+              {i.uncoveredQuantity ? (
+                <span className="text-xs text-amber-700">
+                  {" "}
+                  · {i.uncoveredQuantity} غير مغطاة بالباقة
+                </span>
+              ) : null}
+            </span>
+            <span className="text-sm">
+              {i.packageName
+                ? "مدفوعة بالباقة"
+                : price != null
+                  ? formatFee(price)
+                  : "يُحدَّد في الزيارة"}
+              {!i.packageName && i.discount ? (
+                <span className="ms-1 text-xs text-muted-foreground line-through">
+                  {i.basePrice != null
+                    ? formatFee(i.basePrice * (i.unitLabel ? i.quantity : 1))
+                    : ""}
+                </span>
+              ) : null}
+            </span>
+          </div>
+        );
+      })}
+      {appt.items.length > 1 && total != null && (
+        <div className="flex justify-between border-t border-border pt-1.5 font-medium">
+          <span>{done ? "الإجمالي" : "الإجمالي التقديري"}</span>
+          <span>{formatFee(total)}</span>
+        </div>
+      )}
+    </div>
   );
 }

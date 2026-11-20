@@ -454,6 +454,27 @@ export interface AppointmentDetailView {
   estimatedWaitMin: number | null;
   expectedTime: string | null;
   feedback: { rating: number | null; comment: string | null; createdAt: Date } | null;
+  /** The services of the visit (booked → as done after completion). */
+  items: AppointmentItemView[];
+  estimatedTotal: number | null;
+  finalTotal: number | null;
+  totalDurationMin: number | null;
+}
+
+export interface AppointmentItemView {
+  id: string;
+  serviceName: string;
+  quantity: number;
+  unitLabel: string | null;
+  basePrice: number | null;
+  discount: number | null;
+  total: number | null;
+  offerLabel: string | null;
+  packageName: string | null;
+  durationMin: number;
+  finalQuantity: number | null;
+  finalTotal: number | null;
+  uncoveredQuantity: number | null;
 }
 
 export async function getAppointmentForDetail(
@@ -476,11 +497,20 @@ export async function getAppointmentForDetail(
         },
       },
       feedback: { select: { rating: true, comment: true, createdAt: true } },
+      items: {
+        orderBy: { sortOrder: "asc" },
+        include: {
+          service: { select: { unitLabel: true } },
+          offer: { select: { label: true } },
+          patientPackage: { select: { name: true } },
+        },
+      },
       ...queueInfoInclude,
     },
   });
   if (!row) return null;
   const q = queueView(row, await loadQueueOffsets([row]));
+  const n = (v: Prisma.Decimal | null) => (v == null ? null : Number(v));
   return {
     id: row.id,
     clinicId: row.clinicId,
@@ -513,6 +543,24 @@ export async function getAppointmentForDetail(
     estimatedWaitMin: q.estimatedWaitMin,
     expectedTime: q.expectedTime,
     feedback: row.feedback,
+    items: row.items.map((i) => ({
+      id: i.id,
+      serviceName: i.serviceName,
+      quantity: i.quantity,
+      unitLabel: i.service.unitLabel,
+      basePrice: n(i.basePrice),
+      discount: n(i.discount),
+      total: n(i.total),
+      offerLabel: i.offer?.label ?? null,
+      packageName: i.patientPackage?.name ?? null,
+      durationMin: i.durationMin,
+      finalQuantity: i.finalQuantity,
+      finalTotal: n(i.finalTotal),
+      uncoveredQuantity: i.uncoveredQuantity,
+    })),
+    estimatedTotal: n(row.estimatedTotal),
+    finalTotal: n(row.finalTotal),
+    totalDurationMin: row.totalDurationMin,
   };
 }
 
