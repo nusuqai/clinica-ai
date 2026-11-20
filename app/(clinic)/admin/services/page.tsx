@@ -1,11 +1,14 @@
-import { requirePermission } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { can, requirePermission } from "@/lib/auth";
 import { branchesInScope, listBranches } from "@/server/services/branches";
 import { listCategories, listPractitionerOptions, listServices } from "@/server/services/catalog";
 import PageHeader from "@/components/admin/page-header";
 import ServicesManager from "./_components/services-manager";
 
 export default async function AdminServicesPage() {
-  const ctx = await requirePermission("services");
+  const ctx = await requirePermission(["services", "offers"]);
+  // Offers-only members land on their own tab.
+  if (!can(ctx, "services")) redirect("/admin/services/offers");
   const { clinic } = ctx;
   const scope = ctx.branchIds;
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PricingType, ServiceKind } from "@prisma/client";
+import { OfferType, PricingType, ServiceKind } from "@prisma/client";
 import { pricingUsesPrice, pricingUsesUnits } from "@/lib/catalog";
 
 // Schemas for the service catalog (docs/services-and-packages.md).
@@ -227,3 +227,92 @@ export function serviceFormToInput(v: ServiceFormValues): z.input<typeof service
       .map((d) => ({ doctorId: d.doctorId, price: num(d.price), durationMin: num(d.durationMin) })),
   };
 }
+
+// ─── Offers ───────────────────────────────────────────────────────────────────
+
+const dayKeyText = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "تاريخ غير صالح.")
+  .nullable();
+
+export const offerInputSchema = z
+  .object({
+    name: z.string().trim().min(1, "أدخل اسماً داخلياً للعرض.").max(120, "الاسم طويل جداً."),
+    label: z.string().trim().min(1, "أدخل نص العرض الذي يراه المريض.").max(120, "النص طويل جداً."),
+    type: z.enum(OfferType),
+    value: z.number().nullable(),
+    buyQty: z.number().int().nullable(),
+    getQty: z.number().int().nullable(),
+    rewardValidityDays: z.number().int().nullable(),
+    /** "YYYY-MM-DD" clinic days, inclusive; null = open-ended. */
+    startsAt: dayKeyText,
+    endsAt: dayKeyText,
+    isActive: z.boolean(),
+    allBranches: z.boolean(),
+    branchIds: z.array(uuid).max(200),
+    targets: z
+      .object({
+        serviceIds: z.array(uuid).max(1000),
+        packageIds: z.array(uuid).max(1000),
+        categoryIds: z.array(uuid).max(200),
+      })
+      .refine(
+        (t) => t.serviceIds.length + t.packageIds.length + t.categoryIds.length > 0,
+        "اختر خدمة أو باقة أو تصنيفاً واحداً على الأقل يُطبَّق عليه العرض."
+      ),
+  })
+  .superRefine((v, ctx) => {
+    const need = (ok: boolean, path: string, message: string) => {
+      if (!ok) ctx.addIssue({ code: "custom", path: [path], message });
+    };
+    switch (v.type) {
+      case "PERCENT_OFF":
+        need(v.value != null && v.value > 0 && v.value <= 100, "value", "النسبة بين 1 و100.");
+        break;
+      case "AMOUNT_OFF":
+        need(v.value != null && v.value > 0, "value", "أدخل قيمة الخصم.");
+        break;
+      case "FIXED_PRICE":
+        need(v.value != null && v.value >= 0, "value", "أدخل السعر الخاص.");
+        need(
+          v.targets.categoryIds.length === 0,
+          "targets",
+          "السعر الخاص يُطبَّق على خدمات أو باقات محددة وليس على تصنيف كامل."
+        );
+        break;
+      case "BUY_X_GET_Y":
+        need(v.buyQty != null && v.buyQty >= 1, "buyQty", "أدخل عدد الجلسات المدفوعة.");
+        need(v.getQty != null && v.getQty >= 1, "getQty", "أدخل عدد الجلسات الهدية.");
+        need(
+          v.rewardValidityDays != null && v.rewardValidityDays >= 1,
+          "rewardValidityDays",
+          "أدخل مدة صلاحية الجلسات الهدية بالأيام."
+        );
+        need(v.targets.packageIds.length === 0, "targets", "هذا النوع يُطبَّق على الخدمات فقط.");
+        break;
+      case "BONUS_UNITS":
+        need(
+          v.value != null && Number.isInteger(v.value) && v.value >= 1,
+          "value",
+          "أدخل عدد الوحدات الإضافية."
+        );
+        need(v.targets.serviceIds.length === 0, "targets", "هذا النوع يُطبَّق على الباقات فقط.");
+        break;
+    }
+    if (v.startsAt && v.endsAt && v.endsAt < v.startsAt)
+      need(false, "endsAt", "تاريخ النهاية قبل تاريخ البداية.");
+  })
+  .transform((v) => ({
+    ...v,
+    value: v.type === "BUY_X_GET_Y" ? null : v.value,
+    buyQty: v.type === "BUY_X_GET_Y" ? v.buyQty : null,
+    getQty: v.type === "BUY_X_GET_Y" ? v.getQty : null,
+    rewardValidityDays: v.type === "BUY_X_GET_Y" ? v.rewardValidityDays : null,
+    branchIds: v.allBranches ? [] : [...new Set(v.branchIds)],
+    targets: {
+      serviceIds: [...new Set(v.targets.serviceIds)],
+      packageIds: [...new Set(v.targets.packageIds)],
+      categoryIds: [...new Set(v.targets.categoryIds)],
+    },
+  }));
+export type OfferInput = z.output<typeof offerInputSchema>;

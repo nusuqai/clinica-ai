@@ -78,6 +78,14 @@ export function serviceScopeFilter(scope: BranchScope): Prisma.ServiceWhereInput
   };
 }
 
+/** Prisma WHERE fragment: packages sold in at least one of the scope's branches. */
+export function packageScopeFilter(scope: BranchScope): Prisma.PackageWhereInput {
+  if (scope === null) return {};
+  return {
+    OR: [{ allBranches: true }, { branches: { some: { branchId: { in: [...scope] } } } }],
+  };
+}
+
 function accessFor(
   service: { allBranches: boolean; branches: { branchId: string }[] },
   scope: BranchScope

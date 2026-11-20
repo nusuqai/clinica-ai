@@ -7,9 +7,11 @@ import type { Permission } from "@/lib/permissions";
 import {
   categorySchema,
   doctorServicesInputSchema,
+  offerInputSchema,
   serviceInputSchema,
 } from "@/lib/validations/catalog";
 import * as Catalog from "@/server/services/catalog";
+import * as Offers from "@/server/services/offers";
 import * as Scope from "@/server/services/branchScope";
 
 // Server actions for the service catalog (categories + services). Every action
@@ -154,5 +156,64 @@ export async function setDoctorServicesAction(
   const result = await Catalog.setDoctorServices(clinicId, scope, doctorId, parsed.data);
   if (!result.ok) return { error: result.error };
   refresh();
+  return { success: true };
+}
+
+// ─── Offers ("offers" permission — separate from editing the catalog) ─────────
+
+async function requireOffers() {
+  const ctx = await getPermittedContext(["offers"]);
+  if (!ctx) throw new Error("غير مصرح");
+  return { clinicId: ctx.clinic.id, scope: ctx.branchIds as BranchScope, userId: ctx.user.id };
+}
+
+function refreshOffers() {
+  revalidatePath("/admin/services", "layout");
+}
+
+export async function createOfferAction(input: unknown) {
+  const { clinicId, scope, userId } = await requireOffers();
+  const parsed = offerInputSchema.safeParse(input);
+  if (!parsed.success) return { error: firstIssue(parsed.error) };
+  const result = await Offers.createOffer(clinicId, scope, userId, parsed.data);
+  if (!result.ok) return { error: result.error };
+  refreshOffers();
+  return { success: true as const, id: result.data.id, error: undefined };
+}
+
+export async function updateOfferAction(offerId: string, input: unknown): Promise<ActionResult> {
+  const { clinicId, scope } = await requireOffers();
+  const parsed = offerInputSchema.safeParse(input);
+  if (!parsed.success) return { error: firstIssue(parsed.error) };
+  const result = await Offers.updateOffer(clinicId, scope, offerId, parsed.data);
+  if (!result.ok) return { error: result.error };
+  refreshOffers();
+  return { success: true };
+}
+
+export async function setOfferActiveAction(
+  offerId: string,
+  isActive: boolean
+): Promise<ActionResult> {
+  const { clinicId, scope } = await requireOffers();
+  const result = await Offers.setOfferActive(clinicId, scope, offerId, !!isActive);
+  if (!result.ok) return { error: result.error };
+  refreshOffers();
+  return { success: true };
+}
+
+export async function duplicateOfferAction(offerId: string): Promise<ActionResult> {
+  const { clinicId, scope, userId } = await requireOffers();
+  const result = await Offers.duplicateOffer(clinicId, scope, userId, offerId);
+  if (!result.ok) return { error: result.error };
+  refreshOffers();
+  return { success: true };
+}
+
+export async function deleteOfferAction(offerId: string): Promise<ActionResult> {
+  const { clinicId, scope } = await requireOffers();
+  const result = await Offers.deleteOffer(clinicId, scope, offerId);
+  if (!result.ok) return { error: result.error };
+  refreshOffers();
   return { success: true };
 }
