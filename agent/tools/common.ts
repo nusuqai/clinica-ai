@@ -10,9 +10,10 @@ import { expectedTimeAfter } from "@/lib/availability/queue-time";
 import { modeTag } from "@/lib/availability/modes";
 import { pageRequest } from "@/lib/pagination";
 import { doctorTitleLabel } from "@/lib/doctor-title";
+import { serviceNamesByDoctor } from "@/server/services/catalog";
+import { lengthWith, serviceFit, visitMinutes } from "@/server/services/booking";
 import {
   jsonTool,
-  money,
   timeStr,
   LIST_HINT,
   pageField,
@@ -52,6 +53,7 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
       BranchService.listBranches(clinicId, { activeOnly: true }),
     ]);
     const branchName = new Map(branches.map((b) => [b.id, b.name]));
+    const servicesOf = await serviceNamesByDoctor(doctors.items.map((d) => d.id));
     return {
       ...pageInfo(doctors),
       doctors: doctors.items.map((d) => ({
@@ -65,8 +67,8 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
           .filter((n): n is string => !!n),
         qualifications: d.qualifications,
         expertiseAreas: d.expertiseAreas,
-        examinationFee: money(d.examinationFee),
-        consultationFee: money(d.consultationFee),
+        // What they provide — prices are per service (search_services / get_service).
+        services: servicesOf.get(d.id) ?? [],
         yearsOfExperience: d.yearsOfExperience,
         acceptsChildren: d.acceptsChildren,
         requiresAdvanceBooking: d.requiresAdvanceBooking,
@@ -194,18 +196,28 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
         name: "get_doctor_working_hours",
         description:
           "اعرض مواعيد عمل الطبيب (أيام الأسبوع وساعات العمل الثابتة والفرع الذي يعمل فيه في كل يوم) قبل عرض الفترات المتاحة. كل مدخل يوضّح الفرع (branch) الذي يداوم فيه الطبيب في ذلك اليوم — استعملها للإجابة عن أسئلة مثل «هل يعمل الطبيب في فرع كذا؟» أو «في أي فرع يداوم يوم كذا؟». استخدمها دائماً أولاً عندما يريد المستخدم حجز موعد، حتى يختار يوماً يعمل فيه الطبيب فعلاً، ثم استخدم get_doctor_availability لعرض الفترات المتاحة في ذلك اليوم.",
-        schema: z.object({ doctorId: z.string() }),
+        schema: z.object({
+          doctorId: z.string(),
+          serviceIds: z
+            .array(z.string())
+            .nullable()
+            .describe("الخدمات المطلوبة: تُعاد فقط الأيام/الفروع التي تُقدَّم فيها كلها (اختياري)"),
+        }),
       },
-      async ({ doctorId }) => {
+      async ({ doctorId, serviceIds }) => {
         const doctor = await DoctorService.getDoctor(doctorId, clinicId);
         if (!doctor) return { error: "الطبيب غير موجود" };
-        const rules = await DoctorService.listDoctorRules(doctorId, clinicId); // #38
+        const [rules, fit] = await Promise.all([
+          DoctorService.listDoctorRules(doctorId, clinicId), // #38
+          serviceFit(doctorId, serviceIds),
+        ]);
         return {
           doctorId,
           doctorName: doctor.profile.fullName,
           workingHours: rules
             // Referral-only windows aren't publicly bookable, so hide them here.
             .filter((r) => r.isActive && !r.referralOnly)
+            .filter((r) => !fit || fit(r.id, r.branchId))
             .map((r) => ({
               day: DAY_LABELS_AR[r.dayOfWeek] ?? r.dayOfWeek,
               from: r.startTime,
@@ -221,9 +233,10 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
       {
         name: "get_doctor_availability",
         description:
-          "اعرض الفترات (slots) المتاحة فعلياً لطبيب معيّن في تاريخ محدد (بصيغة YYYY-MM-DD). استخدمها بعد get_doctor_working_hours وبعد أن يختار المستخدم يوماً يعمل فيه الطبيب.",
+          "اعرض الفترات (slots) المتاحة فعلياً لطبيب معيّن في تاريخ محدد (بصيغة YYYY-MM-DD) للخدمات المطلوبة. مرّر serviceIds دائماً عند الحجز: تُعاد فقط أوقات البدء التي تتسع لمدة كل الخدمات. استخدمها بعد get_doctor_working_hours وبعد أن يختار المستخدم يوماً يعمل فيه الطبيب.",
         schema: z.object({
           doctorId: z.string(),
+          serviceIds: z.array(z.string()).nullable().describe("الخدمات المطلوبة في الموعد"),
           date: z
             .string()
             .regex(
@@ -232,9 +245,10 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
             ),
         }),
       },
-      async ({ doctorId, date }) => {
+      async ({ doctorId, date, serviceIds }) => {
         const doctor = await DoctorService.getDoctor(doctorId, clinicId);
         if (!doctor) return { error: "الطبيب غير موجود" };
+        const visitLength = await visitMinutes(doctorId, serviceIds);
 
         // Queue day (order / arrival): report remaining capacity + live position
         // instead of fixed slots. Book via book_order_appointment (no slotId).
@@ -244,6 +258,11 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
         );
         if (orderInfo) {
           const arrival = orderInfo.mode === "ARRIVAL_BASED";
+          const fit = await serviceFit(doctorId, serviceIds);
+          const need = lengthWith(visitLength, orderInfo.estimatedDurationMin ?? 15);
+          const fitsServices = !fit || fit(orderInfo.ruleId, orderInfo.branchId);
+          const fitsTime =
+            orderInfo.remainingMinutes == null || need == null || orderInfo.remainingMinutes >= need;
           return {
             doctorId,
             doctorName: doctor.profile.fullName,
@@ -252,7 +271,10 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
             // arrival, so there's no next number / expected time to promise here.
             mode: arrival ? "arrival" : "order",
             branchId: orderInfo.branchId,
-            available: orderInfo.available,
+            available: orderInfo.available && fitsServices && fitsTime,
+            ...(!fitsServices && { reason: "الخدمات المطلوبة غير متاحة مع الطبيب في هذا اليوم" }),
+            ...(fitsServices && !fitsTime && { reason: "لا يتسع وقت هذا اليوم لمدة الخدمات المطلوبة" }),
+            visitMinutes: need,
             dailyCap: orderInfo.dailyCap,
             booked: orderInfo.booked,
             remaining: orderInfo.remaining,
@@ -270,6 +292,8 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
         const slots = await DoctorService.getAvailableSlotsForBooking(
           doctorId,
           new Date(date),
+          undefined,
+          { serviceIds },
         );
         return {
           doctorId,

@@ -33,3 +33,17 @@ export function visitDate(appt: {
 }): Date | null {
   return appt.slot?.date ?? appt.bookingDate;
 }
+
+/**
+ * When a slot visit really ends: its first slot's start + the services'
+ * total minutes (a long visit spans several slots). Falls back to the slot end.
+ */
+export function visitEnd(
+  slot: { startTime: Date | string; endTime: Date | string },
+  totalDurationMin: number | null | undefined
+): Date {
+  const start = new Date(slot.startTime);
+  if (!totalDurationMin) return new Date(slot.endTime);
+  const end = new Date(start.getTime() + totalDurationMin * 60_000);
+  return end > new Date(slot.endTime) ? end : new Date(slot.endTime);
+}

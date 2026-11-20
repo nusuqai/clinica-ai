@@ -535,3 +535,203 @@ export async function listDoctorServiceOptions(
   });
   return rows.map((r) => ({ id: r.service.id, name: r.service.name }));
 }
+
+// ─── Public catalog (agent, landing page, booking UIs) ────────────────────────
+
+export interface PublicOffer {
+  id: string;
+  label: string;
+  type: string;
+  /** Price after the offer (unit price for PER_UNIT); null for non-price offers. */
+  price: number | null;
+  /** Last day, "YYYY-MM-DD", or null when open-ended. */
+  endsAt: string | null;
+}
+
+export interface PublicService {
+  id: string;
+  name: string;
+  categoryId: string;
+  categoryName: string;
+  kind: ServiceKind;
+  pricingType: PricingType;
+  unitLabel: string | null;
+  description: string | null;
+  prepInstructions: string | null;
+  /** AI-only instructions — never send to a patient-facing page. */
+  agentNotes: string | null;
+  durationMin: number | null;
+  bookable: boolean;
+  /** Price for the asked branch (or the base price when no branch was given). */
+  price: number | null;
+  offer: PublicOffer | null;
+  tiers: { minQty: number; maxQty: number | null; price: number }[];
+  /** Where it is offered, each with its own price. */
+  branches: { id: string; name: string; price: number | null }[];
+  providerCount: number;
+}
+
+/**
+ * Active services as patients see them: only those offered in `branchId` when
+ * given, priced for that branch, with the offer live there today.
+ */
+export async function listPublicServices(
+  clinicId: string,
+  filter: {
+    query?: string | null;
+    categoryId?: string | null;
+    branchId?: string | null;
+    ids?: string[];
+  } = {}
+): Promise<PublicService[]> {
+  const q = filter.query?.trim();
+  const [rows, branches] = await Promise.all([
+    prisma.service.findMany({
+      where: {
+        clinicId,
+        isActive: true,
+        category: { isActive: true },
+        ...(filter.ids ? { id: { in: filter.ids } } : {}),
+        ...(filter.categoryId ? { categoryId: filter.categoryId } : {}),
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: "insensitive" } },
+                { description: { contains: q, mode: "insensitive" } },
+                { category: { name: { contains: q, mode: "insensitive" } } },
+              ],
+            }
+          : {}),
+        ...(filter.branchId
+          ? { OR: [{ allBranches: true }, { branches: { some: { branchId: filter.branchId } } }] }
+          : {}),
+      },
+      include: {
+        category: { select: { name: true, sortOrder: true } },
+        branches: true,
+        tiers: { orderBy: { minQty: "asc" } },
+        _count: { select: { doctors: { where: { doctor: { isActive: true } } } } },
+      },
+      orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
+    }),
+    prisma.branch.findMany({
+      where: { clinicId, isActive: true },
+      select: { id: true, name: true },
+      orderBy: [{ isMain: "desc" }, { name: "asc" }],
+    }),
+  ]);
+  const { loadLiveOffers, offerForItem } = await import("./offers");
+  const offers = await loadLiveOffers(clinicId, filter.branchId ?? null);
+
+  return rows.map((s) => {
+    const branchRow = filter.branchId
+      ? s.branches.find((b) => b.branchId === filter.branchId)
+      : null;
+    const price = dec(branchRow?.price ?? null) ?? dec(s.price);
+    const tiers = s.tiers.map((t) => ({
+      minQty: t.minQty,
+      maxQty: t.maxQty,
+      price: Number(t.price),
+    }));
+    const match = offerForItem(offers, { serviceId: s.id, categoryId: s.categoryId }, price);
+    const offered = s.allBranches
+      ? branches
+      : branches.filter((b) => s.branches.some((r) => r.branchId === b.id));
+    return {
+      id: s.id,
+      name: s.name,
+      categoryId: s.categoryId,
+      categoryName: s.category.name,
+      kind: s.kind,
+      pricingType: s.pricingType,
+      unitLabel: s.unitLabel,
+      description: s.description,
+      prepInstructions: s.prepInstructions,
+      agentNotes: s.agentNotes,
+      durationMin: s.durationMin,
+      bookable: s.bookable,
+      price,
+      offer: match
+        ? {
+            id: match.offer.id,
+            label: match.offer.label,
+            type: match.offer.type,
+            price: match.offer.type === "BUY_X_GET_Y" ? null : match.price,
+            endsAt: match.offer.endsAt,
+          }
+        : null,
+      tiers,
+      branches: offered.map((b) => ({
+        id: b.id,
+        name: b.name,
+        price: dec(s.branches.find((r) => r.branchId === b.id)?.price ?? null) ?? dec(s.price),
+      })),
+      providerCount: s._count.doctors,
+    };
+  });
+}
+
+/** Practitioners who provide a service (optionally working in a branch that offers it). */
+export async function listServiceProviders(
+  clinicId: string,
+  serviceId: string,
+  branchId?: string | null
+) {
+  const service = await prisma.service.findFirst({
+    where: { id: serviceId, clinicId, isActive: true },
+    include: { branches: true },
+  });
+  if (!service) return null;
+  const offeredIn = (id: string) =>
+    service.allBranches || service.branches.some((b) => b.branchId === id);
+  const rows = await prisma.doctorService.findMany({
+    where: {
+      serviceId,
+      doctor: {
+        isActive: true,
+        ...(branchId ? { branches: { some: { branchId } } } : {}),
+      },
+    },
+    include: {
+      doctor: {
+        select: {
+          id: true,
+          fullName: true,
+          title: true,
+          specialty: { select: { name: true } },
+          branches: { select: { branch: { select: { id: true, name: true, isActive: true } } } },
+        },
+      },
+    },
+    orderBy: { doctor: { fullName: "asc" } },
+  });
+  return rows
+    .map((r) => {
+      const branches = r.doctor.branches
+        .map((b) => b.branch)
+        .filter((b) => b.isActive && offeredIn(b.id));
+      return {
+        doctorId: r.doctor.id,
+        fullName: r.doctor.fullName,
+        title: r.doctor.title,
+        specialty: r.doctor.specialty?.name ?? null,
+        /** Practitioner's own price for this service, if it overrides the service's. */
+        priceOverride: dec(r.price),
+        durationMin: r.durationMin ?? service.durationMin,
+        branches: branches.map((b) => ({ id: b.id, name: b.name })),
+      };
+    })
+    .filter((p) => p.branches.length > 0);
+}
+
+/** Each practitioner's active service names (doctor lists). */
+export async function serviceNamesByDoctor(doctorIds: string[]): Promise<Map<string, string[]>> {
+  const rows = await prisma.doctorService.findMany({
+    where: { doctorId: { in: doctorIds }, service: { isActive: true } },
+    select: { doctorId: true, service: { select: { name: true, sortOrder: true } } },
+    orderBy: { service: { sortOrder: "asc" } },
+  });
+  const map = new Map<string, string[]>();
+  for (const r of rows) map.set(r.doctorId, [...(map.get(r.doctorId) ?? []), r.service.name]);
+  return map;
+}

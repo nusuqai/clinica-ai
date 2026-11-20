@@ -8,6 +8,7 @@ import { expectedOrderTime, expectedTimeAfter, minutesAhead } from "@/lib/availa
 import { bookSlotAppointment, releaseAppointmentHold, type BookingItemRequest } from "./booking";
 import { settleSessionLines } from "./packages";
 import { isQueueMode } from "@/lib/availability/modes";
+import { visitEnd } from "@/lib/slot-time";
 import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { personSearch } from "./_search";
 import type { Prisma } from "@prisma/client";
@@ -33,6 +34,8 @@ export interface PatientAppointment {
   currentOrder: number | null; // null when tracking is off (or slot-based)
   estimatedWaitMin: number | null;
   expectedTime: string | null; // "HH:MM" — order-based expected examination time
+  /** The visit's services (names), booked order. */
+  items?: { serviceName: string; quantity: number; patientPackageId: string | null }[];
 }
 
 // Shared "upcoming" filter that covers both slot-based (future slot) and
@@ -62,6 +65,18 @@ type WithQueueInfo = {
   rule: { mode: AvailabilityMode; startTime: string } | null;
   queue: { currentOrder: number; trackCurrentOrder: boolean } | null;
 };
+
+/**
+ * A slot visit can span several slots: report its real end (first slot's start
+ * + the services' minutes) as `slot.endTime`, so every list, card and page
+ * shows the visit's true time range.
+ */
+function withVisitEnd<
+  T extends { slot: { startTime: Date; endTime: Date } | null; totalDurationMin: number | null },
+>(row: T): T {
+  if (!row.slot || !row.totalDurationMin) return row;
+  return { ...row, slot: { ...row.slot, endTime: visitEnd(row.slot, row.totalDurationMin) } };
+}
 
 /** Per queue: each live booking's order number and its minutes of services. */
 type QueueOffsets = Map<string, { orderNumber: number; minutes: number }[]>;
@@ -216,13 +231,20 @@ export async function getPatientAppointmentsPage(
           slot: { select: { date: true, startTime: true, endTime: true } },
           branch: { select: { name: true } },
           doctor: doctorNameSelect,
+          items: {
+            orderBy: { sortOrder: "asc" },
+            select: { serviceName: true, quantity: true, patientPackageId: true },
+          },
           ...queueInfoInclude,
         },
         orderBy: filters.upcoming ? upcomingOrder : pastOrder,
         ...args,
       });
       const offsets = await loadQueueOffsets(rows);
-      return rows.map((row) => ({ ...reshapeDoctor(row), ...queueView(row, offsets) }));
+      return rows.map((row) => ({
+        ...reshapeDoctor(withVisitEnd(row)),
+        ...queueView(row, offsets),
+      }));
     },
     () => prisma.appointment.count({ where })
   );
@@ -260,7 +282,7 @@ export async function getPatientAppointments(
     ...(options?.limit ? { take: options.limit } : {}),
   });
   const offsets = await loadQueueOffsets(rows);
-  return rows.map((row) => ({ ...reshapeDoctor(row), ...queueView(row, offsets) }));
+  return rows.map((row) => ({ ...reshapeDoctor(withVisitEnd(row)), ...queueView(row, offsets) }));
 }
 
 export async function getPatientStats(patientId: string, clinicId?: string) {
@@ -369,6 +391,7 @@ export async function listAppointments(
       });
       return rows.map((row) => {
         const q = queueView(row);
+        row = withVisitEnd(row);
         return {
           ...reshapeDoctor(row),
           orderNumber: q.orderNumber,
@@ -406,16 +429,23 @@ export async function getAppointmentDetails(appointmentId: string) {
       doctor: {
         select: {
           fullName: true,
+          title: true,
           specialty: { select: { name: true } },
-          examinationFee: true,
-          consultationFee: true,
+        },
+      },
+      items: {
+        orderBy: { sortOrder: "asc" },
+        include: {
+          service: { select: { unitLabel: true } },
+          offer: { select: { label: true } },
+          patientPackage: { select: { name: true } },
         },
       },
       ...queueInfoInclude,
     },
   });
   if (!row) return null;
-  return { ...row, ...queueView(row, await loadQueueOffsets([row])) };
+  return { ...withVisitEnd(row), ...queueView(row, await loadQueueOffsets([row])) };
 }
 
 // The full-page view of one appointment: scheduling state, the people involved,
@@ -526,7 +556,7 @@ export async function getAppointmentForDetail(
         row.doctor.consultationFee != null ? Number(row.doctor.consultationFee) : null,
     },
     branch: row.branch,
-    slot: row.slot,
+    slot: withVisitEnd(row).slot,
     patientNotes: row.patientNotes,
     doctorNotes: row.doctorNotes,
     cancellationReason: row.cancellationReason,
@@ -609,7 +639,7 @@ export async function getDoctorAppointments(
     ...(options?.limit ? { take: options.limit } : {}),
   });
   const offsets = await loadQueueOffsets(rows);
-  return rows.map((row) => ({ ...row, ...queueView(row, offsets) }));
+  return rows.map((row) => ({ ...withVisitEnd(row), ...queueView(row, offsets) }));
 }
 
 /** One page of a doctor's appointments, filtered like the admin board, newest first. */
@@ -633,7 +663,7 @@ export async function getDoctorAppointmentsPage(
         ...args,
       });
       const offsets = await loadQueueOffsets(rows);
-      return rows.map((row) => ({ ...row, ...queueView(row, offsets) }));
+      return rows.map((row) => ({ ...withVisitEnd(row), ...queueView(row, offsets) }));
     },
     () => prisma.appointment.count({ where })
   );

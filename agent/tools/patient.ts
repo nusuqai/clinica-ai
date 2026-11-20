@@ -9,11 +9,14 @@ import * as IntakeService from "@/server/services/patient-intake";
 import { INTAKE_FIELDS, INTAKE_REQUIRED_ERROR } from "@/lib/patient-intake";
 import type { AgentContext } from "@/agent/types";
 import { pageRequest } from "@/lib/pagination";
+import { formatFee } from "@/lib/currency";
+import * as Packages from "@/server/services/packages";
+import { listCategories } from "@/server/services/catalog";
+import { creditLineText, PATIENT_PACKAGE_STATUS_LABEL, PAYMENT_STATUS_LABEL } from "@/lib/packages";
 import {
   jsonTool,
   dateStr,
   timeStr,
-  money,
   LIST_HINT,
   pageField,
   pageInfo,
@@ -49,10 +52,41 @@ async function appointmentCard(appointmentId: string) {
     currentOrder: a.currentOrder,
     estimatedWaitMin: a.estimatedWaitMin,
     expectedTime: a.expectedTime, // order-based: expected examination time "HH:MM"
-    examinationFee: money(a.doctor.examinationFee),
+    // What the visit is for, with the price as booked (offer / package applied).
+    services: a.items.map((i) => ({
+      name: i.serviceName,
+      quantity: i.service.unitLabel ? `${i.quantity} ${i.service.unitLabel}` : undefined,
+      price: i.patientPackage
+        ? `من باقة ${i.patientPackage.name}`
+        : i.total != null
+          ? formatFee(Number(i.total))
+          : "يُحدَّد في الزيارة",
+      offer: i.offer?.label ?? undefined,
+    })),
+    estimatedTotal: a.estimatedTotal != null ? formatFee(Number(a.estimatedTotal)) : null,
+    durationMin: a.totalDurationMin,
     notes: a.patientNotes ?? null,
   };
 }
+
+/** The services the visit is for — required on every booking. */
+const itemsField = z
+  .array(
+    z.object({
+      serviceId: z.string().describe("معرّف الخدمة من search_services"),
+      quantity: z
+        .number()
+        .int()
+        .nullable()
+        .describe("للخدمات بالوحدة فقط (نبضات، وحدات…): الكمية التقديرية؛ وإلا null"),
+      patientPackageId: z
+        .string()
+        .nullable()
+        .describe("ادفع هذه الخدمة من باقة المريض (من list_my_packages) إن اختار ذلك؛ وإلا null"),
+    })
+  )
+  .min(1)
+  .describe("الخدمات المطلوبة في هذا الموعد (خدمة واحدة على الأقل)");
 
 // Returned by the booking tools while the patient has no intake file at this
 // clinic: the agent collects the answers, calls save_patient_intake, then books.
@@ -71,19 +105,20 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "book_appointment",
         description:
-          "احجز موعداً للمريض الحالي في فترة زمنية (slot) محددة. احصل على معرّف الفترة من get_doctor_availability أولاً.",
+          "احجز موعداً للمريض الحالي يبدأ في فترة زمنية (slot) محددة، للخدمات المختارة. احصل على معرّف الفترة من get_doctor_availability (مع serviceIds نفسها) أولاً — الخدمات الطويلة تحجز أكثر من فترة متتالية تلقائياً.",
         schema: z.object({
           slotId: z.string(),
+          items: itemsField,
           notes: z.string().nullable().describe("ملاحظات المريض (اختياري)"),
         }),
       },
-      async ({ slotId, notes }) => {
+      async ({ slotId, items, notes }) => {
         if (await needsIntake()) return INTAKE_REQUIRED_RESULT;
         const res = await AppointmentService.createAppointment(
           patientId,
           slotId,
           notes ?? undefined,
-          { clinicId: ctx.clinicId }, // #38: slot's doctor must be in this clinic
+          { clinicId: ctx.clinicId, items }, // #38: slot's doctor must be in this clinic
         );
         if (!res.ok) return { error: res.error };
         // Echo the saved appointment in full so the user can verify every detail.
@@ -100,15 +135,17 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           date: z
             .string()
             .regex(/^\d{4}-\d{2}-\d{2}$/, "يجب أن يكون التاريخ بصيغة YYYY-MM-DD"),
+          items: itemsField,
           notes: z.string().nullable().describe("ملاحظات المريض (اختياري)"),
         }),
       },
-      async ({ doctorId, date, notes }) => {
+      async ({ doctorId, date, items, notes }) => {
         if (await needsIntake()) return INTAKE_REQUIRED_RESULT;
         const res = await BookingService.bookQueueAppointment({
           patientId,
           doctorId,
           date: new Date(date),
+          items,
           notes: notes ?? undefined,
           clinicId: ctx.clinicId, // #38: doctor must be in this clinic
         });
@@ -182,6 +219,85 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
     ),
     jsonTool(
       {
+        name: "list_my_packages",
+        description:
+          "باقات المريض الحالي في هذه العيادة: الرصيد المتبقي من كل نوع (نبضات/وحدات أو جلسات) وما يُستخدم فيه، والفرع، وآخر يوم صلاحية، وحالة الدفع، وآخر الاستخدامات. استخدمها عند سؤاله «كام نبضة فاضلة؟» أو «باقتي بتخلص امتى؟»، وقبل الحجز لتعرض عليه استخدام باقته إن كانت تغطي الخدمة في نفس الفرع.",
+        schema: z.object({}),
+      },
+      async () => {
+        const [packages, categories, services] = await Promise.all([
+          Packages.listPatientPackages(ctx.clinicId, patientId),
+          listCategories(ctx.clinicId),
+          prisma.service.findMany({ where: { clinicId: ctx.clinicId }, select: { id: true, name: true } }),
+        ]);
+        const names = {
+          category: (id: string) => categories.find((c) => c.id === id)?.name,
+          service: (id: string) => services.find((s) => s.id === id)?.name,
+        };
+        const active = packages.filter((p) => p.status === "ACTIVE");
+        return {
+          active: active.map((p) => ({
+            patientPackageId: p.id,
+            name: p.name,
+            branchId: p.branchId,
+            branch: p.branchName,
+            usableUntil: p.expiresOn,
+            payment: PAYMENT_STATUS_LABEL[p.paymentStatus],
+            balances: p.balances.map((b) => ({
+              covers: creditLineText({ ...b, quantity: b.total }, names),
+              remaining: Math.max(0, b.total - b.used),
+              availableToBook: b.available,
+              reservedForUpcoming: b.reserved,
+              unit: b.creditType === "SESSIONS" ? "جلسة" : "وحدة",
+              categoryId: b.categoryId,
+              serviceIds: b.serviceIds,
+            })),
+            recentUse: p.ledger
+              .filter((l) => l.type === "CONSUME")
+              .slice(0, 5)
+              .map((l) => ({ date: dateStr(l.createdAt), service: l.serviceName, used: -l.quantity })),
+          })),
+          others: packages
+            .filter((p) => p.status !== "ACTIVE")
+            .slice(0, 5)
+            .map((p) => ({ name: p.name, status: PATIENT_PACKAGE_STATUS_LABEL[p.status], until: p.expiresOn })),
+        };
+      },
+    ),
+    jsonTool(
+      {
+        name: "request_package",
+        description:
+          "اطلب شراء باقة للمريض الحالي (من list_packages) في فرع محدد — تُنشأ له فوراً بحالة «غير مدفوعة» ويمكنه استخدامها في الحجز مباشرة، ويؤكد الموظفون الدفع في العيادة. لا تستدعها إلا بعد أن تعرض عليه السعر والصلاحية والشروط ويوافق صراحةً. تُعيد patientPackageId لاستخدامه في الحجز.",
+        schema: z.object({
+          packageId: z.string(),
+          branchId: z.string().describe("الفرع الذي سيستخدم فيه الباقة — تُستخدم في هذا الفرع فقط"),
+        }),
+      },
+      async ({ packageId, branchId }) => {
+        const res = await Packages.purchasePackage({
+          clinicId: ctx.clinicId,
+          patientId,
+          packageId,
+          branchId,
+          soldById: null,
+          paid: false,
+          note: "طلبها المريض عبر المساعد الذكي",
+        });
+        if (!res.ok) return { error: res.error };
+        const q = res.data.quote;
+        return {
+          patientPackageId: res.data.id,
+          name: q.name,
+          price: formatFee(q.price),
+          offer: q.offerLabel,
+          usableUntil: q.expiresOn,
+          payment: "غير مدفوعة — يُدفع المبلغ في العيادة",
+        };
+      },
+    ),
+    jsonTool(
+      {
         name: "list_my_appointments",
         description:
           `اعرض مواعيد المريض الحالي (القادمة أو كلها). استخدمها أيضاً (مع upcoming=true) عندما يسأل المريض «ما هو دوري؟» أو «كم رقمي؟» أو «موعدي القادم». لكل موعد: bookingType (slot موعد بوقت ثابت، order نظام الدور، arrival أسبقية الحضور)، وorderNumber، وarrived. في أسبقية الحضور (arrival): إن كان arrived=false فلا رقم بعد — أخبر المريض أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور؛ وإن كان arrived=true فاذكر رقمه (orderNumber)، ومع تفعيل التتبّع اذكر الدور الجاري الآن (currentOrder) ومدة الانتظار التقديرية (estimatedWaitMin). القادمة تُعرض الأقرب أولاً، والسابقة الأحدث أولاً (٢٠ في الصفحة)؛ يمكن التصفية بالطبيب (doctorId) أو الحالة أو اليوم (YYYY-MM-DD). ${LIST_HINT}`,
@@ -250,6 +366,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
                 ? dateStr(a.bookingDate)
                 : null,
             time: a.slot ? timeStr(a.slot.startTime) : null,
+            services: a.items?.map((i) => i.serviceName) ?? [],
             orderNumber: a.orderNumber,
             currentOrder: a.currentOrder,
             estimatedWaitMin: a.estimatedWaitMin,

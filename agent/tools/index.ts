@@ -4,6 +4,7 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import type { AgentContext } from "@/agent/types";
 import { commonTools } from "./common";
 import { knowledgeTools } from "./knowledge";
+import { serviceTools } from "./services";
 import { patientTools } from "./patient";
 import { escalationTool } from "./escalation";
 import { registerInClinicTool } from "./registration";
@@ -29,6 +30,7 @@ export async function getToolsForRole(ctx: AgentContext): Promise<DynamicStructu
   const common = commonTools(ctx.clinicId).filter((t) => !solo || !SOLO_HIDDEN_TOOLS.has(t.name));
   const base = [
     ...common,
+    ...serviceTools(ctx.clinicId),
     ...knowledgeTools(ctx.clinicId),
     escalationTool(ctx),
   ];

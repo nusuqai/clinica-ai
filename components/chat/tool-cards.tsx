@@ -9,6 +9,8 @@ import {
   ListChecks,
   BarChart3,
   Wrench,
+  Package,
+  Sparkles,
 } from "lucide-react";
 import { AppointmentStatus } from "@prisma/client";
 import type { ClientToolCall } from "./types";
@@ -220,10 +222,27 @@ function AppointmentCard({ result }: { result: R }) {
             )}
           </p>
         )}
-        {result.examinationFee != null && (
-          <p>
-            سعر الكشف: <span className="font-medium">{String(result.examinationFee)}</span>
-          </p>
+        {Array.isArray(result.services) && (result.services as R[]).length > 0 && (
+          <div className="space-y-0.5 pt-0.5">
+            {(result.services as R[]).map((s, i) => (
+              <p key={i} className="flex flex-wrap justify-between gap-x-2">
+                <span>
+                  {String(s.name)}
+                  {!!s.quantity && (
+                    <span className="text-muted-foreground"> · {String(s.quantity)}</span>
+                  )}
+                  {!!s.offer && <span className="text-accent"> · {String(s.offer)}</span>}
+                </span>
+                <span className="font-medium">{String(s.price ?? "")}</span>
+              </p>
+            ))}
+            {result.estimatedTotal != null && (result.services as R[]).length > 1 && (
+              <p className="flex justify-between border-t border-border pt-0.5 font-medium">
+                <span>الإجمالي التقديري</span>
+                <span>{String(result.estimatedTotal)}</span>
+              </p>
+            )}
+          </div>
         )}
         {!!result.status && (
           <div className="flex items-center gap-1.5">
@@ -232,6 +251,102 @@ function AppointmentCard({ result }: { result: R }) {
           </div>
         )}
       </div>
+    </CardShell>
+  );
+}
+
+function ServicesCard({ result }: { result: R }) {
+  const services = (result.services as R[] | undefined) ?? (result.id ? [result] : []);
+  if (services.length === 0) return null;
+  return (
+    <CardShell icon={<Sparkles className="h-4 w-4" />} title="الخدمات">
+      {services.slice(0, 8).map((s, i) => {
+        const offer = s.offer as R | null;
+        return (
+          <div key={i} className="text-xs">
+            <p className="flex flex-wrap justify-between gap-x-2">
+              <span className="font-medium text-foreground">{String(s.name)}</span>
+              <span
+                className={
+                  offer?.priceAfterOffer ? "text-muted-foreground line-through" : "text-foreground"
+                }
+              >
+                {String(s.price ?? "")}
+              </span>
+            </p>
+            {!!offer && (
+              <p className="flex flex-wrap justify-between gap-x-2 text-accent">
+                <span>{String(offer.label)}</span>
+                {!!offer.priceAfterOffer && (
+                  <span className="font-medium">{String(offer.priceAfterOffer)}</span>
+                )}
+              </p>
+            )}
+          </div>
+        );
+      })}
+      {services.length > 8 && (
+        <p className="text-[11px] text-muted-foreground">و{services.length - 8} خدمة أخرى</p>
+      )}
+    </CardShell>
+  );
+}
+
+function PackagesCard({ result }: { result: R }) {
+  const packages = (result.packages as R[]) ?? [];
+  if (packages.length === 0) return null;
+  return (
+    <CardShell icon={<Package className="h-4 w-4" />} title="الباقات">
+      {packages.map((p, i) => {
+        const offer = p.offer as R | null;
+        return (
+          <div key={i} className="text-xs">
+            <p className="flex flex-wrap justify-between gap-x-2">
+              <span className="font-medium text-foreground">{String(p.name)}</span>
+              <span className={offer ? "text-muted-foreground line-through" : ""}>
+                {String(p.price)}
+              </span>
+            </p>
+            {!!offer && (
+              <p className="flex justify-between text-accent">
+                <span>{String(offer.label)}</span>
+                <span className="font-medium">{String(offer.priceAfterOffer)}</span>
+              </p>
+            )}
+            <p className="text-muted-foreground">
+              {((p.includes as string[]) ?? []).join(" + ")} · {String(p.validityDays)} يوماً
+            </p>
+          </div>
+        );
+      })}
+    </CardShell>
+  );
+}
+
+function MyPackagesCard({ result }: { result: R }) {
+  const active = (result.active as R[]) ?? [];
+  if (active.length === 0)
+    return (
+      <CardShell icon={<Package className="h-4 w-4" />} title="باقاتي">
+        <p className="text-xs text-muted-foreground">لا توجد باقات نشطة.</p>
+      </CardShell>
+    );
+  return (
+    <CardShell icon={<Package className="h-4 w-4" />} title="باقاتي">
+      {active.map((p, i) => (
+        <div key={i} className="space-y-0.5 text-xs">
+          <p className="font-medium text-foreground">
+            {String(p.name)} <span className="text-muted-foreground">· {String(p.branch)}</span>
+          </p>
+          {((p.balances as R[]) ?? []).map((b, j) => (
+            <p key={j} className="text-muted-foreground">
+              متبقٍ <span className="font-medium text-foreground">{String(b.remaining)}</span>{" "}
+              {String(b.unit)} — {String(b.covers)}
+            </p>
+          ))}
+          <p className="text-muted-foreground">صالحة حتى {String(p.usableUntil)}</p>
+        </div>
+      ))}
     </CardShell>
   );
 }
@@ -332,6 +447,8 @@ const TOOL_LABELS: Record<string, string> = {
   refer_patient: "تحويل المريض لطبيب آخر",
   send_message_to_conversation: "إرسال رسالة للمحادثة",
   cancel_appointment: "إلغاء الموعد",
+  request_package: "طلب شراء باقة",
+  list_service_providers: "عرض مقدمي الخدمة",
   update_my_profile: "تحديث الملف الشخصي",
 };
 
@@ -385,6 +502,10 @@ const REGISTRY: Record<string, (r: R) => React.ReactNode> = {
   book_order_appointment: (r) => <AppointmentCard result={r} />,
   reschedule_appointment: (r) => <AppointmentCard result={r} />,
   list_my_appointments: (r) => <AppointmentListCard result={r} />,
+  search_services: (r) => <ServicesCard result={r} />,
+  get_service: (r) => <ServicesCard result={r} />,
+  list_packages: (r) => <PackagesCard result={r} />,
+  list_my_packages: (r) => <MyPackagesCard result={r} />,
   list_all_appointments: (r) => <AppointmentListCard result={r} />,
   get_my_stats: (r) => <StatsCard result={r} />,
   get_dashboard_stats: (r) => <StatsCard result={r} />,
