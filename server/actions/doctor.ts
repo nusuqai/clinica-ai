@@ -1,5 +1,6 @@
 "use server";
 
+import { parseRuleExtras } from "@/lib/validations/availability";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { Role, type AppointmentStatus, type DayOfWeek } from "@prisma/client";
@@ -157,7 +158,7 @@ export async function createMyRuleAction(formData: FormData) {
     estimatedDurationMin: formData.get("estimatedDurationMin")
       ? Number(formData.get("estimatedDurationMin"))
       : null,
-    dailyCap: formData.get("dailyCap") ? Number(formData.get("dailyCap")) : null,
+    ...parseRuleExtras(formData),
     referralOnly: formData.get("referralOnly") === "on",
     note: (formData.get("note") as string) || null,
   });

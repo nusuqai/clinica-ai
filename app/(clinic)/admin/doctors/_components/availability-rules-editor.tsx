@@ -1,5 +1,6 @@
 "use client";
 
+import { ruleCapText } from "@/lib/availability/queue-capacity";
 import { useEffect, useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { createRuleAction, deleteRuleAction, getDoctorRulesAction } from "@/server/actions/admin";
@@ -186,7 +187,7 @@ export default function AvailabilityRulesEditor(props: Props) {
                     {isQueueMode(rule.mode) ? (
                       <Badge variant="indigo">
                         {MODE_BADGE_AR[rule.mode]}
-                        {rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : ""}
+                        {ruleCapText(rule)}
                       </Badge>
                     ) : (
                       <Badge variant="muted">{rule.slotDurationMin} دقيقة / موعد</Badge>

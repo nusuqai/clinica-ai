@@ -523,3 +523,15 @@ export async function setDoctorServices(
   ]);
   return ok(undefined);
 }
+
+/** The practitioner's active services as {id, name} options (rule restriction picker). */
+export async function listDoctorServiceOptions(
+  doctorId: string
+): Promise<{ id: string; name: string }[]> {
+  const rows = await prisma.doctorService.findMany({
+    where: { doctorId, service: { isActive: true } },
+    select: { service: { select: { id: true, name: true, sortOrder: true } } },
+    orderBy: { service: { sortOrder: "asc" } },
+  });
+  return rows.map((r) => ({ id: r.service.id, name: r.service.name }));
+}

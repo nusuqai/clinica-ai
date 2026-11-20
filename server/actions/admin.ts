@@ -1,5 +1,6 @@
 "use server";
 
+import { parseRuleExtras } from "@/lib/validations/availability";
 import { revalidatePath } from "next/cache";
 import { AppointmentStatus, AvailabilityMode, DoctorTitle, Role } from "@prisma/client";
 import { isDoctorTitle } from "@/lib/doctor-title";
@@ -14,8 +15,9 @@ import * as BranchService from "@/server/services/branches";
 import * as ClinicInfoService from "@/server/services/clinicInfo";
 import * as SpecialtyService from "@/server/services/specialties";
 import * as QueueService from "@/server/services/queue";
+import * as BookingService from "@/server/services/booking";
 import * as KnowledgeService from "@/server/services/knowledge";
-import { expectedOrderTime } from "@/lib/availability/queue-time";
+import { expectedTimeAfter, minutesAhead } from "@/lib/availability/queue-time";
 import { getOrCreatePatientByPhone } from "@/server/services/patients";
 import { normalizePhone, isValidPhone } from "@/lib/phone";
 import { pageRequest, offsetRequest } from "@/lib/pagination";
@@ -132,7 +134,9 @@ interface DraftRule {
   slotDurationMin?: number;
   mode?: import("@prisma/client").AvailabilityMode;
   estimatedDurationMin?: number | null;
+  capType?: import("@prisma/client").QueueCapType;
   dailyCap?: number | null;
+  dailyCapMinutes?: number | null;
   referralOnly?: boolean;
   note?: string | null;
 }
@@ -165,7 +169,10 @@ async function createDraftRules(
       clinicId: clinicId,
       mode: r.mode ?? undefined,
       estimatedDurationMin: r.estimatedDurationMin ?? null,
+      capType: r.capType,
       dailyCap: r.dailyCap ?? null,
+      dailyCapMinutes: r.dailyCapMinutes ?? null,
+      // The doctor is brand new: no services yet, so no per-rule restriction.
       referralOnly: !!r.referralOnly,
       note: r.note ?? null,
     });
@@ -387,6 +394,8 @@ export async function adminBookAppointmentAction(input: {
   slotId?: string;
   date?: string;
   notes?: string;
+  /** The services booked (default: the doctor's كشف). */
+  items?: BookingService.BookingItemRequest[];
 }): Promise<{
   ok: boolean;
   error?: string;
@@ -427,16 +436,21 @@ export async function adminBookAppointmentAction(input: {
   if (input.slotId) {
     const res = await AppointmentService.createAppointment(patientId, input.slotId, input.notes, {
       clinicId,
+      branchScope: scope,
+      items: input.items,
     });
     if (!res.ok) return { ok: false, error: res.error };
     appointmentId = res.data.id;
   } else if (input.date) {
-    const res = await QueueService.bookOrderAppointment(
+    const res = await BookingService.bookQueueAppointment({
       patientId,
-      input.doctorId,
-      new Date(input.date),
-      { notes: input.notes, clinicId, branchScope: scope }
-    );
+      doctorId: input.doctorId,
+      date: new Date(input.date),
+      notes: input.notes,
+      clinicId,
+      branchScope: scope,
+      items: input.items,
+    });
     if (!res.ok) return { ok: false, error: res.error };
     appointmentId = res.data.id;
     mode = res.data.mode === "ARRIVAL_BASED" ? "arrival" : "order";
@@ -469,7 +483,10 @@ export async function getDoctorRulesAction(doctorId: string) {
       slotDurationMin: r.slotDurationMin,
       mode: r.mode,
       estimatedDurationMin: r.estimatedDurationMin,
+      capType: r.capType,
       dailyCap: r.dailyCap,
+      dailyCapMinutes: r.dailyCapMinutes,
+      serviceIds: r.services.map((x) => x.serviceId),
       referralOnly: r.referralOnly,
       note: r.note,
     })),
@@ -498,7 +515,7 @@ export async function createRuleAction(formData: FormData, _clientClinicId?: str
     estimatedDurationMin: formData.get("estimatedDurationMin")
       ? Number(formData.get("estimatedDurationMin"))
       : null,
-    dailyCap: formData.get("dailyCap") ? Number(formData.get("dailyCap")) : null,
+    ...parseRuleExtras(formData),
     referralOnly: formData.get("referralOnly") === "on",
     note: (formData.get("note") as string) || null,
   });
@@ -575,6 +592,18 @@ export async function getDayQueueAction(doctorId: string, date: string) {
   const queue = await QueueService.getDayQueue(doctorId, new Date(date), null, scope);
   if (!queue || queue.clinicId !== clinicId) return { queue: null };
   const sessionStart = queue.rule?.startTime ?? null;
+  // Real minutes booked ahead of each order (services have their own durations).
+  const minutes = queue.appointments.flatMap((a) =>
+    a.orderNumber != null
+      ? [
+          {
+            orderNumber: a.orderNumber,
+            minutes:
+              a.totalDurationMin ?? a.estimatedDurationMin ?? queue.estimatedDurationMin ?? 0,
+          },
+        ]
+      : []
+  );
   return {
     queue: {
       id: queue.id,
@@ -600,7 +629,7 @@ export async function getDayQueueAction(doctorId: string, date: string) {
         arrived: a.arrivedAt != null,
         expectedTime:
           sessionStart != null && a.orderNumber != null
-            ? expectedOrderTime(sessionStart, a.orderNumber, queue.estimatedDurationMin)
+            ? expectedTimeAfter(sessionStart, minutesAhead(minutes, a.orderNumber))
             : null,
       })),
     },

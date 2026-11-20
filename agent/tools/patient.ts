@@ -4,7 +4,7 @@ import { AppointmentStatus } from "@prisma/client";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as AppointmentService from "@/server/services/appointments";
-import * as QueueService from "@/server/services/queue";
+import * as BookingService from "@/server/services/booking";
 import * as IntakeService from "@/server/services/patient-intake";
 import { INTAKE_FIELDS, INTAKE_REQUIRED_ERROR } from "@/lib/patient-intake";
 import type { AgentContext } from "@/agent/types";
@@ -105,12 +105,13 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       },
       async ({ doctorId, date, notes }) => {
         if (await needsIntake()) return INTAKE_REQUIRED_RESULT;
-        const res = await QueueService.bookOrderAppointment(
+        const res = await BookingService.bookQueueAppointment({
           patientId,
           doctorId,
-          new Date(date),
-          { notes: notes ?? undefined, clinicId: ctx.clinicId }, // #38: doctor must be in this clinic
-        );
+          date: new Date(date),
+          notes: notes ?? undefined,
+          clinicId: ctx.clinicId, // #38: doctor must be in this clinic
+        });
         if (!res.ok) return { error: res.error };
         return await appointmentCard(res.data.id);
       },
@@ -163,21 +164,13 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           select: { status: true },
         });
         if (!appt) return { error: "الموعد غير موجود أو لا يخصك" };
-        // Book the new slot first (so a failure leaves the old one intact),
-        // excluding the appointment being rescheduled from the one-active-booking
-        // guard, then cancel the old one.
-        const created = await AppointmentService.createAppointment(
+        // Book the new slot first with the same services (so a failure leaves
+        // the old one intact), then cancel the old one and free what it held.
+        const created = await BookingService.rescheduleToSlot(appointmentId, newSlotId, {
           patientId,
-          newSlotId,
-          undefined,
-          { excludeAppointmentId: appointmentId, clinicId: ctx.clinicId },
-        );
+          clinicId: ctx.clinicId,
+        });
         if (!created.ok) return { error: created.error };
-        await AppointmentService.updateAppointmentStatus(
-          appointmentId,
-          AppointmentStatus.CANCELLED,
-          "إعادة جدولة",
-        );
         // Return the new appointment in full (from the saved record) so the
         // user can confirm the reschedule landed on the slot/branch they meant.
         return {

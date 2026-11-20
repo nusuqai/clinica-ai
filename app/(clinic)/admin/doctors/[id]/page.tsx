@@ -13,7 +13,12 @@ import {
   Sparkles,
 } from "lucide-react";
 import { can, requirePermission } from "@/lib/auth";
-import { listCategories, listDoctorServices, listServices } from "@/server/services/catalog";
+import {
+  listCategories,
+  listDoctorServiceOptions,
+  listDoctorServices,
+  listServices,
+} from "@/server/services/catalog";
 import DoctorServicesTab from "./_components/services-tab";
 import { getDoctor, listDoctorRules, getDoctorScheduleDays } from "@/server/services/doctors";
 import { branchesInScope, listBranches } from "@/server/services/branches";
@@ -319,8 +324,19 @@ async function RulesContent({
   clinicId: string;
   scope: BranchScope;
 }) {
-  const rules = await listDoctorRules(doctorId, clinicId, scope);
-  return <RulesTab doctorId={doctorId} rules={rules} branches={branches} clinicId={clinicId} />;
+  const [rules, services] = await Promise.all([
+    listDoctorRules(doctorId, clinicId, scope),
+    listDoctorServiceOptions(doctorId),
+  ]);
+  return (
+    <RulesTab
+      doctorId={doctorId}
+      rules={rules}
+      branches={branches}
+      clinicId={clinicId}
+      services={services}
+    />
+  );
 }
 
 async function SlotsContent({ doctorId, scope }: { doctorId: string; scope: BranchScope }) {

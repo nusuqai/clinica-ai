@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { authEmailsByIds } from "@/lib/supabase/auth-users";
 import { personSearch, personSearchSql } from "./_search";
 import { ok, err, type Result } from "./_result";
+import { fittingStartSlots, lengthWith, serviceFit, visitMinutes } from "./booking";
 import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
 import { QUEUE_MODES, isQueueMode } from "@/lib/availability/modes";
@@ -23,6 +24,7 @@ import {
   type DayOfWeek,
   type DoctorTitle,
   type Prisma,
+  QueueCapType,
 } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -140,6 +142,11 @@ export interface CreateRuleInput {
   estimatedDurationMin?: number | null;
   /** Order-based only: max bookings per day. */
   dailyCap?: number | null;
+  /** Queue modes: NONE / PATIENTS (dailyCap) / MINUTES (dailyCapMinutes). */
+  capType?: QueueCapType;
+  dailyCapMinutes?: number | null;
+  /** Only these services may be booked on the rule (must be the doctor's). */
+  serviceIds?: string[];
 }
 
 export type DoctorSlot = {
@@ -167,10 +174,16 @@ export async function listActiveDoctors(clinicId: string): Promise<DoctorWithPro
   return doctors.map((d) => toView(d));
 }
 
+/** The services a visit is for — narrows availability to where they fit. */
+export interface VisitFilter {
+  serviceIds?: string[] | null;
+}
+
 export async function getAvailableSlotsForBooking(
   doctorId: string,
   date: Date,
-  branchScope?: BranchScope
+  branchScope?: BranchScope,
+  visit?: VisitFilter
 ): Promise<
   {
     id: string;
@@ -186,25 +199,30 @@ export async function getAvailableSlotsForBooking(
   dayEnd.setHours(23, 59, 59, 999);
   const now = new Date();
 
-  return prisma.slot.findMany({
-    where: {
-      doctorId,
-      isBlocked: false,
-      referralOnly: false, // referral-only slots are not directly bookable by patients
-      appointment: null,
-      date: { gte: dayStart, lte: dayEnd },
-      startTime: { gt: now },
-      ...branchIdFilter(branchScope),
-    },
-    select: {
-      id: true,
-      startTime: true,
-      endTime: true,
-      branchId: true,
-      branch: { select: { id: true, name: true } },
-    },
-    orderBy: { startTime: "asc" },
-  });
+  // Load the whole day (held ones too) so a long visit's run can be checked.
+  const [day, fit, minutes] = await Promise.all([
+    prisma.slot.findMany({
+      where: {
+        doctorId,
+        date: { gte: dayStart, lte: dayEnd },
+        startTime: { gt: now },
+        ...branchIdFilter(branchScope),
+      },
+      include: { branch: { select: { id: true, name: true } } },
+      orderBy: { startTime: "asc" },
+    }),
+    serviceFit(doctorId, visit?.serviceIds),
+    visitMinutes(doctorId, visit?.serviceIds),
+  ]);
+  return fittingStartSlots(fit ? day.filter((s) => fit(s.ruleId, s.branchId)) : day, minutes).map(
+    (s) => ({
+      id: s.id,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      branchId: s.branchId,
+      branch: s.branch,
+    })
+  );
 }
 
 /**
@@ -214,7 +232,8 @@ export async function getAvailableSlotsForBooking(
  */
 export async function getReferralSlotsForBooking(
   doctorId: string,
-  date: Date
+  date: Date,
+  visit?: VisitFilter
 ): Promise<
   {
     id: string;
@@ -231,24 +250,25 @@ export async function getReferralSlotsForBooking(
   dayEnd.setHours(23, 59, 59, 999);
   const now = new Date();
 
-  return prisma.slot.findMany({
-    where: {
-      doctorId,
-      isBlocked: false,
-      appointment: null,
-      date: { gte: dayStart, lte: dayEnd },
-      startTime: { gt: now },
-    },
-    select: {
-      id: true,
-      startTime: true,
-      endTime: true,
-      branchId: true,
-      branch: { select: { id: true, name: true } },
-      referralOnly: true,
-    },
-    orderBy: { startTime: "asc" },
-  });
+  const [day, fit, minutes] = await Promise.all([
+    prisma.slot.findMany({
+      where: { doctorId, date: { gte: dayStart, lte: dayEnd }, startTime: { gt: now } },
+      include: { branch: { select: { id: true, name: true } } },
+      orderBy: { startTime: "asc" },
+    }),
+    serviceFit(doctorId, visit?.serviceIds),
+    visitMinutes(doctorId, visit?.serviceIds),
+  ]);
+  return fittingStartSlots(fit ? day.filter((s) => fit(s.ruleId, s.branchId)) : day, minutes, {
+    allowReferralOnly: true,
+  }).map((s) => ({
+    id: s.id,
+    startTime: s.startTime,
+    endTime: s.endTime,
+    branchId: s.branchId,
+    branch: s.branch,
+    referralOnly: s.referralOnly,
+  }));
 }
 
 export interface AvailableDay {
@@ -268,27 +288,43 @@ export interface AvailableDay {
 export async function getAvailableDaysForBooking(
   doctorId: string,
   daysAhead = 60,
-  branchScope?: BranchScope
+  branchScope?: BranchScope,
+  visit?: VisitFilter
 ): Promise<AvailableDay[]> {
+  const [fit, minutes] = await Promise.all([
+    serviceFit(doctorId, visit?.serviceIds),
+    visitMinutes(doctorId, visit?.serviceIds),
+  ]);
   const now = new Date();
   const until = new Date(now);
   until.setDate(until.getDate() + daysAhead);
 
   // ── Slot-based days ─────────────────────────────────────────────────────────
-  const slots = await prisma.slot.findMany({
+  // Every slot in the window (held too): a day counts only if some start time
+  // fits the whole visit.
+  const windowSlots = await prisma.slot.findMany({
     where: {
       doctorId,
-      isBlocked: false,
-      referralOnly: false, // referral-only slots are not directly bookable by patients
-      appointment: null,
       startTime: { gt: now },
       date: { lte: until },
       ...branchIdFilter(branchScope),
     },
-    select: { date: true },
-    distinct: ["date"],
-    orderBy: { date: "asc" },
+    select: {
+      id: true,
+      ruleId: true,
+      branchId: true,
+      date: true,
+      startTime: true,
+      endTime: true,
+      isBlocked: true,
+      referralOnly: true,
+      heldById: true,
+    },
   });
+  const slots = fittingStartSlots(
+    fit ? windowSlots.filter((s) => fit(s.ruleId, s.branchId)) : windowSlots,
+    minutes
+  );
   const byDate = new Map<string, AvailabilityMode>();
   for (const s of slots) {
     byDate.set(s.date.toISOString().split("T")[0], AvailabilityMode.SLOT_BASED);
@@ -304,7 +340,18 @@ export async function getAvailableDaysForBooking(
       // queue booking requires a concrete branch (inside the staff scope, if any)
       branchId: branchScope == null ? { not: null } : { in: [...branchScope] },
     },
-    select: { dayOfWeek: true, dailyCap: true, branchId: true, endTime: true, mode: true },
+    select: {
+      id: true,
+      dayOfWeek: true,
+      capType: true,
+      dailyCap: true,
+      dailyCapMinutes: true,
+      estimatedDurationMin: true,
+      slotDurationMin: true,
+      branchId: true,
+      endTime: true,
+      mode: true,
+    },
   });
 
   if (orderRules.length > 0) {
@@ -315,15 +362,22 @@ export async function getAvailableDaysForBooking(
     // Preload the window's day queues once so cap checks don't hit the DB per day.
     const queues = await prisma.doctorDayQueue.findMany({
       where: { doctorId, date: { gte: todayUTC, lte: until } },
-      select: { date: true, branchId: true, nextOrder: true, dailyCap: true },
+      select: {
+        date: true,
+        branchId: true,
+        nextOrder: true,
+        capType: true,
+        dailyCap: true,
+        dailyCapMinutes: true,
+        bookedMinutes: true,
+      },
     });
-    const queueByKey = new Map<string, { booked: number; cap: number | null }>();
+    const queueByKey = new Map<string, (typeof queues)[number]>();
     for (const q of queues) {
-      const key = `${q.date.toISOString().split("T")[0]}|${q.branchId ?? ""}`;
-      queueByKey.set(key, { booked: q.nextOrder - 1, cap: q.dailyCap });
+      queueByKey.set(`${q.date.toISOString().split("T")[0]}|${q.branchId ?? ""}`, q);
     }
-
     for (const rule of orderRules) {
+      if (fit && !fit(rule.id, rule.branchId)) continue;
       const targetDay = DAY_MAP[rule.dayOfWeek];
       const cur = new Date(todayUTC);
       while (cur <= until) {
@@ -338,11 +392,22 @@ export async function getAvailableDaysForBooking(
           }
           if (include && !byDate.has(dateStr)) {
             const q = queueByKey.get(`${dateStr}|${rule.branchId ?? ""}`);
-            const cap = q?.cap ?? rule.dailyCap;
-            const booked = q?.booked ?? 0;
-            if (cap == null || booked < cap) {
-              byDate.set(dateStr, rule.mode);
-            }
+            const capType = q?.capType ?? rule.capType;
+            const booked = q ? q.nextOrder - 1 : 0;
+            const cap = q ? q.dailyCap : rule.dailyCap;
+            const capMin = q ? q.dailyCapMinutes : rule.dailyCapMinutes;
+            const fits =
+              capType === "PATIENTS"
+                ? cap == null || booked < cap
+                : capType === "MINUTES"
+                  ? capMin == null ||
+                    capMin - (q?.bookedMinutes ?? 0) >=
+                      Math.max(
+                        1,
+                        lengthWith(minutes, rule.estimatedDurationMin ?? rule.slotDurationMin) ?? 1
+                      )
+                  : true;
+            if (fits) byDate.set(dateStr, rule.mode);
           }
         }
         cur.setUTCDate(cur.getUTCDate() + 1);
@@ -838,7 +903,10 @@ export async function listDoctorRules(
   return prisma.availabilityRule.findMany({
     // #38: optional clinic scope; #52: optional staff branch scope
     where: { doctorId, ...(clinicId ? { clinicId } : {}), ...branchIdFilter(branchScope) },
-    include: { branch: { select: { id: true, name: true } } },
+    include: {
+      branch: { select: { id: true, name: true } },
+      services: { select: { serviceId: true, service: { select: { name: true } } } },
+    },
     orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
   });
 }
@@ -904,8 +972,27 @@ export async function createRule(input: CreateRuleInput): Promise<Result<{ id: s
 
     const mode = input.mode ?? AvailabilityMode.SLOT_BASED;
     const queueMode = isQueueMode(mode);
-    if (queueMode && input.dailyCap != null && input.dailyCap < 1)
+    // Queue cap: legacy callers send only dailyCap (→ PATIENTS when set).
+    const capType: QueueCapType = !queueMode
+      ? QueueCapType.NONE
+      : (input.capType ?? (input.dailyCap != null ? QueueCapType.PATIENTS : QueueCapType.NONE));
+    const dailyCap = capType === QueueCapType.PATIENTS ? (input.dailyCap ?? null) : null;
+    const dailyCapMinutes =
+      capType === QueueCapType.MINUTES ? (input.dailyCapMinutes ?? null) : null;
+    if (capType === QueueCapType.PATIENTS && (dailyCap == null || dailyCap < 1))
       return err("الحد الأقصى للحجوزات يجب أن يكون 1 على الأقل.");
+    if (capType === QueueCapType.MINUTES && (dailyCapMinutes == null || dailyCapMinutes < 1))
+      return err("الحد الأقصى بالدقائق يجب أن يكون دقيقة واحدة على الأقل.");
+
+    // A rule may be limited to some of the doctor's own services.
+    const serviceIds = [...new Set(input.serviceIds ?? [])];
+    if (serviceIds.length) {
+      const provided = await prisma.doctorService.count({
+        where: { doctorId: input.doctorId, serviceId: { in: serviceIds } },
+      });
+      if (provided !== serviceIds.length)
+        return err("اختر من الخدمات التي يقدّمها هذا الطبيب فقط.");
+    }
 
     const rule = await prisma.availabilityRule.create({
       data: {
@@ -918,7 +1005,10 @@ export async function createRule(input: CreateRuleInput): Promise<Result<{ id: s
         clinicId: input.clinicId,
         mode,
         estimatedDurationMin: queueMode ? (input.estimatedDurationMin ?? null) : null,
-        dailyCap: queueMode ? (input.dailyCap ?? null) : null,
+        capType,
+        dailyCap,
+        dailyCapMinutes,
+        services: { create: serviceIds.map((serviceId) => ({ serviceId })) },
         referralOnly: input.referralOnly ?? false,
         note: input.note?.trim() || null,
       },

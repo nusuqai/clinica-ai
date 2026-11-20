@@ -1,5 +1,6 @@
 "use client";
 
+import { ruleCapText } from "@/lib/availability/queue-capacity";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Zap } from "lucide-react";
@@ -20,7 +21,11 @@ import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Hint } from "@/components/ui/tooltip";
-import { RuleFields, useRuleForm } from "@/components/availability/rule-fields";
+import {
+  RuleFields,
+  useRuleForm,
+  type RuleServiceOption,
+} from "@/components/availability/rule-fields";
 import { ruleDraftToFormData, ruleFormDefaults, toRuleDraft } from "@/lib/validations/availability";
 
 export interface DoctorBranchHours {
@@ -35,7 +40,10 @@ export interface DoctorBranchOption {
   hours: DoctorBranchHours[];
 }
 
-type RuleRow = AvailabilityRule & { branch: { id: string; name: string } | null };
+type RuleRow = AvailabilityRule & {
+  branch: { id: string; name: string } | null;
+  services?: { serviceId: string; service: { name: string } }[];
+};
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   [DayOfWeek.SUN]: "الأحد",
@@ -52,9 +60,11 @@ interface RulesTabProps {
   rules: RuleRow[];
   branches: DoctorBranchOption[];
   clinicId: string;
+  /** The doctor's services — a rule can be limited to some of them. */
+  services?: RuleServiceOption[];
 }
 
-export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesTabProps) {
+export default function RulesTab({ doctorId, rules, branches, clinicId, services }: RulesTabProps) {
   const router = useRouter();
   const [addOpen, setAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -185,7 +195,7 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
                   {isQueueMode(rule.mode) ? (
                     <Badge variant="indigo">
                       {MODE_BADGE_AR[rule.mode]}
-                      {rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : ""}
+                      {ruleCapText(rule)}
                       {rule.estimatedDurationMin != null
                         ? ` · ~${rule.estimatedDurationMin} د/مريض`
                         : ""}
@@ -197,6 +207,11 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
                     {rule.isActive ? "نشطة" : "معطّلة"}
                   </Badge>
                   {rule.referralOnly && <Badge variant="warning">تحويلات فقط</Badge>}
+                  {rule.services && rule.services.length > 0 && (
+                    <Badge variant="violet">
+                      خدمات محددة: {rule.services.map((x) => x.service.name).join("، ")}
+                    </Badge>
+                  )}
                 </div>
                 {rule.note && (
                   <p className="mb-1 font-sans text-xs text-muted-foreground">{rule.note}</p>
@@ -261,7 +276,7 @@ export default function RulesTab({ doctorId, rules, branches, clinicId }: RulesT
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="إضافة قاعدة توفر">
         <form onSubmit={handleAdd} noValidate className="space-y-4">
-          <RuleFields control={form.control} branches={branches} />
+          <RuleFields control={form.control} branches={branches} services={services} />
 
           <p className="font-sans text-xs text-muted-foreground">
             سيتم تلقائياً توليد مواعيد الـ 30 يوم القادمة عند الحفظ.

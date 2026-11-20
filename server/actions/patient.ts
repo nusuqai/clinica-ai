@@ -9,7 +9,8 @@ import type { BranchScope } from "@/lib/branch-scope";
 import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
-import { expectedOrderTime } from "@/lib/availability/queue-time";
+import { expectedTimeAfter } from "@/lib/availability/queue-time";
+import * as BookingService from "@/server/services/booking";
 import * as TreatmentService from "@/server/services/treatments";
 import * as IntakeService from "@/server/services/patient-intake";
 import { INTAKE_REQUIRED_ERROR, type IntakeValues } from "@/lib/patient-intake";
@@ -228,9 +229,8 @@ export async function getOrderBookingInfoAction(
     // meaningless before check-in (the number is assigned on arrival), so hide them.
     currentOrder: !arrival && info.trackCurrentOrder ? info.currentOrder : null,
     estimatedDurationMin: info.estimatedDurationMin,
-    expectedTime: arrival
-      ? null
-      : expectedOrderTime(info.sessionStart, nextOrderNumber, info.estimatedDurationMin),
+    // The next booking starts after every minute already booked into the day.
+    expectedTime: arrival ? null : expectedTimeAfter(info.sessionStart, info.bookedMinutes),
   };
 }
 
@@ -276,8 +276,12 @@ export async function bookOrderAppointmentAction(
   if (!(await IntakeService.hasPatientIntake(ctx.clinic.id, ctx.user.id)))
     return { ok: false, error: INTAKE_REQUIRED_ERROR };
 
-  const result = await QueueService.bookOrderAppointment(ctx.user.id, doctorId, new Date(dateStr), {
+  const result = await BookingService.bookQueueAppointment({
+    patientId: ctx.user.id,
+    doctorId,
+    date: new Date(dateStr),
     notes: patientNotes,
+    clinicId: ctx.clinic.id,
   });
   if (!result.ok) return { ok: false, error: result.error };
 
@@ -304,7 +308,9 @@ export async function bookAppointmentAction(
   if (!(await IntakeService.hasPatientIntake(ctx.clinic.id, ctx.user.id)))
     return { ok: false, error: INTAKE_REQUIRED_ERROR };
 
-  const result = await AppointmentService.createAppointment(ctx.user.id, slotId, patientNotes);
+  const result = await AppointmentService.createAppointment(ctx.user.id, slotId, patientNotes, {
+    clinicId: ctx.clinic.id,
+  });
 
   if (!result.ok) return { ok: false, error: result.error };
 
