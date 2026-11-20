@@ -32,6 +32,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ListCardSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { PendingNavigationProvider, PendingSwap } from "@/components/general/pending-navigation";
 import { formatFee } from "@/lib/currency";
+import { doctorTitleLabel } from "@/lib/doctor-title";
 
 const TABS = [
   { key: "appointments", label: "المواعيد", icon: Calendar },
@@ -157,11 +158,7 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
               </span>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              {doctor.title && (
-                <Badge className="px-2">
-                  {doctor.title === "CONSULTANT" ? "استشاري" : "أخصائي"}
-                </Badge>
-              )}
+              {doctor.title && <Badge className="px-2">{doctorTitleLabel(doctor.title)}</Badge>}
               {doctor.acceptsChildren && (
                 <Badge variant="sky" className="px-2">
                   يكشف على الأطفال

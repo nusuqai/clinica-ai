@@ -9,6 +9,7 @@ import { listSpecialties } from "@/server/services/specialties";
 import { expectedOrderTime } from "@/lib/availability/queue-time";
 import { modeTag } from "@/lib/availability/modes";
 import { pageRequest } from "@/lib/pagination";
+import { doctorTitleLabel } from "@/lib/doctor-title";
 import {
   jsonTool,
   money,
@@ -22,12 +23,6 @@ import {
   type FilterChoice,
 } from "./shared";
 
-/** Arabic label for a doctor's rank (null when unset). */
-function doctorTitleAr(title: string | null): string | null {
-  if (title === "CONSULTANT") return "استشاري";
-  if (title === "SPECIALIST") return "أخصائي";
-  return null;
-}
 
 const DAY_LABELS_AR: Record<string, string> = {
   SUN: "الأحد",
@@ -62,7 +57,7 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
       doctors: doctors.items.map((d) => ({
         id: d.id,
         name: d.profile.fullName,
-        title: doctorTitleAr(d.title),
+        title: doctorTitleLabel(d.title),
         specialty: d.specialty,
         specialtyId: d.specialtyId,
         branches: d.branchIds

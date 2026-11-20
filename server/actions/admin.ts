@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { AppointmentStatus, AvailabilityMode, DoctorTitle, Role } from "@prisma/client";
+import { isDoctorTitle } from "@/lib/doctor-title";
 import { parseMode } from "@/lib/availability/modes";
 
 import { can, getClinicContext, getPermittedContext } from "@/lib/auth";
@@ -58,7 +59,7 @@ const DOCTOR_NOT_FOUND = "الطبيب غير موجود";
 // Normalize the doctor-title select into a DoctorTitle enum value or null.
 function parseDoctorTitle(formData: FormData): DoctorTitle | null {
   const v = (formData.get("title") as string) || "";
-  return v === DoctorTitle.SPECIALIST || v === DoctorTitle.CONSULTANT ? v : null;
+  return isDoctorTitle(v) ? v : null;
 }
 
 // Parse the extra doctor attributes shared by create & update forms.
