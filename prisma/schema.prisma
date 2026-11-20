@@ -789,8 +789,6 @@ model Doctor {
   expertiseAreas         String? // مجالات الخبرة الدقيقة
   bio                    String?
   yearsOfExperience      Int?
-  examinationFee         Decimal?     @db.Decimal(10, 2) // سعر الكشف
-  consultationFee        Decimal?     @db.Decimal(10, 2) // سعر الاستشارة
   requiresAdvanceBooking Boolean      @default(true) // يحتاج حجزاً مسبقاً؟
   acceptsChildren        Boolean      @default(false) // يكشف على الأطفال؟
   isActive               Boolean      @default(true)

@@ -120,9 +120,6 @@ export async function updateMyProfileAction(formData: FormData) {
     phone: (formData.get("phone") as string) || null,
     specialtyId: specialtyRes.data,
     bio: (formData.get("bio") as string) || undefined,
-    consultationFee: formData.get("consultationFee")
-      ? Number(formData.get("consultationFee"))
-      : undefined,
     clinicId,
   });
 

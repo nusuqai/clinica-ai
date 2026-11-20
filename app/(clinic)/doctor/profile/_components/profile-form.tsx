@@ -15,7 +15,6 @@ import SpecialtySelect, {
   type SpecialtyOption,
 } from "@/app/(clinic)/admin/doctors/_components/specialty-select";
 import { Alert } from "@/components/ui/alert";
-import { CURRENCY_LABEL } from "@/lib/currency";
 
 interface ProfileFormProps {
   fullName: string;
@@ -23,7 +22,6 @@ interface ProfileFormProps {
   specialtyId: string | null;
   specialties: SpecialtyOption[];
   bio: string | null;
-  consultationFee: string | null;
 }
 
 export default function ProfileForm({
@@ -32,7 +30,6 @@ export default function ProfileForm({
   specialtyId,
   specialties,
   bio,
-  consultationFee,
 }: ProfileFormProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +42,6 @@ export default function ProfileForm({
       phone: phone ?? "",
       specialtyId: specialtyId ?? "",
       newSpecialtyName: "",
-      consultationFee: consultationFee ?? "",
       bio: bio ?? "",
     },
     mode: "onTouched",
@@ -92,16 +88,6 @@ export default function ProfileForm({
         <div>
           <SpecialtySelect control={form.control} specialties={specialties} />
         </div>
-
-        <FormField
-          type="number"
-          control={form.control}
-          name="consultationFee"
-          label={`رسوم الاستشارة (${CURRENCY_LABEL})`}
-          min="0"
-          step="0.01"
-          placeholder="150"
-        />
 
         <FormField
           type="textarea"

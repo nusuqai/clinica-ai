@@ -75,7 +75,6 @@ export const doctorProfileSchema = z
     phone: z.string().trim(),
     specialtyId: z.string(),
     newSpecialtyName: z.string().trim(),
-    consultationFee: optionalAmount,
     bio: z.string().trim(),
   })
   .refine(namesNewSpecialty, newSpecialtyIssue);

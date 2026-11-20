@@ -35,12 +35,8 @@ import {
 // `specialty` is synthesized from the linked Specialty row's name (empty string
 // when unassigned), so read paths that expect a specialty string keep working
 // after the free-text column was normalized into the `specialties` table.
-// Fees are Prisma Decimal on the row; we surface them as plain numbers so the
-// view is safe to pass from Server Components to Client Components (Decimal
-// objects can't cross that boundary).
-export type DoctorWithProfile = Omit<Doctor, "examinationFee" | "consultationFee"> & {
-  examinationFee: number | null;
-  consultationFee: number | null;
+// Prices live on services now (DoctorService / Service), not on the doctor.
+export type DoctorWithProfile = Doctor & {
   profile: {
     fullName: string;
     phone: string | null;
@@ -63,8 +59,6 @@ type DoctorRow = Doctor & {
 function toView(d: DoctorRow, email?: string): DoctorWithProfile {
   return {
     ...d,
-    examinationFee: d.examinationFee == null ? null : Number(d.examinationFee),
-    consultationFee: d.consultationFee == null ? null : Number(d.consultationFee),
     specialty: d.specialty?.name ?? "",
     profile: {
       fullName: d.fullName,
@@ -94,8 +88,6 @@ export interface CreateDoctorInput {
   specialtyId?: string | null;
   bio?: string;
   yearsOfExperience?: number;
-  examinationFee?: number;
-  consultationFee?: number;
   requiresAdvanceBooking?: boolean;
   acceptsChildren?: boolean;
   branchIds?: string[];
@@ -115,8 +107,6 @@ export interface UpdateDoctorInput {
   specialtyId?: string | null;
   bio?: string;
   yearsOfExperience?: number | null;
-  examinationFee?: number | null;
-  consultationFee?: number | null;
   requiresAdvanceBooking?: boolean;
   acceptsChildren?: boolean;
   fullName?: string;
@@ -613,8 +603,6 @@ export async function createDoctor(
           specialtyId: input.specialtyId ?? null,
           bio: input.bio ?? null,
           yearsOfExperience: input.yearsOfExperience ?? null,
-          examinationFee: input.examinationFee ?? null,
-          consultationFee: input.consultationFee ?? null,
           requiresAdvanceBooking: input.requiresAdvanceBooking ?? true,
           acceptsChildren: input.acceptsChildren ?? false,
           isActive: true,
@@ -712,8 +700,6 @@ export async function createDoctorAccount(
           specialtyId: input.specialtyId ?? null,
           bio: input.bio ?? null,
           yearsOfExperience: input.yearsOfExperience ?? null,
-          examinationFee: input.examinationFee ?? null,
-          consultationFee: input.consultationFee ?? null,
           requiresAdvanceBooking: input.requiresAdvanceBooking ?? true,
           acceptsChildren: input.acceptsChildren ?? false,
           isActive: true,
@@ -805,12 +791,6 @@ export async function updateDoctor(input: UpdateDoctorInput): Promise<Result<voi
           ...(input.bio !== undefined && { bio: input.bio }),
           ...(input.yearsOfExperience !== undefined && {
             yearsOfExperience: input.yearsOfExperience,
-          }),
-          ...(input.examinationFee !== undefined && {
-            examinationFee: input.examinationFee,
-          }),
-          ...(input.consultationFee !== undefined && {
-            consultationFee: input.consultationFee,
           }),
           ...(input.requiresAdvanceBooking !== undefined && {
             requiresAdvanceBooking: input.requiresAdvanceBooking,

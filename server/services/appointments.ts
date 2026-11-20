@@ -466,8 +466,6 @@ export interface AppointmentDetailView {
     fullName: string;
     specialty: string;
     title: string | null;
-    examinationFee: number | null;
-    consultationFee: number | null;
   };
   branch: { name: string; address: string | null } | null;
   slot: { date: Date; startTime: Date; endTime: Date } | null;
@@ -526,8 +524,6 @@ export async function getAppointmentForDetail(
           fullName: true,
           title: true,
           specialty: { select: { name: true } },
-          examinationFee: true,
-          consultationFee: true,
         },
       },
       feedback: { select: { rating: true, comment: true, createdAt: true } },
@@ -555,9 +551,6 @@ export async function getAppointmentForDetail(
       fullName: row.doctor.fullName,
       specialty: row.doctor.specialty?.name ?? "",
       title: row.doctor.title,
-      examinationFee: row.doctor.examinationFee != null ? Number(row.doctor.examinationFee) : null,
-      consultationFee:
-        row.doctor.consultationFee != null ? Number(row.doctor.consultationFee) : null,
     },
     branch: row.branch,
     slot: withVisitEnd(row).slot,
