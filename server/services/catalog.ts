@@ -593,18 +593,22 @@ export async function listPublicServices(
         category: { isActive: true },
         ...(filter.ids ? { id: { in: filter.ids } } : {}),
         ...(filter.categoryId ? { categoryId: filter.categoryId } : {}),
-        ...(q
-          ? {
-              OR: [
-                { name: { contains: q, mode: "insensitive" } },
-                { description: { contains: q, mode: "insensitive" } },
-                { category: { name: { contains: q, mode: "insensitive" } } },
-              ],
-            }
-          : {}),
-        ...(filter.branchId
-          ? { OR: [{ allBranches: true }, { branches: { some: { branchId: filter.branchId } } }] }
-          : {}),
+        // Two independent OR groups (text match, branch availability) — kept in
+        // AND so one never overwrites the other.
+        AND: [
+          q
+            ? {
+                OR: [
+                  { name: { contains: q, mode: "insensitive" } },
+                  { description: { contains: q, mode: "insensitive" } },
+                  { category: { name: { contains: q, mode: "insensitive" } } },
+                ],
+              }
+            : {},
+          filter.branchId
+            ? { OR: [{ allBranches: true }, { branches: { some: { branchId: filter.branchId } } }] }
+            : {},
+        ],
       },
       include: {
         category: { select: { name: true, sortOrder: true } },
