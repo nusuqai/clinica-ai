@@ -27,6 +27,7 @@ import { isWithinWhatsappWindow } from "@/lib/meta/window";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
@@ -170,7 +171,13 @@ function ThreadSkeleton() {
           <Skeleton className="h-3 w-24" />
         </div>
       </div>
-      <div className="flex-1 space-y-3 px-5 py-4">
+      <div className="relative flex-1 space-y-3 px-5 py-4">
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-background/90 px-4 py-2 text-sm text-muted-foreground shadow-sm">
+            <Spinner className="size-4 text-accent" />
+            جارٍ تحميل الرسائل…
+          </div>
+        </div>
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className={`flex ${i % 2 ? "justify-end" : "justify-start"}`}>
             <Skeleton className={`h-10 rounded-2xl ${i % 2 ? "w-1/3" : "w-1/2"}`} />
@@ -206,6 +213,14 @@ export default function ChatInbox({
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeId = searchParams.get("id");
+  // The chat just clicked. `?id=` (activeId) only changes once the server has
+  // rendered the new conversation, so until then the thread would keep showing
+  // the previous chat with no sign anything is happening. Showing this id right
+  // away lets the thread switch to its loading skeleton immediately.
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  useEffect(() => setOpeningId(null), [activeId]);
+  /** The conversation the thread pane shows (or is loading). */
+  const viewId = openingId ?? activeId;
   // Which clinic number each message went through — labelled only when the
   // clinic has several (a patient's chats with all of them share one thread).
   const numberLabels = useMemo(
@@ -375,13 +390,14 @@ export default function ChatInbox({
     if (activeId) refreshNeedsMe();
   }, [activeId, refreshNeedsMe]);
 
-  // The thread's server state belongs to `activeId` only once it has arrived.
-  const threadReady = !!selectedConversation && selectedConversation.id === activeId;
+  // The thread's server state belongs to the chat on view only once it has
+  // arrived (instantly for a chat cached from an earlier visit).
+  const threadReady = !!selectedConversation && selectedConversation.id === viewId;
   // The server already answered for this id and found nothing (stale link).
   const threadMissing =
-    !!activeId &&
-    (!/^[0-9a-f-]{36}$/i.test(activeId) || (requestedId === activeId && !initialConversation));
-  const threadLoading = !!activeId && !threadReady && !threadMissing;
+    !!viewId &&
+    (!/^[0-9a-f-]{36}$/i.test(viewId) || (requestedId === viewId && !initialConversation));
+  const threadLoading = !!viewId && !threadReady && !threadMissing;
 
   // Colleague escalations that point at a specific message → "escalated to X".
   const escalatedToByMessage = useMemo(() => {
@@ -889,11 +905,13 @@ export default function ChatInbox({
     const params = new URLSearchParams(searchParams.toString());
     params.set("id", id);
     cameFromListRef.current = true;
+    if (id !== activeId) setOpeningId(id);
     router.push(`/admin/messages?${params.toString()}`);
   };
 
   /** Mobile: back to the list. */
   const handleBack = () => {
+    setOpeningId(null);
     if (cameFromListRef.current) {
       cameFromListRef.current = false;
       router.back();
@@ -1401,7 +1419,7 @@ export default function ChatInbox({
       {/* ── Conversations list (full screen on mobile until a chat is open) ── */}
       <ConversationList
         conversations={conversations}
-        activeId={activeId}
+        activeId={viewId}
         loading={listPending}
         labels={labels}
         needsMeCount={needsMeCount}
@@ -1412,12 +1430,12 @@ export default function ChatInbox({
         onOpenDialog={handleListOpenDialog}
         teammates={teammates}
         canOpenPatientProfile={canOpenPatientProfile}
-        className={cn("w-full md:w-80 md:flex-shrink-0", activeId ? "hidden md:flex" : "flex")}
+        className={cn("w-full md:w-80 md:flex-shrink-0", viewId ? "hidden md:flex" : "flex")}
       />
 
       {/* ── Thread (full screen on mobile) ── */}
-      <div className={cn("min-w-0 flex-1 flex-col", activeId ? "flex" : "hidden md:flex")}>
-        {!activeId ? (
+      <div className={cn("min-w-0 flex-1 flex-col", viewId ? "flex" : "hidden md:flex")}>
+        {!viewId ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
             <MessageSquare className="h-12 w-12 opacity-20" />
             <p className="font-sans text-sm">اختر محادثة لعرض الرسائل</p>

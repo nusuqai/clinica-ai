@@ -67,8 +67,8 @@ export type SoloDoctor = {
   expertiseAreas: string | null;
   bio: string | null;
   yearsOfExperience: number | null;
-  examinationFee: number | null;
-  consultationFee: number | null;
+  /** What the doctor provides (names; prices are per service). */
+  services: string[];
   requiresAdvanceBooking: boolean;
   acceptsChildren: boolean;
   branches: { id: string; name: string; address: string | null }[];
@@ -81,6 +81,11 @@ export async function getSoloDoctor(clinicId: string): Promise<SoloDoctor | null
     orderBy: { fullName: "asc" },
     include: {
       specialty: { select: { name: true } },
+      services: {
+        where: { service: { isActive: true } },
+        select: { service: { select: { name: true, sortOrder: true } } },
+        orderBy: { service: { sortOrder: "asc" } },
+      },
       branches: {
         where: { branch: { isActive: true } },
         include: { branch: { select: { id: true, name: true, address: true, isMain: true } } },
@@ -97,8 +102,7 @@ export async function getSoloDoctor(clinicId: string): Promise<SoloDoctor | null
     expertiseAreas: d.expertiseAreas,
     bio: d.bio,
     yearsOfExperience: d.yearsOfExperience,
-    examinationFee: d.examinationFee == null ? null : Number(d.examinationFee),
-    consultationFee: d.consultationFee == null ? null : Number(d.consultationFee),
+    services: d.services.map((s) => s.service.name),
     requiresAdvanceBooking: d.requiresAdvanceBooking,
     acceptsChildren: d.acceptsChildren,
     branches: d.branches

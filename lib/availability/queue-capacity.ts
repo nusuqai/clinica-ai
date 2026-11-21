@@ -72,3 +72,15 @@ export function queueCapacityHint(
       `يتّسع الوقت لـ ${fits} مريض فقط — قلّل الحد الأقصى أو دقائق الكشف، أو وسّع وقت النهاية.`,
   };
 }
+
+/** " · حد 50 مريض" / " · حد 240 دقيقة" / "" for a queue rule's daily cap. */
+export function ruleCapText(rule: {
+  capType?: "NONE" | "PATIENTS" | "MINUTES" | null;
+  dailyCap: number | null;
+  dailyCapMinutes?: number | null;
+}): string {
+  if (rule.capType === "MINUTES")
+    return rule.dailyCapMinutes != null ? ` · حد ${rule.dailyCapMinutes} دقيقة` : "";
+  if (rule.capType === "NONE") return " · بدون حد";
+  return rule.dailyCap != null ? ` · حد ${rule.dailyCap}` : "";
+}

@@ -23,6 +23,7 @@ import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import Modal from "@/components/admin/modal";
 import { CancelReasonForm } from "@/components/appointments/cancel-reason-form";
+import CompleteVisitDialog from "@/components/appointments/complete-visit-dialog";
 import { Button } from "@/components/ui/button";
 import BoardColumn from "./board-column";
 import { Alert } from "@/components/ui/alert";
@@ -76,6 +77,7 @@ export default function AppointmentBoard({
     setLoadError(byStatus(() => false));
   }, [initialColumns]);
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
+  const [pendingCompleteId, setPendingCompleteId] = useState<string | null>(null);
   const [detailsAppt, setDetailsAppt] = useState<AdminAppointment | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -171,6 +173,11 @@ export default function AppointmentBoard({
       setPendingCancelId(appointment.id);
       return;
     }
+    // Completing records what was actually done (units, final prices, packages).
+    if (newStatus === AppointmentStatus.COMPLETED) {
+      setPendingCompleteId(appointment.id);
+      return;
+    }
 
     const previousStatus = appointment.status;
     applyStatus(appointment.id, previousStatus, newStatus);
@@ -218,6 +225,16 @@ export default function AppointmentBoard({
           {draggingCard && <AppointmentCardOverlay appointment={draggingCard} />}
         </DragOverlay>
       </DndContext>
+
+      <CompleteVisitDialog
+        appointmentId={pendingCompleteId}
+        open={pendingCompleteId !== null}
+        onClose={() => setPendingCompleteId(null)}
+        onCompleted={() => {
+          const appt = appointments.find((x) => x.id === pendingCompleteId);
+          if (appt) applyStatus(appt.id, appt.status, AppointmentStatus.COMPLETED);
+        }}
+      />
 
       <Modal
         open={pendingCancelId !== null}

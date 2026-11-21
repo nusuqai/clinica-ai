@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Phone, DollarSign, Calendar, Search } from "lucide-react";
+import { Phone, Sparkles, Calendar, Search } from "lucide-react";
 import type { Paginated } from "@/lib/pagination";
 import { publicDoctorsPageAction } from "@/server/actions/patient";
 import { useLoadMore } from "@/hooks/use-load-more";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
-import { formatFee } from "@/lib/currency";
+import { practitionerName } from "@/lib/doctor-title";
 
 export type PublicDoctor = Awaited<ReturnType<typeof publicDoctorsPageAction>>["items"][number];
 
@@ -61,7 +61,6 @@ interface BookTarget {
   id: string;
   name: string;
   specialty: string;
-  fee: number | null;
 }
 
 export function DoctorsClient({
@@ -191,7 +190,7 @@ export function DoctorsClient({
                   </Avatar>
                   <div className="min-w-0">
                     <p className="truncate font-heading text-base font-bold text-text">
-                      د. {doctor.profile.fullName}
+                      {practitionerName(doctor.profile.fullName, doctor.title)}
                     </p>
                     <p className="truncate font-sans text-sm text-accent">{doctor.specialty}</p>
                   </div>
@@ -199,14 +198,12 @@ export function DoctorsClient({
 
                 {/* Info rows */}
                 <div className="mt-4 flex flex-col gap-2 border-t border-border pt-4">
-                  {doctor.consultationFee && (
-                    <div className="flex items-center gap-2 text-text/60">
-                      <DollarSign className="h-4 w-4 shrink-0 text-accent" />
+                  {doctor.services.length > 0 && (
+                    <div className="flex items-start gap-2 text-text/60">
+                      <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
                       <span className="font-sans text-sm">
-                        رسوم الكشف:{" "}
-                        <span className="font-medium text-text">
-                          {formatFee(doctor.consultationFee)}
-                        </span>
+                        {doctor.services.slice(0, 4).join("، ")}
+                        {doctor.services.length > 4 && ` +${doctor.services.length - 4}`}
                       </span>
                     </div>
                   )}
@@ -233,7 +230,6 @@ export function DoctorsClient({
                       id: doctor.id,
                       name: doctor.profile.fullName,
                       specialty: doctor.specialty,
-                      fee: doctor.consultationFee,
                     })
                   }
                   className="mt-5 w-full transition-all group-hover:bg-accent"

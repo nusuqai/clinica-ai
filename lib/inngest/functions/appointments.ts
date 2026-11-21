@@ -1,5 +1,6 @@
 import "server-only";
 import { AppointmentStatus, Channel, SenderType } from "@prisma/client";
+import { expirePackages, settleSessionLines } from "@/server/services/packages";
 import { prisma } from "@/lib/prisma";
 import { inngest, type AppointmentNotifyData } from "@/lib/inngest/client";
 import { sendTemplateMessage, WhatsAppApiError } from "@/lib/meta/whatsapp";
@@ -89,11 +90,21 @@ async function sweepNoShows(now: Date): Promise<number> {
 
   if (dueIds.length === 0) return 0;
 
-  const res = await prisma.appointment.updateMany({
-    where: { id: { in: dueIds }, status: { in: OPEN_STATUSES } },
-    data: { status: AppointmentStatus.NO_SHOW },
-  });
-  return res.count;
+  // One by one, so each no-show also settles its package sessions (a no-show
+  // uses the reserved session; unit credit is untouched) in the same transaction.
+  let count = 0;
+  for (const id of dueIds) {
+    await prisma.$transaction(async (tx) => {
+      const res = await tx.appointment.updateMany({
+        where: { id, status: { in: OPEN_STATUSES } },
+        data: { status: AppointmentStatus.NO_SHOW },
+      });
+      if (res.count === 0) return;
+      await settleSessionLines(tx, id, "NO_SHOW");
+      count++;
+    });
+  }
+  return count;
 }
 
 // ─── Pass 2: confirmation reminders ─────────────────────────────────────────
@@ -262,6 +273,9 @@ export const appointmentsSweep = inngest.createFunction(
     const now = new Date(await step.run("stamp-now", async () => new Date().toISOString()));
 
     const noShows = await step.run("sweep-no-shows", () => sweepNoShows(now));
+
+    // Packages past their last valid day (idempotent; hourly is fine for a daily rule).
+    await step.run("expire-packages", () => expirePackages(now));
 
     const reminders = await step.run("find-due-reminders", () => findDueReminders(now));
     if (reminders.length > 0) {

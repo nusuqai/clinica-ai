@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm, useWatch, type Control, type UseFormReturn } from "react-hook-form";
+import {
+  useController,
+  useForm,
+  useWatch,
+  type Control,
+  type UseFormReturn,
+} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AvailabilityMode, DayOfWeek } from "@prisma/client";
+import { AvailabilityMode, DayOfWeek, QueueCapType } from "@prisma/client";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 import { cn } from "@/lib/utils";
 import { FormField } from "@/components/ui/form-field";
@@ -57,6 +65,18 @@ const MODE_OPTIONS = [
   { value: AvailabilityMode.ARRIVAL_BASED, label: "أسبقية الحضور" },
 ];
 
+const CAP_OPTIONS = [
+  { value: QueueCapType.NONE, label: "بدون حد" },
+  { value: QueueCapType.PATIENTS, label: "عدد المرضى" },
+  { value: QueueCapType.MINUTES, label: "إجمالي الدقائق" },
+];
+
+/** A service the rule can be limited to (the doctor's own services). */
+export interface RuleServiceOption {
+  id: string;
+  name: string;
+}
+
 type RuleControl = Control<RuleFormInput, unknown, RuleFormValues>;
 export type RuleForm = UseFormReturn<RuleFormInput, unknown, RuleFormValues>;
 
@@ -85,6 +105,7 @@ export function resetRuleExtras(form: RuleForm) {
   form.setValue("referralOnly", false);
   form.setValue("note", "");
   form.setValue("mode", AvailabilityMode.SLOT_BASED);
+  form.setValue("serviceIds", []);
 }
 
 /** The branch's opening window for a weekday, as a helper hint + validity flag. */
@@ -108,10 +129,13 @@ function branchWindow(branches: RuleBranch[], branchId: string, day: DayOfWeek) 
 export function RuleFields({
   control,
   branches,
+  services,
   compact = false,
 }: {
   control: RuleControl;
   branches: RuleBranch[];
+  /** The doctor's services; when given, the rule can be limited to some of them. */
+  services?: RuleServiceOption[];
   compact?: boolean;
 }) {
   const labelClassName = compact ? "text-xs text-muted-foreground" : undefined;
@@ -156,6 +180,10 @@ export function RuleFields({
       />
 
       <ModeFields control={control} labelClassName={labelClassName} compact={compact} />
+
+      {services && services.length > 0 && (
+        <RuleServicesField control={control} services={services} compact={compact} />
+      )}
 
       <FormField
         control={control}
@@ -227,13 +255,14 @@ function ModeFields({
           />
           <FormField
             control={control}
-            name="dailyCap"
-            type="number"
-            label="الحد الأقصى للحجوزات"
+            name="capType"
+            type="select"
+            label="الحد اليومي"
             labelClassName={labelClassName}
-            min={1}
+            options={CAP_OPTIONS}
+            hint="بالدقائق: يتوقف الحجز عندما يمتلئ اليوم بمدد الخدمات المحجوزة."
           />
-          <CapacityHint control={control} compact={compact} />
+          <CapFields control={control} labelClassName={labelClassName} compact={compact} />
         </>
       ) : (
         <FormField
@@ -247,6 +276,95 @@ function ModeFields({
         />
       )}
     </>
+  );
+}
+
+/** The cap's number (patients or minutes), per the chosen cap type. */
+function CapFields({
+  control,
+  labelClassName,
+  compact,
+}: {
+  control: RuleControl;
+  labelClassName?: string;
+  compact: boolean;
+}) {
+  const capType = useWatch({ control, name: "capType" });
+  if (capType === QueueCapType.PATIENTS)
+    return (
+      <>
+        <FormField
+          control={control}
+          name="dailyCap"
+          type="number"
+          label="الحد الأقصى للحجوزات"
+          labelClassName={labelClassName}
+          min={1}
+          className="sm:col-span-2"
+        />
+        <CapacityHint control={control} compact={compact} />
+      </>
+    );
+  if (capType === QueueCapType.MINUTES)
+    return (
+      <FormField
+        control={control}
+        name="dailyCapMinutes"
+        type="number"
+        label="الحد الأقصى بالدقائق"
+        labelClassName={labelClassName}
+        min={1}
+        className="sm:col-span-2"
+        hint="مجموع مدد الخدمات المحجوزة في اليوم لا يتجاوز هذا الرقم."
+      />
+    );
+  return null;
+}
+
+/** "All the doctor's services" or a hand-picked subset for this rule. */
+function RuleServicesField({
+  control,
+  services,
+  compact,
+}: {
+  control: RuleControl;
+  services: RuleServiceOption[];
+  compact: boolean;
+}) {
+  const { field } = useController({ control, name: "serviceIds" });
+  const selected: string[] = field.value ?? [];
+  const limited = selected.length > 0;
+  return (
+    <div className="space-y-2 rounded-xl border border-border p-3 sm:col-span-2">
+      <Label
+        className={cn("font-sans font-medium text-foreground", compact ? "text-xs" : "text-sm")}
+      >
+        الخدمات المتاحة في هذا الموعد
+      </Label>
+      <p className="font-sans text-xs text-muted-foreground">
+        {limited
+          ? "يمكن حجز الخدمات المختارة فقط في هذه الفترة."
+          : "كل خدمات الطبيب متاحة. اختر خدمات بعينها لتقصر هذه الفترة عليها (مثال: يوم الليزر)."}
+      </p>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        {services.map((s) => (
+          <label
+            key={s.id}
+            className="flex cursor-pointer items-center gap-2 font-sans text-sm text-foreground"
+          >
+            <Checkbox
+              checked={selected.includes(s.id)}
+              onCheckedChange={(c) =>
+                field.onChange(
+                  c === true ? [...selected, s.id] : selected.filter((id) => id !== s.id)
+                )
+              }
+            />
+            {s.name}
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -85,7 +85,6 @@ export default async function AdminAppointmentsPage({ searchParams }: PageProps)
                   id: d.id,
                   name: d.profile.fullName,
                   specialty: d.specialty,
-                  fee: d.consultationFee,
                 }))}
             />
           }

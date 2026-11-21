@@ -22,6 +22,7 @@ import {
 } from "@/server/actions/admin";
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import Modal from "@/components/admin/modal";
+import CompleteVisitDialog from "@/components/appointments/complete-visit-dialog";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
@@ -435,32 +436,13 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
         </>
       )}
 
-      <Modal
+      {/* Finishing the patient being served: record what was done, then advance. */}
+      <CompleteVisitDialog
+        appointmentId={confirmNext ? (currentPatient?.id ?? null) : null}
         open={confirmNext}
         onClose={() => setConfirmNext(false)}
-        title="إنهاء كشف المريض الحالي"
-      >
-        <div className="space-y-4">
-          <p className="font-sans text-sm leading-relaxed text-foreground">
-            هل أنهى المريض <span className="font-semibold">{currentPatient?.patientName}</span> (دور{" "}
-            {currentPatient?.orderNumber}) الكشف؟ سيُعلَّم موعده كمكتمل وينتقل الدور إلى المريض
-            التالي.
-          </p>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setConfirmNext(false)}
-              disabled={isPending}
-              className="text-muted-foreground"
-            >
-              إلغاء
-            </Button>
-            <Button onClick={performNext} loading={isPending}>
-              {isPending ? "جارٍ..." : "تأكيد الإنهاء والانتقال"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        onCompleted={performNext}
+      />
     </div>
   );
 }

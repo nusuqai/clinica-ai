@@ -11,7 +11,8 @@ import {
   Coins,
   Bot,
 } from "lucide-react";
-import { getDashboardStats, getDoctorLoad } from "@/server/services/reports";
+import { getCatalogReport, getDashboardStats, getDoctorLoad } from "@/server/services/reports";
+import { formatFee } from "@/lib/currency";
 import { getClinicAiUsage } from "@/server/services/aiReports";
 import { requirePermission } from "@/lib/auth";
 import StatCard from "@/components/admin/stat-card";
@@ -29,10 +30,11 @@ export default async function AdminReportsPage() {
   // and doctors, cut to their branches). Members, conversations and AI usage
   // have no branch — showing clinic-wide totals there would leak other branches.
   const limited = scope !== null;
-  const [stats, doctorLoad, ai] = await Promise.all([
+  const [stats, doctorLoad, ai, catalog] = await Promise.all([
     getDashboardStats(clinic.id, scope),
     getDoctorLoad(clinic.id, scope),
     limited ? null : getClinicAiUsage(clinic.id),
+    getCatalogReport(clinic.id, scope),
   ]);
 
   const totalAppts = stats.totalAppointments || 1;
@@ -154,6 +156,92 @@ export default async function AdminReportsPage() {
           </Card>
         )}
       </div>
+
+      {/* Services, packages & offers — last 30 days, cut to the member's branches. */}
+      <Card className="mb-6 p-6">
+        <h2 className="mb-6 font-heading font-semibold text-foreground">
+          الخدمات والباقات والعروض — آخر {catalog.windowDays} يوماً
+        </h2>
+        <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+          <StatCard
+            label={`إيراد الخدمات (${catalog.completedVisits} زيارة)`}
+            value={formatFee(catalog.servicesRevenue)}
+            icon={Coins}
+            color="primary"
+          />
+          <StatCard
+            label={`باقات مُباعة${catalog.packagesUnpaid ? ` (${catalog.packagesUnpaid} غير مدفوعة)` : ""}`}
+            value={`${catalog.packagesSold} · ${formatFee(catalog.packagesRevenue)}`}
+            icon={CheckCircle}
+            color="accent"
+          />
+          <StatCard
+            label="مستهلك من الباقات"
+            value={`${units(catalog.unitsConsumed)} وحدة · ${units(catalog.sessionsConsumed)} جلسة`}
+            icon={Clock}
+            color="accent"
+          />
+          <StatCard
+            label="وحدات تجاوزت رصيد الباقة"
+            value={units(catalog.uncoveredUnits)}
+            icon={UserX}
+            color={catalog.uncoveredUnits ? "amber" : "accent"}
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div>
+            <h3 className="mb-3 font-sans text-sm font-semibold text-muted-foreground">
+              أكثر الخدمات
+            </h3>
+            {catalog.topServices.length ? (
+              <BarList
+                items={catalog.topServices.map((x) => ({
+                  label: x.name,
+                  sublabel: formatFee(x.revenue),
+                  value: x.count,
+                }))}
+                color="bg-primary"
+              />
+            ) : (
+              <p className="font-sans text-sm text-muted-foreground">لا توجد زيارات مكتملة.</p>
+            )}
+          </div>
+          <div>
+            <h3 className="mb-3 font-sans text-sm font-semibold text-muted-foreground">
+              الباقات المُباعة
+            </h3>
+            {catalog.topPackages.length ? (
+              <BarList
+                items={catalog.topPackages.map((x) => ({
+                  label: x.name,
+                  sublabel: formatFee(x.revenue),
+                  value: x.count,
+                }))}
+                color="bg-accent"
+              />
+            ) : (
+              <p className="font-sans text-sm text-muted-foreground">لم تُبع باقات.</p>
+            )}
+          </div>
+          <div>
+            <h3 className="mb-3 font-sans text-sm font-semibold text-muted-foreground">
+              استخدام العروض
+            </h3>
+            {catalog.offers.length ? (
+              <BarList
+                items={catalog.offers.map((x) => ({
+                  label: x.name,
+                  sublabel: x.discount ? `خصم ${formatFee(x.discount)}` : undefined,
+                  value: x.uses,
+                }))}
+                color="bg-emerald-500"
+              />
+            ) : (
+              <p className="font-sans text-sm text-muted-foreground">لم تُستخدم عروض.</p>
+            )}
+          </div>
+        </div>
+      </Card>
 
       {/* AI assistant — the unit meter, summarized. The full breakdown (daily,
           per channel, runway) lives on /admin/ai/usage; this is the at-a-glance
