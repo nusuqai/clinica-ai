@@ -6,34 +6,28 @@ import type { AgentContext } from "@/agent/types";
 import { jsonTool } from "./shared";
 
 /**
- * Available to all identified (non-null-role) callers. Turns off AI
- * auto-reply for the current session and logs the request — a session can
- * accumulate several of these if the admin re-enables the AI and the user
- * asks for a human again.
+ * Available to all identified (non-null-role) callers. Logs an escalation so
+ * staff are notified and can follow up — the AI keeps auto-replying in the
+ * session (staff can still turn it off manually from the inbox). A session can
+ * accumulate several of these if the user asks for a human more than once.
  */
 export function escalationTool(ctx: AgentContext): DynamicStructuredTool {
   return jsonTool(
     {
       name: "escalate_to_human",
       description:
-        "استخدمه عندما يطلب المستخدم موظفاً بشرياً أو عند طلب خارج قدراتك — سيتابع أحد الموظفين المحادثة.",
+        "استخدمه عندما يطلب المستخدم موظفاً بشرياً أو عند طلب خارج قدراتك — سيتم إشعار أحد الموظفين لمتابعة المحادثة، وتستمر أنت في الرد على المستخدم.",
       schema: z.object({ reason: z.string().nullable() }),
     },
     async ({ reason }) => {
-      await prisma.$transaction([
-        prisma.chatSession.update({
-          where: { id: ctx.sessionId },
-          data: { aiEnabled: false },
-        }),
-        prisma.escalation.create({
-          data: {
-            clinicId: ctx.clinicId,
-            conversationId: ctx.conversationId,
-            sessionId: ctx.sessionId,
-            reason: reason ?? null,
-          },
-        }),
-      ]);
+      await prisma.escalation.create({
+        data: {
+          clinicId: ctx.clinicId,
+          conversationId: ctx.conversationId,
+          sessionId: ctx.sessionId,
+          reason: reason ?? null,
+        },
+      });
       return { escalated: true, reason: reason ?? null };
     },
   );
