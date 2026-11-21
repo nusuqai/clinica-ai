@@ -341,27 +341,13 @@ export default function ChatInbox({
     setTimeout(() => setHighlightedId((cur) => (cur === id ? null : cur)), 1600);
   };
 
-  // Client-side cache of conversation detail + messages, keyed by conversation
-  // id. Lets switching back to an already-visited thread render instantly
-  // instead of waiting on the server round-trip triggered by router.push.
-  const conversationCache = useRef<
-    Map<string, { detail: ConversationDetail; messages: MessageItem[]; notes: InternalNoteItem[] }>
-  >(new Map());
-
-  // Sync when the server re-renders with fresh data, and cache it for this id.
+  // Sync when the server re-renders with fresh data.
   useEffect(() => setConversations(initialConversations), [initialConversations]);
   useEffect(() => setLabels(initialLabels), [initialLabels]);
   useEffect(() => {
     setMessages(initialMessages);
     setInternalNotes(initialInternalNotes);
     setSelectedConversation(initialConversation);
-    if (initialConversation) {
-      conversationCache.current.set(initialConversation.id, {
-        detail: initialConversation,
-        messages: initialMessages,
-        notes: initialInternalNotes,
-      });
-    }
   }, [initialConversation, initialMessages, initialInternalNotes]);
 
   // An optimistic bubble is retired once its real row shows up in the server
@@ -391,7 +377,7 @@ export default function ChatInbox({
   }, [activeId, refreshNeedsMe]);
 
   // The thread's server state belongs to the chat on view only once it has
-  // arrived (instantly for a chat cached from an earlier visit).
+  // arrived .
   const threadReady = !!selectedConversation && selectedConversation.id === viewId;
   // The server already answered for this id and found nothing (stale link).
   const threadMissing =
@@ -891,14 +877,6 @@ export default function ChatInbox({
   }, [eventTick]);
 
   const handleSelectConversation = (id: string) => {
-    const cached = conversationCache.current.get(id);
-    if (cached) {
-      // Instant paint from cache; router.push below still refreshes it
-      // server-side, and the effect above will reconcile once that lands.
-      setSelectedConversation(cached.detail);
-      setMessages(cached.messages);
-      setInternalNotes(cached.notes);
-    }
     // Opening it reads it — zero the badge immediately (the page render
     // persists it server-side).
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)));
