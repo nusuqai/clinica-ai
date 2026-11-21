@@ -185,6 +185,47 @@ function toNumber(to: EvolutionRecipient): string {
   throw new EvolutionApiError("outbound message has no recipient (neither phone nor JID)", 400);
 }
 
+/**
+ * Every address we can try, best first. A contact WhatsApp addresses by LID is
+ * reachable by that JID even when a phone number is also known, whereas sending
+ * to the bare digits can be rejected or never delivered — so the LID goes first
+ * and the phone is the fallback.
+ */
+function addressCandidates(to: EvolutionRecipient): string[] {
+  const out: string[] = [];
+  if (to.userId) out.push(to.userId);
+  if (to.phone) out.push(to.phone.replace(/\D/g, ""));
+  if (out.length === 0) {
+    throw new EvolutionApiError("outbound message has no recipient (neither phone nor JID)", 400);
+  }
+  return out;
+}
+
+/** Runs `send` against each candidate address until one succeeds. */
+async function sendToFirstReachable<T extends SendResponse>(
+  to: EvolutionRecipient,
+  send: (number: string) => Promise<T>,
+  kind = "message"
+): Promise<T> {
+  const candidates = addressCandidates(to);
+  let lastErr: unknown;
+  for (const number of candidates) {
+    try {
+      const res = await send(number);
+      // Evolution's own view of the send: the JID it actually resolved the
+      // number to, its id and status — what to compare against WhatsApp.
+      console.log(
+        `[evolution] ${kind} sent number=${number} → remoteJid=${res.key?.remoteJid ?? "?"} id=${res.key?.id ?? "?"} status=${res.status ?? "?"}`
+      );
+      return res;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[evolution] send to ${number} failed, trying next address:`, err);
+    }
+  }
+  throw lastErr;
+}
+
 /** The remote JID for chat-level calls (presence, read receipts). */
 function toJid(to: EvolutionRecipient): string {
   const n = toNumber(to);
@@ -202,7 +243,11 @@ function quoted(options?: EvolutionSendOptions) {
   return options?.replyToId ? { quoted: { key: { id: options.replyToId } } } : {};
 }
 
-type SendResponse = { key?: { id?: string } };
+type SendResponse = {
+  key?: { id?: string; remoteJid?: string };
+  status?: string;
+  exists?: boolean;
+};
 const sentId = (res: SendResponse) => res.key?.id ?? null;
 
 /** Sends a text message. Returns the WhatsApp message id. */
@@ -212,12 +257,17 @@ export async function sendText(
   text: string,
   options?: EvolutionSendOptions
 ): Promise<string | null> {
-  const res = await evo<SendResponse>("POST", `/message/sendText/${enc(instanceName)}`, {
-    number: toNumber(to),
-    text,
-    linkPreview: true,
-    ...quoted(options),
-  });
+  const res = await sendToFirstReachable(
+    to,
+    (number) =>
+      evo<SendResponse>("POST", `/message/sendText/${enc(instanceName)}`, {
+        number,
+        text,
+        linkPreview: true,
+        ...quoted(options),
+      }),
+    "text"
+  );
   return sentId(res);
 }
 
@@ -236,15 +286,20 @@ export async function sendMedia(
   },
   options?: EvolutionSendOptions
 ): Promise<string | null> {
-  const res = await evo<SendResponse>("POST", `/message/sendMedia/${enc(instanceName)}`, {
-    number: toNumber(to),
-    mediatype: media.mediaType,
-    mimetype: media.mimeType,
-    media: media.bytes.toString("base64"),
-    ...(media.caption ? { caption: media.caption } : {}),
-    ...(media.fileName ? { fileName: media.fileName } : {}),
-    ...quoted(options),
-  });
+  const res = await sendToFirstReachable(
+    to,
+    (number) =>
+      evo<SendResponse>("POST", `/message/sendMedia/${enc(instanceName)}`, {
+        number,
+        mediatype: media.mediaType,
+        mimetype: media.mimeType,
+        media: media.bytes.toString("base64"),
+        ...(media.caption ? { caption: media.caption } : {}),
+        ...(media.fileName ? { fileName: media.fileName } : {}),
+        ...quoted(options),
+      }),
+    "media"
+  );
   return sentId(res);
 }
 
@@ -258,11 +313,16 @@ export async function sendVoiceNote(
   bytes: Buffer,
   options?: EvolutionSendOptions
 ): Promise<string | null> {
-  const res = await evo<SendResponse>("POST", `/message/sendWhatsAppAudio/${enc(instanceName)}`, {
-    number: toNumber(to),
-    audio: bytes.toString("base64"),
-    ...quoted(options),
-  });
+  const res = await sendToFirstReachable(
+    to,
+    (number) =>
+      evo<SendResponse>("POST", `/message/sendWhatsAppAudio/${enc(instanceName)}`, {
+        number,
+        audio: bytes.toString("base64"),
+        ...quoted(options),
+      }),
+    "voice"
+  );
   return sentId(res);
 }
 
