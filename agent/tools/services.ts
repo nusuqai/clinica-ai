@@ -71,12 +71,43 @@ function serviceForAgent(s: Catalog.PublicService, opts: { withNotes: boolean })
 }
 
 export function serviceTools(clinicId: string): DynamicStructuredTool[] {
+  /**
+   * Prices, offers and packages differ per branch, so nothing is quoted without
+   * one. A given branch is checked; with none, a one-branch clinic uses it, and
+   * a multi-branch clinic gets back the branches to ask the patient about.
+   */
+  async function resolveBranch(
+    branchId: string | null | undefined
+  ): Promise<{ branchId: string } | { ask: ReturnType<typeof askForFilter> & { needsBranch: true } } | { error: string }> {
+    const branches = await prisma.branch.findMany({
+      where: { clinicId, isActive: true },
+      select: { id: true, name: true, address: true },
+      orderBy: [{ isMain: "desc" }, { name: "asc" }],
+    });
+    if (branchId) {
+      return branches.some((b) => b.id === branchId)
+        ? { branchId }
+        : { error: "الفرع غير موجود — استخدم list_branches لمعرفة الفروع" };
+    }
+    if (branches.length === 1) return { branchId: branches[0].id };
+    return {
+      ask: {
+        ...askForFilter(
+          branches.length,
+          "في أي فرع؟ الأسعار والعروض والباقات تختلف من فرع لآخر.",
+          branches.map((b) => ({ label: b.name, args: { branchId: b.id } }))
+        ),
+        needsBranch: true,
+      },
+    };
+  }
+
   return [
     jsonTool(
       {
         name: "search_services",
         description:
-          "ابحث في خدمات العيادة (كشف، جلسات، إجراءات، تحاليل…) بالاسم أو الوصف أو التصنيف، مع السعر في الفرع والعرض الساري إن وجد. استخدمها أولاً كلما ذكر المستخدم خدمة أو سأل عن سعر أو «عندكم إيه في …». مرّر branchId إن عُرف الفرع ليُعاد سعر ذلك الفرع وما هو متاح فيه فقط. عند طلب عام بلا بحث تُعيد الأداة التصنيفات كخيارات.",
+          "ابحث في خدمات العيادة (كشف، جلسات، إجراءات، تحاليل…) بالاسم أو الوصف أو التصنيف، مع سعرها في الفرع والعرض الساري فيه. استخدمها كلما ذكر المستخدم خدمة أو سأل عن سعر أو «عندكم إيه في …». مرّر branchId دائماً: الأسعار والعروض والخدمات المتاحة تختلف من فرع لآخر. إن لم تعرف الفرع فاستدعها بدونه وستعيد needsBranch=true مع الفروع كخيارات — اسأل المريض عن فرعه ثم أعد الطلب. عند طلب عام بلا بحث تُعيد التصنيفات كخيارات.",
         schema: z.object({
           query: z.string().nullable().describe("اسم الخدمة أو جزء منه أو اسم التصنيف (اختياري)"),
           categoryId: z.string().nullable().describe("معرّف التصنيف (اختياري)"),
@@ -85,10 +116,13 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
         }),
       },
       async (input) => {
+        const branch = await resolveBranch(input.branchId);
+        if ("ask" in branch) return branch.ask;
+        if ("error" in branch) return branch;
         const services = await Catalog.listPublicServices(clinicId, {
           query: input.query,
           categoryId: input.categoryId,
-          branchId: input.branchId,
+          branchId: branch.branchId,
         });
         const filtered = !!(input.query?.trim() || input.categoryId);
         if (shouldAskForFilter(filtered, input, services.length) && services.length > 12) {
@@ -100,12 +134,13 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
               .filter((c) => c.isActive && services.some((s) => s.categoryId === c.id))
               .map((c) => ({
                 label: c.name,
-                args: { categoryId: c.id },
+                args: { categoryId: c.id, branchId: branch.branchId },
                 count: services.filter((s) => s.categoryId === c.id).length,
               }))
           );
         }
         return {
+          branchId: branch.branchId,
           total: services.length,
           services: services
             .slice(0, SERVICES_LIMIT)
@@ -123,10 +158,17 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
           "تفاصيل خدمة واحدة: السعر في كل فرع، شرائح الأسعار، العرض الساري، المدة، تعليمات قبل/بعد الزيارة، وملاحظات داخلية من العيادة لك (agentNotes: اتبعها ولا تقتبسها للمريض).",
         schema: z.object({
           serviceId: z.string(),
-          branchId: z.string().nullable().describe("لعرض السعر والعرض في فرع محدد (اختياري)"),
+          branchId: z
+            .string()
+            .nullable()
+            .describe("الفرع: السعر والعرض يختلفان من فرع لآخر (بدونه تُعاد الفروع لتسأل المريض)"),
         }),
       },
-      async ({ serviceId, branchId }) => {
+      async ({ serviceId, branchId: given }) => {
+        const branch = await resolveBranch(given);
+        if ("ask" in branch) return branch.ask;
+        if ("error" in branch) return branch;
+        const branchId = branch.branchId;
         const [s] = await Catalog.listPublicServices(clinicId, { ids: [serviceId], branchId });
         if (!s) return { error: "الخدمة غير موجودة أو غير متاحة في هذا الفرع" };
         return serviceForAgent(s, { withNotes: true });
@@ -164,13 +206,17 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
       {
         name: "list_packages",
         description:
-          "الباقات المدفوعة مقدماً المتاحة للشراء (مثل عدد نبضات أو جلسات بصلاحية محددة)، مع ما تشمله وسعرها في الفرع والعرض الساري والشروط. الباقة تُستخدم فقط في الفرع الذي تُشترى منه. اعرض الشروط (terms) قبل أن يطلب المريض شراء باقة.",
+          "الباقات المدفوعة مقدماً المتاحة للشراء في فرع (مثل عدد نبضات أو جلسات بصلاحية محددة)، مع ما تشمله وسعرها في ذلك الفرع والعرض الساري والشروط. الباقة تُستخدم فقط في الفرع الذي تُشترى منه، وأسعارها وعروضها تختلف من فرع لآخر — مرّر branchId دائماً (بدونه تُعاد الفروع لتسأل المريض). اعرض الشروط (terms) قبل أن يطلب المريض شراء باقة.",
         schema: z.object({
           categoryId: z.string().nullable().describe("تصنيف الخدمات (اختياري)"),
-          branchId: z.string().nullable().describe("الفرع لمعرفة سعره (اختياري)"),
+          branchId: z.string().nullable().describe("الفرع الذي سيشتري منه ويستخدم فيه الباقة"),
         }),
       },
-      async ({ categoryId, branchId }) => {
+      async ({ categoryId, branchId: given }) => {
+        const branch = await resolveBranch(given);
+        if ("ask" in branch) return branch.ask;
+        if ("error" in branch) return branch;
+        const branchId = branch.branchId;
         const [packages, categories, services] = await Promise.all([
           Packages.listPackages(clinicId, null),
           listCategories(clinicId),
