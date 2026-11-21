@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AvailabilityMode, DayOfWeek } from "@prisma/client";
+import { AvailabilityMode, DayOfWeek, QueueCapType } from "@prisma/client";
 import { isQueueMode } from "@/lib/availability/modes";
 
 // The "new availability rule" form — shared by the add/edit doctor modals, the
@@ -17,7 +17,12 @@ export const ruleFormSchema = z
     slotDurationMin: z.coerce.number(),
     // Only used by the queue modes; validated regardless, they keep sane defaults.
     estimatedDurationMin: positiveInt("أدخل عدد دقائق صحيحاً (1 أو أكثر)."),
+    /** Queue modes: how the day is capped — none, a number of patients, or minutes of services. */
+    capType: z.enum(QueueCapType),
     dailyCap: positiveInt("أدخل حداً صحيحاً (1 أو أكثر)."),
+    dailyCapMinutes: positiveInt("أدخل عدد دقائق صحيحاً (1 أو أكثر)."),
+    /** Only these services may be booked on this rule; empty = all the doctor's services. */
+    serviceIds: z.array(z.string()),
     referralOnly: z.boolean(),
     note: z.string().trim(),
   })
@@ -37,7 +42,10 @@ export function ruleFormDefaults(branchId = ""): RuleFormInput {
     mode: AvailabilityMode.SLOT_BASED,
     slotDurationMin: "30",
     estimatedDurationMin: 10,
+    capType: QueueCapType.PATIENTS,
     dailyCap: 50,
+    dailyCapMinutes: 240,
+    serviceIds: [],
     referralOnly: false,
     note: "",
   };
@@ -56,8 +64,14 @@ export interface RuleDraft {
   mode: AvailabilityMode;
   /** Queue modes: estimated minutes per patient. */
   estimatedDurationMin: number | null;
-  /** Queue modes: max bookings per day. */
+  /** Queue modes: how the day is capped. */
+  capType: QueueCapType;
+  /** Queue modes, PATIENTS cap: max bookings per day. */
   dailyCap: number | null;
+  /** Queue modes, MINUTES cap: max minutes of services per day. */
+  dailyCapMinutes: number | null;
+  /** Only these services on this rule; empty = all the doctor's services. */
+  serviceIds: string[];
   /** Referral-only rules aren't bookable by patients directly. */
   referralOnly: boolean;
   note: string | null;
@@ -74,7 +88,10 @@ export function toRuleDraft(v: RuleFormValues): RuleDraft {
     slotDurationMin: v.slotDurationMin,
     mode: v.mode,
     estimatedDurationMin: queue ? v.estimatedDurationMin : null,
-    dailyCap: queue ? v.dailyCap : null,
+    capType: queue ? v.capType : QueueCapType.NONE,
+    dailyCap: queue && v.capType === QueueCapType.PATIENTS ? v.dailyCap : null,
+    dailyCapMinutes: queue && v.capType === QueueCapType.MINUTES ? v.dailyCapMinutes : null,
+    serviceIds: v.serviceIds,
     referralOnly: v.referralOnly,
     note: v.note || null,
   };
@@ -91,8 +108,33 @@ export function ruleDraftToFormData(d: RuleDraft): FormData {
   fd.set("mode", d.mode);
   if (d.estimatedDurationMin != null)
     fd.set("estimatedDurationMin", String(d.estimatedDurationMin));
+  fd.set("capType", d.capType);
   if (d.dailyCap != null) fd.set("dailyCap", String(d.dailyCap));
+  if (d.dailyCapMinutes != null) fd.set("dailyCapMinutes", String(d.dailyCapMinutes));
+  for (const id of d.serviceIds) fd.append("serviceIds", id);
   if (d.referralOnly) fd.set("referralOnly", "on");
   if (d.note) fd.set("note", d.note);
   return fd;
+}
+
+/** The rule extras every create-rule action reads from FormData (cap + services). */
+export function parseRuleExtras(fd: FormData): {
+  capType: QueueCapType;
+  dailyCap: number | null;
+  dailyCapMinutes: number | null;
+  serviceIds: string[];
+} {
+  const raw = String(fd.get("capType") ?? "");
+  const capType = (Object.values(QueueCapType) as string[]).includes(raw)
+    ? (raw as QueueCapType)
+    : fd.get("dailyCap")
+      ? QueueCapType.PATIENTS
+      : QueueCapType.NONE;
+  const num = (k: string) => (fd.get(k) ? Number(fd.get(k)) : null);
+  return {
+    capType,
+    dailyCap: num("dailyCap"),
+    dailyCapMinutes: num("dailyCapMinutes"),
+    serviceIds: fd.getAll("serviceIds").map(String).filter(Boolean),
+  };
 }

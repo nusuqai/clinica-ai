@@ -31,13 +31,29 @@ import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatFee } from "@/lib/currency";
+import {
+  getBookableServicesAction,
+  previewBookingAction,
+  type BookableService,
+  type PreviewLine,
+} from "@/server/actions/booking";
+import { durationText, servicePriceText } from "@/lib/catalog";
+import type { PricingType } from "@prisma/client";
 
 interface Doctor {
   id: string;
   name: string;
   specialty: string;
-  fee: number | null;
 }
+
+/** A booked service line as sent to the booking actions. */
+export interface BookingItem {
+  serviceId: string;
+  quantity: number | null;
+  patientPackageId: string | null;
+}
+
+const UNIT_PRICING = new Set(["PER_UNIT", "TIERED"]);
 
 interface Slot {
   id: string;
@@ -85,9 +101,13 @@ interface Props {
    * Booking on someone else's behalf (the admin board): replaces the patient's
    * own booking actions. When set, the auth gate is skipped.
    */
-  onBook?: (selection: Selection, notes: string) => Promise<BookResult>;
+  onBook?: (selection: Selection, notes: string, items: BookingItem[]) => Promise<BookResult>;
   /** Who is being booked for — shown in the summary when booking on their behalf. */
   patientName?: string;
+  /** Staff booking for an existing patient: their packages can pay lines. */
+  patientId?: string;
+  /** Services picked before opening (e.g. from the landing catalog). */
+  initialServiceIds?: string[];
 }
 
 export interface BookResult {
@@ -117,10 +137,63 @@ export function BookAppointmentModal({
   registerHref = "/register",
   onBook,
   patientName,
+  patientId,
+  initialServiceIds,
 }: Props) {
   const onBehalf = !!onBook;
   const needsAuth = !onBehalf && (!isAuthenticated || !isPatient);
-  const [step, setStep] = useState<1 | 2>(1);
+  // 0 = choose services, 1 = day / time, 2 = confirm.
+  const [step, setStep] = useState<0 | 1 | 2>(0);
+
+  // ── Services ──
+  const [services, setServices] = useState<BookableService[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [chosen, setChosen] = useState<Record<string, string>>({}); // serviceId → quantity text
+  const chosenIds = Object.keys(chosen);
+  const [packageFor, setPackageFor] = useState<Record<string, string>>({}); // serviceId → patientPackageId
+  const [preview, setPreview] = useState<{
+    lines: PreviewLine[];
+    estimatedTotal: number | null;
+    totalDurationMin: number;
+  } | null>(null);
+  const [previewError, setPreviewError] = useState("");
+
+  useEffect(() => {
+    if (needsAuth) return;
+    let cancelled = false;
+    getBookableServicesAction(doctor.id)
+      .then((list) => {
+        if (cancelled) return;
+        setServices(list);
+        // Preselected (landing catalog) or a single plain service → skip the step.
+        const pre = (initialServiceIds ?? []).filter((id) => list.some((s) => s.id === id));
+        const auto =
+          pre.length > 0
+            ? pre
+            : list.length === 1 && !UNIT_PRICING.has(list[0].pricingType)
+              ? [list[0].id]
+              : [];
+        if (auto.length) {
+          setChosen(Object.fromEntries(auto.map((id) => [id, ""])));
+          if (auto.every((id) => !UNIT_PRICING.has(list.find((s) => s.id === id)!.pricingType)))
+            setStep(1);
+        }
+      })
+      .catch(() => {})
+      .finally(() => !cancelled && setServicesLoading(false));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doctor.id, needsAuth]);
+
+  function items(): BookingItem[] {
+    return chosenIds.map((id) => ({
+      serviceId: id,
+      quantity: chosen[id] ? Number(chosen[id]) : null,
+      patientPackageId: packageFor[id] || null,
+    }));
+  }
   const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
   const [daysLoading, setDaysLoading] = useState(true);
   const [daysError, setDaysError] = useState("");
@@ -169,16 +242,27 @@ export function BookAppointmentModal({
 
   // Load the doctor's available days once, up-front. Only dates + mode — each
   // day's slots/queue are loaded lazily on open so opening the list stays fast.
+  const serviceKey = chosenIds.slice().sort().join(",");
   useEffect(() => {
-    if (needsAuth) return;
+    if (needsAuth || step !== 1) return;
     let cancelled = false;
     setDaysLoading(true);
     setDaysError("");
-    getAvailableDaysAction(doctor.id)
+    // New services → new availability: drop what was loaded for the old ones.
+    setDayData({});
+    setDayError({});
+    setOpenDate(null);
+    setSelection(null);
+    getAvailableDaysAction(doctor.id, chosenIds)
       .then((days) => {
         if (cancelled) return;
         setAvailableDays(days);
-        if (days.length === 0) setDaysError("لا توجد أيام متاحة لهذا الطبيب حالياً");
+        if (days.length === 0)
+          setDaysError(
+            chosenIds.length
+              ? "لا توجد أيام متاحة لهذه الخدمات مع هذا الطبيب حالياً"
+              : "لا توجد أيام متاحة لهذا الطبيب حالياً"
+          );
       })
       .catch(() => {
         if (!cancelled) setDaysError("تعذر تحميل الأيام المتاحة، يرجى المحاولة مجدداً");
@@ -190,7 +274,31 @@ export function BookAppointmentModal({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doctor.id, needsAuth]);
+  }, [doctor.id, needsAuth, step === 1, serviceKey]);
+
+  // Confirm step: price the exact visit (branch, offer on that day, packages).
+  const packageKey = JSON.stringify(packageFor);
+  useEffect(() => {
+    if (step !== 2 || !selection) return;
+    let cancelled = false;
+    setPreview(null);
+    setPreviewError("");
+    previewBookingAction({
+      doctorId: doctor.id,
+      slotId: selection.mode === "SLOT_BASED" ? selection.slot.id : null,
+      date: selection.mode === "ORDER_BASED" ? selection.date : null,
+      items: items(),
+      patientId: patientId ?? null,
+    }).then((res) => {
+      if (cancelled) return;
+      if (res.ok) setPreview(res);
+      else setPreviewError(res.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, selection, packageKey]);
 
   async function toggleDay(date: string, mode: Mode) {
     // Collapse if already open.
@@ -206,14 +314,14 @@ export function BookAppointmentModal({
     setDayError((m) => ({ ...m, [date]: "" }));
     try {
       if (mode !== "SLOT_BASED") {
-        const info = await getOrderBookingInfoAction(doctor.id, date);
+        const info = await getOrderBookingInfoAction(doctor.id, date, chosenIds);
         if (!info) {
           setDayError((m) => ({ ...m, [date]: "تعذّر تحميل حالة الطابور" }));
         } else {
           setDayData((m) => ({ ...m, [date]: { kind: "queue", info } }));
         }
       } else {
-        const slots = await getAvailableSlotsAction(doctor.id, date);
+        const slots = await getAvailableSlotsAction(doctor.id, date, chosenIds);
         setDayData((m) => ({ ...m, [date]: { kind: "slots", slots } }));
         if (slots.length === 0)
           setDayError((m) => ({ ...m, [date]: "لا توجد مواعيد متاحة في هذا اليوم" }));
@@ -244,7 +352,7 @@ export function BookAppointmentModal({
         setIntakeRequired(false);
       }
       if (onBook) {
-        const res = await onBook(selection, notes);
+        const res = await onBook(selection, notes, items());
         if (res.ok) {
           setBookedArrival(res.mode === "arrival");
           setBookedOrder(res.orderNumber ?? null);
@@ -253,11 +361,16 @@ export function BookAppointmentModal({
           setBookingError(res.error ?? "حدث خطأ غير متوقع");
         }
       } else if (selection.mode === "SLOT_BASED") {
-        const res = await bookAppointmentAction(selection.slot.id, notes || undefined);
+        const res = await bookAppointmentAction(selection.slot.id, notes || undefined, items());
         if (res.ok) setSuccess(true);
         else setBookingError(res.error ?? "حدث خطأ غير متوقع");
       } else {
-        const res = await bookOrderAppointmentAction(doctor.id, selection.date, notes || undefined);
+        const res = await bookOrderAppointmentAction(
+          doctor.id,
+          selection.date,
+          notes || undefined,
+          items()
+        );
         if (res.ok) {
           setBookedArrival(res.mode === "arrival");
           setBookedOrder(res.orderNumber ?? null);
@@ -338,9 +451,31 @@ export function BookAppointmentModal({
             </div>
           )}
 
+          {/* Step 0 — Services */}
+          {!needsAuth && step === 0 && !success && (
+            <ServicesStep
+              services={services}
+              loading={servicesLoading}
+              chosen={chosen}
+              onChange={setChosen}
+              onNext={() => setStep(1)}
+            />
+          )}
+
           {/* Step 1 — Day accordion */}
           {!needsAuth && step === 1 && !success && (
             <div className="flex flex-col gap-5">
+              {services.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setStep(0)}
+                  className="self-start font-sans text-xs text-accent hover:underline"
+                >
+                  الخدمات:{" "}
+                  {chosenIds.map((id) => services.find((s) => s.id === id)?.name).join("، ")} —
+                  تغيير
+                </button>
+              )}
               <div>
                 <p className="mb-1 font-heading text-base font-bold text-text">اختر يوم الموعد</p>
                 <p className="font-sans text-sm text-text/50">
@@ -536,16 +671,15 @@ export function BookAppointmentModal({
                       )}
                     </>
                   )}
-                  {doctor.fee && (
-                    <div className="flex items-center justify-between">
-                      <span className="font-sans text-sm text-text/70">رسوم الكشف</span>
-                      <span className="font-sans text-sm font-semibold text-accent">
-                        {formatFee(doctor.fee)}
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
+
+              <PreviewBox
+                preview={preview}
+                error={previewError}
+                packageFor={packageFor}
+                onPackage={(serviceId, ppId) => setPackageFor((m) => ({ ...m, [serviceId]: ppId }))}
+              />
 
               {intakeRequired && (
                 <div className="flex flex-col gap-4 rounded-xl border border-accent/30 bg-accent/5 p-4">
@@ -585,7 +719,7 @@ export function BookAppointmentModal({
                 control={notesForm.control}
                 name="notes"
                 rows={3}
-                placeholder="الكشف بخصوص إيه؟ اكتب الأعراض أو أي معلومات تريد إبلاغ الطبيب بها..."
+                placeholder="اكتب الأعراض أو أي معلومات تريد إبلاغ الطبيب بها..."
                 controlClassName="px-4 py-3 text-text placeholder:text-text/30 focus-visible:border-accent focus-visible:ring-accent/20"
               />
 
@@ -614,6 +748,7 @@ export function BookAppointmentModal({
                   variant="accent"
                   onClick={handleBook}
                   loading={isPending}
+                  disabled={!preview}
                   className="h-12 flex-1 text-base"
                 >
                   {isPending
@@ -779,6 +914,206 @@ function QueueBox({
       >
         {selected ? "✓ تم اختيار الدور" : "احجز دوري"}
       </Button>
+    </div>
+  );
+}
+
+/** Step 0: pick the services of the visit (estimated units for per-unit ones). */
+function ServicesStep({
+  services,
+  loading,
+  chosen,
+  onChange,
+  onNext,
+}: {
+  services: BookableService[];
+  loading: boolean;
+  chosen: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+  onNext: () => void;
+}) {
+  if (loading)
+    return (
+      <div className="flex items-center justify-center py-6">
+        <Spinner className="size-6 text-accent" />
+      </div>
+    );
+  if (services.length === 0)
+    return (
+      <Alert variant="destructive" className="items-center border-transparent text-red-600">
+        <AlertCircle className="h-4 w-4 shrink-0" />
+        لا توجد خدمات متاحة للحجز مع هذا الطبيب حالياً
+      </Alert>
+    );
+  const categories = [...new Set(services.map((s) => s.categoryName))];
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="mb-1 font-heading text-base font-bold text-text">اختر الخدمة</p>
+        <p className="font-sans text-sm text-text/50">يمكنك اختيار أكثر من خدمة في نفس الزيارة</p>
+      </div>
+      {categories.map((cat) => (
+        <div key={cat} className="flex flex-col gap-2">
+          {categories.length > 1 && (
+            <p className="font-sans text-xs font-semibold text-text/50">{cat}</p>
+          )}
+          {services
+            .filter((s) => s.categoryName === cat)
+            .map((s) => {
+              const on = s.id in chosen;
+              const unit = UNIT_PRICING.has(s.pricingType);
+              return (
+                <div
+                  key={s.id}
+                  className={`rounded-xl border px-4 py-3 transition-colors ${on ? "border-accent bg-accent/5" : "border-border"}`}
+                >
+                  <label className="flex cursor-pointer items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => {
+                        const next = { ...chosen };
+                        if (e.target.checked) next[s.id] = "";
+                        else delete next[s.id];
+                        onChange(next);
+                      }}
+                      className="mt-1 h-4 w-4 accent-[var(--color-accent,#0ea5e9)]"
+                    />
+                    <span className="flex-1">
+                      <span className="flex flex-wrap items-baseline justify-between gap-x-2">
+                        <span className="font-sans text-sm font-medium text-text">{s.name}</span>
+                        <span className="font-sans text-sm text-text/70">
+                          {servicePriceText({
+                            pricingType: s.pricingType as PricingType,
+                            price: s.price,
+                            unitLabel: s.unitLabel,
+                          })}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 flex flex-wrap gap-x-3 font-sans text-xs text-text/50">
+                        {s.durationMin ? <span>{durationText(s.durationMin)}</span> : null}
+                        {s.offerLabel && <span className="text-accent">{s.offerLabel}</span>}
+                      </span>
+                      {s.description && (
+                        <span className="mt-1 block font-sans text-xs text-text/50">
+                          {s.description}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                  {on && unit && (
+                    <input
+                      type="number"
+                      min={1}
+                      inputMode="numeric"
+                      value={chosen[s.id]}
+                      onChange={(e) => onChange({ ...chosen, [s.id]: e.target.value })}
+                      placeholder={`الكمية التقديرية${s.unitLabel ? ` (${s.unitLabel})` : ""} — اختياري`}
+                      className="mt-2 h-10 w-full rounded-lg border border-border px-3 font-sans text-sm text-text"
+                    />
+                  )}
+                </div>
+              );
+            })}
+        </div>
+      ))}
+      <Button
+        onClick={onNext}
+        disabled={Object.keys(chosen).length === 0}
+        className="mt-1 h-12 w-full text-base"
+      >
+        التالي — اختيار الموعد
+      </Button>
+    </div>
+  );
+}
+
+/** Confirm step: the priced lines (branch price, offer, package) and the total. */
+function PreviewBox({
+  preview,
+  error,
+  packageFor,
+  onPackage,
+}: {
+  preview: { lines: PreviewLine[]; estimatedTotal: number | null; totalDurationMin: number } | null;
+  error: string;
+  packageFor: Record<string, string>;
+  onPackage: (serviceId: string, patientPackageId: string) => void;
+}) {
+  if (error)
+    return (
+      <Alert variant="destructive" className="items-center border-transparent text-red-600">
+        <AlertCircle className="h-4 w-4 shrink-0" />
+        {error}
+      </Alert>
+    );
+  if (!preview)
+    return (
+      <div className="flex items-center justify-center py-3">
+        <Spinner className="text-accent" />
+      </div>
+    );
+  return (
+    <div className="rounded-xl border border-border px-4 py-3">
+      <p className="font-sans text-xs font-medium text-text/50">الخدمات</p>
+      <div className="mt-2 flex flex-col gap-2">
+        {preview.lines.map((l) => (
+          <div key={l.serviceId} className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+              <span className="font-sans text-sm text-text">
+                {l.serviceName}
+                {l.unitLabel && l.quantity > 1 && (
+                  <span className="text-text/50">
+                    {" "}
+                    · {l.quantity} {l.unitLabel}
+                  </span>
+                )}
+              </span>
+              <span className="font-sans text-sm font-medium text-text">
+                {l.patientPackageId
+                  ? "من الباقة"
+                  : l.total != null
+                    ? formatFee(l.total)
+                    : "يُحدَّد في الزيارة"}
+                {!l.patientPackageId && !!l.discount && l.basePrice != null && (
+                  <span className="ms-1 text-xs font-normal text-text/40 line-through">
+                    {formatFee(l.unitLabel ? l.basePrice * l.quantity : l.basePrice)}
+                  </span>
+                )}
+              </span>
+            </div>
+            {l.offerLabel && !l.patientPackageId && (
+              <span className="font-sans text-xs text-accent">{l.offerLabel}</span>
+            )}
+            {l.packages.length > 0 && (
+              <select
+                value={packageFor[l.serviceId] ?? ""}
+                onChange={(e) => onPackage(l.serviceId, e.target.value)}
+                className="h-9 rounded-lg border border-border bg-white px-2 font-sans text-xs text-text"
+              >
+                <option value="">ادفع الخدمة بشكل منفصل</option>
+                {l.packages.map((p) => (
+                  <option key={p.patientPackageId} value={p.patientPackageId}>
+                    من باقة {p.name} — متبقٍ {p.available}{" "}
+                    {p.creditType === "SESSIONS" ? "جلسة" : "وحدة"} (حتى {p.expiresOn})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        ))}
+        {(preview.lines.length > 1 || preview.totalDurationMin > 0) && (
+          <div className="flex flex-wrap justify-between gap-x-2 border-t border-border pt-2 font-sans text-sm">
+            <span className="text-text/70">
+              {preview.lines.length > 1 ? "الإجمالي التقديري" : "المدة"}
+              {preview.totalDurationMin ? ` · ${durationText(preview.totalDurationMin)}` : ""}
+            </span>
+            {preview.lines.length > 1 && preview.estimatedTotal != null && (
+              <span className="font-semibold text-accent">{formatFee(preview.estimatedTotal)}</span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

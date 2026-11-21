@@ -14,6 +14,7 @@ import { FormField } from "@/components/ui/form-field";
 import { AppointmentStatus } from "@prisma/client";
 import { Hint } from "@/components/ui/tooltip";
 import { CancelReasonForm } from "@/components/appointments/cancel-reason-form";
+import CompleteVisitDialog from "@/components/appointments/complete-visit-dialog";
 
 interface AppointmentActionsProps {
   appointmentId: string;
@@ -29,6 +30,7 @@ export default function AppointmentActions({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [completeOpen, setCompleteOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,7 +104,7 @@ export default function AppointmentActions({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleStatus(AppointmentStatus.COMPLETED)}
+              onClick={() => setCompleteOpen(true)}
               disabled={isPending}
               className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 [&_svg]:size-3.5"
             >
@@ -150,6 +152,13 @@ export default function AppointmentActions({
       </div>
 
       {error && <p className="mt-1 font-sans text-xs text-red-600">{error}</p>}
+
+      <CompleteVisitDialog
+        appointmentId={appointmentId}
+        open={completeOpen}
+        onClose={() => setCompleteOpen(false)}
+        onCompleted={() => router.refresh()}
+      />
 
       {/* Cancel modal */}
       <Modal

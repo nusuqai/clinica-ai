@@ -46,3 +46,25 @@ export function expectedOrderTime(
     return null;
   return toHHMM(startMin + (orderNumber - 1) * estimatedDurationMin);
 }
+
+/**
+ * Expected start time when `minutesBefore` minutes of booked services are
+ * ahead of this patient: session start + those minutes. With services, each
+ * visit has its own duration, so this replaces "order × fixed estimate".
+ */
+export function expectedTimeAfter(sessionStart: string, minutesBefore: number): string | null {
+  const startMin = parseHHMM(sessionStart);
+  if (startMin == null || !Number.isFinite(minutesBefore) || minutesBefore < 0) return null;
+  return toHHMM(startMin + minutesBefore);
+}
+
+/** Minutes of the bookings ahead of `orderNumber` (orders in [from, orderNumber)). */
+export function minutesAhead(
+  queue: readonly { orderNumber: number; minutes: number }[],
+  orderNumber: number,
+  from = 1
+): number {
+  return queue
+    .filter((q) => q.orderNumber >= from && q.orderNumber < orderNumber)
+    .reduce((sum, q) => sum + q.minutes, 0);
+}

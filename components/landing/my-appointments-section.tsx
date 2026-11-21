@@ -7,6 +7,7 @@ import {
   MapPin,
   Stethoscope,
   ChevronLeft,
+  Sparkles,
 } from "lucide-react";
 import type { PatientAppointment } from "@/server/services/appointments";
 import type { TreatmentRecordView } from "@/server/services/treatments";
@@ -175,6 +176,15 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
         </div>
 
         <div className="space-y-1.5 font-sans text-sm text-muted-foreground">
+          {appt.items && appt.items.length > 0 && (
+            <p className="flex items-start gap-1.5 text-foreground">
+              <Sparkles className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
+              {appt.items.map((i) => i.serviceName).join("، ")}
+              {appt.items.some((i) => i.patientPackageId) && (
+                <span className="text-xs text-violet-700">· من الباقة</span>
+              )}
+            </p>
+          )}
           {appt.slot ? (
             <p className="flex items-center gap-1.5">
               <Clock className="h-4 w-4 flex-shrink-0" />

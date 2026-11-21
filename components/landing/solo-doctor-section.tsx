@@ -7,7 +7,7 @@ import {
   BadgeCheck,
   BriefcaseMedical,
   CalendarCheck,
-  DollarSign,
+  Sparkles,
   GraduationCap,
   MapPin,
   Stethoscope,
@@ -17,7 +17,6 @@ import { doctorSubtitle } from "@/lib/doctor-title";
 import { BookAppointmentModal } from "./book-appointment-modal";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { formatFee } from "@/lib/currency";
 
 function initials(name: string) {
   return name
@@ -70,15 +69,12 @@ export function SoloDoctorSection({
       label: "سنوات الخبرة",
       value: `${doctor.yearsOfExperience} سنة`,
     },
-    doctor.examinationFee != null && {
-      icon: DollarSign,
-      label: "سعر الكشف",
-      value: formatFee(doctor.examinationFee),
-    },
-    doctor.consultationFee != null && {
-      icon: DollarSign,
-      label: "سعر الاستشارة",
-      value: formatFee(doctor.consultationFee),
+    doctor.services.length > 0 && {
+      icon: Sparkles,
+      label: "الخدمات",
+      value:
+        doctor.services.slice(0, 4).join("، ") +
+        (doctor.services.length > 4 ? ` +${doctor.services.length - 4}` : ""),
     },
     {
       icon: Baby,
@@ -201,7 +197,6 @@ export function SoloDoctorSection({
             id: doctor.id,
             name: doctor.fullName,
             specialty: subtitle ?? "",
-            fee: doctor.examinationFee ?? doctor.consultationFee,
           }}
           isAuthenticated={isAuthenticated}
           isPatient={isPatient}

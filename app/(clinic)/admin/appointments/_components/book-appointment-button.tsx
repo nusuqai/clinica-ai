@@ -7,6 +7,7 @@ import Modal from "@/components/admin/modal";
 import {
   BookAppointmentModal,
   type BookResult,
+  type BookingItem,
   type Selection,
 } from "@/components/landing/book-appointment-modal";
 import { adminBookAppointmentAction, searchPatientsAction } from "@/server/actions/admin";
@@ -19,7 +20,6 @@ export interface BookableDoctor {
   id: string;
   name: string;
   specialty: string;
-  fee: number | null;
 }
 
 type PatientChoice = { id: string; fullName: string } | { fullName: string; phone: string };
@@ -88,7 +88,11 @@ export default function BookAppointmentButton({ doctors }: { doctors: BookableDo
     setBooking({ doctor, patient });
   }
 
-  async function book(selection: Selection, notes: string): Promise<BookResult> {
+  async function book(
+    selection: Selection,
+    notes: string,
+    items: BookingItem[]
+  ): Promise<BookResult> {
     if (!booking) return { ok: false };
     const res = await adminBookAppointmentAction({
       patient: booking.patient,
@@ -97,6 +101,7 @@ export default function BookAppointmentButton({ doctors }: { doctors: BookableDo
         ? { slotId: selection.slot.id }
         : { date: selection.date }),
       notes: notes || undefined,
+      items,
     });
     if (res.ok) router.refresh();
     return res;
@@ -272,6 +277,7 @@ export default function BookAppointmentButton({ doctors }: { doctors: BookableDo
           isAuthenticated
           isPatient
           patientName={booking.patient.fullName}
+          patientId={"id" in booking.patient ? booking.patient.id : undefined}
           onBook={book}
           onClose={() => setBooking(null)}
         />

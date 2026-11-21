@@ -34,8 +34,6 @@ function formFromDoctor(doctor: DoctorWithProfile): DoctorFormValues {
     title: doctor.title ?? "",
     specialtyId: doctor.specialtyId ?? "",
     yearsOfExperience: doctor.yearsOfExperience?.toString() ?? "",
-    examinationFee: doctor.examinationFee?.toString() ?? "",
-    consultationFee: doctor.consultationFee?.toString() ?? "",
     requiresAdvanceBooking: doctor.requiresAdvanceBooking,
     acceptsChildren: doctor.acceptsChildren,
     branchIds: doctor.branchIds,

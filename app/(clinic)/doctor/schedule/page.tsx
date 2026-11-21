@@ -5,6 +5,7 @@ import { Activity, CalendarClock } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { listDoctorRules, listDoctorSlots, getDoctorByProfileId } from "@/server/services/doctors";
 import { listBranches } from "@/server/services/branches";
+import { listDoctorServiceOptions } from "@/server/services/catalog";
 import DoctorRulesTab, { type DoctorBranchOption } from "./_components/doctor-rules-tab";
 import DoctorSlotsTab from "./_components/doctor-slots-tab";
 import { CardGridSkeleton } from "@/components/ui/skeleton";
@@ -95,7 +96,8 @@ async function RulesContent({
         closeTime: h.closeTime,
       })),
     }));
-  return <DoctorRulesTab rules={rules} branches={branches} />;
+  const services = await listDoctorServiceOptions(doctorId);
+  return <DoctorRulesTab rules={rules} branches={branches} services={services} />;
 }
 
 async function SlotsContent({ doctorId }: { doctorId: string }) {

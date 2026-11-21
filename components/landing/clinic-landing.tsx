@@ -6,6 +6,16 @@ import * as AppointmentService from "@/server/services/appointments";
 import { getSoloDoctor } from "@/server/services/clinic-kind";
 import { doctorSubtitle } from "@/lib/doctor-title";
 import { SoloDoctorSection } from "@/components/landing/solo-doctor-section";
+import {
+  ServicesSection,
+  type LandingPackage,
+  type LandingService,
+} from "@/components/landing/services-section";
+import { MyPackagesSection } from "@/components/landing/my-packages-section";
+import { listCategories, listPublicServices } from "@/server/services/catalog";
+import { listPackages, listPatientPackages } from "@/server/services/packages";
+import { listBranches } from "@/server/services/branches";
+import { creditLineText } from "@/lib/packages";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { HeroSection } from "@/components/landing/hero-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
@@ -59,6 +69,10 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
     myPastVisits,
     myRecords,
     myHistoryDoctors,
+    catalogServices,
+    catalogPackages,
+    catalogCategories,
+    myPackages,
   ] = await Promise.all([
     isSolo ? getSoloDoctor(clinic.id) : Promise.resolve(null),
     // Counts for the stats + specialty sections; the doctor cards are paged.
@@ -83,7 +97,51 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
     isPatient && ctx ? myPastVisitsPageAction({}, 1) : Promise.resolve(null),
     isPatient && ctx ? myRecordsPageAction({}, 1) : Promise.resolve(null),
     isPatient && ctx ? myHistoryDoctorsAction() : Promise.resolve([]),
+    // The service catalog + packages (public); a patient also sees their packages.
+    listPublicServices(clinic.id),
+    listPackages(clinic.id, null),
+    listCategories(clinic.id),
+    isPatient && ctx ? listPatientPackages(clinic.id, ctx.user.id) : Promise.resolve([]),
   ]);
+  // Public shapes only — AI-only notes never reach the browser.
+  const landingServices: LandingService[] = catalogServices.map((sv) => ({
+    id: sv.id,
+    name: sv.name,
+    categoryId: sv.categoryId,
+    categoryName: sv.categoryName,
+    pricingType: sv.pricingType,
+    unitLabel: sv.unitLabel,
+    description: sv.description,
+    durationMin: sv.durationMin,
+    bookable: sv.bookable,
+    price: sv.price,
+    offer: sv.offer
+      ? { label: sv.offer.label, price: sv.offer.price, endsAt: sv.offer.endsAt }
+      : null,
+    tiers: sv.tiers,
+  }));
+  const categoryName = Object.fromEntries(catalogCategories.map((c) => [c.id, c.name]));
+  const serviceName = Object.fromEntries(catalogServices.map((sv) => [sv.id, sv.name]));
+  const activeBranches = await listBranches(clinic.id, { activeOnly: true });
+  const landingPackages: LandingPackage[] = catalogPackages
+    .filter(
+      (pk) => pk.isActive && catalogCategories.some((c) => c.id === pk.categoryId && c.isActive)
+    )
+    .map((pk) => ({
+      id: pk.id,
+      name: pk.name,
+      categoryName: categoryName[pk.categoryId] ?? "",
+      description: pk.description,
+      terms: pk.terms,
+      includes: pk.items.map((i) =>
+        creditLineText(i, { category: (id) => categoryName[id], service: (id) => serviceName[id] })
+      ),
+      price: pk.price,
+      validityDays: pk.validityDays,
+      branches: activeBranches
+        .filter((b) => pk.allBranches || pk.branches.some((r) => r.branchId === b.id))
+        .map((b) => ({ id: b.id, name: b.name })),
+    }));
   const nextAppointment = myUpcoming?.[0]
     ? { doctorName: myUpcoming[0].doctor.profile.fullName, when: describeWhen(myUpcoming[0]) }
     : null;
@@ -152,6 +210,13 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
           />
         )}
 
+        {isPatient && (
+          <MyPackagesSection
+            packages={myPackages}
+            names={{ categories: categoryName, services: serviceName }}
+          />
+        )}
+
         <HowItWorksSection solo={isSolo} />
 
         <section className="bg-background px-6 py-20">
@@ -180,6 +245,16 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
             )}
           </div>
         </section>
+
+        <ServicesSection
+          services={landingServices}
+          packages={landingPackages}
+          isAuthenticated={isAuthenticated}
+          isPatient={isPatient}
+          appointmentsHref={appointmentsHref}
+          loginHref={loginHref}
+          registerHref={registerHref}
+        />
 
         <FeaturesSection solo={isSolo} />
         {!isSolo && <SpecialtiesSection specialties={specialties} />}

@@ -2,7 +2,8 @@ import "server-only";
 import { branchIdFilter, type BranchScope } from "@/lib/branch-scope";
 import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
-import { AppointmentStatus, AvailabilityMode, DayOfWeek, type Prisma } from "@prisma/client";
+import { settleSessionLines } from "./packages";
+import { AppointmentStatus, AvailabilityMode, DayOfWeek, QueueCapType } from "@prisma/client";
 import { QUEUE_MODES, isArrivalMode } from "@/lib/availability/modes";
 
 // getUTCDay() index → DayOfWeek enum.
@@ -48,47 +49,6 @@ export async function getOrderRuleForDate(
   });
 }
 
-/**
- * Get (or lazily create) the day queue for a (doctor, branch, date), snapshotting
- * the rule's cap/estimate onto it the first time. Runs inside the caller's
- * transaction when `tx` is passed.
- */
-async function ensureQueue(
-  tx: Prisma.TransactionClient,
-  rule: {
-    id: string;
-    doctorId: string;
-    branchId: string; // order-based rules must have a branch (see bookOrderAppointment)
-    dailyCap: number | null;
-    estimatedDurationMin: number | null;
-  },
-  clinicId: string,
-  date: Date
-) {
-  const day = toDateOnly(date);
-  const existing = await tx.doctorDayQueue.findUnique({
-    where: {
-      doctorId_branchId_date: {
-        doctorId: rule.doctorId,
-        branchId: rule.branchId,
-        date: day,
-      },
-    },
-  });
-  if (existing) return existing;
-  return tx.doctorDayQueue.create({
-    data: {
-      clinicId,
-      doctorId: rule.doctorId,
-      branchId: rule.branchId,
-      ruleId: rule.id,
-      date: day,
-      dailyCap: rule.dailyCap,
-      estimatedDurationMin: rule.estimatedDurationMin,
-    },
-  });
-}
-
 export interface OrderBookingResult {
   id: string;
   mode: AvailabilityMode;
@@ -101,129 +61,9 @@ export interface OrderBookingResult {
   trackCurrentOrder: boolean;
 }
 
-/**
- * Book a queue appointment (ORDER_BASED or ARRIVAL_BASED): claim one slot under
- * the day's cap atomically so concurrent bookings never overshoot the cap.
- *
- *  - ORDER_BASED: the order number is handed out now (nextOrder), so the patient
- *    leaves with a fixed queue position.
- *  - ARRIVAL_BASED (أسبقية الحضور): booking only reserves a place — orderNumber
- *    stays null and arrivedAt is unset. Reception assigns the order number at
- *    check-in via markArrived(), by physical arrival order. nextOrder here is
- *    just the reservation counter that enforces the cap.
- */
-export async function bookOrderAppointment(
-  patientId: string,
-  doctorId: string,
-  date: Date,
-  opts?: {
-    branchId?: string | null;
-    notes?: string;
-    clinicId?: string;
-    /** Staff booking on a patient's behalf: only a queue in their branches. */
-    branchScope?: BranchScope;
-  }
-): Promise<Result<OrderBookingResult>> {
-  try {
-    const day = toDateOnly(date);
-    if (day < toDateOnly(new Date())) return err("لا يمكن الحجز في يوم مضى");
-
-    const doctor = await prisma.doctor.findUnique({
-      where: { id: doctorId },
-      select: { clinicId: true },
-    });
-    if (!doctor) return err("الطبيب غير موجود");
-    // Multi-tenant guard (#38): the doctor must belong to the caller's clinic, so
-    // a patient in Clinic A can't book a queue place with a Clinic B doctor by id.
-    if (opts?.clinicId && doctor.clinicId !== opts.clinicId) return err("الطبيب غير موجود");
-
-    // Block a second open booking with the same doctor: the patient must finish
-    // (or cancel) an existing PENDING/CONFIRMED appointment first.
-    const active = await prisma.appointment.findFirst({
-      where: {
-        patientId,
-        doctorId,
-        status: {
-          in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
-        },
-      },
-      select: { id: true },
-    });
-    if (active)
-      return err(
-        "لديك حجز قائم مع هذا الطبيب لم يكتمل بعد. يرجى إتمامه أو إلغاؤه قبل حجز موعد جديد."
-      );
-
-    const rule = await getOrderRuleForDate(doctorId, day, opts?.branchId, opts?.branchScope);
-    if (!rule) return err("هذا الطبيب لا يعمل بنظام الدور أو أسبقية الحضور في هذا اليوم");
-    if (!rule.branchId) return err("قاعدة الدور بدون فرع محدد");
-    const orderRule = { ...rule, branchId: rule.branchId };
-    const arrival = isArrivalMode(rule.mode);
-
-    const result = await prisma.$transaction(async (tx) => {
-      const queue = await ensureQueue(tx, orderRule, doctor.clinicId, day);
-
-      // Atomically claim one place under the cap. Postgres re-checks the WHERE
-      // after locking the row, so two concurrent bookings can't both slip past
-      // the cap. nextOrder is the booking counter for both modes (for arrival it
-      // just counts reservations; the serving order is assigned later at arrival).
-      const bumped = await tx.doctorDayQueue.updateMany({
-        where: {
-          id: queue.id,
-          ...(queue.dailyCap != null ? { nextOrder: { lte: queue.dailyCap } } : {}),
-        },
-        data: { nextOrder: { increment: 1 } },
-      });
-      if (bumped.count === 0) {
-        return { capped: true as const };
-      }
-
-      const after = await tx.doctorDayQueue.findUniqueOrThrow({
-        where: { id: queue.id },
-      });
-      // Arrival-priority: no order number at booking (assigned on check-in).
-      const orderNumber = arrival ? null : after.nextOrder - 1;
-
-      const appt = await tx.appointment.create({
-        data: {
-          clinicId: doctor.clinicId,
-          branchId: rule.branchId,
-          patientId,
-          doctorId,
-          ruleId: rule.id,
-          queueId: queue.id,
-          bookingDate: day,
-          orderNumber,
-          estimatedDurationMin: after.estimatedDurationMin,
-          status: AppointmentStatus.PENDING,
-          patientNotes: opts?.notes ?? null,
-        },
-      });
-      return {
-        capped: false as const,
-        appt,
-        orderNumber,
-        currentOrder: after.currentOrder,
-        trackCurrentOrder: after.trackCurrentOrder,
-        estimatedDurationMin: after.estimatedDurationMin,
-      };
-    });
-
-    if (result.capped) return err("اكتمل عدد الحجوزات المتاحة لهذا اليوم");
-
-    return ok({
-      id: result.appt.id,
-      mode: rule.mode,
-      orderNumber: result.orderNumber,
-      bookingDate: day,
-      estimatedDurationMin: result.estimatedDurationMin,
-      currentOrder: result.currentOrder,
-      trackCurrentOrder: result.trackCurrentOrder,
-    });
-  } catch (e) {
-    return err(e instanceof Error ? e.message : "فشل حجز الدور");
-  }
-}
+// Booking a queue place lives in server/services/booking.ts
+// (bookQueueAppointment): it claims the place and its service minutes under the
+// day's cap atomically.
 
 /** Estimated wait (minutes) for an order given the current position + per-patient estimate. */
 export function estimateWaitMinutes(
@@ -240,9 +80,15 @@ export interface OrderBookingInfo {
   mode: AvailabilityMode; // ORDER_BASED or ARRIVAL_BASED
   ruleId: string;
   branchId: string | null;
+  /** How the day is capped: NONE, PATIENTS (dailyCap) or MINUTES (dailyCapMinutes). */
+  capType: QueueCapType;
   dailyCap: number | null;
+  dailyCapMinutes: number | null;
   booked: number; // order numbers handed out so far
-  remaining: number | null; // null = unlimited
+  /** Minutes of services booked into the day (live bookings). */
+  bookedMinutes: number;
+  remaining: number | null; // places left (PATIENTS cap); null = not capped by count
+  remainingMinutes: number | null; // minutes left (MINUTES cap); null = not capped by time
   currentOrder: number;
   estimatedDurationMin: number | null;
   trackCurrentOrder: boolean;
@@ -258,7 +104,9 @@ export async function getOrderBookingInfo(
   doctorId: string,
   date: Date,
   branchId?: string | null,
-  branchScope?: BranchScope
+  branchScope?: BranchScope,
+  /** The visit's total service minutes — a MINUTES-capped day must still fit it. */
+  opts?: { durationMin?: number }
 ): Promise<OrderBookingInfo | null> {
   const day = toDateOnly(date);
   const rule = await getOrderRuleForDate(doctorId, day, branchId, branchScope);
@@ -270,15 +118,28 @@ export async function getOrderBookingInfo(
     },
   });
   const booked = queue ? queue.nextOrder - 1 : 0;
-  const cap = queue?.dailyCap ?? rule.dailyCap;
+  const bookedMinutes = queue?.bookedMinutes ?? 0;
+  const capType = queue?.capType ?? rule.capType;
+  const cap = capType === QueueCapType.PATIENTS ? (queue?.dailyCap ?? rule.dailyCap) : null;
+  const capMinutes =
+    capType === QueueCapType.MINUTES ? (queue?.dailyCapMinutes ?? rule.dailyCapMinutes) : null;
+  const remaining = cap == null ? null : Math.max(0, cap - booked);
+  const remainingMinutes = capMinutes == null ? null : Math.max(0, capMinutes - bookedMinutes);
+  const need = Math.max(1, opts?.durationMin ?? 1);
   return {
-    available: cap == null || booked < cap,
+    available:
+      (remaining == null || remaining > 0) &&
+      (remainingMinutes == null || remainingMinutes >= need),
     mode: rule.mode,
     ruleId: rule.id,
     branchId: rule.branchId,
+    capType,
     dailyCap: cap,
+    dailyCapMinutes: capMinutes,
     booked,
-    remaining: cap == null ? null : Math.max(0, cap - booked),
+    bookedMinutes,
+    remaining,
+    remainingMinutes,
     currentOrder: queue?.currentOrder ?? 0,
     estimatedDurationMin: queue?.estimatedDurationMin ?? rule.estimatedDurationMin,
     trackCurrentOrder: queue?.trackCurrentOrder ?? true,
@@ -313,6 +174,8 @@ export async function getDayQueue(
           skippedAt: true,
           arrivedAt: true,
           patientNotes: true,
+          totalDurationMin: true,
+          estimatedDurationMin: true,
           patient: { select: { fullName: true, phone: true } },
         },
         // Arrival-priority reservations have a null orderNumber until check-in;
@@ -489,10 +352,14 @@ export async function completeCurrentAndAdvance(
         select: { id: true },
       });
       if (current) {
-        await prisma.appointment.update({
-          where: { id: current.id },
-          // completedAt anchors the post-visit feedback delay in the sweep.
-          data: { status: AppointmentStatus.COMPLETED, completedAt: new Date(), skippedAt: null },
+        await prisma.$transaction(async (tx) => {
+          await tx.appointment.update({
+            where: { id: current.id },
+            // completedAt anchors the post-visit feedback delay in the sweep.
+            data: { status: AppointmentStatus.COMPLETED, completedAt: new Date(), skippedAt: null },
+          });
+          // Package sessions reserved for the visit are used now.
+          await settleSessionLines(tx, current.id, "COMPLETED");
         });
         completedAppointmentId = current.id;
       }
@@ -567,11 +434,13 @@ export async function setQueueCap(
   try {
     const q = await ownedQueue(queueId, doctorId);
     if (!q) return err("الطابور غير موجود");
+    if (q.capType === QueueCapType.MINUTES)
+      return err("حد هذا اليوم بالدقائق — عدّله من قاعدة التوفر");
     if (cap != null && cap < q.nextOrder - 1)
       return err("لا يمكن جعل الحد الأقصى أقل من عدد الحجوزات الحالية");
     await prisma.doctorDayQueue.update({
       where: { id: queueId },
-      data: { dailyCap: cap },
+      data: { dailyCap: cap, capType: cap == null ? QueueCapType.NONE : QueueCapType.PATIENTS },
     });
     return ok(undefined);
   } catch (e) {

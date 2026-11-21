@@ -19,8 +19,6 @@ const doctorFormBase = z.object({
   specialtyId: z.string(),
   newSpecialtyName: z.string().trim(),
   yearsOfExperience: optionalAmount,
-  examinationFee: optionalAmount,
-  consultationFee: optionalAmount,
   requiresAdvanceBooking: z.boolean(),
   acceptsChildren: z.boolean(),
   branchIds: z.array(z.string()),
@@ -49,8 +47,6 @@ export const EMPTY_DOCTOR_FORM: DoctorFormValues = {
   specialtyId: "",
   newSpecialtyName: "",
   yearsOfExperience: "",
-  examinationFee: "",
-  consultationFee: "",
   requiresAdvanceBooking: true,
   acceptsChildren: false,
   branchIds: [],
@@ -79,7 +75,6 @@ export const doctorProfileSchema = z
     phone: z.string().trim(),
     specialtyId: z.string(),
     newSpecialtyName: z.string().trim(),
-    consultationFee: optionalAmount,
     bio: z.string().trim(),
   })
   .refine(namesNewSpecialty, newSpecialtyIssue);

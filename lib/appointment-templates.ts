@@ -10,6 +10,7 @@
  */
 
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { DOCTOR_TITLE_LABEL } from "@/lib/doctor-title";
 
 /** Every token an admin may map onto a template placeholder. */
 export const APPOINTMENT_TOKENS = [
@@ -41,10 +42,7 @@ export const APPOINTMENT_TOKEN_LABELS: Record<AppointmentToken, string> = {
   order_number: "رقم الدور",
 };
 
-const TITLE_LABELS: Record<string, string> = {
-  SPECIALIST: "أخصائي",
-  CONSULTANT: "استشاري",
-};
+const TITLE_LABELS: Record<string, string> = DOCTOR_TITLE_LABEL;
 
 /** The appointment shape the token resolver needs (loaded with relations). */
 export interface TokenSourceAppointment {

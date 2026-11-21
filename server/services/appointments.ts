@@ -4,8 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
 import { AppointmentStatus, AvailabilityMode } from "@prisma/client";
 import { advanceQueueOnComplete, estimateWaitMinutes } from "./queue";
-import { expectedOrderTime } from "@/lib/availability/queue-time";
+import { expectedOrderTime, expectedTimeAfter, minutesAhead } from "@/lib/availability/queue-time";
+import { bookSlotAppointment, releaseAppointmentHold, type BookingItemRequest } from "./booking";
+import { settleSessionLines } from "./packages";
 import { isQueueMode } from "@/lib/availability/modes";
+import { visitEnd } from "@/lib/slot-time";
 import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { personSearch } from "./_search";
 import type { Prisma } from "@prisma/client";
@@ -31,6 +34,8 @@ export interface PatientAppointment {
   currentOrder: number | null; // null when tracking is off (or slot-based)
   estimatedWaitMin: number | null;
   expectedTime: string | null; // "HH:MM" — order-based expected examination time
+  /** The visit's services (names), booked order. */
+  items?: { serviceName: string; quantity: number; patientPackageId: string | null }[];
 }
 
 // Shared "upcoming" filter that covers both slot-based (future slot) and
@@ -52,6 +57,7 @@ const queueInfoInclude = {
 } as const;
 
 type WithQueueInfo = {
+  queueId: string | null;
   orderNumber: number | null;
   bookingDate: Date | null;
   estimatedDurationMin: number | null;
@@ -60,10 +66,60 @@ type WithQueueInfo = {
   queue: { currentOrder: number; trackCurrentOrder: boolean } | null;
 };
 
+/**
+ * A slot visit can span several slots: report its real end (first slot's start
+ * + the services' minutes) as `slot.endTime`, so every list, card and page
+ * shows the visit's true time range.
+ */
+function withVisitEnd<
+  T extends { slot: { startTime: Date; endTime: Date } | null; totalDurationMin: number | null },
+>(row: T): T {
+  if (!row.slot || !row.totalDurationMin) return row;
+  return { ...row, slot: { ...row.slot, endTime: visitEnd(row.slot, row.totalDurationMin) } };
+}
+
+/** Per queue: each live booking's order number and its minutes of services. */
+type QueueOffsets = Map<string, { orderNumber: number; minutes: number }[]>;
+
+/**
+ * Loads, for the queues these rows belong to, every live booking's minutes —
+ * so expected times / waits add up the real service durations ahead instead of
+ * assuming every patient takes the same time.
+ */
+async function loadQueueOffsets(
+  rows: readonly { queueId: string | null }[]
+): Promise<QueueOffsets> {
+  const ids = [...new Set(rows.flatMap((r) => (r.queueId ? [r.queueId] : [])))];
+  const map: QueueOffsets = new Map();
+  if (ids.length === 0) return map;
+  const appts = await prisma.appointment.findMany({
+    where: {
+      queueId: { in: ids },
+      status: { not: AppointmentStatus.CANCELLED },
+      orderNumber: { not: null },
+    },
+    select: {
+      queueId: true,
+      orderNumber: true,
+      totalDurationMin: true,
+      estimatedDurationMin: true,
+    },
+  });
+  for (const a of appts) {
+    const list = map.get(a.queueId!) ?? [];
+    list.push({
+      orderNumber: a.orderNumber!,
+      minutes: a.totalDurationMin ?? a.estimatedDurationMin ?? 0,
+    });
+    map.set(a.queueId!, list);
+  }
+  return map;
+}
+
 // Derives the display-facing queue fields (isOrderBased, live current order,
 // estimated wait, expected examination time) from the persisted appointment +
-// queue snapshot.
-function queueView(row: WithQueueInfo) {
+// queue snapshot (and, when given, the real minutes booked ahead).
+function queueView(row: WithQueueInfo, offsets?: QueueOffsets) {
   // A queue booking is one whose rule is a queue mode, or (defensively) any row
   // that carries an order number. Arrival-priority reservations have no order
   // number until check-in, so lean on the rule mode to classify them.
@@ -72,13 +128,18 @@ function queueView(row: WithQueueInfo) {
   const arrived = row.arrivedAt != null;
   const tracking = row.queue?.trackCurrentOrder ?? false;
   const currentOrder = isOrderBased && tracking ? (row.queue?.currentOrder ?? 0) : null;
+  const ahead = row.queueId ? offsets?.get(row.queueId) : undefined;
   const estimatedWaitMin =
     isOrderBased && tracking && row.orderNumber != null
-      ? estimateWaitMinutes(row.orderNumber, currentOrder ?? 0, row.estimatedDurationMin)
+      ? ahead
+        ? minutesAhead(ahead, row.orderNumber, Math.max(1, currentOrder ?? 0))
+        : estimateWaitMinutes(row.orderNumber, currentOrder ?? 0, row.estimatedDurationMin)
       : null;
   const expectedTime =
     isOrderBased && row.orderNumber != null && row.rule?.startTime
-      ? expectedOrderTime(row.rule.startTime, row.orderNumber, row.estimatedDurationMin)
+      ? ahead
+        ? expectedTimeAfter(row.rule.startTime, minutesAhead(ahead, row.orderNumber))
+        : expectedOrderTime(row.rule.startTime, row.orderNumber, row.estimatedDurationMin)
       : null;
   return {
     orderNumber: row.orderNumber,
@@ -170,12 +231,20 @@ export async function getPatientAppointmentsPage(
           slot: { select: { date: true, startTime: true, endTime: true } },
           branch: { select: { name: true } },
           doctor: doctorNameSelect,
+          items: {
+            orderBy: { sortOrder: "asc" },
+            select: { serviceName: true, quantity: true, patientPackageId: true },
+          },
           ...queueInfoInclude,
         },
         orderBy: filters.upcoming ? upcomingOrder : pastOrder,
         ...args,
       });
-      return rows.map((row) => ({ ...reshapeDoctor(row), ...queueView(row) }));
+      const offsets = await loadQueueOffsets(rows);
+      return rows.map((row) => ({
+        ...reshapeDoctor(withVisitEnd(row)),
+        ...queueView(row, offsets),
+      }));
     },
     () => prisma.appointment.count({ where })
   );
@@ -204,6 +273,10 @@ export async function getPatientAppointments(
       slot: { select: { date: true, startTime: true, endTime: true } },
       branch: { select: { name: true } },
       doctor: doctorNameSelect,
+      items: {
+        orderBy: { sortOrder: "asc" },
+        select: { serviceName: true, quantity: true, patientPackageId: true },
+      },
       ...queueInfoInclude,
     },
     orderBy: [
@@ -212,7 +285,8 @@ export async function getPatientAppointments(
     ],
     ...(options?.limit ? { take: options.limit } : {}),
   });
-  return rows.map((row) => ({ ...reshapeDoctor(row), ...queueView(row) }));
+  const offsets = await loadQueueOffsets(rows);
+  return rows.map((row) => ({ ...reshapeDoctor(withVisitEnd(row)), ...queueView(row, offsets) }));
 }
 
 export async function getPatientStats(patientId: string, clinicId?: string) {
@@ -321,6 +395,7 @@ export async function listAppointments(
       });
       return rows.map((row) => {
         const q = queueView(row);
+        row = withVisitEnd(row);
         return {
           ...reshapeDoctor(row),
           orderNumber: q.orderNumber,
@@ -358,16 +433,23 @@ export async function getAppointmentDetails(appointmentId: string) {
       doctor: {
         select: {
           fullName: true,
+          title: true,
           specialty: { select: { name: true } },
-          examinationFee: true,
-          consultationFee: true,
+        },
+      },
+      items: {
+        orderBy: { sortOrder: "asc" },
+        include: {
+          service: { select: { unitLabel: true } },
+          offer: { select: { label: true } },
+          patientPackage: { select: { name: true } },
         },
       },
       ...queueInfoInclude,
     },
   });
   if (!row) return null;
-  return { ...row, ...queueView(row) };
+  return { ...withVisitEnd(row), ...queueView(row, await loadQueueOffsets([row])) };
 }
 
 // The full-page view of one appointment: scheduling state, the people involved,
@@ -384,8 +466,6 @@ export interface AppointmentDetailView {
     fullName: string;
     specialty: string;
     title: string | null;
-    examinationFee: number | null;
-    consultationFee: number | null;
   };
   branch: { name: string; address: string | null } | null;
   slot: { date: Date; startTime: Date; endTime: Date } | null;
@@ -406,6 +486,27 @@ export interface AppointmentDetailView {
   estimatedWaitMin: number | null;
   expectedTime: string | null;
   feedback: { rating: number | null; comment: string | null; createdAt: Date } | null;
+  /** The services of the visit (booked → as done after completion). */
+  items: AppointmentItemView[];
+  estimatedTotal: number | null;
+  finalTotal: number | null;
+  totalDurationMin: number | null;
+}
+
+export interface AppointmentItemView {
+  id: string;
+  serviceName: string;
+  quantity: number;
+  unitLabel: string | null;
+  basePrice: number | null;
+  discount: number | null;
+  total: number | null;
+  offerLabel: string | null;
+  packageName: string | null;
+  durationMin: number;
+  finalQuantity: number | null;
+  finalTotal: number | null;
+  uncoveredQuantity: number | null;
 }
 
 export async function getAppointmentForDetail(
@@ -423,16 +524,23 @@ export async function getAppointmentForDetail(
           fullName: true,
           title: true,
           specialty: { select: { name: true } },
-          examinationFee: true,
-          consultationFee: true,
         },
       },
       feedback: { select: { rating: true, comment: true, createdAt: true } },
+      items: {
+        orderBy: { sortOrder: "asc" },
+        include: {
+          service: { select: { unitLabel: true } },
+          offer: { select: { label: true } },
+          patientPackage: { select: { name: true } },
+        },
+      },
       ...queueInfoInclude,
     },
   });
   if (!row) return null;
-  const q = queueView(row);
+  const q = queueView(row, await loadQueueOffsets([row]));
+  const n = (v: Prisma.Decimal | null) => (v == null ? null : Number(v));
   return {
     id: row.id,
     clinicId: row.clinicId,
@@ -443,12 +551,9 @@ export async function getAppointmentForDetail(
       fullName: row.doctor.fullName,
       specialty: row.doctor.specialty?.name ?? "",
       title: row.doctor.title,
-      examinationFee: row.doctor.examinationFee != null ? Number(row.doctor.examinationFee) : null,
-      consultationFee:
-        row.doctor.consultationFee != null ? Number(row.doctor.consultationFee) : null,
     },
     branch: row.branch,
-    slot: row.slot,
+    slot: withVisitEnd(row).slot,
     patientNotes: row.patientNotes,
     doctorNotes: row.doctorNotes,
     cancellationReason: row.cancellationReason,
@@ -465,6 +570,24 @@ export async function getAppointmentForDetail(
     estimatedWaitMin: q.estimatedWaitMin,
     expectedTime: q.expectedTime,
     feedback: row.feedback,
+    items: row.items.map((i) => ({
+      id: i.id,
+      serviceName: i.serviceName,
+      quantity: i.quantity,
+      unitLabel: i.service.unitLabel,
+      basePrice: n(i.basePrice),
+      discount: n(i.discount),
+      total: n(i.total),
+      offerLabel: i.offer?.label ?? null,
+      packageName: i.patientPackage?.name ?? null,
+      durationMin: i.durationMin,
+      finalQuantity: i.finalQuantity,
+      finalTotal: n(i.finalTotal),
+      uncoveredQuantity: i.uncoveredQuantity,
+    })),
+    estimatedTotal: n(row.estimatedTotal),
+    finalTotal: n(row.finalTotal),
+    totalDurationMin: row.totalDurationMin,
   };
 }
 
@@ -512,7 +635,8 @@ export async function getDoctorAppointments(
     ],
     ...(options?.limit ? { take: options.limit } : {}),
   });
-  return rows.map((row) => ({ ...row, ...queueView(row) }));
+  const offsets = await loadQueueOffsets(rows);
+  return rows.map((row) => ({ ...withVisitEnd(row), ...queueView(row, offsets) }));
 }
 
 /** One page of a doctor's appointments, filtered like the admin board, newest first. */
@@ -535,7 +659,8 @@ export async function getDoctorAppointmentsPage(
         orderBy: filters.upcoming ? upcomingOrder : pastOrder,
         ...args,
       });
-      return rows.map((row) => ({ ...row, ...queueView(row) }));
+      const offsets = await loadQueueOffsets(rows);
+      return rows.map((row) => ({ ...withVisitEnd(row), ...queueView(row, offsets) }));
     },
     () => prisma.appointment.count({ where })
   );
@@ -543,65 +668,35 @@ export async function getDoctorAppointmentsPage(
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
+/**
+ * Book a slot visit. Thin wrapper over the booking engine (server/services/
+ * booking.ts): validates the services, holds as many consecutive slots as the
+ * services take, and snapshots prices. Without `items` the practitioner's
+ * default service (their كشف) is booked.
+ */
 export async function createAppointment(
   patientId: string,
   slotId: string,
   patientNotes?: string,
-  opts?: { excludeAppointmentId?: string; clinicId?: string }
-): Promise<Result<{ id: string }>> {
-  try {
-    const slot = await prisma.slot.findUnique({
-      where: { id: slotId },
-      include: { appointment: true, doctor: { select: { clinicId: true } } },
-    });
-    if (!slot) return err("الموعد غير موجود");
-    // Multi-tenant guard (#38): when a clinic is given, the slot's doctor must
-    // belong to it, so a patient chatting in Clinic A can't book a slot in
-    // Clinic B by passing its id. Same "not found" message — don't reveal it exists.
-    if (opts?.clinicId && slot.doctor.clinicId !== opts.clinicId) return err("الموعد غير موجود");
-    if (slot.isBlocked) return err("هذا الموعد غير متاح");
-    if (slot.referralOnly)
-      return err("هذا الموعد مخصّص للتحويلات من الأطباء ولا يمكن حجزه مباشرةً");
-    if (slot.appointment) return err("هذا الموعد محجوز بالفعل");
-    if (slot.startTime < new Date()) return err("لا يمكن حجز مواعيد في الماضي");
-
-    // Block a second open booking with the same doctor: the patient must finish
-    // (or cancel) an existing PENDING/CONFIRMED appointment first. Reschedule
-    // passes excludeAppointmentId so the booking it's replacing doesn't self-block.
-    const active = await prisma.appointment.findFirst({
-      where: {
-        patientId,
-        doctorId: slot.doctorId,
-        status: {
-          in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
-        },
-        ...(opts?.excludeAppointmentId ? { id: { not: opts.excludeAppointmentId } } : {}),
-      },
-      select: { id: true },
-    });
-    if (active)
-      return err(
-        "لديك حجز قائم مع هذا الطبيب لم يكتمل بعد. يرجى إتمامه أو إلغاؤه قبل حجز موعد جديد."
-      );
-
-    const appointment = await prisma.appointment.create({
-      data: {
-        clinicId: slot.doctor.clinicId,
-        branchId: slot.branchId, // snapshot the slot's branch onto the appointment
-        patientId,
-        doctorId: slot.doctorId,
-        slotId,
-        status: AppointmentStatus.PENDING,
-        patientNotes: patientNotes ?? null,
-      },
-    });
-    return ok({ id: appointment.id });
-  } catch (e) {
-    if (e instanceof Error && e.message.includes("Unique constraint")) {
-      return err("هذا الموعد محجوز بالفعل");
-    }
-    return err(e instanceof Error ? e.message : "فشل حجز الموعد");
+  opts?: {
+    excludeAppointmentId?: string;
+    clinicId?: string;
+    items?: BookingItemRequest[] | null;
+    branchScope?: BranchScope;
+    status?: AppointmentStatus;
   }
+): Promise<Result<{ id: string }>> {
+  const res = await bookSlotAppointment({
+    patientId,
+    slotId,
+    notes: patientNotes,
+    items: opts?.items,
+    clinicId: opts?.clinicId,
+    branchScope: opts?.branchScope,
+    excludeAppointmentId: opts?.excludeAppointmentId,
+    status: opts?.status,
+  });
+  return res.ok ? ok({ id: res.data.id }) : res;
 }
 
 /**
@@ -613,38 +708,17 @@ export async function referAppointment(
   referringDoctorId: string,
   patientId: string,
   slotId: string,
-  notes?: string
+  notes?: string,
+  items?: BookingItemRequest[] | null
 ): Promise<Result<{ id: string }>> {
-  try {
-    const slot = await prisma.slot.findUnique({
-      where: { id: slotId },
-      include: { appointment: true, doctor: { select: { clinicId: true } } },
-    });
-    if (!slot) return err("الموعد غير موجود");
-    if (slot.isBlocked) return err("هذا الموعد غير متاح");
-    if (slot.appointment) return err("هذا الموعد محجوز بالفعل");
-    if (slot.startTime < new Date()) return err("لا يمكن حجز مواعيد في الماضي");
-    if (slot.doctorId === referringDoctorId) return err("لا يمكن تحويل المريض إلى نفس الطبيب");
-
-    const appointment = await prisma.appointment.create({
-      data: {
-        clinicId: slot.doctor.clinicId,
-        branchId: slot.branchId, // snapshot the slot's branch onto the appointment
-        patientId,
-        doctorId: slot.doctorId,
-        referredByDoctorId: referringDoctorId,
-        slotId,
-        status: AppointmentStatus.PENDING,
-        patientNotes: notes ?? null,
-      },
-    });
-    return ok({ id: appointment.id });
-  } catch (e) {
-    if (e instanceof Error && e.message.includes("Unique constraint")) {
-      return err("هذا الموعد محجوز بالفعل");
-    }
-    return err(e instanceof Error ? e.message : "فشل تحويل الموعد");
-  }
+  const res = await bookSlotAppointment({
+    patientId,
+    slotId,
+    notes,
+    items,
+    referredByDoctorId: referringDoctorId,
+  });
+  return res.ok ? ok({ id: res.data.id }) : res;
 }
 
 export async function updateAppointmentStatus(
@@ -653,19 +727,26 @@ export async function updateAppointmentStatus(
   cancellationReason?: string
 ): Promise<Result<void>> {
   try {
-    await prisma.appointment.update({
-      where: { id: appointmentId },
-      data: {
-        status,
-        ...(status === AppointmentStatus.CONFIRMED && { confirmedAt: new Date() }),
-        // completedAt anchors the post-visit feedback delay (the automation
-        // sweep sends "delayMinutes after completion").
-        ...(status === AppointmentStatus.COMPLETED && { completedAt: new Date() }),
-        ...(status === AppointmentStatus.CANCELLED && {
-          cancelledAt: new Date(),
-          cancellationReason: cancellationReason ?? null,
-        }),
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          status,
+          ...(status === AppointmentStatus.CONFIRMED && { confirmedAt: new Date() }),
+          // completedAt anchors the post-visit feedback delay (the automation
+          // sweep sends "delayMinutes after completion").
+          ...(status === AppointmentStatus.COMPLETED && { completedAt: new Date() }),
+          ...(status === AppointmentStatus.CANCELLED && {
+            cancelledAt: new Date(),
+            cancellationReason: cancellationReason ?? null,
+          }),
+        },
+      });
+      // A cancelled visit gives its slots / queue minutes / package sessions back;
+      // a finished one (or a no-show) uses its reserved package sessions.
+      if (status === AppointmentStatus.CANCELLED) await releaseAppointmentHold(appointmentId, tx);
+      if (status === AppointmentStatus.COMPLETED || status === AppointmentStatus.NO_SHOW)
+        await settleSessionLines(tx, appointmentId, status);
     });
     // Completing an order-based appointment advances the queue's "now serving".
     if (status === AppointmentStatus.COMPLETED) {

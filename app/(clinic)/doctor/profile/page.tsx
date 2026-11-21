@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { UserCircle, Stethoscope, Phone, DollarSign } from "lucide-react";
+import { UserCircle, Stethoscope, Phone } from "lucide-react";
 import { requireClinicMember } from "@/lib/auth";
 import { getDoctorByProfileId } from "@/server/services/doctors";
 import { listSpecialtyOptions } from "@/server/services/specialties";
@@ -7,13 +7,29 @@ import ProfileForm from "./_components/profile-form";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { formatFee } from "@/lib/currency";
+import { listPublicServices } from "@/server/services/catalog";
+import { prisma } from "@/lib/prisma";
+import { servicePriceText } from "@/lib/catalog";
 
 export default async function DoctorProfilePage() {
   const ctx = await requireClinicMember(["DOCTOR"]);
   const doctor = await getDoctorByProfileId(ctx.user.id, ctx.clinic.id);
   if (!doctor) redirect(`/doctor`);
   const specialties = await listSpecialtyOptions(ctx.clinic.id);
+  // The services I provide, with my price when the clinic set one for me.
+  const own = await prisma.doctorService.findMany({
+    where: { doctorId: doctor.id },
+    select: { serviceId: true, price: true },
+  });
+  const catalog = await listPublicServices(ctx.clinic.id, { ids: own.map((o) => o.serviceId) });
+  const myServices = catalog.map((sv) => {
+    const mine = own.find((o) => o.serviceId === sv.id)?.price;
+    return {
+      id: sv.id,
+      name: sv.name,
+      priceText: servicePriceText({ ...sv, price: mine != null ? Number(mine) : sv.price }),
+    };
+  });
 
   const initials = doctor.profile.fullName
     .split(" ")
@@ -54,12 +70,6 @@ export default async function DoctorProfilePage() {
                   {doctor.profile.phone}
                 </span>
               )}
-              {doctor.consultationFee && (
-                <span className="flex items-center gap-1 font-sans text-xs text-muted-foreground">
-                  <DollarSign className="h-3.5 w-3.5" />
-                  {formatFee(doctor.consultationFee)}
-                </span>
-              )}
               <Badge variant={doctor.isActive ? "success" : "neutral"}>
                 {doctor.isActive ? "نشط" : "غير نشط"}
               </Badge>
@@ -77,8 +87,30 @@ export default async function DoctorProfilePage() {
           specialtyId={doctor.specialtyId}
           specialties={specialties}
           bio={doctor.bio}
-          consultationFee={doctor.consultationFee ? String(doctor.consultationFee) : null}
         />
+      </Card>
+
+      {/* What I provide — managed by the clinic (Services / my doctor page). */}
+      <Card className="mt-6 p-6">
+        <h3 className="mb-1 font-heading font-semibold text-foreground">خدماتي</h3>
+        <p className="mb-4 font-sans text-xs text-muted-foreground">
+          تحدّد العيادة الخدمات التي تقدّمها وأسعارها.
+        </p>
+        {myServices.length === 0 ? (
+          <p className="font-sans text-sm text-muted-foreground">لم تُسند لك خدمات بعد.</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {myServices.map((sv) => (
+              <div
+                key={sv.id}
+                className="flex flex-wrap justify-between gap-2 py-2 font-sans text-sm"
+              >
+                <span className="text-foreground">{sv.name}</span>
+                <span className="text-muted-foreground">{sv.priceText}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       {/* Stats */}

@@ -25,6 +25,10 @@ import EditIntakeModal from "./_components/edit-intake-modal";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import PatientPackagesSection from "@/components/packages/patient-packages-section";
+import { listPatientPackages, listPackages } from "@/server/services/packages";
+import { listCategories, listServices } from "@/server/services/catalog";
+import { branchesInScope, listBranches } from "@/server/services/branches";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -61,6 +65,18 @@ export default async function UserDetailPage({ params }: PageProps) {
   // (lab results, x-rays, documents) inline alongside the clinical details.
   const appointmentIds = records.flatMap((r) => (r.appointmentId ? [r.appointmentId] : []));
   const attachmentsByAppointment = await listAttachmentsForAppointments(appointmentIds, clinic.id);
+
+  // Packages: their own permission (selling / adjusting credit).
+  const canPackages = can(ctx, "patient_packages");
+  const packagesData = canPackages
+    ? await Promise.all([
+        listPatientPackages(clinic.id, id, ctx.branchIds),
+        listPackages(clinic.id, ctx.branchIds),
+        listBranches(clinic.id, { activeOnly: true }),
+        listCategories(clinic.id),
+        listServices(clinic.id, null),
+      ])
+    : null;
 
   const initials = user.fullName
     .split(" ")
@@ -146,6 +162,29 @@ export default async function UserDetailPage({ params }: PageProps) {
           </div>
         </div>
       </Card>
+
+      {packagesData && (
+        <PatientPackagesSection
+          patientId={user.id}
+          packages={packagesData[0]}
+          sellable={packagesData[1]
+            .filter((p) => p.isActive)
+            .map((p) => ({
+              id: p.id,
+              name: p.name,
+              allBranches: p.allBranches,
+              branchIds: p.branches.map((b) => b.branchId),
+            }))}
+          branches={branchesInScope(packagesData[2], ctx.branchIds).map((b) => ({
+            id: b.id,
+            name: b.name,
+          }))}
+          names={{
+            categories: Object.fromEntries(packagesData[3].map((c) => [c.id, c.name])),
+            services: Object.fromEntries(packagesData[4].map((s) => [s.id, s.name])),
+          }}
+        />
+      )}
 
       {/* Intake file + clinical history — only for members who may manage
           medical records. */}
