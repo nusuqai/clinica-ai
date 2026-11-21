@@ -3,6 +3,8 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ChevronDown,
+  ChevronsUpDown,
   Clock,
   FolderTree,
   LayoutTemplate,
@@ -25,6 +27,7 @@ import { SERVICE_KIND_LABEL, durationText, servicePriceText } from "@/lib/catalo
 import type { CategoryView, PractitionerOption, ServiceView } from "@/server/services/catalog";
 import CategoriesModal from "./categories-modal";
 import TemplatesModal from "./templates-modal";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import ServiceFormModal, { type BranchOption } from "./service-form-modal";
 
 export default function ServicesManager({
@@ -48,6 +51,16 @@ export default function ServicesManager({
   const [query, setQuery] = useState("");
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  // Collapsed category sections (all open by default).
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  function toggleSection(id: string, open: boolean) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (open) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ServiceView | null>(null);
   const [newCategoryId, setNewCategoryId] = useState("");
@@ -113,6 +126,21 @@ export default function ServicesManager({
             className="ps-9"
           />
         </div>
+        {grouped.length > 1 && !query.trim() && (
+          <Button
+            variant="ghost"
+            onClick={() =>
+              setCollapsed(
+                collapsed.size === grouped.length
+                  ? new Set()
+                  : new Set(grouped.map((g) => g.category.id))
+              )
+            }
+          >
+            <ChevronsUpDown />
+            {collapsed.size === grouped.length ? "فتح الكل" : "طي الكل"}
+          </Button>
+        )}
         {!limited && (
           <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
             <FolderTree />
@@ -158,107 +186,124 @@ export default function ServicesManager({
       ) : (
         <div className="space-y-5">
           {grouped.map(({ category, items }) => (
-            <Card key={category.id} className="overflow-hidden">
-              <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/40 px-5 py-3">
-                <div className="flex items-center gap-2">
-                  <h2 className="font-heading font-bold text-foreground">{category.name}</h2>
-                  <Badge variant="muted">{items.length}</Badge>
-                  {!category.isActive && <Badge variant="neutral">تصنيف معطّل</Badge>}
+            <Collapsible
+              key={category.id}
+              // A search shows every match; otherwise each section remembers its state.
+              open={query.trim() !== "" || !collapsed.has(category.id)}
+              onOpenChange={(open) => toggleSection(category.id, open)}
+              asChild
+            >
+              <Card className="overflow-hidden">
+                <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/40 px-5 py-3">
+                  <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 text-start">
+                    <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground transition-transform group-data-[state=closed]:-rotate-90" />
+                    <h2 className="font-heading font-bold text-foreground">{category.name}</h2>
+                    <Badge variant="muted">{items.length}</Badge>
+                    {!category.isActive && <Badge variant="neutral">تصنيف معطّل</Badge>}
+                  </CollapsibleTrigger>
+                  {category.isActive && (
+                    <Button variant="ghost" size="sm" onClick={() => openCreate(category.id)}>
+                      <Plus />
+                      خدمة
+                    </Button>
+                  )}
                 </div>
-                {category.isActive && (
-                  <Button variant="ghost" size="sm" onClick={() => openCreate(category.id)}>
-                    <Plus />
-                    خدمة
-                  </Button>
-                )}
-              </div>
 
-              {items.length === 0 ? (
-                <p className="px-5 py-6 font-sans text-sm text-muted-foreground">
-                  لا توجد خدمات في هذا التصنيف بعد.
-                </p>
-              ) : (
-                <div className="divide-y divide-border">
-                  {items.map((s) => (
-                    <div
-                      key={s.id}
-                      className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-sans font-medium text-foreground">{s.name}</span>
-                          <Badge variant="outline">{SERVICE_KIND_LABEL[s.kind]}</Badge>
-                          {!s.isActive && <Badge variant="neutral">معطّلة</Badge>}
-                          {!s.bookable && <Badge variant="warning">لا تُحجز مباشرة</Badge>}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-sans text-xs text-muted-foreground">
-                          <span className="font-medium text-foreground">{servicePriceText(s)}</span>
-                          {s.durationMin && (
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3.5 w-3.5" />
-                              {durationText(s.durationMin)}
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1">
-                            <MapPin className="h-3.5 w-3.5" />
-                            {branchSummary(s)}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Users className="h-3.5 w-3.5" />
-                            {s.doctors.length === 0
-                              ? "لا يقدّمها أحد بعد"
-                              : `${s.doctors.length} مقدم خدمة`}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-shrink-0 items-center gap-1">
-                        <Hint label={s.access === "full" ? "تعديل" : "تعديل ما يخص فروعك"}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEdit(s)}
-                            aria-label="تعديل"
-                            className="hover:bg-primary/10 hover:text-primary"
-                          >
-                            <Pencil />
-                          </Button>
-                        </Hint>
-                        {s.access === "full" && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={isPending}
-                              onClick={() =>
-                                runAction(() => setServiceActiveAction(s.id, !s.isActive))
-                              }
-                            >
-                              {s.isActive ? "تعطيل" : "تفعيل"}
-                            </Button>
-                            <Hint
-                              label={s.used ? "مستخدمة في حجوزات — عطّلها بدلاً من حذفها" : "حذف"}
-                            >
-                              <span>
-                                <Button
-                                  variant="ghost-destructive"
-                                  size="icon"
-                                  disabled={isPending || s.used}
-                                  onClick={() => handleDelete(s)}
-                                  aria-label="حذف"
-                                >
-                                  <Trash2 />
-                                </Button>
+                <CollapsibleContent>
+                  {items.length === 0 ? (
+                    <p className="px-5 py-6 font-sans text-sm text-muted-foreground">
+                      لا توجد خدمات في هذا التصنيف بعد.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-border">
+                      {items.map((s) => (
+                        <div
+                          key={s.id}
+                          className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-sans font-medium text-foreground">
+                                {s.name}
                               </span>
+                              <Badge variant="outline">{SERVICE_KIND_LABEL[s.kind]}</Badge>
+                              {!s.isActive && <Badge variant="neutral">معطّلة</Badge>}
+                              {!s.bookable && <Badge variant="warning">لا تُحجز مباشرة</Badge>}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-sans text-xs text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                {servicePriceText(s)}
+                              </span>
+                              {s.durationMin && (
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-3.5 w-3.5" />
+                                  {durationText(s.durationMin)}
+                                </span>
+                              )}
+                              <span className="flex items-center gap-1">
+                                <MapPin className="h-3.5 w-3.5" />
+                                {branchSummary(s)}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Users className="h-3.5 w-3.5" />
+                                {s.doctors.length === 0
+                                  ? "لا يقدّمها أحد بعد"
+                                  : `${s.doctors.length} مقدم خدمة`}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-shrink-0 items-center gap-1">
+                            <Hint label={s.access === "full" ? "تعديل" : "تعديل ما يخص فروعك"}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openEdit(s)}
+                                aria-label="تعديل"
+                                className="hover:bg-primary/10 hover:text-primary"
+                              >
+                                <Pencil />
+                              </Button>
                             </Hint>
-                          </>
-                        )}
-                      </div>
+                            {s.access === "full" && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={isPending}
+                                  onClick={() =>
+                                    runAction(() => setServiceActiveAction(s.id, !s.isActive))
+                                  }
+                                >
+                                  {s.isActive ? "تعطيل" : "تفعيل"}
+                                </Button>
+                                <Hint
+                                  label={
+                                    s.used ? "مستخدمة في حجوزات — عطّلها بدلاً من حذفها" : "حذف"
+                                  }
+                                >
+                                  <span>
+                                    <Button
+                                      variant="ghost-destructive"
+                                      size="icon"
+                                      disabled={isPending || s.used}
+                                      onClick={() => handleDelete(s)}
+                                      aria-label="حذف"
+                                    >
+                                      <Trash2 />
+                                    </Button>
+                                  </span>
+                                </Hint>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+                  )}
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
           ))}
         </div>
       )}
