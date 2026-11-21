@@ -4,12 +4,6 @@ import { getInstanceOwner } from "@/lib/evolution/client";
 import { evolutionEventName, parseEvolutionMessages } from "@/lib/evolution/inbound";
 import { processInboundWhatsApp } from "@/server/services/whatsappIngest";
 import { recordPhoneMessage } from "@/server/services/evolutionSync";
-import { prisma } from "@/lib/prisma";
-import { startHistorySync } from "@/server/services/evolutionHistorySync";
-
-/** WhatsApp pushes history to a newly linked phone in the background — give it
- *  a few minutes before importing. */
-const AUTO_IMPORT_DELAY_SECONDS = 180;
 
 export const runtime = "nodejs";
 
@@ -52,7 +46,6 @@ export async function POST(
     console.log(`[evolution] clinic ${config.clinicId} connection → ${state}`);
     if (state === "open") {
       await recordOwnerPhone(config.clinicId, config.configId, config.instanceName);
-      await autoImportHistory(config.clinicId, config.configId);
     }
     return NextResponse.json({ ok: true });
   }
@@ -107,23 +100,4 @@ async function recordOwnerPhone(
   } catch (err) {
     console.error("[evolution] failed to record the linked phone:", err);
   }
-}
-
-/**
- * First link of a number → import its recent chats once. Reconnects (server
- * restarts, phone back online) also report "open", so skip numbers that have a
- * sync on record (running, stopped, or done — staff decide what happens to it);
- * the settings panel re-runs it on demand. Unlinking drops the sync record, so
- * linking the phone again imports anew — skipping messages already stored.
- */
-async function autoImportHistory(clinicId: string, configId: string): Promise<void> {
-  const sync = await prisma.whatsappHistorySync.findUnique({
-    where: { whatsappConfigId: configId },
-    select: { id: true },
-  });
-  if (sync) return;
-  const res = await startHistorySync(clinicId, configId, "fresh", {
-    delaySeconds: AUTO_IMPORT_DELAY_SECONDS,
-  });
-  if (!res.ok) console.error("[evolution] failed to queue history import:", res.message);
 }
