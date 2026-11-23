@@ -62,7 +62,7 @@ export function SoloDoctorSection({
     );
   }
 
-  const subtitle = doctorSubtitle(doctor.title, doctor.specialty);
+  const subtitle = doctorSubtitle(doctor.title, doctor.specialty, doctor.sex);
   const facts = [
     doctor.yearsOfExperience != null && {
       icon: Award,

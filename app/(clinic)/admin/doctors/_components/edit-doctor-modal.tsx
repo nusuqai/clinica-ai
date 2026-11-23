@@ -32,6 +32,7 @@ function formFromDoctor(doctor: DoctorWithProfile): DoctorFormValues {
     ...EMPTY_DOCTOR_FORM,
     fullName: doctor.profile.fullName,
     title: doctor.title ?? "",
+    sex: doctor.sex ?? "",
     specialtyId: doctor.specialtyId ?? "",
     yearsOfExperience: doctor.yearsOfExperience?.toString() ?? "",
     requiresAdvanceBooking: doctor.requiresAdvanceBooking,

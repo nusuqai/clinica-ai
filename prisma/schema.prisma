@@ -94,11 +94,19 @@ enum PhoneType {
 // Doctor's professional rank shown on their profile.
 // SPECIALIST = أخصائي, CONSULTANT = استشاري.
 enum DoctorTitle {
+  DOCTOR // طبيب/ة
   SPECIALIST
   CONSULTANT
   NURSE // ممرض/ة
   TECHNICIAN // فني/ة (ليزر، أشعة...)
   SPECIALIST_THERAPIST // أخصائي علاج / تغذية
+}
+
+// The practitioner's sex — drives gendered wording (طبيب/طبيبة، د. … هو/هي)
+// since a name alone can mislead the AI agent.
+enum DoctorSex {
+  MALE
+  FEMALE
 }
 
 // What a TreatmentProcedure row records. Kept deliberately coarse — a clinic
@@ -765,6 +773,7 @@ model Doctor {
   fullName               String
   phone                  String?
   title                  DoctorTitle? // أخصائي / استشاري
+  sex                    DoctorSex? // ذكر / أنثى
   qualifications         String? // المؤهلات العلمية
   expertiseAreas         String? // مجالات الخبرة الدقيقة
   bio                    String?

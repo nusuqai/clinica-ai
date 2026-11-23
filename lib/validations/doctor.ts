@@ -16,6 +16,7 @@ const optionalAmount = z
 const doctorFormBase = z.object({
   fullName: z.string().trim().min(1, "أدخل اسم الطبيب."),
   title: z.string(),
+  sex: z.string(),
   specialtyId: z.string(),
   newSpecialtyName: z.string().trim(),
   yearsOfExperience: optionalAmount,
@@ -44,6 +45,7 @@ export type DoctorFormValues = z.infer<typeof doctorFormBase>;
 export const EMPTY_DOCTOR_FORM: DoctorFormValues = {
   fullName: "",
   title: "",
+  sex: "",
   specialtyId: "",
   newSpecialtyName: "",
   yearsOfExperience: "",

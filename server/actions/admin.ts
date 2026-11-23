@@ -2,8 +2,8 @@
 
 import { parseRuleExtras } from "@/lib/validations/availability";
 import { revalidatePath } from "next/cache";
-import { AppointmentStatus, AvailabilityMode, DoctorTitle, Role } from "@prisma/client";
-import { isDoctorTitle } from "@/lib/doctor-title";
+import { AppointmentStatus, AvailabilityMode, DoctorSex, DoctorTitle, Role } from "@prisma/client";
+import { isDoctorSex, isDoctorTitle } from "@/lib/doctor-title";
 import { parseMode } from "@/lib/availability/modes";
 
 import { can, getClinicContext, getPermittedContext } from "@/lib/auth";
@@ -63,11 +63,17 @@ function parseDoctorTitle(formData: FormData): DoctorTitle | null {
   return isDoctorTitle(v) ? v : null;
 }
 
+function parseDoctorSex(formData: FormData): DoctorSex | null {
+  const v = (formData.get("sex") as string) || "";
+  return isDoctorSex(v) ? v : null;
+}
+
 // Parse the extra doctor attributes shared by create & update forms.
 function parseDoctorAttributes(formData: FormData) {
   const num = (key: string) => (formData.get(key) ? Number(formData.get(key)) : undefined);
   return {
     title: parseDoctorTitle(formData),
+    sex: parseDoctorSex(formData),
     yearsOfExperience: num("yearsOfExperience"),
     requiresAdvanceBooking: formData.get("requiresAdvanceBooking") === "on",
     acceptsChildren: formData.get("acceptsChildren") === "on",
@@ -214,6 +220,7 @@ export async function updateDoctorAction(formData: FormData) {
     // `phone` is intentionally not read here: the field was removed from the
     // form, so leaving it out preserves any existing value instead of wiping it.
     title: attrs.title,
+    sex: attrs.sex,
     qualifications: (formData.get("qualifications") as string) || null,
     expertiseAreas: (formData.get("expertiseAreas") as string) || null,
     specialtyId: specialtyRes.data,
