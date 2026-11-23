@@ -6,8 +6,9 @@ import { prisma } from "@/lib/prisma";
 import { authorizePatientHistory } from "@/server/services/treatmentAccess";
 import { listPatientRecords } from "@/server/services/treatments";
 import RecordTimeline from "@/components/medical/record-timeline";
-import PatientIntakeCard from "@/components/medical/patient-intake-card";
-import { getPatientIntake } from "@/server/services/patient-intake";
+import HealthProfileCard from "@/components/health-profile/health-profile-card";
+import EditHealthProfileModal from "@/components/health-profile/edit-health-profile-modal";
+import { getPatientHealthProfile, listAnswerRevisions } from "@/server/services/health-profile";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
@@ -24,10 +25,11 @@ export default async function DoctorPatientHistoryPage({ params }: PageProps) {
   const access = await authorizePatientHistory(id);
   if (!access.ok) notFound();
 
-  const [patient, records, intake] = await Promise.all([
+  const [patient, records, health, healthRevisions] = await Promise.all([
     prisma.profile.findUnique({ where: { id }, select: { fullName: true, phone: true } }),
     listPatientRecords({ clinicId: access.clinicId, patientId: id }),
-    getPatientIntake(access.clinicId, id),
+    getPatientHealthProfile(access.clinicId, id),
+    listAnswerRevisions(access.clinicId, id),
   ]);
   if (!patient) notFound();
 
@@ -62,7 +64,17 @@ export default async function DoctorPatientHistoryPage({ params }: PageProps) {
       </Card>
 
       <div className="mb-6">
-        <PatientIntakeCard intake={intake} />
+        <HealthProfileCard
+          profile={health}
+          revisions={healthRevisions}
+          action={
+            <EditHealthProfileModal
+              patientId={id}
+              sections={health.sections}
+              answers={health.answers}
+            />
+          }
+        />
       </div>
 
       <h2 className="mb-4 font-heading text-lg font-bold text-foreground">السجل العلاجي</h2>
