@@ -702,6 +702,7 @@ export async function listServiceProviders(
           id: true,
           fullName: true,
           title: true,
+          sex: true,
           specialty: { select: { name: true } },
           branches: { select: { branch: { select: { id: true, name: true, isActive: true } } } },
         },
@@ -718,6 +719,7 @@ export async function listServiceProviders(
         doctorId: r.doctor.id,
         fullName: r.doctor.fullName,
         title: r.doctor.title,
+        sex: r.doctor.sex,
         specialty: r.doctor.specialty?.name ?? null,
         /** Practitioner's own price for this service, if it overrides the service's. */
         priceOverride: dec(r.price),

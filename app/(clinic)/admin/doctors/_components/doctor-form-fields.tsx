@@ -3,7 +3,12 @@
 import { useController, type Control } from "react-hook-form";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
-import { DOCTOR_TITLES, DOCTOR_TITLE_LABEL } from "@/lib/doctor-title";
+import {
+  DOCTOR_SEXES,
+  DOCTOR_SEX_LABEL,
+  DOCTOR_TITLES,
+  DOCTOR_TITLE_LABEL,
+} from "@/lib/doctor-title";
 import type { DoctorFormValues } from "@/lib/validations/doctor";
 import SpecialtySelect, { type SpecialtyOption } from "./specialty-select";
 import type { EditorBranch } from "./availability-rules-editor";
@@ -11,6 +16,11 @@ import type { EditorBranch } from "./availability-rules-editor";
 export const DOCTOR_TITLE_OPTIONS = [
   { value: "", label: "غير محدد" },
   ...DOCTOR_TITLES.map((t) => ({ value: t, label: DOCTOR_TITLE_LABEL[t] })),
+];
+
+export const DOCTOR_SEX_OPTIONS = [
+  { value: "", label: "غير محدد" },
+  ...DOCTOR_SEXES.map((s) => ({ value: s, label: DOCTOR_SEX_LABEL[s] })),
 ];
 
 /**
@@ -48,6 +58,13 @@ export function DoctorFormFields({
           type="select"
           label={`الدرجة${opt}`}
           options={DOCTOR_TITLE_OPTIONS}
+        />
+        <FormField
+          control={control}
+          name="sex"
+          type="select"
+          label={`الجنس${opt}`}
+          options={DOCTOR_SEX_OPTIONS}
         />
         <div>
           <SpecialtySelect control={control} specialties={specialties} />

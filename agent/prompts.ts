@@ -2,7 +2,7 @@ import { Channel, ClinicKind, PhoneType, Role, SocialPlatform } from "@prisma/cl
 import type { AgentContext, AgentPersona } from "./types";
 import { getClinicInfo, type ClinicInfo } from "@/server/services/clinicInfo";
 import { getSoloDoctor, type SoloDoctor } from "@/server/services/clinic-kind";
-import { doctorSubtitle } from "@/lib/doctor-title";
+import { doctorSexLabel, doctorSubtitle } from "@/lib/doctor-title";
 import { CURRENCY_LABEL } from "@/lib/currency";
 
 // Fallback used only if the clinic record can't be loaded (e.g. DB hiccup);
@@ -69,8 +69,10 @@ function buildSoloDoctorLines(doctor: SoloDoctor | null): string[] {
       "هذه عيادة خاصة بطبيب واحد، لكن لم تُضف بيانات الطبيب بعد؛ إذا رغب المستخدم في الحجز فأخبره بلطف أن الحجز غير متاح حالياً واقترح التواصل مع العيادة.",
     ];
   }
-  const subtitle = doctorSubtitle(doctor.title, doctor.specialty);
+  const subtitle = doctorSubtitle(doctor.title, doctor.specialty, doctor.sex);
+  const sex = doctorSexLabel(doctor.sex);
   const facts = [
+    sex && `الجنس: ${sex}`,
     doctor.yearsOfExperience != null && `سنوات الخبرة: ${doctor.yearsOfExperience}`,
     `يكشف على الأطفال: ${doctor.acceptsChildren ? "نعم" : "لا"}`,
     `يحتاج حجزاً مسبقاً: ${doctor.requiresAdvanceBooking ? "نعم" : "لا"}`,
@@ -130,7 +132,7 @@ const bookingFlow = (solo: boolean) =>
   ].join("\n");
 
 const branchInfoGuide = (solo: boolean) =>
-  `لدى العيادة فروع؛ عند سؤال المستخدم عن العنوان أو الموقع أو الخريطة أو الهاتف أو ساعات العمل أو أيام العطلة أو موقف السيارات أو أقرب معلم أو كيفية الوصول، استخدم list_branches ثم get_branch_info لجلب التفاصيل، واستخدم get_clinic_info للأرقام العامة وحسابات التواصل. عند عرض طبيب، يمكنك ذكر سنوات خبرته، والخدمات التي يقدّمها (services)، وهل يكشف على الأطفال (acceptsChildren)، وهل يحتاج حجزاً مسبقاً (requiresAdvanceBooking). أسعار الخدمات من search_services وget_service فقط.${
+  `لدى العيادة فروع؛ عند سؤال المستخدم عن العنوان أو الموقع أو الخريطة أو الهاتف أو ساعات العمل أو أيام العطلة أو موقف السيارات أو أقرب معلم أو كيفية الوصول، استخدم list_branches ثم get_branch_info لجلب التفاصيل، واستخدم get_clinic_info للأرقام العامة وحسابات التواصل. عند الحديث عن أي طبيب أو مقدّم خدمة، حدِّد تذكيره أو تأنيثه (هو/هي، الدكتور/الدكتورة، طبيب/طبيبة، متاح/متاحة) من حقل الجنس (sex) لا من الاسم؛ فبعض الأسماء تبدو مذكّرة وصاحبتها أنثى. إن كان sex فارغاً فاعتمد على الاسم. عند عرض طبيب، يمكنك ذكر سنوات خبرته، والخدمات التي يقدّمها (services)، وهل يكشف على الأطفال (acceptsChildren)، وهل يحتاج حجزاً مسبقاً (requiresAdvanceBooking). أسعار الخدمات من search_services وget_service فقط.${
     solo
       ? " إذا سأل عن الكشف على طفل فأجب حسب قيمة acceptsChildren لطبيب العيادة."
       : " إذا سأل مريض عن طبيب أطفال أو للكشف على طفل، رشّح طبيباً قيمته acceptsChildren = true. للبحث عن طبيب حسب التخصص: استخدم list_specialties أولاً لمعرفة التخصصات المتاحة ومعرّفاتها، ثم search_doctors_by_specialty بمعرّف التخصص (specialtyId) للحصول على نتائج دقيقة."

@@ -7,7 +7,7 @@ import * as Packages from "@/server/services/packages";
 import { listCategories } from "@/server/services/catalog";
 import { SERVICE_KIND_LABEL, durationText, servicePriceText, tierRangeLabel } from "@/lib/catalog";
 import { creditLineText } from "@/lib/packages";
-import { practitionerName, doctorTitleLabel } from "@/lib/doctor-title";
+import { practitionerName, doctorSexLabel, doctorTitleLabel } from "@/lib/doctor-title";
 import { formatFee } from "@/lib/currency";
 import { askForFilter, jsonTool, shouldAskForFilter, showAllField } from "./shared";
 
@@ -192,7 +192,8 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
           providers: providers.map((p) => ({
             doctorId: p.doctorId,
             name: practitionerName(p.fullName, p.title),
-            title: doctorTitleLabel(p.title),
+            title: doctorTitleLabel(p.title, p.sex),
+            sex: doctorSexLabel(p.sex),
             specialty: p.specialty,
             // null = the service's own price (search_services / get_service).
             price: p.priceOverride != null ? formatFee(p.priceOverride) : null,

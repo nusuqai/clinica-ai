@@ -9,7 +9,7 @@ import { listSpecialties } from "@/server/services/specialties";
 import { expectedTimeAfter } from "@/lib/availability/queue-time";
 import { modeTag } from "@/lib/availability/modes";
 import { pageRequest } from "@/lib/pagination";
-import { doctorTitleLabel } from "@/lib/doctor-title";
+import { doctorSexLabel, doctorTitleLabel } from "@/lib/doctor-title";
 import { serviceNamesByDoctor } from "@/server/services/catalog";
 import { lengthWith, serviceFit, visitMinutes } from "@/server/services/booking";
 import {
@@ -59,7 +59,9 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
       doctors: doctors.items.map((d) => ({
         id: d.id,
         name: d.profile.fullName,
-        title: doctorTitleLabel(d.title),
+        title: doctorTitleLabel(d.title, d.sex),
+        // Authoritative gender — the name alone can mislead.
+        sex: doctorSexLabel(d.sex),
         specialty: d.specialty,
         specialtyId: d.specialtyId,
         branches: d.branchIds
