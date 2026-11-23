@@ -148,7 +148,9 @@ export async function ClinicLanding({ clinic }: { clinic: ClinicSummary }) {
 
   const doctorCount = doctorStats?.count ?? 0;
   const specialties = doctorStats?.bySpecialty ?? [];
-  const soloSubtitle = soloDoctor ? doctorSubtitle(soloDoctor.title, soloDoctor.specialty) : null;
+  const soloSubtitle = soloDoctor
+    ? doctorSubtitle(soloDoctor.title, soloDoctor.specialty, soloDoctor.sex)
+    : null;
   const solo = isSolo
     ? {
         doctorName: soloDoctor?.fullName ?? null,

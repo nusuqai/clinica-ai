@@ -1,5 +1,5 @@
 import "server-only";
-import { ClinicKind, type DoctorTitle, type Prisma } from "@prisma/client";
+import { ClinicKind, type DoctorSex, type DoctorTitle, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
 
@@ -62,6 +62,7 @@ export type SoloDoctor = {
   id: string;
   fullName: string;
   title: DoctorTitle | null;
+  sex: DoctorSex | null;
   specialty: string | null;
   qualifications: string | null;
   expertiseAreas: string | null;
@@ -97,6 +98,7 @@ export async function getSoloDoctor(clinicId: string): Promise<SoloDoctor | null
     id: d.id,
     fullName: d.fullName,
     title: d.title,
+    sex: d.sex,
     specialty: d.specialty?.name ?? null,
     qualifications: d.qualifications,
     expertiseAreas: d.expertiseAreas,

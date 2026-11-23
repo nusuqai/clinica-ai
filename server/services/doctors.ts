@@ -22,6 +22,7 @@ import {
   Role,
   type Doctor,
   type DayOfWeek,
+  type DoctorSex,
   type DoctorTitle,
   type Prisma,
   QueueCapType,
@@ -83,6 +84,7 @@ export interface CreateDoctorInput {
   fullName: string;
   phone?: string;
   title?: DoctorTitle | null;
+  sex?: DoctorSex | null;
   qualifications?: string;
   expertiseAreas?: string;
   specialtyId?: string | null;
@@ -102,6 +104,7 @@ export interface UpdateDoctorInput {
   doctorId: string;
   clinicId: string;
   title?: DoctorTitle | null;
+  sex?: DoctorSex | null;
   qualifications?: string | null;
   expertiseAreas?: string | null;
   specialtyId?: string | null;
@@ -598,6 +601,7 @@ export async function createDoctor(
           fullName: input.fullName,
           phone: input.phone || null,
           title: input.title ?? null,
+          sex: input.sex ?? null,
           qualifications: input.qualifications || null,
           expertiseAreas: input.expertiseAreas || null,
           specialtyId: input.specialtyId ?? null,
@@ -695,6 +699,7 @@ export async function createDoctorAccount(
           fullName: input.fullName,
           phone: input.phone || null,
           title: input.title ?? null,
+          sex: input.sex ?? null,
           qualifications: input.qualifications || null,
           expertiseAreas: input.expertiseAreas || null,
           specialtyId: input.specialtyId ?? null,
@@ -781,6 +786,7 @@ export async function updateDoctor(input: UpdateDoctorInput): Promise<Result<voi
           ...(input.fullName !== undefined && { fullName: input.fullName }),
           ...(input.phone !== undefined && { phone: input.phone }),
           ...(input.title !== undefined && { title: input.title }),
+          ...(input.sex !== undefined && { sex: input.sex }),
           ...(input.qualifications !== undefined && {
             qualifications: input.qualifications,
           }),

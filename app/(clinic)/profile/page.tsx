@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Clock,
   FileText,
+  HeartPulse,
   Mail,
   Phone,
   Stethoscope,
@@ -14,6 +15,8 @@ import { requireClinicMember } from "@/lib/auth";
 import { getPatientStats } from "@/server/services/appointments";
 import { countPatientRecords } from "@/server/services/treatments";
 import { ProfileForm } from "@/components/dashboard/profile-form";
+import { getPatientHealthProfile } from "@/server/services/health-profile";
+import HealthProfileEditor from "@/components/health-profile/health-profile-editor";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -28,10 +31,13 @@ export default async function PatientProfilePage() {
   const ctx = await requireClinicMember(["PATIENT"]);
   const { user, clinic } = ctx;
 
-  const [stats, recordCount] = await Promise.all([
+  const [stats, recordCount, health] = await Promise.all([
     getPatientStats(user.id, clinic.id),
     countPatientRecords(clinic.id, user.id),
+    // Patient-visible questions only — staff-only ones never reach the patient.
+    getPatientHealthProfile(clinic.id, user.id, { audience: "PATIENT" }),
   ]);
+  const hasHealthForm = health.sections.some((s) => s.questions.length > 0);
 
   const fullName = user.profile.fullName;
   const initials =
@@ -154,6 +160,22 @@ export default async function PatientProfilePage() {
             />
             <QuickLink href="/#book" icon={Stethoscope} label="احجز موعداً" hint="اختر طبيبك" />
           </aside>
+
+          {hasHealthForm && (
+            <Card asChild className="p-6 shadow-sm lg:col-span-2">
+              <section>
+                <div className="mb-6 flex items-center gap-2">
+                  <HeartPulse className="h-5 w-5 text-primary" />
+                  <h2 className="font-heading font-semibold text-foreground">ملفي الصحي</h2>
+                </div>
+                <HealthProfileEditor
+                  mode="patient"
+                  sections={health.sections}
+                  answers={health.answers}
+                />
+              </section>
+            </Card>
+          )}
         </div>
       </main>
     </div>

@@ -157,7 +157,9 @@ export default async function DoctorDetailsPage({ params, searchParams }: PagePr
               </span>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              {doctor.title && <Badge className="px-2">{doctorTitleLabel(doctor.title)}</Badge>}
+              {doctor.title && (
+                <Badge className="px-2">{doctorTitleLabel(doctor.title, doctor.sex)}</Badge>
+              )}
               {doctor.acceptsChildren && (
                 <Badge variant="sky" className="px-2">
                   يكشف على الأطفال

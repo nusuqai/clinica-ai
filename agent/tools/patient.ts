@@ -5,8 +5,16 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import * as AppointmentService from "@/server/services/appointments";
 import * as BookingService from "@/server/services/booking";
-import * as IntakeService from "@/server/services/patient-intake";
-import { INTAKE_FIELDS, INTAKE_REQUIRED_ERROR } from "@/lib/patient-intake";
+import * as HealthProfileService from "@/server/services/health-profile";
+import {
+  HEALTH_PROFILE_REQUIRED_ERROR,
+  QUESTION_TYPE_LABEL,
+  flattenQuestions,
+  formatAnswer,
+  isQuestionVisible,
+  missingRequired,
+  type HealthQuestionView,
+} from "@/lib/health-profile";
 import type { AgentContext } from "@/agent/types";
 import { pageRequest } from "@/lib/pagination";
 import { formatFee } from "@/lib/currency";
@@ -88,17 +96,64 @@ const itemsField = z
   .min(1)
   .describe("الخدمات المطلوبة في هذا الموعد (خدمة واحدة على الأقل)");
 
-// Returned by the booking tools while the patient has no intake file at this
-// clinic: the agent collects the answers, calls save_patient_intake, then books.
-const INTAKE_REQUIRED_RESULT = {
-  error: INTAKE_REQUIRED_ERROR,
-  needsIntake: true,
-  questions: INTAKE_FIELDS.map((f) => f.question),
-};
+// ─── Health profile (ملف المريض) ──────────────────────────────────────────────
+// The agent ASKS only patient-visible questions. Staff-only answers are handed
+// over as private context (privateStaffNotes) and must never be revealed.
+
+/** A question as the agent needs it to ask it in chat. */
+interface AgentQuestion {
+  questionId: string;
+  question: string;
+  help: string | null;
+  type: string;
+  required: boolean;
+  options?: string[];
+  unit?: string | null;
+  min?: number | null;
+  max?: number | null;
+  followUps?: (AgentQuestion & { askOnlyIfAnswer: string })[];
+}
+
+function agentQuestion(q: HealthQuestionView, all: HealthQuestionView[]): AgentQuestion {
+  const followUps = all.filter((f) => f.parentId === q.id);
+  return {
+    questionId: q.id,
+    question: q.label,
+    help: q.helpText,
+    type: QUESTION_TYPE_LABEL[q.type],
+    required: q.required,
+    ...(q.type === "SELECT" && { options: q.options.map((o) => o.label) }),
+    ...(q.type === "NUMBER" && { unit: q.unit, min: q.minValue, max: q.maxValue }),
+    ...(followUps.length > 0 && {
+      followUps: followUps.map((f) => ({
+        askOnlyIfAnswer: f.showWhen ? "نعم" : "لا",
+        ...agentQuestion(f, all),
+      })),
+    }),
+  };
+}
+
+/** Booking refused: the required questions to collect first (top-level ones; follow-ups nested). */
+async function healthProfileRequiredResult(clinicId: string, patientId: string) {
+  const missing = await HealthProfileService.missingForBooking(clinicId, patientId);
+  if (missing.length === 0) return null;
+  const view = await HealthProfileService.getPatientHealthProfile(clinicId, patientId, {
+    audience: "PATIENT",
+  });
+  const all = flattenQuestions(view.sections);
+  const missingIds = new Set(missing.map((q) => q.id));
+  // A missing follow-up whose parent is answered is asked on its own.
+  const roots = missing.filter((q) => !q.parentId || !missingIds.has(q.parentId));
+  return {
+    error: HEALTH_PROFILE_REQUIRED_ERROR,
+    needsHealthProfile: true,
+    questions: roots.map((q) => agentQuestion(q, all)),
+  };
+}
 
 export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
   const patientId = ctx.actorId!;
-  const needsIntake = async () => !(await IntakeService.hasPatientIntake(ctx.clinicId, patientId));
+  const needsHealthProfile = () => healthProfileRequiredResult(ctx.clinicId, patientId);
 
   return [
     jsonTool(
@@ -113,7 +168,8 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ slotId, items, notes }) => {
-        if (await needsIntake()) return INTAKE_REQUIRED_RESULT;
+        const blocked = await needsHealthProfile();
+        if (blocked) return blocked;
         const res = await AppointmentService.createAppointment(
           patientId,
           slotId,
@@ -140,7 +196,8 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ doctorId, date, items, notes }) => {
-        if (await needsIntake()) return INTAKE_REQUIRED_RESULT;
+        const blocked = await needsHealthProfile();
+        if (blocked) return blocked;
         const res = await BookingService.bookQueueAppointment({
           patientId,
           doctorId,
@@ -377,25 +434,87 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
     ),
     jsonTool(
       {
-        name: "save_patient_intake",
+        name: "get_health_profile",
         description:
-          "احفظ ملف المريض الحالي لدى هذه العيادة (مطلوب قبل أول حجز). اسأل المريض الأسئلة كلها واحفظ إجاباته كما قالها نصّاً. سبب الكشف ليس هنا: مرّره في notes عند الحجز.",
+          "اعرض «ملف المريض» الصحي للمريض الحالي لدى هذه العيادة: الأسئلة وإجاباته الحالية والأسئلة المطلوبة التي لم يُجب عليها بعد. استخدمها لمعرفة حالته الصحية (مثل الحساسية أو الأمراض المزمنة) أو عندما يطلب المريض مراجعة ملفه أو تعديله.",
+        schema: z.object({}),
+      },
+      async () => {
+        const [view, staff] = await Promise.all([
+          HealthProfileService.getPatientHealthProfile(ctx.clinicId, patientId, {
+            audience: "PATIENT",
+          }),
+          HealthProfileService.getPatientHealthProfile(ctx.clinicId, patientId, {
+            audience: "STAFF",
+          }),
+        ]);
+        const all = flattenQuestions(view.sections);
+        const staffQuestions = flattenQuestions(staff.sections);
+        return {
+          sections: view.sections
+            .filter((s) => s.questions.length > 0)
+            .map((s) => ({
+              title: s.title,
+              questions: flattenQuestions([s])
+                .filter((q) => isQuestionVisible(q, view.answers))
+                .map((q) => ({
+                  questionId: q.id,
+                  question: q.label,
+                  type: QUESTION_TYPE_LABEL[q.type],
+                  required: q.required,
+                  ...(q.type === "SELECT" && { options: q.options.map((o) => o.label) }),
+                  answer: formatAnswer(q, view.answers[q.id]),
+                })),
+            })),
+          missingRequired: missingRequired(view.sections, view.answers).map((q) =>
+            agentQuestion(q, all)
+          ),
+          // PRIVATE: written by the clinic team. Use only as background — never
+          // quote, mention or hint at these to the patient.
+          privateStaffNotes: staffQuestions
+            .filter((q) => staff.answers[q.id] !== undefined)
+            .map((q) => ({ note: q.label, value: formatAnswer(q, staff.answers[q.id]) })),
+        };
+      },
+    ),
+    jsonTool(
+      {
+        name: "save_health_answers",
+        description:
+          "احفظ إجابة أو أكثر من إجابات المريض الحالي على أسئلة «ملف المريض» (من needsHealthProfile في أداة الحجز أو من get_health_profile). يمكن الحفظ تدريجياً. بعد حفظ الأسئلة المطلوبة أعد محاولة الحجز نفسه مباشرةً.",
         schema: z.object({
-          fullName: z.string().describe("الاسم ثلاثي"),
-          age: z.string().describe("السن"),
-          weight: z.string().describe("الوزن"),
-          address: z.string().describe("العنوان"),
-          medicalConditions: z.string().describe("الأمراض السابقة أو المزمنة (أو «لا يوجد»)"),
-          smokingStatus: z.string().describe("مدخن أم غير مدخن"),
-          previousSurgeries: z
-            .string()
-            .describe("العمليات الجراحية السابقة ونوعها وتاريخها (أو «لا يوجد»)"),
+          answers: z
+            .array(
+              z.object({
+                questionId: z.string().describe("questionId كما ورد في الأداة"),
+                answer: z
+                  .string()
+                  .nullable()
+                  .describe(
+                    "إجابة المريض: نص كما قاله؛ للرقم أرقام فقط؛ لسؤال نعم/لا «نعم» أو «لا»؛ لقائمة الاختيار نص أحد الخيارات حرفياً؛ null لمسح الإجابة"
+                  ),
+              })
+            )
+            .min(1),
         }),
       },
-      async (input) => {
-        const res = await IntakeService.savePatientIntake(ctx.clinicId, patientId, input);
+      async ({ answers }) => {
+        const res = await HealthProfileService.saveAnswers({
+          clinicId: ctx.clinicId,
+          patientId,
+          answers: Object.fromEntries(answers.map((a) => [a.questionId, a.answer])),
+          source: "AGENT",
+          actorId: patientId,
+        });
         if (!res.ok) return { error: res.error };
-        return { saved: true };
+        const stillMissing = await HealthProfileService.missingRequiredAnswers(
+          ctx.clinicId,
+          patientId
+        );
+        return {
+          saved: true,
+          stillMissingRequired: stillMissing.map((q) => ({ questionId: q.id, question: q.label })),
+        };
       },
     ),
     jsonTool(

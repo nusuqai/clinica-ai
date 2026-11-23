@@ -16,8 +16,12 @@ import * as CatalogService from "@/server/services/catalog";
 import * as PackageService from "@/server/services/packages";
 import { practitionerName } from "@/lib/doctor-title";
 import * as TreatmentService from "@/server/services/treatments";
-import * as IntakeService from "@/server/services/patient-intake";
-import { INTAKE_REQUIRED_ERROR, type IntakeValues } from "@/lib/patient-intake";
+import * as HealthProfileService from "@/server/services/health-profile";
+import {
+  HEALTH_PROFILE_REQUIRED_ERROR,
+  type AnswersMap,
+  type HealthQuestionView,
+} from "@/lib/health-profile";
 import { pageRequest, mapPage } from "@/lib/pagination";
 
 // ─── Profile mutations ────────────────────────────────────────────────────────
@@ -270,27 +274,54 @@ export async function getOrderBookingInfoAction(
   };
 }
 
-// ─── Patient intake file ──────────────────────────────────────────────────────
+// ─── Patient health profile ───────────────────────────────────────────────────
 
 /**
- * Does the signed-in patient still owe this clinic their intake file? The
- * booking modal asks for it on the confirm step of the first booking.
+ * What the booking modal must ask before this patient's first booking here:
+ * the required patient questions still unanswered (empty once they have any
+ * appointment at this clinic — existing patients are never blocked). The full
+ * patient-visible question list + current answers come along so follow-up
+ * questions can appear as the patient answers their parent.
  */
-export async function myIntakeStatusAction(): Promise<{ required: boolean; fullName: string }> {
+export async function myHealthProfileStatusAction(): Promise<{
+  required: boolean;
+  questions: HealthQuestionView[];
+  answers: AnswersMap;
+  missingIds: string[];
+}> {
+  const empty = { required: false, questions: [], answers: {}, missingIds: [] };
   const ctx = await getClinicContext();
-  if (!ctx || ctx.role !== Role.PATIENT) return { required: false, fullName: "" };
-  const has = await IntakeService.hasPatientIntake(ctx.clinic.id, ctx.user.id);
-  return { required: !has, fullName: ctx.user.profile.fullName ?? "" };
+  if (!ctx || ctx.role !== Role.PATIENT) return empty;
+  const missing = await HealthProfileService.missingForBooking(ctx.clinic.id, ctx.user.id);
+  if (missing.length === 0) return empty;
+  const view = await HealthProfileService.getPatientHealthProfile(ctx.clinic.id, ctx.user.id, {
+    audience: "PATIENT",
+  });
+  return {
+    required: true,
+    questions: view.sections.flatMap((s) => s.questions),
+    answers: view.answers,
+    missingIds: missing.map((q) => q.id),
+  };
 }
 
-export async function saveMyIntakeAction(
-  values: IntakeValues
+/** The signed-in patient saves answers (booking modal / profile page). */
+export async function saveMyHealthAnswersAction(
+  answers: Record<string, unknown>
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
   if (ctx.role !== Role.PATIENT) return { ok: false, error: "هذه الخدمة للمرضى فقط" };
-  const res = await IntakeService.savePatientIntake(ctx.clinic.id, ctx.user.id, values);
-  return res.ok ? { ok: true } : { ok: false, error: res.error };
+  const res = await HealthProfileService.saveAnswers({
+    clinicId: ctx.clinic.id,
+    patientId: ctx.user.id,
+    answers,
+    source: "PATIENT",
+    actorId: ctx.user.id,
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath("/profile");
+  return { ok: true };
 }
 
 // ─── Patient mutations ────────────────────────────────────────────────────────
@@ -309,9 +340,9 @@ export async function bookOrderAppointmentAction(
   const ctx = await getClinicContext();
   if (!ctx) return { ok: false, error: "يجب تسجيل الدخول أولاً" };
   if (ctx.role !== Role.PATIENT) return { ok: false, error: "هذه الخدمة للمرضى فقط" };
-  // First booking at this clinic needs the patient's intake file.
-  if (!(await IntakeService.hasPatientIntake(ctx.clinic.id, ctx.user.id)))
-    return { ok: false, error: INTAKE_REQUIRED_ERROR };
+  // First booking at this clinic needs the required health-profile answers.
+  if ((await HealthProfileService.missingForBooking(ctx.clinic.id, ctx.user.id)).length > 0)
+    return { ok: false, error: HEALTH_PROFILE_REQUIRED_ERROR };
 
   const result = await BookingService.bookQueueAppointment({
     patientId: ctx.user.id,
@@ -353,9 +384,9 @@ export async function bookAppointmentAction(
   if (ctx.role !== Role.PATIENT) {
     return { ok: false, error: "هذه الخدمة للمرضى فقط" };
   }
-  // First booking at this clinic needs the patient's intake file.
-  if (!(await IntakeService.hasPatientIntake(ctx.clinic.id, ctx.user.id)))
-    return { ok: false, error: INTAKE_REQUIRED_ERROR };
+  // First booking at this clinic needs the required health-profile answers.
+  if ((await HealthProfileService.missingForBooking(ctx.clinic.id, ctx.user.id)).length > 0)
+    return { ok: false, error: HEALTH_PROFILE_REQUIRED_ERROR };
 
   const result = await AppointmentService.createAppointment(ctx.user.id, slotId, patientNotes, {
     clinicId: ctx.clinic.id,

@@ -18,10 +18,10 @@ import RecordTimeline from "@/components/medical/record-timeline";
 import RecordRevisions from "@/components/medical/record-revisions";
 import AppointmentAttachments from "@/components/appointments/appointment-attachments";
 import AdminRecordModal from "@/components/medical/admin-record-modal";
-import PatientIntakeCard from "@/components/medical/patient-intake-card";
-import { getPatientIntake } from "@/server/services/patient-intake";
+import HealthProfileCard from "@/components/health-profile/health-profile-card";
+import EditHealthProfileModal from "@/components/health-profile/edit-health-profile-modal";
+import { getPatientHealthProfile, listAnswerRevisions } from "@/server/services/health-profile";
 import EditPatientModal from "./_components/edit-patient-modal";
-import EditIntakeModal from "./_components/edit-intake-modal";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -53,13 +53,14 @@ export default async function UserDetailPage({ params }: PageProps) {
   // Completed visits without a record feed the admin's "add record" form —
   // admins may only document a visit that actually happened.
   const isPatient = canViewRecords;
-  const [records, recordableVisits, intake] = isPatient
+  const [records, recordableVisits, health, healthRevisions] = isPatient
     ? await Promise.all([
         listPatientRecords({ clinicId: clinic.id, patientId: id }),
         listRecordableVisits(clinic.id, id),
-        getPatientIntake(clinic.id, id),
+        getPatientHealthProfile(clinic.id, id),
+        listAnswerRevisions(clinic.id, id),
       ])
-    : [[], [], null];
+    : [[], [], null, []];
 
   // Files attached to those visits, so each record shows its own attachments
   // (lab results, x-rays, documents) inline alongside the clinical details.
@@ -186,27 +187,18 @@ export default async function UserDetailPage({ params }: PageProps) {
         />
       )}
 
-      {/* Intake file + clinical history — only for members who may manage
+      {/* Health profile + clinical history — only for members who may manage
           medical records. */}
-      {isPatient && (
+      {isPatient && health && (
         <section className="mt-6">
-          <PatientIntakeCard
-            intake={intake}
+          <HealthProfileCard
+            profile={health}
+            revisions={healthRevisions}
             action={
-              <EditIntakeModal
+              <EditHealthProfileModal
                 patientId={user.id}
-                patientName={user.fullName}
-                initial={
-                  intake && {
-                    fullName: intake.fullName,
-                    age: intake.age,
-                    weight: intake.weight,
-                    address: intake.address,
-                    medicalConditions: intake.medicalConditions,
-                    smokingStatus: intake.smokingStatus,
-                    previousSurgeries: intake.previousSurgeries,
-                  }
-                }
+                sections={health.sections}
+                answers={health.answers}
               />
             }
           />

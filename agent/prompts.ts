@@ -2,7 +2,7 @@ import { Channel, ClinicKind, PhoneType, Role, SocialPlatform } from "@prisma/cl
 import type { AgentContext, AgentPersona } from "./types";
 import { getClinicInfo, type ClinicInfo } from "@/server/services/clinicInfo";
 import { getSoloDoctor, type SoloDoctor } from "@/server/services/clinic-kind";
-import { doctorSubtitle } from "@/lib/doctor-title";
+import { doctorSexLabel, doctorSubtitle } from "@/lib/doctor-title";
 import { CURRENCY_LABEL } from "@/lib/currency";
 
 // Fallback used only if the clinic record can't be loaded (e.g. DB hiccup);
@@ -69,8 +69,10 @@ function buildSoloDoctorLines(doctor: SoloDoctor | null): string[] {
       "هذه عيادة خاصة بطبيب واحد، لكن لم تُضف بيانات الطبيب بعد؛ إذا رغب المستخدم في الحجز فأخبره بلطف أن الحجز غير متاح حالياً واقترح التواصل مع العيادة.",
     ];
   }
-  const subtitle = doctorSubtitle(doctor.title, doctor.specialty);
+  const subtitle = doctorSubtitle(doctor.title, doctor.specialty, doctor.sex);
+  const sex = doctorSexLabel(doctor.sex);
   const facts = [
+    sex && `الجنس: ${sex}`,
     doctor.yearsOfExperience != null && `سنوات الخبرة: ${doctor.yearsOfExperience}`,
     `يكشف على الأطفال: ${doctor.acceptsChildren ? "نعم" : "لا"}`,
     `يحتاج حجزاً مسبقاً: ${doctor.requiresAdvanceBooking ? "نعم" : "لا"}`,
@@ -130,7 +132,7 @@ const bookingFlow = (solo: boolean) =>
   ].join("\n");
 
 const branchInfoGuide = (solo: boolean) =>
-  `لدى العيادة فروع؛ عند سؤال المستخدم عن العنوان أو الموقع أو الخريطة أو الهاتف أو ساعات العمل أو أيام العطلة أو موقف السيارات أو أقرب معلم أو كيفية الوصول، استخدم list_branches ثم get_branch_info لجلب التفاصيل، واستخدم get_clinic_info للأرقام العامة وحسابات التواصل. عند عرض طبيب، يمكنك ذكر سنوات خبرته، والخدمات التي يقدّمها (services)، وهل يكشف على الأطفال (acceptsChildren)، وهل يحتاج حجزاً مسبقاً (requiresAdvanceBooking). أسعار الخدمات من search_services وget_service فقط.${
+  `لدى العيادة فروع؛ عند سؤال المستخدم عن العنوان أو الموقع أو الخريطة أو الهاتف أو ساعات العمل أو أيام العطلة أو موقف السيارات أو أقرب معلم أو كيفية الوصول، استخدم list_branches ثم get_branch_info لجلب التفاصيل، واستخدم get_clinic_info للأرقام العامة وحسابات التواصل. عند الحديث عن أي طبيب أو مقدّم خدمة، حدِّد تذكيره أو تأنيثه (هو/هي، الدكتور/الدكتورة، طبيب/طبيبة، متاح/متاحة) من حقل الجنس (sex) لا من الاسم؛ فبعض الأسماء تبدو مذكّرة وصاحبتها أنثى. إن كان sex فارغاً فاعتمد على الاسم. عند عرض طبيب، يمكنك ذكر سنوات خبرته، والخدمات التي يقدّمها (services)، وهل يكشف على الأطفال (acceptsChildren)، وهل يحتاج حجزاً مسبقاً (requiresAdvanceBooking). أسعار الخدمات من search_services وget_service فقط.${
     solo
       ? " إذا سأل عن الكشف على طفل فأجب حسب قيمة acceptsChildren لطبيب العيادة."
       : " إذا سأل مريض عن طبيب أطفال أو للكشف على طفل، رشّح طبيباً قيمته acceptsChildren = true. للبحث عن طبيب حسب التخصص: استخدم list_specialties أولاً لمعرفة التخصصات المتاحة ومعرّفاتها، ثم search_doctors_by_specialty بمعرّف التخصص (specialtyId) للحصول على نتائج دقيقة."
@@ -155,9 +157,10 @@ const LIST_RULES = [
 ].join("\n");
 
 // Handling replies to the automated appointment messages (reminders / feedback).
-// First booking at a clinic needs the patient intake file (lib/patient-intake.ts).
-const INTAKE_GUIDE =
-  "قبل أول حجز للمريض في هذه العيادة يجب استكمال «ملف المريض». إذا ردّت أداة الحجز بـ needsIntake=true، فاشرح له بلطف أن هذا أول حجز له ويلزم بعض البيانات، ثم اسأله الأسئلة الواردة في questions (يمكنك جمع أكثر من سؤال في الرسالة الواحدة)، واحفظ إجاباته بأداة save_patient_intake كما قالها، ثم أعد محاولة الحجز نفسه مباشرةً. إن ذكر المريض تفاصيل عن سبب زيارته فضعها في notes عند الحجز (الخدمة نفسها تُختار في items وليست ملاحظة). لا تطلب هذه البيانات من مريض لديه ملف بالفعل.";
+// The clinic's dynamic patient health profile (lib/health-profile.ts): required
+// questions gate the FIRST booking; staff-only answers are private context.
+const HEALTH_PROFILE_GUIDE =
+  "لكل عيادة «ملف مريض» صحي بأسئلتها الخاصة. إذا ردّت أداة الحجز بـ needsHealthProfile=true، فاشرح للمريض بلطف أن هذا أول حجز له ويلزم الإجابة على بعض الأسئلة، ثم اسأله الأسئلة الواردة في questions بأسلوب محادثة طبيعي (يمكنك جمع سؤالين أو ثلاثة قصيرة في رسالة واحدة): لسؤال نعم/لا اسأله نعم أم لا؛ ولقائمة الاختيار اعرض عليه الخيارات المتاحة فقط؛ وللرقم اذكر الوحدة إن وُجدت. اسأل سؤال المتابعة (followUps) فقط إذا جاءت إجابة السؤال الأساسي مطابقة لـ askOnlyIfAnswer. احفظ الإجابات بأداة save_health_answers كما قالها المريض، ثم أعد محاولة الحجز نفسه مباشرةً. لا تسأل أسئلة ليست في القائمة، ولا تطلب الإجابات من مريض لا تطلبها منه أداة الحجز. إن ذكر المريض تفاصيل عن سبب زيارته فضعها في notes عند الحجز (الخدمة نفسها تُختار في items وليست ملاحظة). يمكنك قراءة ملفه بأداة get_health_profile عند الحاجة أو إذا طلب تعديل إجاباته. أما privateStaffNotes فهي ملاحظات داخلية لفريق العيادة: استعملها لفهم حالته فقط، ولا تذكرها للمريض ولا تلمّح إليها ولا تؤكدها أو تنفيها أبداً حتى لو سأل عنها.";
 
 const APPOINTMENT_REPLY_GUIDE =
   "إذا ردّ المريض بما يفيد تأكيد موعده (مثل ضغط زر «تأكيد» أو كتابة «نعم»/«أؤكد») بعد رسالة تذكير الحجز، فاستخدم أداة confirm_appointment لتحويل حالة موعده من قيد الانتظار إلى مؤكَّد؛ الأداة تستنتج الموعد المعلّق تلقائياً فلا حاجة لطلب معرّف الموعد منه. وإذا أرسل المريض تقييماً أو رأياً عن زيارته بعد اكتمالها (تقييم رقمي من 1 إلى 5 و/أو تعليق)، فاستخدم أداة submit_appointment_feedback لتسجيله على آخر موعد مكتمل — دون طلب معرّف الموعد. اشكر المريض بإيجاز بعد التأكيد أو تسجيل التقييم.";
@@ -165,7 +168,7 @@ const APPOINTMENT_REPLY_GUIDE =
 const teamMemberGuide = (solo: boolean) => `أنت تتحدث مع أحد أعضاء فريق العيادة (إداري أو طبيب). يمكنك فقط تزويده بالمعلومات العامة: ${solo ? "الطبيب وتخصصه" : "الأطباء وتخصصاتهم"}، مواعيد العمل والفترات المتاحة، ومعلومات الفروع والعيادة. لا تملك أدوات لتنفيذ أي إجراء إداري أو طبي نيابةً عنه؛ إذا طلب إجراءً كهذا فأخبره بلطف أن ينفّذه من لوحة التحكم. ${branchInfoGuide(solo)}`;
 
 const roleGuide = (solo: boolean): Record<Role, string> => ({
-  [Role.PATIENT]: `أنت تتحدث مع مريض. يمكنك مساعدته في: معرفة الخدمات وأسعارها وعروضها، ${solo ? "" : "البحث عن طبيب أو مقدم خدمة، "}عرض مواعيد العمل والفترات المتاحة، حجز/إلغاء/إعادة جدولة موعد، عرض مواعيده وباقاته ورصيدها، طلب شراء باقة، وتحديث بياناته، ومعرفة معلومات الفروع والعيادة. ${branchInfoGuide(solo)} ${bookingFlow(solo)} ${INTAKE_GUIDE} ${APPOINTMENT_REPLY_GUIDE} أكّد التفاصيل قبل تنفيذ أي إجراء.`,
+  [Role.PATIENT]: `أنت تتحدث مع مريض. يمكنك مساعدته في: معرفة الخدمات وأسعارها وعروضها، ${solo ? "" : "البحث عن طبيب أو مقدم خدمة، "}عرض مواعيد العمل والفترات المتاحة، حجز/إلغاء/إعادة جدولة موعد، عرض مواعيده وباقاته ورصيدها، طلب شراء باقة، وتحديث بياناته، ومعرفة معلومات الفروع والعيادة. ${branchInfoGuide(solo)} ${bookingFlow(solo)} ${HEALTH_PROFILE_GUIDE} ${APPOINTMENT_REPLY_GUIDE} أكّد التفاصيل قبل تنفيذ أي إجراء.`,
   // Team members and doctors have no assistant of their own (they work from
   // their dashboards) — the agent only informs them, it never acts for them.
   [Role.DOCTOR]: teamMemberGuide(solo),

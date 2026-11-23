@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { X, Clock, CheckCircle, AlertCircle, LogIn, Users, ClipboardList } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -14,10 +13,16 @@ import {
   getAvailableDaysAction,
   getAvailableSlotsAction,
   getOrderBookingInfoAction,
-  myIntakeStatusAction,
-  saveMyIntakeAction,
+  myHealthProfileStatusAction,
+  saveMyHealthAnswersAction,
 } from "@/server/actions/patient";
-import { EMPTY_INTAKE, INTAKE_FIELDS, intakeSchema, type IntakeValues } from "@/lib/patient-intake";
+import {
+  formValuesToAnswers,
+  missingRequired,
+  toFormValues,
+  type HealthQuestionView,
+} from "@/lib/health-profile";
+import HealthQuestionsForm from "@/components/health-profile/health-questions-form";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -213,23 +218,34 @@ export function BookAppointmentModal({
   const [bookedArrival, setBookedArrival] = useState(false);
   const [bookingError, setBookingError] = useState("");
 
-  // First booking at this clinic: the patient fills their intake file on the
-  // confirm step (the booking actions refuse without it). Not for staff
-  // booking on a patient's behalf (onBook).
-  const [intakeRequired, setIntakeRequired] = useState(false);
-  const intakeForm = useForm<IntakeValues>({
-    resolver: zodResolver(intakeSchema),
-    defaultValues: EMPTY_INTAKE,
-    mode: "onTouched",
-  });
+  // First booking at this clinic: the patient answers the clinic's REQUIRED
+  // health-profile questions on the confirm step (the booking actions refuse
+  // without them). Not for staff booking on a patient's behalf (onBehalf).
+  // Only questions missing when the modal opened are shown, plus any required
+  // follow-up revealed as the patient answers its yes/no parent.
+  const [healthQuestions, setHealthQuestions] = useState<HealthQuestionView[]>([]);
+  const [healthAsk, setHealthAsk] = useState<Set<string>>(new Set());
+  const [healthValues, setHealthValues] = useState<Record<string, string>>({});
+  const healthRequired = healthAsk.size > 0;
   useEffect(() => {
     if (needsAuth || onBehalf) return;
     let cancelled = false;
-    myIntakeStatusAction()
+    myHealthProfileStatusAction()
       .then((status) => {
         if (cancelled || !status.required) return;
-        setIntakeRequired(true);
-        intakeForm.reset({ ...EMPTY_INTAKE, fullName: status.fullName });
+        setHealthQuestions(status.questions);
+        setHealthValues(toFormValues(status.answers));
+        // Ask the missing ones + the required follow-ups of those (each shown
+        // only once its parent's answer reveals it).
+        const missing = new Set(status.missingIds);
+        setHealthAsk(
+          new Set([
+            ...missing,
+            ...status.questions
+              .filter((q) => q.parentId && q.required && missing.has(q.parentId))
+              .map((q) => q.id),
+          ])
+        );
       })
       .catch(() => {
         // Unknown → leave it to the booking action, which re-checks.
@@ -338,18 +354,25 @@ export function BookAppointmentModal({
     setBookingError("");
     startTransition(async () => {
       const notes = notesForm.getValues("notes").trim();
-      // Save the intake file first; the booking actions require it.
-      if (!onBook && intakeRequired) {
-        if (!(await intakeForm.trigger())) {
-          setBookingError("برجاء استكمال جميع بيانات ملف المريض");
+      // Save the health-profile answers first; the booking actions require them.
+      if (!onBook && healthRequired) {
+        const asked = healthQuestions.filter((q) => healthAsk.has(q.id));
+        const missing = missingRequired(
+          [{ id: "", title: "", description: null, archived: false, questions: healthQuestions }],
+          formValuesToAnswers(healthQuestions, healthValues)
+        ).filter((q) => healthAsk.has(q.id));
+        if (missing.length > 0) {
+          setBookingError("برجاء الإجابة على جميع الأسئلة المطلوبة في ملف المريض");
           return;
         }
-        const saved = await saveMyIntakeAction(intakeForm.getValues());
+        const saved = await saveMyHealthAnswersAction(
+          Object.fromEntries(asked.map((q) => [q.id, healthValues[q.id] ?? null]))
+        );
         if (!saved.ok) {
           setBookingError(saved.error ?? "تعذّر حفظ ملف المريض");
           return;
         }
-        setIntakeRequired(false);
+        setHealthAsk(new Set());
       }
       if (onBook) {
         const res = await onBook(selection, notes, items());
@@ -681,7 +704,7 @@ export function BookAppointmentModal({
                 onPackage={(serviceId, ppId) => setPackageFor((m) => ({ ...m, [serviceId]: ppId }))}
               />
 
-              {intakeRequired && (
+              {healthRequired && (
                 <div className="flex flex-col gap-4 rounded-xl border border-accent/30 bg-accent/5 p-4">
                   <div>
                     <p className="flex items-center gap-2 font-heading text-sm font-bold text-text">
@@ -689,22 +712,16 @@ export function BookAppointmentModal({
                       ملف المريض
                     </p>
                     <p className="mt-1 font-sans text-xs leading-relaxed text-text/60">
-                      لأنه أول حجز لك لدينا، برجاء استكمال البيانات التالية ليطّلع عليها الطبيب.
+                      لأنه أول حجز لك لدينا، برجاء الإجابة على الأسئلة التالية ليطّلع عليها الطبيب.
                     </p>
                   </div>
-                  {INTAKE_FIELDS.map((f) => (
-                    <FormField
-                      key={f.key}
-                      type={f.multiline ? "textarea" : "text"}
-                      {...(f.multiline ? { rows: 2 } : {})}
-                      label={f.question}
-                      labelClassName="text-text"
-                      control={intakeForm.control}
-                      name={f.key}
-                      required
-                      controlClassName="bg-white text-text placeholder:text-text/30 focus-visible:border-accent focus-visible:ring-accent/20"
-                    />
-                  ))}
+                  <HealthQuestionsForm
+                    tone="landing"
+                    questions={healthQuestions}
+                    values={healthValues}
+                    onChange={(id, v) => setHealthValues((m) => ({ ...m, [id]: v }))}
+                    include={(q) => healthAsk.has(q.id)}
+                  />
                 </div>
               )}
 
