@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ok, err, type Result } from "./_result";
 import { settleSessionLines } from "./packages";
 import { AppointmentStatus, AvailabilityMode, DayOfWeek, QueueCapType } from "@prisma/client";
-import { QUEUE_MODES, isArrivalMode } from "@/lib/availability/modes";
+import { DAY_BOOKED_MODES, isArrivalMode } from "@/lib/availability/modes";
 
 // getUTCDay() index → DayOfWeek enum.
 const DAY_BY_INDEX: DayOfWeek[] = [
@@ -25,8 +25,8 @@ export function toDateOnly(date: Date): Date {
 }
 
 /**
- * Find the active queue-based (ORDER_BASED or ARRIVAL_BASED) availability rule
- * that applies to a doctor on a given date. When branchId is given it must
+ * Find the active day-booked (ORDER_BASED, ARRIVAL_BASED or DAY_ONLY) availability
+ * rule that applies to a doctor on a given date. When branchId is given it must
  * match; otherwise the first queue rule for that weekday is used. The returned
  * rule carries its `mode`, which callers branch on (arrival vs order booking).
  */
@@ -42,7 +42,7 @@ export async function getOrderRuleForDate(
       doctorId,
       dayOfWeek,
       isActive: true,
-      mode: { in: QUEUE_MODES },
+      mode: { in: DAY_BOOKED_MODES },
       AND: [branchId ? { branchId } : {}, branchIdFilter(branchScope)],
     },
     orderBy: { startTime: "asc" },
@@ -54,6 +54,7 @@ export interface OrderBookingResult {
   mode: AvailabilityMode;
   // ORDER_BASED: the queue position handed out now. ARRIVAL_BASED: null — the
   // patient only reserves; the order number is assigned at check-in by arrival.
+  // DAY_ONLY: always null — the team sets an exact time instead.
   orderNumber: number | null;
   bookingDate: Date;
   estimatedDurationMin: number | null;
@@ -77,7 +78,7 @@ export function estimateWaitMinutes(
 
 export interface OrderBookingInfo {
   available: boolean;
-  mode: AvailabilityMode; // ORDER_BASED or ARRIVAL_BASED
+  mode: AvailabilityMode; // ORDER_BASED, ARRIVAL_BASED or DAY_ONLY
   ruleId: string;
   branchId: string | null;
   /** How the day is capped: NONE, PATIENTS (dailyCap) or MINUTES (dailyCapMinutes). */
@@ -173,6 +174,7 @@ export async function getDayQueue(
           status: true,
           skippedAt: true,
           arrivedAt: true,
+          scheduledTime: true,
           patientNotes: true,
           totalDurationMin: true,
           estimatedDurationMin: true,

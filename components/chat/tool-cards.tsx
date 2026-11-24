@@ -208,6 +208,18 @@ function AppointmentCard({ result }: { result: R }) {
             {timeText ? ` — ${timeText}` : ""}
           </p>
         )}
+        {result.bookingType === "day" && (
+          <p>
+            الوقت:{" "}
+            {result.scheduledTime ? (
+              <span className="font-medium" dir="ltr">
+                {String(result.scheduledTime)}
+              </span>
+            ) : (
+              <span className="text-amber-700">سيتواصل معك فريق العيادة لتحديد الوقت المناسب</span>
+            )}
+          </p>
+        )}
         {result.bookingType === "order" && result.orderNumber != null && (
           <p>
             رقم الدور: <span className="font-medium">{String(result.orderNumber)}</span>
@@ -369,9 +381,13 @@ function AppointmentListCard({ result }: { result: R }) {
               {String(a.date ?? "")}
               {a.time
                 ? ` — ${String(a.time)}`
-                : a.orderNumber != null
-                  ? ` — دور رقم ${String(a.orderNumber)}`
-                  : ""}
+                : a.scheduledTime
+                  ? ` — ${String(a.scheduledTime)}`
+                  : a.bookingType === "day"
+                    ? " — بانتظار تحديد الوقت"
+                    : a.orderNumber != null
+                      ? ` — دور رقم ${String(a.orderNumber)}`
+                      : ""}
               {a.branch ? ` · ${String(a.branch)}` : ""}
             </p>
           </div>

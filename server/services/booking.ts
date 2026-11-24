@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import type { BranchScope } from "@/lib/branch-scope";
 import { pricingUsesUnits, tierForQuantity } from "@/lib/catalog";
 import { applyOffer, dayKey } from "@/lib/offers";
-import { isArrivalMode } from "@/lib/availability/modes";
+import { isArrivalMode, isDayOnlyMode, normalizeHHMM } from "@/lib/availability/modes";
 import { loadLiveOffers, offerForItem, type LiveOffer } from "./offers";
 import {
   PackageCreditError,
@@ -300,6 +300,7 @@ function sessionWindow(day: Date, start: string, end: string): [number, number] 
 /**
  * Refuse a booking whose time window overlaps another active booking of the
  * patient (any doctor). Queue bookings count as their whole session window.
+ * DAY_ONLY bookings are ignored: their timing is the clinic's responsibility.
  */
 async function patientOverlap(
   patientId: string,
@@ -319,11 +320,12 @@ async function patientOverlap(
       slot: { select: { startTime: true, endTime: true } },
       heldSlots: { select: { startTime: true, endTime: true } },
       bookingDate: true,
-      rule: { select: { startTime: true, endTime: true } },
+      rule: { select: { startTime: true, endTime: true, mode: true } },
       doctor: { select: { fullName: true } },
     },
   });
   for (const r of rows) {
+    if (isDayOnlyMode(r.rule?.mode)) continue;
     let w: [number, number] | null = null;
     if (r.heldSlots.length) {
       w = [
@@ -552,6 +554,9 @@ export interface QueueBookingInput {
   status?: AppointmentStatus;
   /** The team member booking it — see SlotBookingInput.actorUserId. */
   actorUserId?: string | null;
+  /** Day-only: the exact time, when the team already agreed it ("HH:MM").
+   *  Ignored for the queue modes. */
+  scheduledTime?: string | null;
 }
 
 /** Books a queue (order / arrival) visit, then alerts the team (#89). */
@@ -577,7 +582,8 @@ async function bookQueueAppointmentCore(
     return err("الطبيب غير موجود");
 
   const rule = await getOrderRuleForDate(input.doctorId, day, input.branchId, input.branchScope);
-  if (!rule) return err("هذا الطبيب لا يعمل بنظام الدور أو أسبقية الحضور في هذا اليوم");
+  if (!rule)
+    return err("هذا الطبيب لا يعمل بنظام الدور أو أسبقية الحضور أو حجز اليوم في هذا اليوم");
   if (!rule.branchId) return err("قاعدة الدور بدون فرع محدد");
   const branchId = rule.branchId;
   const ruleServices = await prisma.ruleService.findMany({
@@ -595,14 +601,19 @@ async function bookQueueAppointmentCore(
   const booking = resolved.data;
   const minutes = booking.totalDurationMin;
 
-  const overlap = await patientOverlap(
-    input.patientId,
-    day,
-    sessionWindow(day, rule.startTime, rule.endTime)
-  );
-  if (overlap) return err(overlap);
+  // Day-only: the team sets the time later and owns any overlap — no guard.
+  if (!isDayOnlyMode(rule.mode)) {
+    const overlap = await patientOverlap(
+      input.patientId,
+      day,
+      sessionWindow(day, rule.startTime, rule.endTime)
+    );
+    if (overlap) return err(overlap);
+  }
 
-  const arrival = isArrivalMode(rule.mode);
+  // Arrival-priority gets its number at check-in; day-only never gets one (the
+  // team sets an exact time instead). Both just claim a place under the cap.
+  const noOrderNumber = isArrivalMode(rule.mode) || isDayOnlyMode(rule.mode);
   try {
     const result = await prisma.$transaction(async (tx) => {
       const queue =
@@ -638,7 +649,7 @@ async function bookQueueAppointmentCore(
       if (bumped.count === 0) return { capped: true as const, capType: queue.capType };
 
       const after = await tx.doctorDayQueue.findUniqueOrThrow({ where: { id: queue.id } });
-      const orderNumber = arrival ? null : after.nextOrder - 1;
+      const orderNumber = noOrderNumber ? null : after.nextOrder - 1;
       const appt = await tx.appointment.create({
         data: {
           clinicId: doctor.clinicId,
@@ -650,6 +661,7 @@ async function bookQueueAppointmentCore(
           bookingDate: day,
           orderNumber,
           estimatedDurationMin: minutes,
+          scheduledTime: isDayOnlyMode(rule.mode) ? normalizeHHMM(input.scheduledTime) : null,
           status: input.status ?? AppointmentStatus.PENDING,
           ...(input.status === AppointmentStatus.CONFIRMED ? { confirmedAt: new Date() } : {}),
           patientNotes: input.notes ?? null,
@@ -889,4 +901,229 @@ export function fittingStartSlots<T extends SlotLike>(
     }
   }
   return out.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+}
+
+// ─── Day-only: staff move the visit to another day ────────────────────────────
+
+const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"] as const;
+
+/** A day the doctor works in DAY_ONLY mode — a valid target for a day-only move. */
+export interface DayOnlyDate {
+  date: string; // "YYYY-MM-DD"
+  branchId: string;
+  branchName: string;
+  startTime: string;
+  endTime: string;
+}
+
+/**
+ * The doctor's upcoming DAY_ONLY days (inside the staff member's branch scope),
+ * for the "change date" picker. Unlike patient booking, full days are listed
+ * too: staff may book past the daily cap (they get a warning).
+ */
+export async function listDayOnlyDates(
+  doctorId: string,
+  branchScope?: BranchScope,
+  daysAhead = 60
+): Promise<DayOnlyDate[]> {
+  const rules = await prisma.availabilityRule.findMany({
+    where: {
+      doctorId,
+      isActive: true,
+      mode: "DAY_ONLY",
+      branchId: branchScope == null ? { not: null } : { in: [...branchScope] },
+    },
+    select: {
+      dayOfWeek: true,
+      startTime: true,
+      endTime: true,
+      branchId: true,
+      branch: { select: { name: true } },
+    },
+    orderBy: { startTime: "asc" },
+  });
+  const out: DayOnlyDate[] = [];
+  const cur = toDateOnly(new Date());
+  for (let i = 0; i <= daysAhead; i++) {
+    const dow = WEEKDAYS[cur.getUTCDay()];
+    for (const r of rules) {
+      if (r.dayOfWeek !== dow || !r.branchId) continue;
+      out.push({
+        date: dayKey(cur),
+        branchId: r.branchId,
+        branchName: r.branch?.name ?? "",
+        startTime: r.startTime,
+        endTime: r.endTime,
+      });
+    }
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return out;
+}
+
+export interface MoveDayOnlyResult {
+  bookingDate: string;
+  scheduledTime: string | null;
+  /** Soft warnings (over the day's cap, time outside the hours) — saved anyway. */
+  warnings: string[];
+}
+
+/**
+ * Staff change the DATE (and optionally the time) of a DAY_ONLY appointment.
+ * The new date must be one of the doctor's DAY_ONLY days (per their rules, in
+ * the staff member's branch scope); the time is free (warning if outside the
+ * day's hours). The day's cap does not block staff — they get a warning. The
+ * visit keeps its services and booked prices; a package line must still be
+ * usable on the new day (same branch, not expired). The patient isn't messaged;
+ * a reminder already sent for the old date is re-armed for the new one.
+ */
+export async function moveDayOnlyAppointment(input: {
+  appointmentId: string;
+  /** "YYYY-MM-DD" */
+  date: string;
+  /** "HH:MM", or null to leave the time for the team to set later. */
+  time: string | null;
+  clinicId: string;
+  branchScope?: BranchScope;
+  /** Prefer this branch when the doctor has several DAY_ONLY rules that weekday. */
+  branchId?: string | null;
+}): Promise<Result<MoveDayOnlyResult>> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) return err("صيغة التاريخ غير صحيحة");
+  const day = toDateOnly(new Date(input.date));
+  if (Number.isNaN(day.getTime())) return err("صيغة التاريخ غير صحيحة");
+  if (day < toDateOnly(new Date())) return err("لا يمكن نقل الموعد إلى يوم مضى");
+  const time = input.time == null || input.time.trim() === "" ? null : normalizeHHMM(input.time);
+  if (input.time != null && input.time.trim() !== "" && time == null)
+    return err("صيغة الوقت غير صحيحة (مثال: 14:30)");
+
+  const appt = await prisma.appointment.findFirst({
+    where: { id: input.appointmentId, clinicId: input.clinicId },
+    select: {
+      id: true,
+      doctorId: true,
+      branchId: true,
+      status: true,
+      bookingDate: true,
+      queueId: true,
+      totalDurationMin: true,
+      estimatedDurationMin: true,
+      rule: { select: { mode: true } },
+      items: {
+        select: {
+          serviceId: true,
+          patientPackage: { select: { branchId: true, expiresAt: true, name: true } },
+        },
+      },
+    },
+  });
+  if (!appt) return err("الموعد غير موجود");
+  if (!isDayOnlyMode(appt.rule?.mode)) return err("هذا الموعد ليس من نوع حجز اليوم فقط");
+  if (!ACTIVE_STATUSES.includes(appt.status as (typeof ACTIVE_STATUSES)[number]))
+    return err("لا يمكن تعديل موعد منتهٍ أو ملغى");
+
+  // The doctor's DAY_ONLY rule for that weekday (prefer the requested / current branch).
+  const rules = await prisma.availabilityRule.findMany({
+    where: {
+      doctorId: appt.doctorId,
+      isActive: true,
+      mode: "DAY_ONLY",
+      dayOfWeek: WEEKDAYS[day.getUTCDay()],
+      branchId: input.branchScope == null ? { not: null } : { in: [...input.branchScope] },
+    },
+    include: { services: { select: { serviceId: true } } },
+    orderBy: { startTime: "asc" },
+  });
+  const rule =
+    rules.find((r) => r.branchId === input.branchId) ??
+    rules.find((r) => r.branchId === appt.branchId) ??
+    rules[0];
+  if (!rule || !rule.branchId)
+    return err("الطبيب لا يعمل بنظام حجز اليوم في هذا اليوم. اختر يوماً من أيام عمله.");
+  const branchId = rule.branchId;
+
+  // The visit's services must be offered on that rule (rules may be limited).
+  if (rule.services.length) {
+    const allowed = new Set(rule.services.map((s) => s.serviceId));
+    if (appt.items.some((i) => i.serviceId && !allowed.has(i.serviceId)))
+      return err("بعض خدمات هذا الموعد غير متاحة مع الطبيب في هذا اليوم");
+  }
+  // A package line must still be usable on the new day.
+  for (const i of appt.items) {
+    const pkg = i.patientPackage;
+    if (!pkg) continue;
+    if (pkg.branchId !== branchId)
+      return err(`باقة «${pkg.name}» خاصة بفرع آخر — لا يمكن نقل الموعد لهذا الفرع`);
+    if (dayKey(pkg.expiresAt) < dayKey(day)) return err(`باقة «${pkg.name}» تنتهي قبل هذا اليوم`);
+  }
+
+  const minutes = appt.totalDurationMin ?? appt.estimatedDurationMin ?? 0;
+  const sameDay =
+    appt.bookingDate != null &&
+    dayKey(appt.bookingDate) === dayKey(day) &&
+    appt.branchId === branchId;
+  const warnings: string[] = [];
+
+  await prisma.$transaction(async (tx) => {
+    let queueId = appt.queueId;
+    if (!sameDay) {
+      const doctor = await tx.doctor.findUniqueOrThrow({
+        where: { id: appt.doctorId },
+        select: { clinicId: true },
+      });
+      const queue =
+        (await tx.doctorDayQueue.findUnique({
+          where: { doctorId_branchId_date: { doctorId: appt.doctorId, branchId, date: day } },
+        })) ??
+        (await tx.doctorDayQueue.create({
+          data: {
+            clinicId: doctor.clinicId,
+            doctorId: appt.doctorId,
+            branchId,
+            ruleId: rule.id,
+            date: day,
+            capType: rule.capType,
+            dailyCap: rule.dailyCap,
+            dailyCapMinutes: rule.dailyCapMinutes,
+          },
+        }));
+      // Staff may go past the cap: claim the place unguarded, warn if over.
+      const after = await tx.doctorDayQueue.update({
+        where: { id: queue.id },
+        data: { nextOrder: { increment: 1 }, bookedMinutes: { increment: minutes } },
+      });
+      if (
+        after.capType === QueueCapType.PATIENTS &&
+        after.dailyCap != null &&
+        after.nextOrder - 1 > after.dailyCap
+      )
+        warnings.push(
+          `تنبيه: تجاوز هذا اليوم الحد اليومي (${after.nextOrder - 1} من ${after.dailyCap} حجز).`
+        );
+      // Give the old day its minutes back (the order counter is never rewound).
+      if (appt.queueId && minutes > 0)
+        await tx.doctorDayQueue.updateMany({
+          where: { id: appt.queueId, bookedMinutes: { gte: minutes } },
+          data: { bookedMinutes: { decrement: minutes } },
+        });
+      queueId = queue.id;
+    }
+    await tx.appointment.update({
+      where: { id: appt.id },
+      data: {
+        bookingDate: day,
+        branchId,
+        ruleId: rule.id,
+        queueId,
+        scheduledTime: time,
+        // A reminder sent for the old date no longer applies.
+        ...(!sameDay && { reminderSentAt: null }),
+      },
+    });
+  });
+
+  if (time != null && (time < rule.startTime || time >= rule.endTime))
+    warnings.push(
+      `تنبيه: الوقت ${time} خارج ساعات عمل الطبيب في هذا اليوم (${rule.startTime} – ${rule.endTime}). تم الحفظ.`
+    );
+  return ok({ bookingDate: dayKey(day), scheduledTime: time, warnings });
 }

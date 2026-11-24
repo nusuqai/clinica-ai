@@ -7,6 +7,7 @@ import { confirmTools, proposeTool, type StaffToolContext } from "./pending";
 import { staffReadTools } from "./reads";
 import { STAFF_WRITE_ACTIONS } from "./writes";
 import { DOCTOR_WRITE_ACTIONS, doctorReadTools } from "./doctor";
+import { exportTools } from "./export";
 
 // Patient-facing info tools the team still needs (dates, doctors, schedules,
 // availability for booking, services for the booked items).
@@ -43,6 +44,7 @@ export function getStaffTools(ctx: AgentContext): DynamicStructuredTool[] {
     ...info,
     ...(canBook ? serviceTools(ctx.clinicId) : []),
     ...reads,
+    ...exportTools(sctx),
     ...writes.map((w) => proposeTool(sctx, w)),
     ...(writes.length ? confirmTools(sctx, writes) : []),
   ];

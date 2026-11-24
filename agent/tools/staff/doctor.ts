@@ -9,7 +9,7 @@ import * as DoctorService from "@/server/services/doctors";
 import { jsonTool, pageField, pageInfo } from "../shared";
 import type { StaffToolContext, WriteAction } from "./pending";
 import { appointmentBrief, appointmentBriefs, briefLine, dateField, statusLabel } from "./helpers";
-import { checkInAction } from "./writes";
+import { checkInAction, setTimeAction } from "./writes";
 import { medicalFile } from "./reads";
 
 /**
@@ -129,4 +129,5 @@ const updateMyStatus: WriteAction<typeof myStatusSchema> = {
 export const DOCTOR_WRITE_ACTIONS: WriteAction[] = [
   updateMyStatus,
   checkInAction("doctor"),
+  setTimeAction("doctor"),
 ] as WriteAction[];

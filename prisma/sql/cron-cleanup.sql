@@ -2,9 +2,11 @@
 -- Daily housekeeping for the pg_cron jobs — Supabase pg_cron
 -- ============================================================================
 --
--- Run ONCE per environment in the Supabase SQL editor, after
--- debounce-pgcron.sql / staff-alerts-pgcron.sql (and the staff_assistant
--- migration). Idempotent: re-running reschedules the same job.
+-- Mirrors the `purge-cron-history` job running on prod (jobid 3). Run it in the
+-- Supabase SQL editor on any new environment, after debounce-pgcron.sql /
+-- staff-alerts-pgcron.sql and the staff_assistant migration. Idempotent:
+-- cron.schedule with an existing job name REPLACES that job, it never adds a
+-- second one.
 --
 -- Why: pg_cron logs every run in cron.job_run_details and never prunes it. The
 -- debounce job ticks every 15s (~5,760 rows/day) and the team-alert sweep every
@@ -15,9 +17,11 @@
 -- pruned automatically (pg_net.ttl, 6 hours by default).
 --
 -- Retention:
---   cron.job_run_details   7 days   (enough to debug a failing job)
+--   cron.job_run_details   2 days   (enough to debug a failing job)
 --   staff_notifications    30 days after delivery (undelivered ones are kept)
 --   staff_pending_actions  7 days after being used, dropped or expiring
+--   data_report_deliveries 30 days (the Excel itself is never stored; these
+--                          are only send records — needs the data_export migration)
 --
 -- App tables store UTC in `timestamp` (no time zone) columns, so they are
 -- compared with (now() at time zone 'utc'). cron.job_run_details uses timestamptz.
@@ -25,16 +29,13 @@
 
 create extension if not exists pg_cron;
 
-select cron.unschedule('cron-cleanup')
-where exists (select 1 from cron.job where jobname = 'cron-cleanup');
-
--- 03:30 UTC daily — a quiet hour for clinics in the region.
+-- 03:00 UTC daily.
 select cron.schedule(
-  'cron-cleanup',
-  '30 3 * * *',
+  'purge-cron-history',
+  '0 3 * * *',
   $$
     delete from cron.job_run_details
-    where end_time < now() - interval '7 days';
+    where end_time < now() - interval '2 days';
 
     delete from staff_notifications
     where "sentAt" is not null
@@ -42,10 +43,16 @@ select cron.schedule(
 
     delete from staff_pending_actions
     where coalesce("consumedAt", "expiresAt") < (now() at time zone 'utc') - interval '7 days';
+
+    delete from data_report_deliveries
+    where "createdAt" < (now() at time zone 'utc') - interval '30 days';
   $$
 );
 
--- Inspect / run now / stop:
---   select * from cron.job_run_details where jobid = (select jobid from cron.job where jobname='cron-cleanup') order by start_time desc limit 10;
---   select count(*) from cron.job_run_details;
---   select cron.unschedule('cron-cleanup');
+-- Inspect / stop:
+--   select jobid, jobname, schedule, active from cron.job order by jobid;
+--   select status, return_message, start_time from cron.job_run_details
+--     where jobid = (select jobid from cron.job where jobname = 'purge-cron-history')
+--     order by start_time desc limit 10;
+--   select count(*), min(start_time) from cron.job_run_details;
+--   select cron.unschedule('purge-cron-history');  -- to stop it

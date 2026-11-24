@@ -1,5 +1,6 @@
 import "server-only";
 import { AppointmentStatus } from "@prisma/client";
+import { modeTag, type DayModeTag } from "@/lib/availability/modes";
 import type { BranchScope } from "@/lib/branch-scope";
 import { normalizePhone, isValidPhone } from "@/lib/phone";
 import * as AppointmentService from "./appointments";
@@ -29,13 +30,15 @@ export interface BookOnBehalfInput {
   notes?: string;
   /** The services booked (default: the doctor's كشف). */
   items?: BookingService.BookingItemRequest[];
+  /** Day-only day: the exact time already agreed with the patient ("HH:MM"). */
+  scheduledTime?: string | null;
 }
 
 export type BookOnBehalfResult =
   | {
       ok: true;
       appointmentId: string;
-      mode?: "order" | "arrival";
+      mode?: DayModeTag;
       orderNumber?: number | null;
     }
   | { ok: false; error: string };
@@ -74,7 +77,7 @@ export async function bookOnBehalf(input: BookOnBehalfInput): Promise<BookOnBeha
   }
 
   let appointmentId: string;
-  let mode: "order" | "arrival" | undefined;
+  let mode: DayModeTag | undefined;
   let orderNumber: number | null | undefined;
   if (input.slotId) {
     const res = await AppointmentService.createAppointment(patientId, input.slotId, input.notes, {
@@ -95,10 +98,11 @@ export async function bookOnBehalf(input: BookOnBehalfInput): Promise<BookOnBeha
       branchScope: scope,
       items: input.items,
       actorUserId: input.actorUserId,
+      scheduledTime: input.scheduledTime,
     });
     if (!res.ok) return { ok: false, error: res.error };
     appointmentId = res.data.id;
-    mode = res.data.mode === "ARRIVAL_BASED" ? "arrival" : "order";
+    mode = modeTag(res.data.mode) as DayModeTag;
     orderNumber = res.data.orderNumber;
   } else {
     return { ok: false, error: "يرجى اختيار موعد" };

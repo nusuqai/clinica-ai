@@ -22,6 +22,7 @@ import { formatFee } from "@/lib/currency";
 import * as Packages from "@/server/services/packages";
 import { listCategories } from "@/server/services/catalog";
 import { creditLineText, PATIENT_PACKAGE_STATUS_LABEL, PAYMENT_STATUS_LABEL } from "@/lib/packages";
+import { DAY_ONLY_PATIENT_NOTE_AR } from "@/lib/availability/modes";
 import {
   jsonTool,
   dateStr,
@@ -52,8 +53,13 @@ async function appointmentCard(appointmentId: string) {
     branchAddress: a.branch?.address ?? null,
     // Slot-based bookings carry a fixed time; order-based carry a queue number;
     // arrival-priority (أسبقية الحضور) reserve a place and get a number on arrival.
-    bookingType: a.arrivalBased ? "arrival" : a.isOrderBased ? "order" : "slot",
+    bookingType: a.dayOnly ? "day" : a.arrivalBased ? "arrival" : a.isOrderBased ? "order" : "slot",
     arrived: a.arrived, // arrival-priority: whether the patient has been checked in
+    // Day-only (حجز يوم فقط): the time the team set, or null = the team will call.
+    ...(a.dayOnly && {
+      scheduledTime: a.scheduledTime,
+      ...(a.scheduledTime == null && { note: DAY_ONLY_PATIENT_NOTE_AR }),
+    }),
     date: a.slot ? dateStr(a.slot.date) : a.bookingDate ? dateStr(a.bookingDate) : null,
     startTime: a.slot ? timeStr(a.slot.startTime) : null,
     endTime: a.slot ? timeStr(a.slot.endTime) : null,
@@ -186,7 +192,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "book_order_appointment",
         description:
-          "احجز دوراً للمريض الحالي لدى طبيب يعمل بنظام الدور أو بأسبقية الحضور في تاريخ محدّد (YYYY-MM-DD). لا يوجد وقت ثابت. استخدم get_doctor_availability أولاً وتأكّد أن اليوم من نوع طابور. إن كان mode=order يحصل المريض على رقم دور فوراً. وإن كان mode=arrival (أسبقية الحضور) فهو يحجز مكاناً فقط ولا يحصل على رقم الآن؛ يُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور — أخبره بذلك.",
+          "احجز للمريض الحالي يوماً لدى طبيب يعمل بنظام الدور أو بأسبقية الحضور أو بحجز اليوم فقط في تاريخ محدّد (YYYY-MM-DD). لا يوجد وقت ثابت. استخدم get_doctor_availability أولاً وتأكّد أن mode ليس slot. إن كان mode=order يحصل المريض على رقم دور فوراً. وإن كان mode=arrival (أسبقية الحضور) فهو يحجز مكاناً فقط ولا يحصل على رقم الآن؛ يُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور — أخبره بذلك. وإن كان mode=day (حجز يوم فقط) فهو يحجز اليوم فقط: أخبره أن فريق خدمة العملاء سيتواصل معه لتحديد الوقت المناسب له، وأن الفريق سيثبّت الوقت الدقيق للموعد — ولا تَعِده بأي وقت.",
         schema: z.object({
           doctorId: z.string(),
           date: z
@@ -359,7 +365,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       {
         name: "list_my_appointments",
         description:
-          `اعرض مواعيد المريض الحالي (القادمة أو كلها). استخدمها أيضاً (مع upcoming=true) عندما يسأل المريض «ما هو دوري؟» أو «كم رقمي؟» أو «موعدي القادم». لكل موعد: bookingType (slot موعد بوقت ثابت، order نظام الدور، arrival أسبقية الحضور)، وorderNumber، وarrived. في أسبقية الحضور (arrival): إن كان arrived=false فلا رقم بعد — أخبر المريض أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور؛ وإن كان arrived=true فاذكر رقمه (orderNumber)، ومع تفعيل التتبّع اذكر الدور الجاري الآن (currentOrder) ومدة الانتظار التقديرية (estimatedWaitMin). القادمة تُعرض الأقرب أولاً، والسابقة الأحدث أولاً (٢٠ في الصفحة)؛ يمكن التصفية بالطبيب (doctorId) أو الحالة أو اليوم (YYYY-MM-DD). ${LIST_HINT}`,
+          `اعرض مواعيد المريض الحالي (القادمة أو كلها). استخدمها أيضاً (مع upcoming=true) عندما يسأل المريض «ما هو دوري؟» أو «كم رقمي؟» أو «موعدي القادم». لكل موعد: bookingType (slot موعد بوقت ثابت، order نظام الدور، arrival أسبقية الحضور، day حجز يوم فقط — scheduledTime هو الوقت الذي حدده فريق العيادة، وإن كان فارغاً فالفريق سيتواصل معه لتحديده)، وorderNumber، وarrived. في أسبقية الحضور (arrival): إن كان arrived=false فلا رقم بعد — أخبر المريض أنه سيحصل على رقم دوره عند وصوله للعيادة حسب أسبقية الحضور؛ وإن كان arrived=true فاذكر رقمه (orderNumber)، ومع تفعيل التتبّع اذكر الدور الجاري الآن (currentOrder) ومدة الانتظار التقديرية (estimatedWaitMin). القادمة تُعرض الأقرب أولاً، والسابقة الأحدث أولاً (٢٠ في الصفحة)؛ يمكن التصفية بالطبيب (doctorId) أو الحالة أو اليوم (YYYY-MM-DD). ${LIST_HINT}`,
         schema: z.object({
           upcoming: z.boolean().nullable().describe("true للمواعيد القادمة فقط"),
           doctorId: z.string().nullable().describe("معرّف الطبيب (اختياري)"),
@@ -417,8 +423,15 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
             doctorName: a.doctor.profile.fullName,
             specialty: a.doctor.specialty,
             branch: a.branch?.name ?? null,
-            bookingType: a.arrivalBased ? "arrival" : a.isOrderBased ? "order" : "slot",
+            bookingType: a.dayOnly
+              ? "day"
+              : a.arrivalBased
+                ? "arrival"
+                : a.isOrderBased
+                  ? "order"
+                  : "slot",
             arrived: a.arrived,
+            ...(a.dayOnly && { scheduledTime: a.scheduledTime }),
             date: a.slot
               ? dateStr(a.slot.date)
               : a.bookingDate

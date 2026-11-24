@@ -6,6 +6,7 @@ import type { AdminAppointment } from "@/server/services/appointments";
 import { getAllowedTransitions } from "@/lib/appointment-transitions";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Alert } from "@/components/ui/alert";
+import DayOnlyTime from "@/components/appointments/day-only-time";
 
 interface AppointmentCardProps {
   appointment: AdminAppointment;
@@ -82,6 +83,10 @@ function AppointmentCardContent({
           {formatSlotTime(appointment.slot.startTime)}
           {" – "}
           {formatSlotTime(appointment.slot.endTime)}
+        </p>
+      ) : appointment.dayOnly ? (
+        <p className="text-xs text-muted-foreground">
+          <DayOnlyTime time={appointment.scheduledTime} />
         </p>
       ) : appointment.orderNumber != null ? (
         <p className="text-xs text-muted-foreground">دور رقم {appointment.orderNumber}</p>

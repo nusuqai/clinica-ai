@@ -72,13 +72,31 @@ export interface TimedAppointment {
   slot: { startTime: Date; endTime: Date } | null;
   bookingDate: Date | null;
   rule: { startTime: string; endTime: string } | null;
+  /** Day-only bookings: the "HH:MM" the team set (null = not set yet). */
+  scheduledTime?: string | null;
+  /** The visit's minutes — with scheduledTime, gives the visit's end. */
+  totalDurationMin?: number | null;
+}
+
+/** bookingDate + a "HH:MM" wall-clock time, as a true UTC instant. */
+function dayAt(day: Date, hhmm: string, timeZone: string): Date {
+  const { hour, minute } = parseHHMM(hhmm);
+  return zonedWallTimeToUtc(
+    day.getUTCFullYear(),
+    day.getUTCMonth() + 1,
+    day.getUTCDate(),
+    hour,
+    minute,
+    timeZone
+  );
 }
 
 /**
  * The appointment's start as a true UTC instant, or null if it can't be
  * determined (e.g. an order-based booking missing its rule). Slot-based reads
- * the wall-clock components off the stored datetime; order-based combines the
- * booking date with the rule's start time.
+ * the wall-clock components off the stored datetime; a day-only booking whose
+ * time the team set uses that time; order-based (and day-only still waiting for
+ * a time) combines the booking date with the rule's start time.
  */
 export function effectiveStartUtc(appt: TimedAppointment, timeZone: string): Date | null {
   if (appt.slot) {
@@ -91,6 +109,9 @@ export function effectiveStartUtc(appt: TimedAppointment, timeZone: string): Dat
       s.getUTCMinutes(),
       timeZone
     );
+  }
+  if (appt.bookingDate && appt.scheduledTime) {
+    return dayAt(appt.bookingDate, appt.scheduledTime, timeZone);
   }
   if (appt.bookingDate && appt.rule) {
     const d = appt.bookingDate;
@@ -107,8 +128,19 @@ export function effectiveStartUtc(appt: TimedAppointment, timeZone: string): Dat
   return null;
 }
 
-/** The appointment's end as a true UTC instant (see effectiveStartUtc). */
+/**
+ * The appointment's end as a true UTC instant (see effectiveStartUtc). A
+ * day-only booking with a set time ends at that time + its minutes, but never
+ * before the rule's end — the team may set any time, and the no-show sweep must
+ * not close a visit the clinic placed late in (or after) the session.
+ */
 export function effectiveEndUtc(appt: TimedAppointment, timeZone: string): Date | null {
+  if (!appt.slot && appt.bookingDate && appt.scheduledTime) {
+    const start = dayAt(appt.bookingDate, appt.scheduledTime, timeZone);
+    const end = new Date(start.getTime() + Math.max(1, appt.totalDurationMin ?? 30) * 60_000);
+    const ruleEnd = appt.rule ? dayAt(appt.bookingDate, appt.rule.endTime, timeZone) : null;
+    return ruleEnd && ruleEnd > end ? ruleEnd : end;
+  }
   if (appt.slot) {
     const e = appt.slot.endTime;
     return zonedWallTimeToUtc(
@@ -133,4 +165,13 @@ export function effectiveEndUtc(appt: TimedAppointment, timeZone: string): Date 
     );
   }
   return null;
+}
+
+/**
+ * The true UTC instant a clinic-local calendar day ("YYYY-MM-DD") starts at —
+ * e.g. for "everything created on 2026-11-24 in Cairo". DST-correct.
+ */
+export function zonedDayStartUtc(day: string, timeZone: string): Date {
+  const [y, m, d] = day.split("-").map(Number);
+  return zonedWallTimeToUtc(y, m, d, 0, 0, timeZone);
 }

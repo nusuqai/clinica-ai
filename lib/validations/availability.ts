@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AvailabilityMode, DayOfWeek, QueueCapType } from "@prisma/client";
-import { isQueueMode } from "@/lib/availability/modes";
+import { isDayBookedMode, isDayOnlyMode, isQueueMode } from "@/lib/availability/modes";
 
 // The "new availability rule" form — shared by the add/edit doctor modals, the
 // admin doctor page and the doctor's own schedule page.
@@ -60,7 +60,7 @@ export interface RuleDraft {
   startTime: string;
   endTime: string;
   slotDurationMin: number;
-  /** SLOT_BASED (fixed times) or a queue mode. */
+  /** SLOT_BASED (fixed times), a queue mode, or DAY_ONLY. */
   mode: AvailabilityMode;
   /** Queue modes: estimated minutes per patient. */
   estimatedDurationMin: number | null;
@@ -80,6 +80,12 @@ export interface RuleDraft {
 /** Drop the queue-only numbers for slot rules, and empty notes. */
 export function toRuleDraft(v: RuleFormValues): RuleDraft {
   const queue = isQueueMode(v.mode);
+  // Queue modes + day-only carry a daily cap; day-only caps by patients only.
+  const capped = isDayBookedMode(v.mode);
+  const capType =
+    !capped || (isDayOnlyMode(v.mode) && v.capType === QueueCapType.MINUTES)
+      ? QueueCapType.NONE
+      : v.capType;
   return {
     branchId: v.branchId,
     dayOfWeek: v.dayOfWeek,
@@ -88,9 +94,9 @@ export function toRuleDraft(v: RuleFormValues): RuleDraft {
     slotDurationMin: v.slotDurationMin,
     mode: v.mode,
     estimatedDurationMin: queue ? v.estimatedDurationMin : null,
-    capType: queue ? v.capType : QueueCapType.NONE,
-    dailyCap: queue && v.capType === QueueCapType.PATIENTS ? v.dailyCap : null,
-    dailyCapMinutes: queue && v.capType === QueueCapType.MINUTES ? v.dailyCapMinutes : null,
+    capType,
+    dailyCap: capType === QueueCapType.PATIENTS ? v.dailyCap : null,
+    dailyCapMinutes: capType === QueueCapType.MINUTES ? v.dailyCapMinutes : null,
     serviceIds: v.serviceIds,
     referralOnly: v.referralOnly,
     note: v.note || null,

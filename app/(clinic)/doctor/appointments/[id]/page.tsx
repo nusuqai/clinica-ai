@@ -36,6 +36,7 @@ export default async function DoctorAppointmentDetailPage({ params }: PageProps)
       backHref="/doctor/appointments"
       backLabel="المواعيد"
       patientHistoryHref={`/doctor/patients/${appt.patient.id}`}
+      canSetTime
     />
   );
 }

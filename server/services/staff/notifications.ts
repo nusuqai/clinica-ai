@@ -262,6 +262,8 @@ async function appointmentLine(appointmentId: string) {
       doctorId: true,
       orderNumber: true,
       bookingDate: true,
+      scheduledTime: true,
+      rule: { select: { mode: true } },
       cancellationReason: true,
       patient: { select: { fullName: true } },
       doctor: { select: { fullName: true } },
@@ -273,7 +275,14 @@ async function appointmentLine(appointmentId: string) {
   const day = a.slot?.date ?? a.bookingDate;
   const when = [
     day ? formatSlotDate(day, { weekday: "long", day: "numeric", month: "short" }) : "",
-    a.slot ? formatSlotTime(a.slot.startTime) : a.orderNumber != null ? `دور ${a.orderNumber}` : "",
+    a.slot
+      ? formatSlotTime(a.slot.startTime)
+      : a.rule?.mode === "DAY_ONLY"
+        ? // Day-only: the team still has to call the patient to set the time.
+          (a.scheduledTime ?? "(حجز يوم — يحتاج تحديد الوقت)")
+        : a.orderNumber != null
+          ? `دور ${a.orderNumber}`
+          : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -408,11 +417,11 @@ export function summarizeAlerts(rows: { event: StaffEvent }[]): string {
 }
 
 /** Meta rejects template parameters with newlines, tabs or 4+ spaces. */
-function templateParam(value: string): string {
+export function templateParam(value: string): string {
   return oneLine(value.replace(/[\n\t]/g, " ").replace(/ {4,}/g, "   "), 900) || "-";
 }
 
-interface MemberTarget {
+export interface MemberTarget {
   memberId: string;
   clinicId: string;
   userId: string;
@@ -422,7 +431,7 @@ interface MemberTarget {
   linkConfigId: string | null;
 }
 
-async function loadTarget(memberId: string): Promise<MemberTarget | null> {
+export async function loadTarget(memberId: string): Promise<MemberTarget | null> {
   const m = await prisma.clinicMember.findUnique({
     where: { id: memberId },
     select: {
@@ -449,7 +458,7 @@ async function loadTarget(memberId: string): Promise<MemberTarget | null> {
 }
 
 /** The member's own WhatsApp assistant thread (where alerts are recorded). */
-async function staffThreadId(clinicId: string, userId: string): Promise<string | null> {
+export async function staffThreadId(clinicId: string, userId: string): Promise<string | null> {
   const conv = await prisma.conversation.findFirst({
     where: {
       clinicId,
@@ -463,7 +472,7 @@ async function staffThreadId(clinicId: string, userId: string): Promise<string |
 }
 
 /** The number the member linked through, else the clinic's main number. */
-async function targetTransport(t: MemberTarget): Promise<WhatsAppTransport | null> {
+export async function targetTransport(t: MemberTarget): Promise<WhatsAppTransport | null> {
   if (t.linkConfigId) {
     const byLink = await getWhatsappTransportById(t.clinicId, t.linkConfigId);
     if (byLink) return byLink;
@@ -473,7 +482,7 @@ async function targetTransport(t: MemberTarget): Promise<WhatsAppTransport | nul
 
 const WINDOW_MS = 24 * 60 * 60_000;
 
-async function windowOpen(conversationId: string | null): Promise<boolean> {
+export async function windowOpen(conversationId: string | null): Promise<boolean> {
   if (!conversationId) return false;
   const last = await prisma.message.findFirst({
     where: { conversationId, senderType: SenderType.USER },
@@ -485,7 +494,7 @@ async function windowOpen(conversationId: string | null): Promise<boolean> {
 
 /** Records an alert message in the member's thread so the assistant (and the
  *  member, scrolling back) see what was sent. */
-async function recordInThread(
+export async function recordInThread(
   clinicId: string,
   conversationId: string | null,
   text: string,

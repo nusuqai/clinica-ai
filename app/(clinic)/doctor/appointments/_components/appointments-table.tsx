@@ -24,6 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Hint } from "@/components/ui/tooltip";
+import DayOnlyTime from "@/components/appointments/day-only-time";
 
 type Row = DoctorAppointmentView & { hasRecord: boolean };
 
@@ -109,6 +110,8 @@ export default function AppointmentsTable({
                         {" – "}
                         {formatSlotTime(appt.slot.endTime)}
                       </>
+                    ) : appt.dayOnly ? (
+                      <DayOnlyTime time={appt.scheduledTime} />
                     ) : appt.orderNumber != null ? (
                       <span dir="rtl">دور رقم {appt.orderNumber}</span>
                     ) : (
