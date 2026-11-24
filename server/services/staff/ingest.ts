@@ -11,6 +11,7 @@ import {
   verifyLinkCode,
 } from "./link";
 import { flushMemberAlertsOnInbound } from "./notifications";
+import { flushMemberReportsOnInbound } from "@/server/services/exports/delivery";
 
 /**
  * Team assistant (#89) — the front of the WhatsApp inbound path, shared by the
@@ -115,6 +116,7 @@ export async function routeStaffInbound(
 
   // Their 24h window is open now: deliver anything waiting for them first.
   await flushMemberAlertsOnInbound(link.memberId);
+  await flushMemberReportsOnInbound(link.memberId);
 
   if (message.kind !== "text" && message.kind !== "voice") {
     await reply(creds, contact, UNSUPPORTED_NOTICE);

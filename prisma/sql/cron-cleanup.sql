@@ -20,6 +20,8 @@
 --   cron.job_run_details   2 days   (enough to debug a failing job)
 --   staff_notifications    30 days after delivery (undelivered ones are kept)
 --   staff_pending_actions  7 days after being used, dropped or expiring
+--   data_report_deliveries 30 days (the Excel itself is never stored; these
+--                          are only send records — needs the data_export migration)
 --
 -- App tables store UTC in `timestamp` (no time zone) columns, so they are
 -- compared with (now() at time zone 'utc'). cron.job_run_details uses timestamptz.
@@ -41,6 +43,9 @@ select cron.schedule(
 
     delete from staff_pending_actions
     where coalesce("consumedAt", "expiresAt") < (now() at time zone 'utc') - interval '7 days';
+
+    delete from data_report_deliveries
+    where "createdAt" < (now() at time zone 'utc') - interval '30 days';
   $$
 );
 

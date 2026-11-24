@@ -84,9 +84,21 @@ export const STAFF_EVENT_META: Record<
     personal: true,
     doctors: false,
   },
+  // Not an alert: the scheduled patient-data report (docs/data-export.md). Its
+  // recipients are chosen on the export page, so it is left out of
+  // STAFF_EVENTS (the alert routing list and the grouped digest).
+  DAILY_REPORT: {
+    label: "تقرير بيانات المرضى المجدول",
+    description: "ملف Excel بحركة المرضى يُرسل يومياً في الوقت المحدد",
+    heading: "التقرير اليومي",
+    short: "تقرير",
+    personal: false,
+    doctors: false,
+  },
 };
 
-/** Display order: routable events first, then the personal ones. */
+/** Display order: routable events first, then the personal ones. (DAILY_REPORT
+ *  is deliberately absent — see its entry above.) */
 export const STAFF_EVENTS: StaffEvent[] = [
   StaffEvent.AI_ESCALATION,
   StaffEvent.NEW_BOOKING,
