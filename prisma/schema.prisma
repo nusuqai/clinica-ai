@@ -860,6 +860,11 @@ enum AvailabilityMode {
   SLOT_BASED // fixed time slots — patient picks a specific time
   ORDER_BASED // queue / نظام الدور — sequential order numbers handed out at booking
   ARRIVAL_BASED // أسبقية الحضور — patient reserves; the order number is handed out at check-in, by physical arrival order
+  // حجز يوم فقط — the patient books the DAY only; the clinic team then contacts
+  // them and sets the exact time (Appointment.scheduledTime). No slots, no order
+  // numbers, no overlap checks: timing is the clinic's responsibility. Uses the
+  // DoctorDayQueue row only as the day's booking ledger (optional cap).
+  DAY_ONLY
 }
 
 model AvailabilityRule {
@@ -1000,6 +1005,11 @@ model Appointment {
   // clinic. Assigning arrivedAt is what hands out orderNumber. Null = reserved but
   // not yet arrived. Always null for SLOT_BASED / ORDER_BASED bookings.
   arrivedAt            DateTime?
+  // DAY_ONLY (حجز يوم فقط): the exact time the clinic team agreed with the
+  // patient, as clinic wall-clock "HH:MM" on bookingDate (same convention as
+  // AvailabilityRule.startTime). Null = still waiting for the team to set it.
+  // Free-form: never checked for overlaps. Always null for the other modes.
+  scheduledTime        String?
   status               AppointmentStatus @default(PENDING)
   // Order-based: set when the doctor temporarily skips this order (patient not
   // present). Keeps status PENDING; cleared on recall. Skipped orders are passed

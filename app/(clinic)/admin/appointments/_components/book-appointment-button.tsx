@@ -99,7 +99,7 @@ export default function BookAppointmentButton({ doctors }: { doctors: BookableDo
       doctorId: booking.doctor.id,
       ...(selection.mode === "SLOT_BASED"
         ? { slotId: selection.slot.id }
-        : { date: selection.date }),
+        : { date: selection.date, scheduledTime: selection.scheduledTime ?? null }),
       notes: notes || undefined,
       items,
     });

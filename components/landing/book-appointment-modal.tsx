@@ -36,6 +36,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatFee } from "@/lib/currency";
+import { Input } from "@/components/ui/input";
+import { DAY_ONLY_PATIENT_NOTE_AR } from "@/lib/availability/modes";
 import {
   getBookableServicesAction,
   previewBookingAction,
@@ -66,7 +68,7 @@ interface Slot {
   endTime: string;
 }
 
-type Mode = "SLOT_BASED" | "ORDER_BASED" | "ARRIVAL_BASED";
+type Mode = "SLOT_BASED" | "ORDER_BASED" | "ARRIVAL_BASED" | "DAY_ONLY";
 
 interface AvailableDay {
   date: string;
@@ -74,8 +76,9 @@ interface AvailableDay {
 }
 
 interface OrderInfo {
-  // "order" = number handed out now; "arrival" = number handed out at check-in.
-  mode: "order" | "arrival";
+  // "order" = number handed out now; "arrival" = number handed out at check-in;
+  // "day" = the day only — the clinic team calls to set the exact time.
+  mode: "order" | "arrival" | "day";
   available: boolean;
   remaining: number | null;
   nextOrderNumber: number;
@@ -90,7 +93,13 @@ type DayData = { kind: "slots"; slots: Slot[] } | { kind: "queue"; info: OrderIn
 /** What the patient has chosen to book, carried into the confirm step. */
 export type Selection =
   | { mode: "SLOT_BASED"; date: string; slot: Slot }
-  | { mode: "ORDER_BASED"; date: string; info: OrderInfo };
+  | {
+      mode: "ORDER_BASED";
+      date: string;
+      info: OrderInfo;
+      /** Day-only, booked by staff: the time already agreed with the patient. */
+      scheduledTime?: string;
+    };
 
 interface Props {
   doctor: Doctor;
@@ -118,7 +127,7 @@ interface Props {
 export interface BookResult {
   ok: boolean;
   error?: string;
-  mode?: "order" | "arrival";
+  mode?: "order" | "arrival" | "day";
   orderNumber?: number | null;
 }
 
@@ -216,6 +225,9 @@ export function BookAppointmentModal({
   const [success, setSuccess] = useState(false);
   const [bookedOrder, setBookedOrder] = useState<number | null>(null);
   const [bookedArrival, setBookedArrival] = useState(false);
+  const [bookedDay, setBookedDay] = useState(false);
+  // Day-only, booked by staff: optional time already agreed with the patient.
+  const [dayTime, setDayTime] = useState("");
   const [bookingError, setBookingError] = useState("");
 
   // First booking at this clinic: the patient answers the clinic's REQUIRED
@@ -375,9 +387,16 @@ export function BookAppointmentModal({
         setHealthAsk(new Set());
       }
       if (onBook) {
-        const res = await onBook(selection, notes, items());
+        const res = await onBook(
+          selection.mode === "ORDER_BASED" && selection.info.mode === "day" && dayTime
+            ? { ...selection, scheduledTime: dayTime }
+            : selection,
+          notes,
+          items()
+        );
         if (res.ok) {
           setBookedArrival(res.mode === "arrival");
+          setBookedDay(res.mode === "day");
           setBookedOrder(res.orderNumber ?? null);
           setSuccess(true);
         } else {
@@ -396,6 +415,7 @@ export function BookAppointmentModal({
         );
         if (res.ok) {
           setBookedArrival(res.mode === "arrival");
+          setBookedDay(res.mode === "day");
           setBookedOrder(res.orderNumber ?? null);
           setSuccess(true);
         } else {
@@ -557,7 +577,11 @@ export function BookAppointmentModal({
                             {mode !== "SLOT_BASED" && (
                               <Badge variant="accent" className="px-2 text-[11px]">
                                 <Users className="h-3 w-3" />
-                                {mode === "ARRIVAL_BASED" ? "أسبقية الحضور" : "طابور"}
+                                {mode === "ARRIVAL_BASED"
+                                  ? "أسبقية الحضور"
+                                  : mode === "DAY_ONLY"
+                                    ? "حجز يوم"
+                                    : "طابور"}
                               </Badge>
                             )}
                           </span>
@@ -681,10 +705,27 @@ export function BookAppointmentModal({
                         <span className="font-sans text-sm font-medium text-text">
                           {selection.info.mode === "arrival"
                             ? "أسبقية الحضور — رقمك عند الوصول"
-                            : `الدور — رقمك ${selection.info.nextOrderNumber}`}
+                            : selection.info.mode === "day"
+                              ? "حجز يوم — الوقت يحدده فريق العيادة"
+                              : `الدور — رقمك ${selection.info.nextOrderNumber}`}
                         </span>
                       </div>
-                      {selection.info.mode !== "arrival" && selection.info.expectedTime && (
+                      {selection.info.mode === "day" && onBehalf && (
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-sans text-sm text-text/70">
+                            الوقت المتفق عليه (اختياري)
+                          </span>
+                          <Input
+                            type="time"
+                            dir="ltr"
+                            value={dayTime}
+                            onChange={(e) => setDayTime(e.target.value)}
+                            className="h-9 w-36"
+                            aria-label="الوقت المتفق عليه"
+                          />
+                        </div>
+                      )}
+                      {selection.info.mode === "order" && selection.info.expectedTime && (
                         <div className="flex items-center justify-between">
                           <span className="font-sans text-sm text-text/70">الوقت المتوقع</span>
                           <span className="font-sans text-sm font-medium text-text">
@@ -771,7 +812,7 @@ export function BookAppointmentModal({
                   {isPending
                     ? "جارٍ الحجز..."
                     : selection.mode === "ORDER_BASED"
-                      ? selection.info.mode === "arrival"
+                      ? selection.info.mode !== "order"
                         ? "تأكيد الحجز"
                         : "تأكيد حجز الدور"
                       : "تأكيد الحجز"}
@@ -788,11 +829,13 @@ export function BookAppointmentModal({
               </div>
               <div>
                 <p className="font-heading text-xl font-bold text-text">
-                  {bookedArrival
-                    ? "تم حجز مكانك!"
-                    : bookedOrder != null
-                      ? "تم حجز دورك!"
-                      : "تم الحجز بنجاح!"}
+                  {bookedDay
+                    ? "تم حجز اليوم!"
+                    : bookedArrival
+                      ? "تم حجز مكانك!"
+                      : bookedOrder != null
+                        ? "تم حجز دورك!"
+                        : "تم الحجز بنجاح!"}
                 </p>
                 {onBehalf ? (
                   <p className="mt-1 font-sans text-sm text-text/60">
@@ -807,7 +850,16 @@ export function BookAppointmentModal({
                         يُعطى رقم الدور عند الوصول حسب أسبقية الحضور
                       </span>
                     )}
+                    {bookedDay && (
+                      <span className="mt-0.5 block text-text/50">
+                        {dayTime
+                          ? `الوقت المسجّل: ${dayTime}`
+                          : "لم يُحدَّد الوقت بعد — سجّله من صفحة الموعد بعد الاتفاق مع المريض"}
+                      </span>
+                    )}
                   </p>
+                ) : bookedDay ? (
+                  <p className="mt-1 font-sans text-sm text-text/60">{DAY_ONLY_PATIENT_NOTE_AR}</p>
                 ) : bookedArrival ? (
                   <p className="mt-1 font-sans text-sm text-text/60">
                     احضر إلى العيادة وسيتم إعطاؤك رقم دورك حسب أسبقية وصولك.
@@ -867,6 +919,36 @@ function QueueBox({
       </Alert>
     );
   }
+  // Day-only: the patient books the day; the clinic team calls to set the time.
+  if (info.mode === "day") {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="rounded-lg bg-accent/5 px-3 py-2.5">
+          <p className="font-sans text-sm text-text">
+            احجز هذا اليوم، و<span className="font-bold text-accent">سيتواصل معك فريق العيادة</span>{" "}
+            لتحديد الوقت المناسب لك.
+          </p>
+          {info.remaining != null && (
+            <p className="mt-1 font-sans text-xs text-text/60">
+              المتبقّي اليوم: {info.remaining} حجز
+            </p>
+          )}
+        </div>
+        <Button
+          variant="outline"
+          onClick={onSelect}
+          className={`h-auto w-full rounded-lg px-3 py-2.5 transition-all ${
+            selected
+              ? "border-accent bg-accent text-white shadow-md shadow-accent/20 hover:bg-accent hover:text-white"
+              : "border-accent/40 bg-background text-accent hover:bg-accent/5 hover:text-accent"
+          }`}
+        >
+          {selected ? "✓ تم اختيار اليوم" : "احجز هذا اليوم"}
+        </Button>
+      </div>
+    );
+  }
+
   // Arrival-priority: no fixed number at booking — reception assigns it on arrival.
   if (info.mode === "arrival") {
     return (

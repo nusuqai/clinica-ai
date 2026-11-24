@@ -8,7 +8,12 @@ import { ok, err, type Result } from "./_result";
 import { fittingStartSlots, lengthWith, serviceFit, visitMinutes } from "./booking";
 import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
-import { QUEUE_MODES, isQueueMode } from "@/lib/availability/modes";
+import {
+  DAY_BOOKED_MODES,
+  isDayBookedMode,
+  isDayOnlyMode,
+  isQueueMode,
+} from "@/lib/availability/modes";
 import {
   assertCanActivateDoctor,
   isSoloClinic,
@@ -129,7 +134,7 @@ export interface CreateRuleInput {
   referralOnly?: boolean;
   /** Free-text admin/doctor note about this rule. */
   note?: string | null;
-  /** SLOT_BASED (default) or ORDER_BASED (queue). */
+  /** SLOT_BASED (default), a queue mode, or DAY_ONLY. */
   mode?: AvailabilityMode;
   /** Order-based only: estimated minutes per patient. */
   estimatedDurationMin?: number | null;
@@ -323,12 +328,12 @@ export async function getAvailableDaysForBooking(
     byDate.set(s.date.toISOString().split("T")[0], AvailabilityMode.SLOT_BASED);
   }
 
-  // ── Queue days (order / arrival) ─────────────────────────────────────────────
+  // ── Day-booked days (order / arrival / day-only) ─────────────────────────────
   const orderRules = await prisma.availabilityRule.findMany({
     where: {
       doctorId,
       isActive: true,
-      mode: { in: QUEUE_MODES },
+      mode: { in: DAY_BOOKED_MODES },
       referralOnly: false, // referral-only rules aren't directly bookable
       // queue booking requires a concrete branch (inside the staff scope, if any)
       branchId: branchScope == null ? { not: null } : { in: [...branchScope] },
@@ -958,10 +963,14 @@ export async function createRule(input: CreateRuleInput): Promise<Result<{ id: s
 
     const mode = input.mode ?? AvailabilityMode.SLOT_BASED;
     const queueMode = isQueueMode(mode);
+    // Day-booked rules (queue modes + day-only) have no slots and may be capped.
+    const dayBooked = isDayBookedMode(mode);
     // Queue cap: legacy callers send only dailyCap (→ PATIENTS when set).
-    const capType: QueueCapType = !queueMode
+    let capType: QueueCapType = !dayBooked
       ? QueueCapType.NONE
       : (input.capType ?? (input.dailyCap != null ? QueueCapType.PATIENTS : QueueCapType.NONE));
+    // Day-only has no service minutes to fill: patients cap or none.
+    if (isDayOnlyMode(mode) && capType === QueueCapType.MINUTES) capType = QueueCapType.NONE;
     const dailyCap = capType === QueueCapType.PATIENTS ? (input.dailyCap ?? null) : null;
     const dailyCapMinutes =
       capType === QueueCapType.MINUTES ? (input.dailyCapMinutes ?? null) : null;
@@ -999,8 +1008,8 @@ export async function createRule(input: CreateRuleInput): Promise<Result<{ id: s
         note: input.note?.trim() || null,
       },
     });
-    // Queue rules (order / arrival) have no fixed slots — bookings are queued at runtime.
-    if (!queueMode) await generateSlotsForRule(rule.id, 30);
+    // Day-booked rules (order / arrival / day-only) have no fixed slots.
+    if (!dayBooked) await generateSlotsForRule(rule.id, 30);
     return ok({ id: rule.id });
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل إنشاء قاعدة التوفر");
@@ -1074,7 +1083,7 @@ export async function generateSlotsForRule(
     // available and order numbers are handed out lazily (at booking for order,
     // at check-in for arrival). Nothing to generate; creating Slot rows here
     // would wrongly turn the rule slot-based.
-    if (isQueueMode(rule.mode)) return ok({ count: 0 });
+    if (isDayBookedMode(rule.mode)) return ok({ count: 0 });
 
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);

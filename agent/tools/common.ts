@@ -7,7 +7,7 @@ import * as QueueService from "@/server/services/queue";
 import { getClinicInfo } from "@/server/services/clinicInfo";
 import { listSpecialties } from "@/server/services/specialties";
 import { expectedTimeAfter } from "@/lib/availability/queue-time";
-import { modeTag } from "@/lib/availability/modes";
+import { DAY_ONLY_PATIENT_NOTE_AR, modeTag } from "@/lib/availability/modes";
 import { pageRequest } from "@/lib/pagination";
 import { doctorSexLabel, doctorTitleLabel } from "@/lib/doctor-title";
 import { serviceNamesByDoctor } from "@/server/services/catalog";
@@ -226,7 +226,7 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
               to: r.endTime,
               branchId: r.branchId,
               branch: r.branch?.name ?? null,
-              mode: modeTag(r.mode), // "slot" | "order" | "arrival"
+              mode: modeTag(r.mode), // "slot" | "order" | "arrival" | "day"
             })),
         };
       },
@@ -259,7 +259,9 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
           new Date(date),
         );
         if (orderInfo) {
-          const arrival = orderInfo.mode === "ARRIVAL_BASED";
+          const tag = modeTag(orderInfo.mode);
+          // Arrival-priority and day-only promise no number / expected time.
+          const arrival = tag !== "order";
           const fit = await serviceFit(doctorId, serviceIds);
           const need = lengthWith(visitLength, orderInfo.estimatedDurationMin ?? 15);
           const fitsServices = !fit || fit(orderInfo.ruleId, orderInfo.branchId);
@@ -271,7 +273,10 @@ export function commonTools(clinicId: string): DynamicStructuredTool[] {
             date,
             // "arrival" (أسبقية الحضور): the patient reserves and gets a number on
             // arrival, so there's no next number / expected time to promise here.
-            mode: arrival ? "arrival" : "order",
+            // "day" (حجز يوم فقط): the patient books the day; the team calls to set
+            // the exact time.
+            mode: tag,
+            ...(tag === "day" && { note: DAY_ONLY_PATIENT_NOTE_AR }),
             branchId: orderInfo.branchId,
             available: orderInfo.available && fitsServices && fitsTime,
             ...(!fitsServices && { reason: "الخدمات المطلوبة غير متاحة مع الطبيب في هذا اليوم" }),

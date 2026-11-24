@@ -10,7 +10,9 @@ import {
 import { AppointmentStatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import type { ScheduleDaySummary } from "@/server/services/doctors";
-import type { AppointmentStatus } from "@prisma/client";
+import type { AppointmentStatus, AvailabilityMode } from "@prisma/client";
+import Link from "next/link";
+import DayOnlyTime from "@/components/appointments/day-only-time";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,10 +42,13 @@ interface QueuePatient {
   notes: string | null;
   skipped: boolean;
   expectedTime: string | null;
+  /** Day-only: the time the team set (null = still to set). */
+  scheduledTime: string | null;
 }
 interface QueueData {
   id: string;
   date: string;
+  mode: AvailabilityMode;
   branchName: string | null;
   currentOrder: number;
   nextOrder: number;
@@ -157,7 +162,12 @@ export default function SlotsTab({ doctorId, days }: SlotsTabProps) {
       {days.map((day) => {
         const { date, mode } = day;
         const isQueue = mode !== "SLOT_BASED";
-        const queueLabel = mode === "ARRIVAL_BASED" ? "أسبقية الحضور" : "نظام الدور";
+        const queueLabel =
+          mode === "ARRIVAL_BASED"
+            ? "أسبقية الحضور"
+            : mode === "DAY_ONLY"
+              ? "حجز يوم"
+              : "نظام الدور";
         const dateObj = new Date(date + "T00:00:00Z");
 
         // Slot header counts stay fresh after a block toggle by deriving from the
@@ -314,7 +324,63 @@ function SlotList({
 }
 
 /** Order-based day: the ordered list of patients who booked the queue. */
+/** A day-only day: who booked it and the time the team set for each. */
+function DayOnlyList({ queue }: { queue: QueueData }) {
+  const booked = queue.nextOrder - 1;
+  const pending = queue.patients.filter(
+    (p) => p.scheduledTime == null && (p.status === "PENDING" || p.status === "CONFIRMED")
+  ).length;
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 bg-muted/20 px-5 py-3 font-sans text-xs text-muted-foreground">
+        <span>
+          الحجوزات: <span className="font-medium tabular-nums text-foreground">{booked}</span>
+          {queue.dailyCap != null && ` / ${queue.dailyCap}`}
+        </span>
+        {pending > 0 && <span className="text-amber-700">بانتظار تحديد الوقت: {pending}</span>}
+        {queue.branchName && <span>{queue.branchName}</span>}
+      </div>
+      {queue.patients.length === 0 ? (
+        <p className="px-5 py-4 font-sans text-sm text-muted-foreground">لا توجد حجوزات.</p>
+      ) : (
+        <div className="divide-y divide-border">
+          {[...queue.patients]
+            .sort((a, b) => (a.scheduledTime ?? "99").localeCompare(b.scheduledTime ?? "99"))
+            .map((p) => (
+              <div key={p.id} className="flex items-start justify-between gap-3 px-5 py-3">
+                <div className="min-w-0">
+                  <p className="truncate font-sans text-sm font-medium text-foreground">
+                    {p.patientName}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 font-sans text-xs text-muted-foreground">
+                    {p.phone && <span dir="ltr">{p.phone}</span>}
+                    <DayOnlyTime time={p.scheduledTime} />
+                  </div>
+                  {p.notes && (
+                    <p className="mt-0.5 font-sans text-xs text-muted-foreground">
+                      <span className="text-foreground/70">ملاحظة:</span> {p.notes}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <Link
+                    href={`/admin/appointments/${p.id}`}
+                    className="font-sans text-xs font-medium text-primary hover:underline"
+                  >
+                    {p.scheduledTime ? "تعديل الوقت" : "تحديد الوقت"}
+                  </Link>
+                  <AppointmentStatusBadge status={p.status} />
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function QueueList({ queue }: { queue: QueueData }) {
+  if (queue.mode === "DAY_ONLY") return <DayOnlyList queue={queue} />;
   const booked = queue.nextOrder - 1;
   return (
     <div>

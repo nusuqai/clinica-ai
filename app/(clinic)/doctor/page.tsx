@@ -110,7 +110,9 @@ export default async function DoctorDashboardPage() {
                           <>
                             {appt.bookingDate &&
                               formatSlotDate(appt.bookingDate, { day: "numeric", month: "short" })}
-                            {appt.orderNumber != null && ` · دور رقم ${appt.orderNumber}`}
+                            {appt.dayOnly
+                              ? ` · ${appt.scheduledTime ?? "بانتظار تحديد الوقت"}`
+                              : appt.orderNumber != null && ` · دور رقم ${appt.orderNumber}`}
                           </>
                         )}
                       </p>
