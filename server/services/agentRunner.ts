@@ -1,6 +1,14 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { Channel, SenderType, MessageDelivery, type Role, type Prisma } from "@prisma/client";
+import {
+  AiUsageKind,
+  Channel,
+  ConversationKind,
+  SenderType,
+  MessageDelivery,
+  type Role,
+  type Prisma,
+} from "@prisma/client";
 import { downloadWhatsAppMedia, type WhatsAppTransport } from "@/lib/whatsapp/transport";
 import type {
   UnsupportedMediaType,
@@ -57,6 +65,12 @@ import {
   notifyUnitAlert,
 } from "./aiCredit";
 import { getOrCreatePatientByPhone } from "./patients";
+import {
+  ASSISTANT_BLOCK_NOTICE,
+  UNITS_OUT_NOTICE,
+  assistantBlock,
+  loadStaffMember,
+} from "./staff/access";
 import type { TokenUsage } from "@/agent/types";
 
 const FALLBACK_REPLY = "تم تنفيذ طلبك.";
@@ -160,6 +174,8 @@ export async function chargeReply(args: {
   usage: TokenUsage;
   /** The AI employee that wrote the reply — the unit is attributed to it. */
   aiAgentId?: string | null;
+  /** REPLY (patient-facing agent) or STAFF_REPLY (team assistant). */
+  kind?: AiUsageKind;
 }): Promise<void> {
   try {
     const alert = await chargeUsage(args);
@@ -212,6 +228,9 @@ interface ConvInfo {
   whatsappUserId: string | null;
   channel: Channel;
   clinicId: string;
+  /** STAFF_ASSISTANT = a clinic member's own thread with the team assistant. */
+  kind: ConversationKind;
+  userId: string | null;
   clinic: { slug: string; debounceSeconds: number };
 }
 
@@ -225,6 +244,8 @@ async function loadConversation(conversationId: string): Promise<ConvInfo | null
       whatsappUserId: true,
       channel: true,
       clinicId: true,
+      kind: true,
+      userId: true,
       clinic: { select: { slug: true, debounceSeconds: true } },
     },
   });
@@ -246,6 +267,16 @@ async function resolveProfileAndLink(
   conv: ConvInfo,
   contact: WhatsAppContact
 ): Promise<{ id: string; fullName: string | null } | null> {
+  // A member's assistant thread belongs to their account — never match the
+  // phone to some other profile, and never provision a patient for it.
+  if (conv.kind === ConversationKind.STAFF_ASSISTANT) {
+    return conv.userId
+      ? prisma.profile.findUnique({
+          where: { id: conv.userId },
+          select: { id: true, fullName: true },
+        })
+      : null;
+  }
   const { phone, userId } = contact;
   let profile = phone
     ? await prisma.profile.findUnique({
@@ -344,9 +375,14 @@ export type AgentReply =
       /** Clinic opted into spoken replies — the deliver step may synthesize TTS. */
       voiceReplyEnabled: boolean;
       /** The AI employee that answered — the caller stamps it on the persisted
-       *  reply. */
-      aiAgentId: string;
-    };
+       *  reply. Null for the team assistant (it is no AI employee). */
+      aiAgentId: string | null;
+      /** How the reply is billed: REPLY, or STAFF_REPLY for the team assistant. */
+      usageKind: AiUsageKind;
+    }
+  /** A fixed notice instead of an agent answer (team assistant gates: switched
+   *  off, units out). Delivered like a reply but never charged. */
+  | { kind: "notice"; text: string };
 
 /**
  * THE COMMON AGENT BRAIN — channel-agnostic. Applies the gates (per-session AI
@@ -359,6 +395,7 @@ export type AgentReply =
  * identical for WhatsApp, web, Instagram, Messenger, …
  */
 export async function generateAgentReply(ctx: AgentContext): Promise<AgentReply> {
+  if (ctx.staff) return generateStaffReply(ctx);
   const { clinicId, conversationId, sessionId } = ctx;
 
   if (!(await isSessionAiEnabled(sessionId))) {
@@ -394,11 +431,71 @@ export async function generateAgentReply(ctx: AgentContext): Promise<AgentReply>
   const { text, toolCalls, usage } = await runAgentToText({ ...ctx, agent }, toPrior(prior));
   return {
     aiAgentId: agent.id,
+    usageKind: AiUsageKind.REPLY,
     kind: "reply",
     text: text || FALLBACK_REPLY,
     toolCalls,
     usage,
     voiceReplyEnabled: status.voiceReplyEnabled,
+  };
+}
+
+/**
+ * The team assistant's brain (#89) — a clinic member managing the clinic. Its
+ * own gates: the clinic's master switch and the member's flag (re-read every
+ * turn, so switching either off takes effect at once), then the unit balance.
+ * No AI employee, no shift hours, no per-agent caps, and never an escalation —
+ * a closed gate answers the member with a notice instead.
+ */
+async function generateStaffReply(ctx: AgentContext): Promise<AgentReply> {
+  const { clinicId, sessionId } = ctx;
+  if (!ctx.actorId) return { kind: "skipped", reason: "handoff" };
+  const member = await loadStaffMember(clinicId, ctx.actorId);
+  if (!member) return { kind: "skipped", reason: "handoff" };
+  const block = await assistantBlock(clinicId, member);
+  if (block) return { kind: "notice", text: ASSISTANT_BLOCK_NOTICE[block] };
+  const status = await getClinicAiStatus(clinicId);
+  if (!status.sufficient) return { kind: "notice", text: UNITS_OUT_NOTICE };
+
+  const prior = await getSessionMessages(sessionId);
+  const { text, toolCalls, usage } = await runAgentToText(
+    { ...ctx, staff: member.actor, actorName: member.fullName },
+    toPrior(prior)
+  );
+  return {
+    kind: "reply",
+    aiAgentId: null,
+    usageKind: AiUsageKind.STAFF_REPLY,
+    text: text || FALLBACK_REPLY,
+    toolCalls,
+    usage,
+    voiceReplyEnabled: status.voiceReplyEnabled,
+  };
+}
+
+/** The team-assistant context for a member's own thread (#89), or null when
+ *  the thread's owner is no longer a team member of the clinic. */
+export async function staffAgentContext(args: {
+  conversationId: string;
+  clinicId: string;
+  clinicSlug: string;
+  sessionId: string;
+  channel: Channel;
+  userId: string;
+}): Promise<AgentContext | null> {
+  const member = await loadStaffMember(args.clinicId, args.userId);
+  if (!member) return null;
+  return {
+    actorId: args.userId,
+    role: member.actor.role,
+    clinicId: args.clinicId,
+    clinicSlug: args.clinicSlug,
+    contactPhone: null,
+    channel: args.channel,
+    conversationId: args.conversationId,
+    sessionId: args.sessionId,
+    actorName: member.fullName,
+    staff: member.actor,
   };
 }
 
@@ -471,7 +568,32 @@ async function deliverPushReply<T>(args: {
 
   const gen = await generateAgentReply(ctx);
   if (gen.kind === "skipped") return { kind: "skipped" };
-  const { text: reply, toolCalls, voiceReplyEnabled, aiAgentId } = gen;
+  if (gen.kind === "notice") {
+    // A gate notice (team assistant): delivered like a reply, never charged.
+    const noticeMsg = await persistAgentMessage(
+      conversationId,
+      sessionId,
+      clinicId,
+      gen.text,
+      null,
+      MessageDelivery.QUEUED,
+      null,
+      sendingNumber
+    );
+    await markMessagesProcessed(processedIds);
+    const out = await adapter.sendText(transport, recipient, gen.text);
+    await markAgentDelivery(
+      noticeMsg.id,
+      out.delivered ? MessageDelivery.SENT : MessageDelivery.FAILED,
+      {
+        whatsappMessageId: out.providerMessageId,
+        whatsappConfigId: out.whatsappConfigId,
+        incrementAttempts: true,
+      }
+    );
+    return { kind: "replied", delivered: out.delivered };
+  }
+  const { text: reply, toolCalls, voiceReplyEnabled, aiAgentId, usageKind } = gen;
   // On the rare turn with no usage metadata, still bill the one unit (USD side
   // computes to zero) rather than hand out a free reply — same as the web path.
   const usage = gen.usage ?? {
@@ -517,7 +639,14 @@ async function deliverPushReply<T>(args: {
         sendingNumber
       );
       await markMessagesProcessed(processedIds);
-      await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage, aiAgentId });
+      await chargeReply({
+        clinicId,
+        sessionId,
+        messageId: agentMsg.id,
+        usage,
+        aiAgentId,
+        kind: usageKind,
+      });
       if (tts.model) {
         await chargeTtsSafe({
           clinicId,
@@ -561,7 +690,14 @@ async function deliverPushReply<T>(args: {
     sendingNumber
   );
   await markMessagesProcessed(processedIds);
-  await chargeReply({ clinicId, sessionId, messageId: agentMsg.id, usage, aiAgentId });
+  await chargeReply({
+    clinicId,
+    sessionId,
+    messageId: agentMsg.id,
+    usage,
+    aiAgentId,
+    kind: usageKind,
+  });
   const out = await adapter.sendText(transport, recipient, reply);
   await markAgentDelivery(
     agentMsg.id,
@@ -657,20 +793,42 @@ export async function processDebouncedConversation(row: ClaimedConversation): Pr
     return;
   }
 
-  const profile = await resolveProfileAndLink(clinicId, conversationId, conv, {
-    phone: recipient.phone ?? null,
-    userId: recipient.userId ?? null,
-  });
-  const ctx = await pushAgentContext({
-    conversationId,
-    clinicId,
-    clinicSlug: conv.clinic.slug,
-    sessionId,
-    channel: conv.channel,
-    profile,
-    whatsappName: conv.whatsappName,
-    recipient,
-  });
+  let ctx: AgentContext;
+  if (conv.kind === ConversationKind.STAFF_ASSISTANT) {
+    // A clinic member's own thread → the team assistant (#89).
+    const staffCtx = conv.userId
+      ? await staffAgentContext({
+          conversationId,
+          clinicId,
+          clinicSlug: conv.clinic.slug,
+          sessionId,
+          channel: conv.channel,
+          userId: conv.userId,
+        })
+      : null;
+    if (!staffCtx) {
+      // No longer a team member — nothing to answer with; don't loop.
+      await markMessagesProcessed(processedIds);
+      await finalizeIdle(conversationId);
+      return;
+    }
+    ctx = staffCtx;
+  } else {
+    const profile = await resolveProfileAndLink(clinicId, conversationId, conv, {
+      phone: recipient.phone ?? null,
+      userId: recipient.userId ?? null,
+    });
+    ctx = await pushAgentContext({
+      conversationId,
+      clinicId,
+      clinicSlug: conv.clinic.slug,
+      sessionId,
+      channel: conv.channel,
+      profile,
+      whatsappName: conv.whatsappName,
+      recipient,
+    });
+  }
 
   try {
     const outcome = await deliverPushReply({

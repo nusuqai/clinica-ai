@@ -81,7 +81,8 @@ export async function getClinicAiUsage(
       where: {
         clinicId,
         createdAt: { gte: since },
-        kind: AiUsageKind.REPLY,
+        // Both reply kinds spend a unit: patient replies and the team assistant's (#89).
+        kind: { in: [AiUsageKind.REPLY, AiUsageKind.STAFF_REPLY] },
         sessionId: { not: null },
       },
     }),
@@ -217,6 +218,7 @@ export interface AiCostBreakdown {
 
 const KIND_LABEL: Partial<Record<AiUsageKind, string>> = {
   [AiUsageKind.REPLY]: "ردود المساعد",
+  [AiUsageKind.STAFF_REPLY]: "ردود مساعد الفريق",
   [AiUsageKind.TRANSCRIPTION]: "تفريغ الرسائل الصوتية",
   [AiUsageKind.TTS]: "الردود الصوتية",
   [AiUsageKind.EXTRACTION]: "قراءة الصور",
@@ -250,7 +252,7 @@ function buildCostBreakdown(rows: KindCostRow[]): AiCostBreakdown {
     k.calls += r.calls;
     byKindMap.set(r.kind, k);
 
-    if (r.kind === AiUsageKind.REPLY) {
+    if (r.kind === AiUsageKind.REPLY || r.kind === AiUsageKind.STAFF_REPLY) {
       replyUsd += r.rawUsd;
       replyParts.context += r.contextUsd;
       replyParts.cachedContext += r.cachedContextUsd;

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { NoteVisibility, Role, SenderType, StaffAlertKind, type Prisma } from "@prisma/client";
+import { notifyAssignment } from "./staff/notifications";
 
 // Inbox utilities — read side. Everything here is staff-only state layered on
 // top of conversations: per-user (pins, labels, private reminders/notes) or
@@ -29,6 +30,58 @@ export async function listInboxTeammates(clinicId: string): Promise<InboxTeammat
     orderBy: { user: { fullName: "asc" } },
   });
   return members.map((m) => ({ id: m.user.id, fullName: m.user.fullName }));
+}
+
+/**
+ * Assigns (or unassigns, `assigneeId` null) a conversation — shared by the inbox
+ * and the team assistant (#89). The caller has already checked the actor may
+ * touch the conversation and that the assignee is an inbox teammate.
+ */
+export async function assignConversationAs(args: {
+  clinicId: string;
+  actorId: string;
+  conversation: { id: string; assignedToId: string | null; updatedAt: Date };
+  assigneeId: string | null;
+}): Promise<void> {
+  const { clinicId, actorId, conversation, assigneeId } = args;
+  if (conversation.assignedToId === assigneeId) return;
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        assignedToId: assigneeId,
+        assignedById: assigneeId ? actorId : null,
+        assignedAt: assigneeId ? now : null,
+        // Keep the list order: @updatedAt would otherwise bump it to the top.
+        updatedAt: conversation.updatedAt,
+      },
+    });
+    // The previous assignee's pending "assigned to you" alert is moot now.
+    await tx.staffAlert.updateMany({
+      where: {
+        conversationId: conversation.id,
+        kind: StaffAlertKind.ASSIGNMENT,
+        resolvedAt: null,
+      },
+      data: { resolvedAt: now, resolvedById: actorId },
+    });
+    // Notify the new assignee — unless they assigned it to themselves.
+    if (assigneeId && assigneeId !== actorId) {
+      await tx.staffAlert.create({
+        data: {
+          clinicId,
+          conversationId: conversation.id,
+          recipientId: assigneeId,
+          actorId,
+          kind: StaffAlertKind.ASSIGNMENT,
+        },
+      });
+    }
+  });
+  if (assigneeId) {
+    await notifyAssignment({ clinicId, conversationId: conversation.id, assigneeId, actorId });
+  }
 }
 
 /** True when `userId` is an inbox teammate of this clinic. */

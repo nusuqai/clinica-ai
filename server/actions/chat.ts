@@ -10,6 +10,9 @@ import {
 } from "@/server/services/agentSession";
 import { quoteKindOf, quoteSnippet } from "@/lib/message-quote";
 import type { AgentMessageMetadata } from "@/agent/types";
+import { getClinicContext } from "@/lib/auth";
+import { isTeamRole } from "@/server/services/staff/access";
+import { getOrCreateStaffWebConversation } from "@/server/services/staff/link";
 
 export interface WebChatMessage {
   id: string;
@@ -104,4 +107,21 @@ export async function getGuestChatMessages(conversationId: string): Promise<WebC
     conversationId,
     messages: messages.map(toWebChatMessage),
   };
+}
+
+/**
+ * The team assistant's bubble (#89): the member's own assistant thread in this
+ * host's clinic and its active session's messages.
+ */
+export async function getStaffChatMessages(): Promise<WebChatState | null> {
+  const ctx = await getClinicContext();
+  if (!ctx || ctx.viaPlatformAdmin || !isTeamRole(ctx.role)) return null;
+  const conversationId = await getOrCreateStaffWebConversation(ctx.clinic.id, ctx.user.id);
+  const activeSession = await prisma.chatSession.findFirst({
+    where: { conversationId, expiresAt: { gt: new Date() } },
+    orderBy: { startedAt: "desc" },
+    select: { id: true },
+  });
+  const messages = activeSession ? await getSessionMessages(activeSession.id) : [];
+  return { conversationId, messages: messages.map(toWebChatMessage) };
 }

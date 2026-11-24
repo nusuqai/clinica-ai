@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getPermittedContext, type ClinicContext } from "@/lib/auth";
 import { isLabelColor } from "@/lib/inbox-labels";
 import {
+  assignConversationAs,
   isInboxTeammate,
   listInboxTeammates,
   listMyLabels,
@@ -15,6 +16,7 @@ import {
   type InboxTeammate,
   type InternalNoteItem,
 } from "@/server/services/inbox";
+import { notifyColleagueEscalation } from "@/server/services/staff/notifications";
 
 // Inbox utilities — write side. Every action resolves the clinic from the
 // request host (never the caller), requires `messages`, and checks that the
@@ -181,37 +183,11 @@ export async function assignConversation(
   if (assigneeId && !(await isInboxTeammate(ctx.clinic.id, assigneeId))) {
     return fail("هذا العضو لا يملك صلاحية الرسائل");
   }
-  if (conversation.assignedToId === assigneeId) return { ok: true };
-
-  const now = new Date();
-  await prisma.$transaction(async (tx) => {
-    await tx.conversation.update({
-      where: { id: conversationId },
-      data: {
-        assignedToId: assigneeId,
-        assignedById: assigneeId ? ctx.user.id : null,
-        assignedAt: assigneeId ? now : null,
-        // Keep the list order: @updatedAt would otherwise bump it to the top.
-        updatedAt: conversation.updatedAt,
-      },
-    });
-    // The previous assignee's pending "assigned to you" alert is moot now.
-    await tx.staffAlert.updateMany({
-      where: { conversationId, kind: StaffAlertKind.ASSIGNMENT, resolvedAt: null },
-      data: { resolvedAt: now, resolvedById: ctx.user.id },
-    });
-    // Notify the new assignee — unless they assigned it to themselves.
-    if (assigneeId && assigneeId !== ctx.user.id) {
-      await tx.staffAlert.create({
-        data: {
-          clinicId: ctx.clinic.id,
-          conversationId,
-          recipientId: assigneeId,
-          actorId: ctx.user.id,
-          kind: StaffAlertKind.ASSIGNMENT,
-        },
-      });
-    }
+  await assignConversationAs({
+    clinicId: ctx.clinic.id,
+    actorId: ctx.user.id,
+    conversation,
+    assigneeId,
   });
   return { ok: true };
 }
@@ -241,7 +217,7 @@ export async function escalateToColleague(input: {
     messageId = msg?.id ?? null;
   }
 
-  await prisma.staffAlert.create({
+  const alert = await prisma.staffAlert.create({
     data: {
       clinicId: ctx.clinic.id,
       conversationId: input.conversationId,
@@ -251,6 +227,15 @@ export async function escalateToColleague(input: {
       kind: StaffAlertKind.ESCALATION,
       note: cleanText(input.note, 1000) || null,
     },
+    select: { id: true, note: true },
+  });
+  await notifyColleagueEscalation({
+    clinicId: ctx.clinic.id,
+    alertId: alert.id,
+    conversationId: input.conversationId,
+    recipientId: input.recipientId,
+    actorId: ctx.user.id,
+    note: alert.note,
   });
   return { ok: true };
 }

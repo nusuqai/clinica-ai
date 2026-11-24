@@ -1,5 +1,6 @@
 "use server";
 
+import { notifyPatientCancelled } from "@/server/services/staff/notifications";
 import { revalidatePath } from "next/cache";
 import { AppointmentStatus, Role } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
@@ -86,6 +87,7 @@ export async function cancelAppointmentAction(
     AppointmentStatus.CANCELLED
   );
   if (!result.ok) return { ok: false, error: result.error };
+  await notifyPatientCancelled(appointmentId);
 
   revalidatePath("/", "page"); // the clinic home shows the patient's bookings too
   revalidatePath("/dashboard", "page");

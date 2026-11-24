@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   getWebChatMessages,
   getGuestChatMessages,
+  getStaffChatMessages,
   type WebChatMessage,
 } from "@/server/actions/chat";
 import { useRealtimeMessages } from "@/hooks/use-realtime-messages";
@@ -66,7 +67,36 @@ const GUEST_CONVERSATION_KEY = "clinica_guest_conversation_id";
 /** How often an open guest chat checks for staff replies. */
 const GUEST_POLL_MS = 10_000;
 
-export default function ChatBubble({ guest = false }: { guest?: boolean }) {
+/** What differs between the patient widget and the team assistant (#89). */
+const VARIANTS = {
+  patient: {
+    chatUrl: "/api/agent/chat",
+    voiceUrl: "/api/agent/voice",
+    title: "خدمة العملاء",
+    subtitle: "نسعد بخدمتك",
+    empty: "مرحباً! كيف يمكنني مساعدتك اليوم؟ يمكنني حجز المواعيد والإجابة عن استفساراتك.",
+  },
+  staff: {
+    chatUrl: "/api/agent/staff/chat",
+    voiceUrl: "/api/agent/staff/voice",
+    title: "مساعد الفريق",
+    subtitle: "اسألني عن العيادة أو اطلب مني إجراءً",
+    empty:
+      "مرحباً! اسألني مثلاً: «كم موعد عندنا بكرة؟» أو «ما التصعيدات المفتوحة؟»، أو اطلب مني تأكيد موعد أو إلغاءه — سأعرض عليك ما سأفعله قبل التنفيذ.",
+  },
+} as const;
+
+export default function ChatBubble({
+  guest = false,
+  variant = "patient",
+}: {
+  guest?: boolean;
+  /** "staff" = the team assistant on the clinic dashboards. */
+  variant?: keyof typeof VARIANTS;
+}) {
+  const v = VARIANTS[variant];
+  const staff = variant === "staff";
+  const loadMemberChat = staff ? getStaffChatMessages : getWebChatMessages;
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(() =>
@@ -107,10 +137,10 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
   // it already exists (from localStorage) or after their first message.
   useEffect(() => {
     if (guest) return;
-    getWebChatMessages().then((state) => {
+    loadMemberChat().then((state) => {
       if (state) setConversationId(state.conversationId);
     });
-  }, [guest]);
+  }, [guest, loadMemberChat]);
 
   // Load the active session's history the first time the panel is opened.
   useEffect(() => {
@@ -132,7 +162,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       });
       return;
     }
-    getWebChatMessages().then((state) => {
+    loadMemberChat().then((state) => {
       if (!state) return;
       setConversationId(state.conversationId);
       setMessages(
@@ -149,7 +179,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
         }))
       );
     });
-  }, [open, loaded, guest, conversationId]);
+  }, [open, loaded, guest, conversationId, loadMemberChat]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -163,7 +193,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       ? conversationId
         ? getGuestChatMessages(conversationId)
         : Promise.resolve(null)
-      : getWebChatMessages();
+      : loadMemberChat();
     load.then((state) => {
       if (!state) return;
       setMessages((prev) => {
@@ -180,11 +210,12 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
         return newAdminMessages.length ? [...prev, ...newAdminMessages] : prev;
       });
     });
-  }, [guest, conversationId]);
+  }, [guest, conversationId, loadMemberChat]);
 
   // Signed-in users: Realtime (row-level security lets them see their own
   // conversation) is used purely as a "something changed" signal to refetch.
-  useRealtimeMessages(guest ? null : conversationId, pullStaffReplies);
+  // The team assistant's thread gets no human replies — nothing to listen for.
+  useRealtimeMessages(guest || staff ? null : conversationId, pullStaffReplies);
 
   // Guests have no account, so Realtime can't authorize them — poll instead,
   // only while the chat is open.
@@ -217,7 +248,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
     ]);
 
     try {
-      const res = await fetch("/api/agent/chat", {
+      const res = await fetch(v.chatUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(guest ? { message: text, conversationId } : { message: text }),
@@ -298,7 +329,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       fd.append("audio", blob, "voice.webm");
       if (guest && conversationId) fd.append("conversationId", conversationId);
 
-      const res = await fetch("/api/agent/voice", { method: "POST", body: fd });
+      const res = await fetch(v.voiceUrl, { method: "POST", body: fd });
       if (!res.ok) throw new Error("network");
       const data = await res.json();
 
@@ -361,7 +392,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
       <Button
         size="icon"
         onClick={() => setOpen((v) => !v)}
-        aria-label="خدمة العملاء"
+        aria-label={v.title}
         className="fixed bottom-20 end-6 z-40 h-14 w-14 rounded-full shadow-lg transition-all [&_svg]:size-6"
       >
         {open ? <X /> : <MessageCircle />}
@@ -373,8 +404,8 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
           <div className="flex flex-shrink-0 items-center gap-2 bg-primary px-4 py-3 text-white">
             <Headset className="h-5 w-5" />
             <div>
-              <p className="font-heading text-sm font-semibold">خدمة العملاء</p>
-              <p className="text-[11px] text-white/70">نسعد بخدمتك</p>
+              <p className="font-heading text-sm font-semibold">{v.title}</p>
+              <p className="text-[11px] text-white/70">{v.subtitle}</p>
             </div>
           </div>
 
@@ -382,9 +413,7 @@ export default function ChatBubble({ guest = false }: { guest?: boolean }) {
             {messages.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
                 <Headset className="h-10 w-10 opacity-30" />
-                <p className="font-sans text-xs">
-                  مرحباً! كيف يمكنني مساعدتك اليوم؟ يمكنني حجز المواعيد والإجابة عن استفساراتك.
-                </p>
+                <p className="font-sans text-xs">{v.empty}</p>
               </div>
             )}
             {messages.map((m) => (

@@ -1,8 +1,9 @@
 import "server-only";
-import { Prisma, AiUnitLedgerType, AiUsageKind } from "@prisma/client";
+import { Prisma, AiUnitLedgerType, AiUsageKind, ConversationKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendClinicLowUnitsAlert } from "@/lib/email/send-transactional";
 import type { TokenUsage } from "@/agent/types";
+import { notifyAiEscalation, notifyUnits } from "@/server/services/staff/notifications";
 
 /**
  * Per-clinic AI metering — units for the clinic, raw USD cost for the platform.
@@ -295,6 +296,8 @@ export async function chargeUsage(args: {
   usage: TokenUsage;
   /** The AI employee that wrote the reply — attributes the unit to it. */
   aiAgentId?: string | null;
+  /** REPLY (default) or STAFF_REPLY — both cost one unit. */
+  kind?: AiUsageKind;
 }): Promise<UnitAlert | null> {
   const { clinicId, sessionId, messageId, usage } = args;
 
@@ -328,6 +331,7 @@ export async function chargeUsage(args: {
         sessionId,
         messageId,
         aiAgentId: args.aiAgentId ?? null,
+        kind: args.kind ?? AiUsageKind.REPLY,
         model: usage.model,
         promptTokens: usage.promptTokens,
         completionTokens: usage.completionTokens,
@@ -397,6 +401,8 @@ export async function chargeUsage(args: {
  * triggered by has already reached the patient.
  */
 export async function notifyUnitAlert(clinicId: string, alert: UnitAlert): Promise<void> {
+  // The clinic's own team too, when the admin routed the event (#89).
+  await notifyUnits(clinicId, alert.severity, alert.unitBalance);
   try {
     const clinic = await prisma.clinic.findUnique({
       where: { id: clinicId },
@@ -738,14 +744,27 @@ export async function ensureOpenEscalation(
   sessionId: string,
   reason: string
 ): Promise<void> {
+  if (await isStaffAssistantThread(conversationId)) return;
   const open = await prisma.escalation.findFirst({
     where: { sessionId, resolvedAt: null },
     select: { id: true },
   });
   if (open) return;
-  await prisma.escalation.create({
+  const created = await prisma.escalation.create({
     data: { clinicId, conversationId, sessionId, reason },
+    select: { id: true },
   });
+  await notifyAiEscalation({ clinicId, conversationId, escalationId: created.id, reason });
+}
+
+/** A clinic member's own team-assistant thread (#89) is never escalated: it is
+ *  not in the inbox, and the member IS the team. */
+async function isStaffAssistantThread(conversationId: string): Promise<boolean> {
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { kind: true },
+  });
+  return conv?.kind === ConversationKind.STAFF_ASSISTANT;
 }
 
 /**
@@ -763,12 +782,15 @@ export async function escalateMessage(
   messageId: string,
   reason: string
 ): Promise<void> {
+  if (await isStaffAssistantThread(conversationId)) return;
   const existing = await prisma.escalation.findFirst({
     where: { messageId },
     select: { id: true },
   });
   if (existing) return;
-  await prisma.escalation.create({
+  const created = await prisma.escalation.create({
     data: { clinicId, conversationId, sessionId, messageId, reason },
+    select: { id: true },
   });
+  await notifyAiEscalation({ clinicId, conversationId, escalationId: created.id, reason });
 }

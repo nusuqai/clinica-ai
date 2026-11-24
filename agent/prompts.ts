@@ -4,6 +4,7 @@ import { getClinicInfo, type ClinicInfo } from "@/server/services/clinicInfo";
 import { getSoloDoctor, type SoloDoctor } from "@/server/services/clinic-kind";
 import { doctorSexLabel, doctorSubtitle } from "@/lib/doctor-title";
 import { CURRENCY_LABEL } from "@/lib/currency";
+import { buildStaffSystemPrompt } from "./prompts-staff";
 
 // Fallback used only if the clinic record can't be loaded (e.g. DB hiccup);
 // normally the agent identifies itself with the clinic's real name.
@@ -194,6 +195,8 @@ const existingAccountNotMemberGuide = (solo: boolean) => `هذا الشخص لد
 const guestWebGuide = (solo: boolean) => `أنت تتحدث مع زائر لم يسجّل الدخول بعد. رحّب به وقدّم له معلومات عامة إن سأل: ${doctorsInfo(solo)}، ومواعيد ${solo ? "عمله" : "عملهم"}، والفترات المتاحة، ومعلومات الفروع (العنوان، الهاتف، ساعات العمل، الموقف، كيفية الوصول) عبر list_branches وget_branch_info وget_clinic_info. لا يمكنك حجز أو إلغاء أو تعديل أي موعد له لأنه لا يملك حساباً — إذا رغب بالحجز، أخبره بلطف أنه يحتاج أولاً لإنشاء حساب أو تسجيل الدخول من الموقع، ثم يمكنه العودة لإتمام الحجز. ${bookingFlow(solo)}`;
 
 export async function buildSystemPrompt(ctx: AgentContext): Promise<string> {
+  // A clinic member talking to the team assistant (#89).
+  if (ctx.staff) return buildStaffSystemPrompt({ ...ctx, staff: ctx.staff });
   // Load the real clinic so the agent identifies itself as that clinic (name,
   // description, phones, socials) rather than a generic product name.
   const clinic = await getClinicInfo(ctx.clinicId).catch(() => null);

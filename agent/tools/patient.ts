@@ -1,4 +1,5 @@
 import "server-only";
+import { notifyPatientCancelled } from "@/server/services/staff/notifications";
 import { z } from "zod";
 import { AppointmentStatus } from "@prisma/client";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
@@ -240,6 +241,7 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
           reason ?? undefined,
         );
         if (!res.ok) return { error: res.error };
+        await notifyPatientCancelled(appointmentId);
         return { appointmentId, status: AppointmentStatus.CANCELLED };
       },
     ),

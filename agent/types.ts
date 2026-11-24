@@ -31,6 +31,27 @@ export interface AgentContext {
   /** The AI employee on shift for this reply (name + persona), set by
    *  `generateAgentReply` — which never runs the agent without one. */
   agent?: AgentPersona | null;
+  /**
+   * Set when a clinic MEMBER is talking to the team assistant (#89) — from their
+   * own WhatsApp or the dashboard bubble. Switches the agent to the staff prompt
+   * and tool set; every tool authorizes against this (permissions, branch scope,
+   * own-doctor). Absent on every patient/contact conversation.
+   */
+  staff?: StaffActor;
+}
+
+/** The team member the assistant acts for, and exactly what they may do. */
+export interface StaffActor {
+  /** ClinicMember id. */
+  memberId: string;
+  role: "ADMIN" | "STAFF" | "DOCTOR";
+  /** Permission keys (lib/permissions) — all for ADMIN, the role's for STAFF,
+   *  none for DOCTOR (a doctor acts on their own appointments only). */
+  permissions: string[];
+  /** Branch scope: null = every branch (ADMIN / unrestricted STAFF / DOCTOR). */
+  branchIds: string[] | null;
+  /** The Doctor row of a DOCTOR member; null otherwise. */
+  doctorId: string | null;
 }
 
 /** The identity an AI employee speaks with — see AiAgent in the schema. */
