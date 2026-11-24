@@ -116,6 +116,6 @@ what "that escalation" refers to.
    (`CRON_SECRET`).
 3. Official numbers only: create and approve a UTILITY alert template, then bind
    it in `/admin/assistant`.
-4. Run `prisma/sql/cron-cleanup.sql` once. It schedules a daily job that prunes
-   pg_cron's run log (7 days), delivered alerts (30 days) and used or expired
-   confirmation proposals (7 days).
+4. Run `prisma/sql/cron-cleanup.sql` once. It creates or replaces the daily
+   `purge-cron-history` job, which prunes pg_cron's run log (2 days), delivered
+   alerts (30 days) and used or expired confirmation proposals (7 days).
