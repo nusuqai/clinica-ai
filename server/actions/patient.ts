@@ -11,6 +11,7 @@ import * as DoctorService from "@/server/services/doctors";
 import * as AppointmentService from "@/server/services/appointments";
 import * as QueueService from "@/server/services/queue";
 import { expectedTimeAfter } from "@/lib/availability/queue-time";
+import { modeTag, type DayModeTag } from "@/lib/availability/modes";
 import * as BookingService from "@/server/services/booking";
 import { serviceNamesByDoctor } from "@/server/services/catalog";
 import * as CatalogService from "@/server/services/catalog";
@@ -226,7 +227,7 @@ export async function getOrderBookingInfoAction(
   dateStr: string,
   serviceIds?: string[] | null
 ): Promise<{
-  mode: "order" | "arrival";
+  mode: DayModeTag;
   available: boolean;
   remaining: number | null;
   nextOrderNumber: number;
@@ -260,10 +261,12 @@ export async function getOrderBookingInfoAction(
     : probe;
   if (!info) return null;
   if (fit && !fit(info.ruleId, info.branchId)) info.available = false;
-  const arrival = info.mode === "ARRIVAL_BASED";
+  const mode = modeTag(info.mode) as DayModeTag;
+  // Arrival-priority and day-only hand out no number / expected time at booking.
+  const arrival = mode !== "order";
   const nextOrderNumber = info.booked + 1;
   return {
-    mode: arrival ? "arrival" : "order",
+    mode,
     available: info.available,
     remaining: info.remaining,
     nextOrderNumber,
@@ -336,7 +339,7 @@ export async function bookOrderAppointmentAction(
 ): Promise<{
   ok: boolean;
   error?: string;
-  mode?: "order" | "arrival";
+  mode?: DayModeTag;
   orderNumber?: number | null;
 }> {
   const ctx = await getClinicContext();
@@ -361,7 +364,7 @@ export async function bookOrderAppointmentAction(
   // Arrival-priority bookings have no order number yet (assigned at check-in).
   return {
     ok: true,
-    mode: result.data.mode === "ARRIVAL_BASED" ? "arrival" : "order",
+    mode: modeTag(result.data.mode) as DayModeTag,
     orderNumber: result.data.orderNumber,
   };
 }

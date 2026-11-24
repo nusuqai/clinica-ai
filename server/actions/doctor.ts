@@ -86,6 +86,21 @@ export async function updateAppointmentStatusAsDoctorAction(
   return { success: true };
 }
 
+/** Day-only booking: the doctor sets (or clears) the agreed time of their own visit. */
+export async function setAppointmentTimeAsDoctorAction(appointmentId: string, time: string | null) {
+  const { doctorId } = await requireDoctor();
+  const appt = await prisma.appointment.findFirst({
+    where: { id: appointmentId, doctorId },
+    select: { clinicId: true },
+  });
+  if (!appt) return { error: "الموعد غير موجود أو غير مصرح" };
+  const res = await AppointmentService.setScheduledTime(appointmentId, time, appt.clinicId);
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/doctor/appointments", "page");
+  revalidatePath(`/doctor/appointments/${appointmentId}`, "page");
+  return { success: true as const, ...res.data };
+}
+
 export async function updateDoctorNotesAction(appointmentId: string, doctorNotes: string) {
   const { doctorId } = await requireDoctor();
 
@@ -225,7 +240,8 @@ export async function toggleMySlotBlockedAction(slotId: string) {
 export async function getMyDayQueueAction(date: string) {
   const { doctorId } = await requireDoctor();
   const queue = await QueueService.getDayQueue(doctorId, new Date(date));
-  if (!queue) return { queue: null };
+  // Day-only days have no serving queue (the team sets each visit's time).
+  if (!queue || queue.rule?.mode === "DAY_ONLY") return { queue: null };
   return {
     queue: {
       id: queue.id,

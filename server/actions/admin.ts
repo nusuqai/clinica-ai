@@ -4,7 +4,7 @@ import { parseRuleExtras } from "@/lib/validations/availability";
 import { revalidatePath } from "next/cache";
 import { AppointmentStatus, AvailabilityMode, DoctorSex, DoctorTitle, Role } from "@prisma/client";
 import { isDoctorSex, isDoctorTitle } from "@/lib/doctor-title";
-import { parseMode } from "@/lib/availability/modes";
+import { parseMode, type DayModeTag } from "@/lib/availability/modes";
 
 import { can, getClinicContext, getPermittedContext } from "@/lib/auth";
 import type { Permission } from "@/lib/permissions";
@@ -16,6 +16,7 @@ import * as ClinicInfoService from "@/server/services/clinicInfo";
 import * as SpecialtyService from "@/server/services/specialties";
 import * as QueueService from "@/server/services/queue";
 import * as BookingService from "@/server/services/booking";
+import { prisma } from "@/lib/prisma";
 import * as KnowledgeService from "@/server/services/knowledge";
 import { expectedTimeAfter, minutesAhead } from "@/lib/availability/queue-time";
 import { bookOnBehalf } from "@/server/services/bookOnBehalf";
@@ -308,6 +309,52 @@ export async function updateAppointmentStatusAction(
   return { success: true };
 }
 
+/** Day-only booking: set (or clear) the exact time agreed with the patient. */
+export async function setAppointmentTimeAction(appointmentId: string, time: string | null) {
+  const { clinicId, scope } = await requireScoped("appointments");
+  if (!(await Scope.appointmentInScope(appointmentId, clinicId, scope)))
+    return { error: "الموعد غير موجود" };
+  const res = await AppointmentService.setScheduledTime(appointmentId, time, clinicId);
+  if (!res.ok) return { error: res.error };
+  revalidatePath(`/admin/appointments/${appointmentId}`, "page");
+  return { success: true as const, ...res.data };
+}
+
+/** Day-only booking: the doctor's day-only days this member can move the visit to. */
+export async function dayOnlyDatesAction(appointmentId: string) {
+  const { clinicId, scope } = await requireScoped("appointments");
+  if (!(await Scope.appointmentInScope(appointmentId, clinicId, scope))) return { dates: [] };
+  const appt = await prisma.appointment.findFirst({
+    where: { id: appointmentId, clinicId },
+    select: { doctorId: true },
+  });
+  if (!appt) return { dates: [] };
+  return { dates: await BookingService.listDayOnlyDates(appt.doctorId, scope) };
+}
+
+/** Day-only booking: move the visit to another of the doctor's day-only days (+ time). */
+export async function moveDayOnlyAppointmentAction(
+  appointmentId: string,
+  date: string,
+  time: string | null,
+  branchId?: string | null
+) {
+  const { clinicId, scope } = await requireScoped("appointments");
+  if (!(await Scope.appointmentInScope(appointmentId, clinicId, scope)))
+    return { error: "الموعد غير موجود" };
+  const res = await BookingService.moveDayOnlyAppointment({
+    appointmentId,
+    date,
+    time,
+    clinicId,
+    branchScope: scope,
+    branchId,
+  });
+  if (!res.ok) return { error: res.error };
+  revalidatePath(`/admin/appointments/${appointmentId}`, "page");
+  return { success: true as const, ...res.data };
+}
+
 // ─── Paged lists (infinite scroll) ─────────────────────────────────────────────
 
 /** A page of the clinic's appointments — the board columns and the doctor tab. */
@@ -391,10 +438,12 @@ export async function adminBookAppointmentAction(input: {
   notes?: string;
   /** The services booked (default: the doctor's كشف). */
   items?: BookingService.BookingItemRequest[];
+  /** Day-only day: the exact time already agreed with the patient ("HH:MM"). */
+  scheduledTime?: string | null;
 }): Promise<{
   ok: boolean;
   error?: string;
-  mode?: "order" | "arrival";
+  mode?: DayModeTag;
   orderNumber?: number | null;
 }> {
   const { clinicId, scope, userId } = await requireScoped("appointments");
@@ -567,6 +616,7 @@ export async function getDayQueueAction(doctorId: string, date: string) {
         notes: a.patientNotes,
         skipped: a.skippedAt != null,
         arrived: a.arrivedAt != null,
+        scheduledTime: a.scheduledTime, // day-only: the time the team set
         expectedTime:
           sessionStart != null && a.orderNumber != null
             ? expectedTimeAfter(sessionStart, minutesAhead(minutes, a.orderNumber))

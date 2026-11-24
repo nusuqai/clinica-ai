@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
+import DayOnlyTime from "@/components/appointments/day-only-time";
 
 // The doctor's appointments tab: first page from the server, the rest on scroll.
 export default function DoctorAppointmentsTab({
@@ -87,6 +88,8 @@ export default function DoctorAppointmentsTab({
                         {" – "}
                         {formatSlotTime(appt.slot.endTime)}
                       </>
+                    ) : appt.dayOnly ? (
+                      <DayOnlyTime time={appt.scheduledTime} />
                     ) : appt.orderNumber != null ? (
                       <span dir="rtl">دور رقم {appt.orderNumber}</span>
                     ) : (

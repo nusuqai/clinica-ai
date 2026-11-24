@@ -53,6 +53,15 @@ export interface TokenSourceAppointment {
   branch: { name: string; address: string | null } | null;
   slot: { startTime: Date; date: Date } | null;
   clinic: { name: string };
+  /** Day-only bookings: the "HH:MM" the team set (null = not set yet). */
+  scheduledTime?: string | null;
+  rule?: { mode: string } | null;
+}
+
+/** "14:30" → the same Arabic clock format formatSlotTime gives slots. */
+function formatHHMM(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  return formatSlotTime(new Date(Date.UTC(2000, 0, 1, h, m)));
 }
 
 /**
@@ -74,7 +83,13 @@ export function buildTokenContext(appt: TokenSourceAppointment): Record<Appointm
     branch_name: appt.branch?.name ?? "",
     branch_address: appt.branch?.address ?? "",
     appointment_date: dateSource ? formatSlotDate(dateSource) : "",
-    appointment_time: appt.slot ? formatSlotTime(appt.slot.startTime) : orderPhrase,
+    appointment_time: appt.slot
+      ? formatSlotTime(appt.slot.startTime)
+      : appt.scheduledTime
+        ? formatHHMM(appt.scheduledTime)
+        : appt.rule?.mode === "DAY_ONLY"
+          ? "سيتواصل معك فريق العيادة لتحديد الوقت"
+          : orderPhrase,
     order_number: appt.orderNumber != null ? String(appt.orderNumber) : "",
   };
 }

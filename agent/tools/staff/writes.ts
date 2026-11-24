@@ -11,6 +11,7 @@ import * as UserService from "@/server/services/users";
 import { bookOnBehalf } from "@/server/services/bookOnBehalf";
 import { assignConversationAs, isInboxTeammate } from "@/server/services/inbox";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
+import { normalizeHHMM } from "@/lib/availability/modes";
 import type { WriteAction, StaffToolContext } from "./pending";
 import {
   actorInboxScope,
@@ -177,13 +178,89 @@ export function checkInAction(scopeOf: "staff" | "doctor"): WriteAction<typeof c
   };
 }
 
+const setTimeSchema = z.object({
+  appointmentId: z.string(),
+  time: z
+    .string()
+    .nullable()
+    .describe("الوقت بصيغة HH:MM (24 ساعة) مثل 14:30 — أو null لمسح الوقت"),
+  date: dateField
+    .nullable()
+    .describe(
+      "اختياري — لنقل الموعد ليوم آخر (YYYY-MM-DD): يجب أن يكون من أيام «حجز اليوم» الخاصة بالطبيب"
+    ),
+});
+
+/** Day-only (حجز يوم فقط): set the exact time the team agreed with the patient. */
+export function setTimeAction(scopeOf: "staff" | "doctor"): WriteAction<typeof setTimeSchema> {
+  async function load(ctx: StaffToolContext, appointmentId: string) {
+    if (scopeOf === "doctor") {
+      const own = await prisma.appointment.findFirst({
+        where: { id: appointmentId, clinicId: ctx.clinicId, doctorId: ctx.staff.doctorId ?? "" },
+        select: { id: true },
+      });
+      return own ? appointmentBrief(ctx.clinicId, appointmentId) : null;
+    }
+    return scopedAppointment(ctx, appointmentId);
+  }
+  return {
+    name: "set_appointment_time",
+    description:
+      "حدّد الوقت الدقيق لحجز من نوع «حجز يوم فقط» بعد الاتفاق مع المريض (أو امسحه بـ null)، ويمكن أيضاً نقله ليوم آخر بتمرير date (لأيام «حجز اليوم» الخاصة بالطبيب فقط؛ يُسمح بتجاوز الحد اليومي مع تنبيه). أي وقت مقبول ولا يتم التحقق من التداخل — مسؤولية العيادة. لا تُرسل رسالة للمريض تلقائياً.",
+    schema: setTimeSchema,
+    allowed: (a) => (scopeOf === "doctor" ? a.doctorId != null : can(a, "appointments")),
+    async prepare(ctx, { appointmentId, time, date }) {
+      if (date && scopeOf === "doctor")
+        return { error: "نقل الموعد ليوم آخر متاح لفريق العيادة فقط — يمكنك تعديل الوقت" };
+      const b = await load(ctx, appointmentId);
+      if (!b) return { error: "الحجز غير موجود" };
+      if (!b.dayOnly) return { error: "هذا الحجز ليس من نوع حجز اليوم فقط" };
+      if (CLOSED.includes(b.status)) return { error: "لا يمكن تعديل وقت حجز منتهٍ أو ملغى" };
+      if (time != null && !normalizeHHMM(time))
+        return { error: "صيغة الوقت غير صحيحة (مثال: 14:30)" };
+      const at = time ? ` الساعة ${normalizeHHMM(time)}` : "";
+      return {
+        summary: date
+          ? `نقل ${briefLine(b)} إلى يوم ${date}${at}`
+          : time
+            ? `تحديد وقت ${normalizeHHMM(time)} لـ ${briefLine(b)}`
+            : `مسح وقت ${briefLine(b)}`,
+      };
+    },
+    async execute(ctx, { appointmentId, time, date }) {
+      const b = await load(ctx, appointmentId);
+      if (!b) throw new Error("الحجز غير موجود");
+      if (date) {
+        const moved = await BookingService.moveDayOnlyAppointment({
+          appointmentId,
+          date,
+          time,
+          clinicId: ctx.clinicId,
+          branchScope: ctx.staff.branchIds,
+        });
+        if (!moved.ok) throw new Error(moved.error);
+        return { appointmentId, ...moved.data };
+      }
+      const res = await AppointmentService.setScheduledTime(appointmentId, time, ctx.clinicId);
+      if (!res.ok) throw new Error(res.error);
+      return { appointmentId, scheduledTime: res.data.scheduledTime, warning: res.data.warning };
+    },
+  };
+}
+
 const bookSchema = z.object({
   patientId: z.string().nullable().describe("مريض موجود (من search_patients)"),
   newPatientName: z.string().nullable().describe("لمريض جديد: الاسم الكامل"),
   newPatientPhone: z.string().nullable().describe("لمريض جديد: رقم الهاتف"),
   doctorId: z.string(),
   slotId: z.string().nullable().describe("يوم بنظام الفترات: الفترة من get_doctor_availability"),
-  date: dateField.nullable().describe("يوم بنظام الدور/أسبقية الحضور: التاريخ (بدون slotId)"),
+  date: dateField
+    .nullable()
+    .describe("يوم بنظام الدور/أسبقية الحضور/حجز اليوم: التاريخ (بدون slotId)"),
+  time: z
+    .string()
+    .nullable()
+    .describe("حجز يوم فقط: الوقت المتفق عليه مع المريض HH:MM إن وُجد (اختياري)"),
   serviceIds: z.array(z.string()).nullable().describe("الخدمات (افتراضياً كشف الطبيب)"),
   notes: z.string().nullable(),
 });
@@ -229,7 +306,7 @@ const book: WriteAction<typeof bookSchema> = {
     if (args.slotId && !slot) return { error: "الفترة غير موجودة" };
     const when = slot
       ? `${formatSlotDate(slot.date, { weekday: "long", day: "numeric", month: "long" })} ${formatSlotTime(slot.startTime)}`
-      : `يوم ${args.date} (بالدور)`;
+      : `يوم ${args.date}${args.time ? ` الساعة ${args.time}` : ""}`;
     return { summary: `حجز موعد لـ ${patientName} مع ${doctor?.fullName ?? ""} — ${when}` };
   },
   async execute(ctx, args) {
@@ -245,6 +322,7 @@ const book: WriteAction<typeof bookSchema> = {
       date: args.slotId ? undefined : (args.date ?? undefined),
       notes: args.notes ?? undefined,
       items: args.serviceIds?.map((serviceId) => ({ serviceId })),
+      scheduledTime: args.time,
     });
     if (!res.ok) throw new Error(res.error);
     return {
@@ -393,6 +471,7 @@ export const STAFF_WRITE_ACTIONS: WriteAction[] = [
   updateStatus,
   reschedule,
   checkInAction("staff"),
+  setTimeAction("staff"),
   book,
   resolveEscalation,
   setConversationAi,

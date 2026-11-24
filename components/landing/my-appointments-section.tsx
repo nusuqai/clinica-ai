@@ -37,11 +37,13 @@ export function describeWhen(appt: PatientAppointment): string {
   const day = date ? formatSlotDate(date, { weekday: "long", day: "numeric", month: "long" }) : "";
   const time = appt.slot
     ? formatSlotTime(appt.slot.startTime)
-    : appt.orderNumber != null
-      ? `دورك رقم ${appt.orderNumber}`
-      : appt.arrivalBased
-        ? "رقمك عند الوصول"
-        : "";
+    : appt.dayOnly
+      ? (appt.scheduledTime ?? "سيتم التواصل لتحديد الوقت")
+      : appt.orderNumber != null
+        ? `دورك رقم ${appt.orderNumber}`
+        : appt.arrivalBased
+          ? "رقمك عند الوصول"
+          : "";
   return [day, time].filter(Boolean).join(" · ");
 }
 
@@ -213,6 +215,16 @@ function AppointmentCard({ appt, isNext }: { appt: PatientAppointment; isNext: b
                 </Alert>
               )}
             </>
+          ) : appt.dayOnly ? (
+            // Day-only booking: the clinic team calls to agree the exact time.
+            <p className="flex items-center gap-1.5">
+              <Clock className="h-4 w-4 flex-shrink-0" />
+              {appt.scheduledTime ? (
+                <span dir="ltr">{appt.scheduledTime}</span>
+              ) : (
+                "سيتواصل معك فريق العيادة لتحديد الوقت المناسب"
+              )}
+            </p>
           ) : appt.arrivalBased ? (
             // Arrival-priority reservation not yet checked in — no number yet.
             <p className="flex items-center gap-1.5">

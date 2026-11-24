@@ -7,7 +7,7 @@ import { advanceQueueOnComplete, estimateWaitMinutes } from "./queue";
 import { expectedOrderTime, expectedTimeAfter, minutesAhead } from "@/lib/availability/queue-time";
 import { bookSlotAppointment, releaseAppointmentHold, type BookingItemRequest } from "./booking";
 import { settleSessionLines } from "./packages";
-import { isQueueMode } from "@/lib/availability/modes";
+import { isDayOnlyMode, isQueueMode, normalizeHHMM } from "@/lib/availability/modes";
 import { visitEnd } from "@/lib/slot-time";
 import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { personSearch } from "./_search";
@@ -31,6 +31,8 @@ export interface PatientAppointment {
   isOrderBased: boolean; // true for any queue booking (order or arrival)
   arrivalBased: boolean; // arrival-priority (أسبقية الحضور): number assigned at check-in
   arrived: boolean; // arrival-priority: whether the patient has been checked in yet
+  dayOnly: boolean; // day-only (حجز يوم فقط): the team sets the exact time
+  scheduledTime: string | null; // day-only: "HH:MM" set by the team; null = not yet
   currentOrder: number | null; // null when tracking is off (or slot-based)
   estimatedWaitMin: number | null;
   expectedTime: string | null; // "HH:MM" — order-based expected examination time
@@ -62,6 +64,7 @@ type WithQueueInfo = {
   bookingDate: Date | null;
   estimatedDurationMin: number | null;
   arrivedAt: Date | null;
+  scheduledTime: string | null;
   rule: { mode: AvailabilityMode; startTime: string } | null;
   queue: { currentOrder: number; trackCurrentOrder: boolean } | null;
 };
@@ -126,6 +129,7 @@ function queueView(row: WithQueueInfo, offsets?: QueueOffsets) {
   const isOrderBased = isQueueMode(row.rule?.mode) || row.orderNumber != null;
   const arrivalBased = row.rule?.mode === AvailabilityMode.ARRIVAL_BASED;
   const arrived = row.arrivedAt != null;
+  const dayOnly = isDayOnlyMode(row.rule?.mode);
   const tracking = row.queue?.trackCurrentOrder ?? false;
   const currentOrder = isOrderBased && tracking ? (row.queue?.currentOrder ?? 0) : null;
   const ahead = row.queueId ? offsets?.get(row.queueId) : undefined;
@@ -148,6 +152,8 @@ function queueView(row: WithQueueInfo, offsets?: QueueOffsets) {
     isOrderBased,
     arrivalBased,
     arrived,
+    dayOnly,
+    scheduledTime: dayOnly ? row.scheduledTime : null,
     currentOrder,
     estimatedWaitMin,
     expectedTime,
@@ -173,6 +179,8 @@ export interface AdminAppointment {
   isOrderBased: boolean;
   arrivalBased: boolean;
   arrived: boolean;
+  dayOnly: boolean;
+  scheduledTime: string | null;
 }
 
 // The doctor carries its own name and links to a Specialty; keep the
@@ -403,6 +411,8 @@ export async function listAppointments(
           isOrderBased: q.isOrderBased,
           arrivalBased: q.arrivalBased,
           arrived: q.arrived,
+          dayOnly: q.dayOnly,
+          scheduledTime: q.scheduledTime,
         };
       });
     },
@@ -459,6 +469,7 @@ export async function getAppointmentDetails(appointmentId: string) {
 export interface AppointmentDetailView {
   id: string;
   clinicId: string;
+  branchId: string | null;
   status: AppointmentStatus;
   createdAt: Date;
   patient: { id: string; fullName: string; phone: string | null };
@@ -482,6 +493,8 @@ export interface AppointmentDetailView {
   isOrderBased: boolean;
   arrivalBased: boolean;
   arrived: boolean;
+  dayOnly: boolean;
+  scheduledTime: string | null;
   currentOrder: number | null;
   estimatedWaitMin: number | null;
   expectedTime: string | null;
@@ -544,6 +557,7 @@ export async function getAppointmentForDetail(
   return {
     id: row.id,
     clinicId: row.clinicId,
+    branchId: row.branchId,
     status: row.status,
     createdAt: row.createdAt,
     patient: row.patient,
@@ -566,6 +580,8 @@ export async function getAppointmentForDetail(
     isOrderBased: q.isOrderBased,
     arrivalBased: q.arrivalBased,
     arrived: q.arrived,
+    dayOnly: q.dayOnly,
+    scheduledTime: q.scheduledTime,
     currentOrder: q.currentOrder,
     estimatedWaitMin: q.estimatedWaitMin,
     expectedTime: q.expectedTime,
@@ -608,6 +624,8 @@ export interface DoctorAppointmentView {
   isOrderBased: boolean;
   arrivalBased: boolean;
   arrived: boolean;
+  dayOnly: boolean;
+  scheduledTime: string | null;
   currentOrder: number | null;
   estimatedWaitMin: number | null;
   estimatedDurationMin: number | null;
@@ -759,4 +777,53 @@ export async function updateAppointmentStatus(
   } catch (e) {
     return err(e instanceof Error ? e.message : "فشل تحديث حالة الموعد");
   }
+}
+
+// ─── Day-only booking: the team sets the exact time ──────────────────────────
+
+export interface SetScheduledTimeResult {
+  scheduledTime: string | null;
+  /** Set when the time falls outside the rule's working hours — saved anyway
+   *  (timing is the clinic's responsibility); the UI shows it as a warning. */
+  warning: string | null;
+}
+
+/**
+ * Sets (or clears, with null) the exact time of a DAY_ONLY appointment — the
+ * time the clinic team agreed with the patient. Free-form by design: no slot or
+ * overlap checks; a time outside the rule's hours is saved with a warning. The
+ * patient is not messaged (the team tells them on the call).
+ */
+export async function setScheduledTime(
+  appointmentId: string,
+  time: string | null,
+  clinicId?: string
+): Promise<Result<SetScheduledTimeResult>> {
+  const appt = await prisma.appointment.findFirst({
+    where: { id: appointmentId, ...(clinicId ? { clinicId } : {}) },
+    select: {
+      status: true,
+      rule: { select: { mode: true, startTime: true, endTime: true } },
+    },
+  });
+  if (!appt) return err("الموعد غير موجود");
+  if (!isDayOnlyMode(appt.rule?.mode)) return err("هذا الموعد ليس من نوع حجز اليوم فقط");
+  if (appt.status !== AppointmentStatus.PENDING && appt.status !== AppointmentStatus.CONFIRMED)
+    return err("لا يمكن تعديل وقت موعد منتهٍ أو ملغى");
+
+  const value = time == null || time.trim() === "" ? null : normalizeHHMM(time);
+  if (time != null && time.trim() !== "" && value == null)
+    return err("صيغة الوقت غير صحيحة (مثال: 14:30)");
+
+  await prisma.appointment.update({
+    where: { id: appointmentId },
+    data: { scheduledTime: value },
+  });
+
+  const rule = appt.rule!;
+  const warning =
+    value != null && (value < rule.startTime || value >= rule.endTime)
+      ? `تنبيه: الوقت ${value} خارج ساعات عمل الطبيب في هذا اليوم (${rule.startTime} – ${rule.endTime}). تم الحفظ.`
+      : null;
+  return ok({ scheduledTime: value, warning });
 }

@@ -262,6 +262,8 @@ async function appointmentLine(appointmentId: string) {
       doctorId: true,
       orderNumber: true,
       bookingDate: true,
+      scheduledTime: true,
+      rule: { select: { mode: true } },
       cancellationReason: true,
       patient: { select: { fullName: true } },
       doctor: { select: { fullName: true } },
@@ -273,7 +275,14 @@ async function appointmentLine(appointmentId: string) {
   const day = a.slot?.date ?? a.bookingDate;
   const when = [
     day ? formatSlotDate(day, { weekday: "long", day: "numeric", month: "short" }) : "",
-    a.slot ? formatSlotTime(a.slot.startTime) : a.orderNumber != null ? `دور ${a.orderNumber}` : "",
+    a.slot
+      ? formatSlotTime(a.slot.startTime)
+      : a.rule?.mode === "DAY_ONLY"
+        ? // Day-only: the team still has to call the patient to set the time.
+          (a.scheduledTime ?? "(حجز يوم — يحتاج تحديد الوقت)")
+        : a.orderNumber != null
+          ? `دور ${a.orderNumber}`
+          : "",
   ]
     .filter(Boolean)
     .join(" ");

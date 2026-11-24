@@ -21,6 +21,7 @@ import RecordTimeline from "@/components/medical/record-timeline";
 import RecordRevisions from "@/components/medical/record-revisions";
 import AppointmentRecordModal from "@/components/medical/appointment-record-modal";
 import AppointmentAttachments from "@/components/appointments/appointment-attachments";
+import DayTimeEditor from "@/components/appointments/day-time-editor";
 import { formatSlotDate, formatSlotTime } from "@/lib/slot-time";
 import type { AppointmentDetailView } from "@/server/services/appointments";
 import type { TreatmentRecordView } from "@/server/services/treatments";
@@ -49,6 +50,9 @@ interface Props {
   /** False for staff who manage appointments but not medical records: the
       record + attachments sections are left out entirely. Defaults to true. */
   showRecords?: boolean;
+  /** Day-only bookings: this viewer may set the agreed time (staff with the
+      appointments permission, or the visit's doctor). */
+  canSetTime?: boolean;
 }
 
 export default function AppointmentDetail({
@@ -61,6 +65,7 @@ export default function AppointmentDetail({
   backLabel,
   patientHistoryHref,
   showRecords = true,
+  canSetTime = false,
 }: Props) {
   const isStaff = viewerRole === Role.DOCTOR || viewerRole === Role.ADMIN;
   const visitDate = appt.slot?.date ?? appt.bookingDate;
@@ -110,7 +115,24 @@ export default function AppointmentDetail({
             <Row icon={Calendar} label="التاريخ">
               {visitDate ? formatSlotDate(visitDate) : "—"}
             </Row>
-            {appt.slot ? (
+            {appt.dayOnly ? (
+              <Row icon={Clock} label="اليوم والوقت (حجز يوم — يحدده فريق العيادة)">
+                <DayTimeEditor
+                  appointmentId={appt.id}
+                  initialTime={appt.scheduledTime}
+                  initialDate={
+                    appt.bookingDate ? new Date(appt.bookingDate).toISOString().slice(0, 10) : null
+                  }
+                  initialBranchId={appt.branchId}
+                  role={viewerRole === Role.DOCTOR ? "DOCTOR" : "ADMIN"}
+                  editable={
+                    canSetTime &&
+                    isStaff &&
+                    (appt.status === "PENDING" || appt.status === "CONFIRMED")
+                  }
+                />
+              </Row>
+            ) : appt.slot ? (
               <Row icon={Clock} label="الوقت">
                 <span dir="ltr">
                   {formatSlotTime(appt.slot.startTime)} – {formatSlotTime(appt.slot.endTime)}

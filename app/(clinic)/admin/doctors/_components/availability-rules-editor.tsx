@@ -4,7 +4,7 @@ import { ruleCapText } from "@/lib/availability/queue-capacity";
 import { useEffect, useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { createRuleAction, deleteRuleAction, getDoctorRulesAction } from "@/server/actions/admin";
-import { isQueueMode, MODE_BADGE_AR } from "@/lib/availability/modes";
+import { isDayBookedMode, MODE_BADGE_AR } from "@/lib/availability/modes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -184,7 +184,7 @@ export default function AvailabilityRulesEditor(props: Props) {
                       {rule.startTime} – {rule.endTime}
                     </span>
                     <Badge>{branchName(rule.branchId)}</Badge>
-                    {isQueueMode(rule.mode) ? (
+                    {isDayBookedMode(rule.mode) ? (
                       <Badge variant="indigo">
                         {MODE_BADGE_AR[rule.mode]}
                         {ruleCapText(rule)}

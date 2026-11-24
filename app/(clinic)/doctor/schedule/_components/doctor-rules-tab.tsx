@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { DayOfWeek, type AvailabilityRule } from "@prisma/client";
 import { formatSlotDate } from "@/lib/slot-time";
-import { isQueueMode, MODE_BADGE_AR } from "@/lib/availability/modes";
+import { isDayBookedMode, MODE_BADGE_AR } from "@/lib/availability/modes";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -188,7 +188,7 @@ export default function DoctorRulesTab({ rules, branches, services }: DoctorRule
                     {rule.startTime} – {rule.endTime}
                   </span>
                   {rule.branch && <Badge>{rule.branch.name}</Badge>}
-                  {isQueueMode(rule.mode) ? (
+                  {isDayBookedMode(rule.mode) ? (
                     <Badge variant="indigo">
                       {MODE_BADGE_AR[rule.mode]}
                       {ruleCapText(rule)}
@@ -238,7 +238,7 @@ export default function DoctorRulesTab({ rules, branches, services }: DoctorRule
                 {/* Queue (order-based) rules need no slot generation — the day
                     is implicitly available and order numbers are handed out on
                     booking, so the generate button is slot-based only. */}
-                {!isQueueMode(rule.mode) && (
+                {!isDayBookedMode(rule.mode) && (
                   <Hint label="توليد مواعيد للـ 30 يوم القادمة">
                     <Button
                       variant="outline"

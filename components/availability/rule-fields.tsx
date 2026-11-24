@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 
 import { cn } from "@/lib/utils";
 import { FormField } from "@/components/ui/form-field";
-import { isQueueMode } from "@/lib/availability/modes";
+import { isDayOnlyMode, isQueueMode } from "@/lib/availability/modes";
 import { queueCapacityHint } from "@/lib/availability/queue-capacity";
 import {
   ruleFormDefaults,
@@ -63,6 +63,7 @@ const MODE_OPTIONS = [
   { value: AvailabilityMode.SLOT_BASED, label: "مواعيد بأوقات ثابتة" },
   { value: AvailabilityMode.ORDER_BASED, label: "نظام الدور (طابور)" },
   { value: AvailabilityMode.ARRIVAL_BASED, label: "أسبقية الحضور" },
+  { value: AvailabilityMode.DAY_ONLY, label: "حجز يوم فقط (الفريق يحدد الوقت)" },
 ];
 
 const CAP_OPTIONS = [
@@ -70,6 +71,8 @@ const CAP_OPTIONS = [
   { value: QueueCapType.PATIENTS, label: "عدد المرضى" },
   { value: QueueCapType.MINUTES, label: "إجمالي الدقائق" },
 ];
+/** Day-only booking caps by a number of bookings or not at all (no service minutes to fill). */
+const DAY_ONLY_CAP_OPTIONS = CAP_OPTIONS.filter((o) => o.value !== QueueCapType.MINUTES);
 
 /** A service the rule can be limited to (the doctor's own services). */
 export interface RuleServiceOption {
@@ -238,10 +241,27 @@ function ModeFields({
         hint={
           mode === AvailabilityMode.ORDER_BASED
             ? "بمجرد أن يحجز المريض يحصل على رقم دوره، ونُخبره بالوقت المتوقع لكشفه تقريباً، ويمكنه متابعة كم تبقّى على دوره من خلالنا."
-            : mode === AvailabilityMode.ARRIVAL_BASED &&
-              "يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور (يسجّل الاستقبال وصوله)."
+            : mode === AvailabilityMode.ARRIVAL_BASED
+              ? "يحجز المريض مكاناً بلا رقم، ويُعطى رقم دوره عند وصوله للعيادة حسب أسبقية الحضور (يسجّل الاستقبال وصوله)."
+              : mode === AvailabilityMode.DAY_ONLY &&
+                "يحجز المريض اليوم فقط، ثم يتواصل معه فريق العيادة لتحديد الوقت المناسب ويسجّله على الموعد. لا يتم التحقق من تداخل الأوقات — مسؤولية العيادة."
         }
       />
+
+      {isDayOnlyMode(mode) && (
+        <>
+          <FormField
+            control={control}
+            name="capType"
+            type="select"
+            label="الحد اليومي"
+            labelClassName={labelClassName}
+            options={DAY_ONLY_CAP_OPTIONS}
+            hint="اختياري: أقصى عدد حجوزات في اليوم."
+          />
+          <CapFields control={control} labelClassName={labelClassName} compact={compact} dayOnly />
+        </>
+      )}
 
       {isQueueMode(mode) ? (
         <>
@@ -264,7 +284,7 @@ function ModeFields({
           />
           <CapFields control={control} labelClassName={labelClassName} compact={compact} />
         </>
-      ) : (
+      ) : isDayOnlyMode(mode) ? null : (
         <FormField
           control={control}
           name="slotDurationMin"
@@ -284,10 +304,13 @@ function CapFields({
   control,
   labelClassName,
   compact,
+  dayOnly = false,
 }: {
   control: RuleControl;
   labelClassName?: string;
   compact: boolean;
+  /** Day-only rules: patients cap only, and no per-patient capacity estimate. */
+  dayOnly?: boolean;
 }) {
   const capType = useWatch({ control, name: "capType" });
   if (capType === QueueCapType.PATIENTS)
@@ -302,10 +325,10 @@ function CapFields({
           min={1}
           className="sm:col-span-2"
         />
-        <CapacityHint control={control} compact={compact} />
+        {!dayOnly && <CapacityHint control={control} compact={compact} />}
       </>
     );
-  if (capType === QueueCapType.MINUTES)
+  if (capType === QueueCapType.MINUTES && !dayOnly)
     return (
       <FormField
         control={control}

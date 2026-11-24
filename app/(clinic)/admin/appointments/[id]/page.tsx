@@ -38,6 +38,7 @@ export default async function AdminAppointmentDetailPage({ params }: PageProps) 
       viewerRole={Role.ADMIN}
       canEdit={access.canEdit}
       showRecords={access.canViewRecords}
+      canSetTime={can(ctx, "appointments")}
       backHref={can(ctx, "appointments") ? "/admin/appointments" : "/admin"}
       backLabel={can(ctx, "appointments") ? "المواعيد" : "الرئيسية"}
       patientHistoryHref={can(ctx, "patients") ? `/admin/patients/${appt.patient.id}` : undefined}

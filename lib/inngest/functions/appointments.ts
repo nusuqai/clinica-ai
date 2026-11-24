@@ -46,6 +46,7 @@ const COARSE_BUFFER_MS = 18 * 60 * 60 * 1000;
 // Widest reminder lead we pre-filter for; the exact per-clinic lead is applied
 // in the refinement pass. 48h leaves headroom above the 24h default.
 const MAX_LEAD_MS = 48 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Follow-up reminders key on a TreatmentRecord.followUpDate (a DATE, weeks out
 // in the usual case). Pre-filter a wide window then refine per-binding lead in
@@ -75,6 +76,8 @@ async function sweepNoShows(now: Date): Promise<number> {
     select: {
       id: true,
       bookingDate: true,
+      scheduledTime: true,
+      totalDurationMin: true,
       slot: { select: { startTime: true, endTime: true } },
       rule: { select: { startTime: true, endTime: true } },
       clinic: { select: { timezone: true } },
@@ -134,13 +137,20 @@ async function findDueReminders(now: Date): Promise<DueRow[]> {
       },
       OR: [
         { slotId: { not: null }, slot: { startTime: { gte: coarseFrom, lte: coarseTo } } },
-        { slotId: null, bookingDate: { gte: coarseFrom, lte: coarseTo } },
+        // bookingDate is the day's midnight while the visit (rule start, or a
+        // day-only time the team set) can be late that day: widen by a day.
+        {
+          slotId: null,
+          bookingDate: { gte: new Date(coarseFrom.getTime() - DAY_MS), lte: coarseTo },
+        },
       ],
     },
     select: {
       id: true,
       clinicId: true,
       bookingDate: true,
+      scheduledTime: true,
+      totalDurationMin: true,
       slot: { select: { startTime: true, endTime: true } },
       rule: { select: { startTime: true, endTime: true } },
       clinic: {
@@ -530,6 +540,8 @@ async function sendAppointmentNotify(
       status: true,
       orderNumber: true,
       bookingDate: true,
+      scheduledTime: true,
+      rule: { select: { mode: true } },
       reminderSentAt: true,
       feedbackRequestedAt: true,
       patient: { select: { id: true, fullName: true, phone: true } },

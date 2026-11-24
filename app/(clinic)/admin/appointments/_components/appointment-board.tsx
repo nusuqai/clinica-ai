@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import BoardColumn from "./board-column";
 import { Alert } from "@/components/ui/alert";
 import { AppointmentCardOverlay } from "./appointment-card";
+import DayOnlyTime from "@/components/appointments/day-only-time";
 
 const STATUS_ORDER: AppointmentStatus[] = [
   AppointmentStatus.PENDING,
@@ -288,8 +289,13 @@ export default function AppointmentBoard({
                     ? formatSlotDate(detailsAppt.bookingDate)
                     : "—"}
               </DetailRow>
-              <DetailRow icon={Clock} label={detailsAppt.slot ? "الوقت" : "الدور"}>
-                {detailsAppt.slot ? (
+              <DetailRow
+                icon={Clock}
+                label={detailsAppt.slot || detailsAppt.dayOnly ? "الوقت" : "الدور"}
+              >
+                {detailsAppt.dayOnly ? (
+                  <DayOnlyTime time={detailsAppt.scheduledTime} />
+                ) : detailsAppt.slot ? (
                   <span dir="ltr">
                     {formatSlotTime(detailsAppt.slot.startTime)} –{" "}
                     {formatSlotTime(detailsAppt.slot.endTime)}

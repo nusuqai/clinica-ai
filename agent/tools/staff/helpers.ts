@@ -47,6 +47,9 @@ export interface AppointmentBrief {
   orderNumber: number | null;
   arrivalBased: boolean;
   arrived: boolean;
+  /** Day-only (حجز يوم فقط): the team sets the time; null time = still to set. */
+  dayOnly: boolean;
+  scheduledTime: string | null;
   notes: string | null;
 }
 
@@ -60,6 +63,7 @@ const briefSelect = {
   bookingDate: true,
   patientNotes: true,
   arrivedAt: true,
+  scheduledTime: true,
   patient: { select: { fullName: true, phone: true } },
   doctor: { select: { fullName: true } },
   branch: { select: { name: true } },
@@ -77,6 +81,7 @@ type BriefRow = {
   bookingDate: Date | null;
   patientNotes: string | null;
   arrivedAt: Date | null;
+  scheduledTime: string | null;
   patient: { fullName: string; phone: string | null };
   doctor: { fullName: string };
   branch: { name: string } | null;
@@ -98,10 +103,12 @@ function toBrief(a: BriefRow): AppointmentBrief {
     status: a.status,
     statusLabel: statusLabel(a.status),
     date: day ? formatSlotDate(day, { weekday: "long", day: "numeric", month: "long" }) : null,
-    time: a.slot ? formatSlotTime(a.slot.startTime) : null,
+    time: a.slot ? formatSlotTime(a.slot.startTime) : (a.scheduledTime ?? null),
     orderNumber: a.orderNumber,
     arrivalBased: a.rule?.mode === "ARRIVAL_BASED",
     arrived: !!a.arrivedAt,
+    dayOnly: a.rule?.mode === "DAY_ONLY",
+    scheduledTime: a.rule?.mode === "DAY_ONLY" ? a.scheduledTime : null,
     notes: a.patientNotes,
   };
 }

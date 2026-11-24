@@ -100,6 +100,7 @@ const MODE_LABEL: Record<string, string> = {
   SLOT_BASED: "موعد محدد",
   ORDER_BASED: "بالدور",
   ARRIVAL_BASED: "أسبقية الحضور",
+  DAY_ONLY: "حجز يوم",
 };
 
 const CHANNEL_LABEL: Record<Channel, string> = {
@@ -115,6 +116,7 @@ const appointmentSelect = {
   branchId: true,
   status: true,
   orderNumber: true,
+  scheduledTime: true,
   bookingDate: true,
   arrivedAt: true,
   patientNotes: true,
@@ -179,6 +181,7 @@ function narrowsPatients(f: ExportFilters, scope: BranchScope): boolean {
 function visitWhen(a: ApptRow): { day: string | null; time: string | null } {
   const day = wallDay(a.slot?.date ?? a.bookingDate);
   if (a.slot) return { day, time: wallTime(a.slot.startTime) };
+  if (a.rule?.mode === "DAY_ONLY") return { day, time: a.scheduledTime ?? "بانتظار تحديد الوقت" };
   if (a.orderNumber != null) return { day, time: `دور ${a.orderNumber}` };
   return { day, time: a.rule?.mode === "ARRIVAL_BASED" ? "لم يصل بعد" : null };
 }

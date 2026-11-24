@@ -206,6 +206,14 @@ export default function QueuePanel({ doctorId }: { doctorId: string }) {
 
       {loading ? (
         <p className="font-sans text-sm text-muted-foreground">جارٍ التحميل...</p>
+      ) : queue?.mode === "DAY_ONLY" ? (
+        // Day-only days have no serving queue — the team sets each visit's time.
+        <Card className="py-16 text-center">
+          <p className="font-sans text-muted-foreground">
+            هذا اليوم بنظام «حجز يوم فقط» — لا يوجد طابور. تابع الحجوزات وحدّد أوقاتها من تبويب
+            المواعيد المتاحة أو من صفحة كل موعد.
+          </p>
+        </Card>
       ) : !queue ? (
         <Card className="py-16 text-center">
           <p className="font-sans text-muted-foreground">
