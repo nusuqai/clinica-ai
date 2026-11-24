@@ -109,7 +109,12 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
         description:
           "ابحث في خدمات العيادة (كشف، جلسات، إجراءات، تحاليل…) بالاسم أو الوصف أو التصنيف، مع سعرها في الفرع والعرض الساري فيه. استخدمها كلما ذكر المستخدم خدمة أو سأل عن سعر أو «عندكم إيه في …». مرّر branchId دائماً: الأسعار والعروض والخدمات المتاحة تختلف من فرع لآخر. إن لم تعرف الفرع فاستدعها بدونه وستعيد needsBranch=true مع الفروع كخيارات — اسأل المريض عن فرعه ثم أعد الطلب. عند طلب عام بلا بحث تُعيد التصنيفات كخيارات.",
         schema: z.object({
-          query: z.string().nullable().describe("اسم الخدمة أو جزء منه أو اسم التصنيف (اختياري)"),
+          query: z
+            .string()
+            .nullable()
+            .describe(
+              "اسم الخدمة أو جزء منه أو اسم التصنيف (اختياري). قد تكون أسماء الخدمات والتصنيفات بالإنجليزية (مثل Laser، Botox، Filler، Half Legs)؛ إن لم تجد نتيجة بالكلمة العربية فأعد البحث بمقابلها الإنجليزي"
+            ),
           categoryId: z.string().nullable().describe("معرّف التصنيف (اختياري)"),
           branchId: z.string().nullable().describe("معرّف الفرع من list_branches (اختياري)"),
           showAll: showAllField,
