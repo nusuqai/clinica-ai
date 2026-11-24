@@ -10,6 +10,7 @@ import { escalationTool } from "./escalation";
 import { registerInClinicTool } from "./registration";
 import { claimWebLoginTool } from "./claim";
 import { isSoloClinic } from "@/server/services/clinic-kind";
+import { getStaffTools } from "./staff";
 
 // A solo-doctor clinic has one doctor, so there is nothing to list or search
 // by specialty — withheld so the model never starts a "which doctor / which
@@ -26,6 +27,8 @@ const SOLO_HIDDEN_TOOLS = new Set([
  * never constructed, so the model cannot see or call them.
  */
 export async function getToolsForRole(ctx: AgentContext): Promise<DynamicStructuredTool[]> {
+  // A clinic member talking to the team assistant (#89): their own tool set.
+  if (ctx.staff) return getStaffTools(ctx);
   const solo = await isSoloClinic(ctx.clinicId).catch(() => false);
   const common = commonTools(ctx.clinicId).filter((t) => !solo || !SOLO_HIDDEN_TOOLS.has(t.name));
   const base = [

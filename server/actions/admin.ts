@@ -18,8 +18,7 @@ import * as QueueService from "@/server/services/queue";
 import * as BookingService from "@/server/services/booking";
 import * as KnowledgeService from "@/server/services/knowledge";
 import { expectedTimeAfter, minutesAhead } from "@/lib/availability/queue-time";
-import { getOrCreatePatientByPhone } from "@/server/services/patients";
-import { normalizePhone, isValidPhone } from "@/lib/phone";
+import { bookOnBehalf } from "@/server/services/bookOnBehalf";
 import { pageRequest, offsetRequest } from "@/lib/pagination";
 import type { BranchScope } from "@/lib/branch-scope";
 import * as Scope from "@/server/services/branchScope";
@@ -47,10 +46,10 @@ async function requirePerm(...permissions: Permission[]): Promise<string> {
 // a staff member limited to some branches can't reach another branch's rows.
 async function requireScoped(
   ...permissions: Permission[]
-): Promise<{ clinicId: string; scope: BranchScope }> {
+): Promise<{ clinicId: string; scope: BranchScope; userId: string }> {
   const ctx = await getPermittedContext(permissions);
   if (!ctx) throw new Error("غير مصرح");
-  return { clinicId: ctx.clinic.id, scope: ctx.branchIds };
+  return { clinicId: ctx.clinic.id, scope: ctx.branchIds, userId: ctx.user.id };
 }
 
 const DOCTOR_NOT_FOUND = "الطبيب غير موجود";
@@ -398,69 +397,12 @@ export async function adminBookAppointmentAction(input: {
   mode?: "order" | "arrival";
   orderNumber?: number | null;
 }> {
-  const { clinicId, scope } = await requireScoped("appointments");
-  if (input.items && (!Array.isArray(input.items) || input.items.length > 20))
-    return { ok: false, error: "بيانات غير صالحة" };
-  // Staff book only with doctors — and into slots / queues — of their branches.
-  if (!(await Scope.doctorInScope(input.doctorId, clinicId, scope)))
-    return { ok: false, error: DOCTOR_NOT_FOUND };
-  if (input.slotId && !(await Scope.slotInScope(input.slotId, clinicId, scope)))
-    return { ok: false, error: "الموعد غير موجود" };
-
-  let patientId: string;
-  if ("id" in input.patient) {
-    if (!(await UserService.isClinicPatient(input.patient.id, clinicId)))
-      return { ok: false, error: "المريض غير موجود في هذه العيادة" };
-    patientId = input.patient.id;
-  } else {
-    const fullName = input.patient.fullName.trim();
-    const phone = normalizePhone(input.patient.phone);
-    if (!fullName) return { ok: false, error: "اسم المريض مطلوب" };
-    if (!isValidPhone(phone)) return { ok: false, error: "رقم الهاتف غير صالح" };
-    try {
-      ({ profileId: patientId } = await getOrCreatePatientByPhone({
-        clinicId,
-        phone,
-        name: fullName,
-      }));
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "تعذّر إنشاء حساب المريض" };
-    }
-  }
-
-  let appointmentId: string;
-  let mode: "order" | "arrival" | undefined;
-  let orderNumber: number | null | undefined;
-  if (input.slotId) {
-    const res = await AppointmentService.createAppointment(patientId, input.slotId, input.notes, {
-      clinicId,
-      branchScope: scope,
-      items: input.items,
-    });
-    if (!res.ok) return { ok: false, error: res.error };
-    appointmentId = res.data.id;
-  } else if (input.date) {
-    const res = await BookingService.bookQueueAppointment({
-      patientId,
-      doctorId: input.doctorId,
-      date: new Date(input.date),
-      notes: input.notes,
-      clinicId,
-      branchScope: scope,
-      items: input.items,
-    });
-    if (!res.ok) return { ok: false, error: res.error };
-    appointmentId = res.data.id;
-    mode = res.data.mode === "ARRIVAL_BASED" ? "arrival" : "order";
-    orderNumber = res.data.orderNumber;
-  } else {
-    return { ok: false, error: "يرجى اختيار موعد" };
-  }
-
-  await AppointmentService.updateAppointmentStatus(appointmentId, AppointmentStatus.CONFIRMED);
+  const { clinicId, scope, userId } = await requireScoped("appointments");
+  const res = await bookOnBehalf({ ...input, clinicId, scope, actorUserId: userId });
+  if (!res.ok) return { ok: false, error: res.error };
 
   revalidatePath("/admin/appointments", "page");
-  return { ok: true, mode, orderNumber };
+  return { ok: true, mode: res.mode, orderNumber: res.orderNumber };
 }
 
 // ─── Availability Rule actions ────────────────────────────────────────────────

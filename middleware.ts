@@ -53,6 +53,8 @@ const PUBLIC_API_ROUTES = [
   "/api/agent/chat",
   "/api/inngest",
   "/api/cron/process-debounce",
+  // Team-alert sweep (#89) — CRON_SECRET bearer, like the debounce processor.
+  "/api/cron/staff-alerts",
 ];
 
 // API handlers scope themselves (the WhatsApp webhook identifies its clinic by

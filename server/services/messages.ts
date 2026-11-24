@@ -6,7 +6,7 @@ import {
   type InboxNumberScope,
 } from "@/lib/inbox-scope";
 import { prisma } from "@/lib/prisma";
-import { Channel, Role, SenderType, type Prisma } from "@prisma/client";
+import { Channel, ConversationKind, Role, SenderType, type Prisma } from "@prisma/client";
 import { personSearch, phoneDigits } from "./_search";
 import { quoteKindOf, quoteSnippet } from "@/lib/message-quote";
 import {
@@ -190,7 +190,13 @@ async function customerConversationWhere(clinicId: string): Promise<Prisma.Conve
     select: { userId: true },
   });
   const staffIds = staff.map((s) => s.userId);
-  return { clinicId, OR: [{ userId: null }, { userId: { notIn: staffIds } }] };
+  // Team-assistant threads (#89) are a member's own chat with the AI — never
+  // listed, whoever their owner is now.
+  return {
+    clinicId,
+    kind: ConversationKind.CUSTOMER,
+    OR: [{ userId: null }, { userId: { notIn: staffIds } }],
+  };
 }
 
 export interface ConversationFilters {

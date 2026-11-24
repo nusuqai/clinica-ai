@@ -4,6 +4,7 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { prisma } from "@/lib/prisma";
 import type { AgentContext } from "@/agent/types";
 import { jsonTool } from "./shared";
+import { notifyAiEscalation } from "@/server/services/staff/notifications";
 
 /**
  * Available to all identified (non-null-role) callers. Logs an escalation so
@@ -20,13 +21,20 @@ export function escalationTool(ctx: AgentContext): DynamicStructuredTool {
       schema: z.object({ reason: z.string().nullable() }),
     },
     async ({ reason }) => {
-      await prisma.escalation.create({
+      const created = await prisma.escalation.create({
         data: {
           clinicId: ctx.clinicId,
           conversationId: ctx.conversationId,
           sessionId: ctx.sessionId,
           reason: reason ?? null,
         },
+        select: { id: true },
+      });
+      await notifyAiEscalation({
+        clinicId: ctx.clinicId,
+        conversationId: ctx.conversationId,
+        escalationId: created.id,
+        reason: reason ?? null,
       });
       return { escalated: true, reason: reason ?? null };
     },

@@ -14,6 +14,7 @@ import {
 } from "./packages";
 import { getOrderRuleForDate, toDateOnly, type OrderBookingResult } from "./queue";
 import { ok, err, type Result } from "./_result";
+import { notifyNewBooking } from "./staff/notifications";
 
 // The booking engine: every appointment is booked FOR services (≥ 1 line), and
 // the services' durations drive the schedule. Design and rules:
@@ -357,6 +358,9 @@ export interface SlotBookingInput {
   /** Reschedule: the booking being replaced doesn't block itself. */
   excludeAppointmentId?: string;
   status?: AppointmentStatus;
+  /** The team member booking it (dashboard / team assistant) — not alerted
+   *  about their own booking. Omitted for patient bookings. */
+  actorUserId?: string | null;
 }
 
 export interface SlotBookingResult {
@@ -406,7 +410,19 @@ async function consecutiveSlots(
   return ok(run.map((s) => s.id));
 }
 
+/** Books a slot visit, then alerts the team (#89) — a reschedule's new
+ *  booking is not a new booking, so it raises nothing. */
 export async function bookSlotAppointment(
+  input: SlotBookingInput
+): Promise<Result<SlotBookingResult>> {
+  const res = await bookSlotAppointmentCore(input);
+  if (res.ok && !input.excludeAppointmentId) {
+    await notifyNewBooking(res.data.id, input.actorUserId ?? null);
+  }
+  return res;
+}
+
+async function bookSlotAppointmentCore(
   input: SlotBookingInput
 ): Promise<Result<SlotBookingResult>> {
   const slot = await prisma.slot.findUnique({
@@ -534,9 +550,20 @@ export interface QueueBookingInput {
   clinicId?: string;
   branchScope?: BranchScope;
   status?: AppointmentStatus;
+  /** The team member booking it — see SlotBookingInput.actorUserId. */
+  actorUserId?: string | null;
 }
 
+/** Books a queue (order / arrival) visit, then alerts the team (#89). */
 export async function bookQueueAppointment(
+  input: QueueBookingInput
+): Promise<Result<OrderBookingResult & { booking: ResolvedBooking }>> {
+  const res = await bookQueueAppointmentCore(input);
+  if (res.ok) await notifyNewBooking(res.data.id, input.actorUserId ?? null);
+  return res;
+}
+
+async function bookQueueAppointmentCore(
   input: QueueBookingInput
 ): Promise<Result<OrderBookingResult & { booking: ResolvedBooking }>> {
   const day = toDateOnly(input.date);

@@ -13,6 +13,7 @@ import {
 } from "@/server/services/agentRunner";
 import type { InboundEnvelope } from "@/lib/meta/whatsapp-inbound";
 import type { WhatsAppTransport } from "@/lib/whatsapp/transport";
+import { routeStaffInbound } from "@/server/services/staff/ingest";
 
 /**
  * Routes one inbound WhatsApp message to its handler — shared by the Meta Cloud
@@ -21,9 +22,10 @@ import type { WhatsAppTransport } from "@/lib/whatsapp/transport";
  * download media and send any immediate notice back.
  */
 export async function processInboundWhatsApp(
-  { phone, userId, name, messageId, quotedWamid, message }: InboundEnvelope,
+  envelope: InboundEnvelope,
   creds: WhatsAppTransport
 ): Promise<void> {
+  const { phone, userId, name, messageId, quotedWamid, message } = envelope;
   console.log(
     `[wa-debug] processMessage phone=${phone ?? "(hidden)"} userId=${userId ?? "(none)"} messageId=${messageId} kind=${message.kind}`
   );
@@ -35,11 +37,19 @@ export async function processInboundWhatsApp(
     return;
   }
 
-  const conversation = await resolveConversation(creds.clinicId, {
-    phone,
-    userId,
-    name,
-  });
+  // Team assistant (#89): a link code, or a linked clinic member writing from
+  // their own WhatsApp — never the patient pipeline. Their text/voice continue
+  // below on their own (inbox-hidden) assistant thread.
+  const staffRoute = await routeStaffInbound(envelope, creds);
+  if (staffRoute === "handled") return;
+
+  const conversation = staffRoute
+    ? { id: staffRoute.staffConversationId }
+    : await resolveConversation(creds.clinicId, {
+        phone,
+        userId,
+        name,
+      });
 
   // Voice notes are downloaded, stored, transcribed, then answered like text.
   if (message.kind === "voice") {

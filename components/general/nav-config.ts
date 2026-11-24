@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   HeartPulse,
   Sparkles,
+  Bot,
 } from "lucide-react";
 import type { NavItem } from "./sidebar";
 import type { Permission } from "@/lib/permissions";
@@ -31,6 +32,7 @@ export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
     { href: "/doctor/patients", label: "المرضى", icon: Users },
     { href: "/doctor/schedule", label: "جدول العمل", icon: Clock },
     { href: "/doctor/profile", label: "الملف الشخصي", icon: UserCircle },
+    { href: "/doctor/my-whatsapp", label: "واتساب الخاص بي", icon: Smartphone },
   ],
   admin: [
     // Each item names the permission that opens it (see lib/permissions.ts);
@@ -38,6 +40,7 @@ export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
     // items are for the clinic ADMIN alone.
     { href: "/admin", label: "الرئيسية", icon: LayoutDashboard, permission: "reports" },
     { href: "/admin/team", label: "فريق العمل", icon: ShieldCheck, adminOnly: true },
+    { href: "/admin/assistant", label: "مساعد الفريق", icon: Bot, adminOnly: true },
     { href: "/admin/patients", label: "المرضى", icon: HeartPulse, permission: "patients" },
     { href: "/admin/doctors", label: "الأطباء", icon: Stethoscope, permission: "doctors" },
     {
@@ -92,6 +95,8 @@ export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
     //   ],
     // },
     { href: "/admin/reports", label: "التقارير", icon: BarChart3, permission: "reports" },
+    // Every team member links their own number (#89) — no permission needed.
+    { href: "/admin/my-whatsapp", label: "واتساب الخاص بي", icon: Smartphone },
   ],
 };
 

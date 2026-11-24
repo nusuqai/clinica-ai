@@ -684,9 +684,12 @@ export async function createAppointment(
     items?: BookingItemRequest[] | null;
     branchScope?: BranchScope;
     status?: AppointmentStatus;
+    /** The team member booking it (not alerted about their own booking). */
+    actorUserId?: string | null;
   }
 ): Promise<Result<{ id: string }>> {
   const res = await bookSlotAppointment({
+    actorUserId: opts?.actorUserId,
     patientId,
     slotId,
     notes: patientNotes,

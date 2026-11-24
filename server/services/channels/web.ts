@@ -14,8 +14,10 @@ import { getClinicAiStatus } from "../aiCredit";
 import { transcribeAudio } from "../transcription";
 import { synthesizeSpeech } from "../tts";
 import { uploadPatientMedia } from "@/lib/supabase/storage";
+import { getOrCreateStaffWebConversation } from "../staff/link";
 import {
   generateAgentReply,
+  staffAgentContext,
   chargeReply,
   chargeTranscriptionSafe,
   chargeTtsSafe,
@@ -69,6 +71,8 @@ interface WebReplyOutcome {
   agentMessageId: string;
   replyText: string;
   toolCalls: ToolCallRecord[];
+  /** A gate notice (team assistant), not an agent answer — never spoken. */
+  notice: boolean;
 }
 
 /**
@@ -208,6 +212,17 @@ function guestWebContext(
 async function runWebReplyCore(ctx: AgentContext): Promise<WebReplyOutcome | null> {
   const gen = await generateAgentReply(ctx);
   if (gen.kind === "skipped") return null;
+  if (gen.kind === "notice") {
+    const noticeMsg = await persistAgentMessage(
+      ctx.conversationId,
+      ctx.sessionId,
+      ctx.clinicId,
+      gen.text,
+      null,
+      MessageDelivery.SENT
+    );
+    return { agentMessageId: noticeMsg.id, replyText: gen.text, toolCalls: [], notice: true };
+  }
 
   const agentMsg = await persistAgentMessage(
     ctx.conversationId,
@@ -227,6 +242,7 @@ async function runWebReplyCore(ctx: AgentContext): Promise<WebReplyOutcome | nul
     sessionId: ctx.sessionId,
     messageId: agentMsg.id,
     aiAgentId: gen.aiAgentId,
+    kind: gen.usageKind,
     usage: gen.usage ?? {
       promptTokens: 0,
       completionTokens: 0,
@@ -235,7 +251,12 @@ async function runWebReplyCore(ctx: AgentContext): Promise<WebReplyOutcome | nul
       model: DEFAULT_MODEL,
     },
   });
-  return { agentMessageId: agentMsg.id, replyText: gen.text, toolCalls: gen.toolCalls };
+  return {
+    agentMessageId: agentMsg.id,
+    replyText: gen.text,
+    toolCalls: gen.toolCalls,
+    notice: false,
+  };
 }
 
 /** Text-reply tail for the web entrypoints → the JSON the route returns. */
@@ -325,7 +346,7 @@ async function finishWebVoiceReply(
   // Voice-out: the patient spoke, so speak back — but only if the clinic opted in.
   let audioMessageId: string | null = null;
   const status = await getClinicAiStatus(clinicId);
-  if (status.voiceReplyEnabled) {
+  if (status.voiceReplyEnabled && !outcome.notice) {
     const tts = await synthesizeSpeech(outcome.replyText);
     if (tts) {
       try {
@@ -376,4 +397,51 @@ async function finishWebVoiceReply(
     handoff: false,
     audioMessageId,
   };
+}
+
+// ─── Team assistant on the dashboard bubble (#89) ───────────────────────────
+
+/** The clinic a team member is chatting in — resolved by the route from the
+ *  request host and the member's session. */
+export interface StaffWebClinic {
+  id: string;
+  slug: string;
+}
+
+async function staffWebContext(clinic: StaffWebClinic, userId: string): Promise<AgentContext> {
+  const conversationId = await getOrCreateStaffWebConversation(clinic.id, userId);
+  const sessionId = await resolveActiveSession(conversationId, clinic.id);
+  const ctx = await staffAgentContext({
+    conversationId,
+    clinicId: clinic.id,
+    clinicSlug: clinic.slug,
+    sessionId,
+    channel: Channel.WEB,
+    userId,
+  });
+  if (!ctx) throw new Error("Not a team member of this clinic");
+  return ctx;
+}
+
+/** A team member's text turn with the team assistant (dashboard bubble). */
+export async function staffWebReply(
+  clinic: StaffWebClinic,
+  userId: string,
+  userText: string
+): Promise<WebReplyResult> {
+  const ctx = await staffWebContext(clinic, userId);
+  await persistUserMessage(ctx.conversationId, ctx.sessionId, clinic.id, userText, userId);
+  const tail = await finishWebTextReply(ctx);
+  return { conversationId: ctx.conversationId, ...tail };
+}
+
+/** A team member's voice turn with the team assistant (dashboard bubble). */
+export async function staffWebVoiceReply(
+  clinic: StaffWebClinic,
+  userId: string,
+  audio: { bytes: Buffer; mimeType: string }
+): Promise<WebVoiceResult> {
+  const ctx = await staffWebContext(clinic, userId);
+  const tail = await finishWebVoiceReply(ctx, audio);
+  return { conversationId: ctx.conversationId, ...tail };
 }

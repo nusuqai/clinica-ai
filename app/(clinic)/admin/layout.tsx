@@ -3,6 +3,8 @@ import { ClinicKind, Role } from "@prisma/client";
 import { can, requireClinicMember, roleHome } from "@/lib/auth";
 import { isDashboardRole } from "@/lib/permissions";
 import DashboardShell from "@/components/general/dashboard-shell";
+import ChatBubble from "@/components/chat/chat-bubble";
+import { assistantOpenFor } from "@/server/services/staff/access";
 import { countNeedsMe, getUnresolvedEscalationConversationIds } from "@/server/services/messages";
 import { inboxNumberScope } from "@/lib/inbox-scope";
 import { getClinicUnitSummary } from "@/server/services/aiCredit";
@@ -15,6 +17,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!isDashboardRole(ctx.role)) redirect(roleHome(ctx.role));
 
   const isClinicAdmin = ctx.role === Role.ADMIN;
+  const showAssistant =
+    !ctx.viaPlatformAdmin && (await assistantOpenFor(ctx.clinic.id, ctx.user.id));
   // Only fetch what this member is allowed to see in the shell.
   const [initialUnresolvedEscalationConversationIds, units, initialNeedsMeCount] =
     await Promise.all([
@@ -56,6 +60,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       soloDoctor={ctx.clinic.kind === ClinicKind.SOLO_DOCTOR}
     >
       {children}
+      {/* Team assistant (#89) — only when it's open to this member. */}
+      {showAssistant && <ChatBubble variant="staff" />}
     </DashboardShell>
   );
 }
