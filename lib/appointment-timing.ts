@@ -134,3 +134,12 @@ export function effectiveEndUtc(appt: TimedAppointment, timeZone: string): Date 
   }
   return null;
 }
+
+/**
+ * The true UTC instant a clinic-local calendar day ("YYYY-MM-DD") starts at —
+ * e.g. for "everything created on 2026-11-24 in Cairo". DST-correct.
+ */
+export function zonedDayStartUtc(day: string, timeZone: string): Date {
+  const [y, m, d] = day.split("-").map(Number);
+  return zonedWallTimeToUtc(y, m, d, 0, 0, timeZone);
+}

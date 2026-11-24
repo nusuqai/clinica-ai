@@ -313,6 +313,8 @@ model Clinic {
   staffEventRecipients      StaffEventRecipient[]
   staffNotifications        StaffNotification[]
   staffPendingActions       StaffPendingAction[]
+  dataReportSettings        DataReportSettings?
+  dataReportDeliveries      DataReportDelivery[]
 
   @@map("clinics")
 }
@@ -590,6 +592,7 @@ model ClinicMember {
   whatsappLink       MemberWhatsappLink?
   eventSubscriptions StaffEventRecipient[]
   staffNotifications StaffNotification[]
+  dataReports        DataReportDelivery[]
 
   @@unique([userId, clinicId])
   @@index([clinicId])
@@ -2483,6 +2486,9 @@ enum StaffEvent {
   PATIENT_CANCELLED
   UNITS_LOW
   UNITS_OUT
+  // The scheduled patient-data report (Excel). Recipients are routed like the
+  // other events, but the file is sent by the report sweep, not as an alert.
+  DAILY_REPORT
 }
 
 // Per-clinic settings of the team assistant. A missing row = defaults.
@@ -2612,4 +2618,60 @@ model StaffPendingAction {
   @@index([clinicId])
   @@index([actorId])
   @@map("staff_pending_actions")
+}
+
+// ─── Patient-data export & scheduled report ─────────────────────────────────
+// Design: docs/data-export.md.
+
+// Which day the scheduled report covers.
+enum DataReportCoverage {
+  TODAY // the clinic day up to the send time (e.g. sent at 22:00)
+  YESTERDAY // the whole previous day (e.g. sent at 08:00)
+}
+
+// Per-clinic schedule of the patient-data report. A missing row = off.
+// Recipients are StaffEventRecipient rows with event DAILY_REPORT.
+model DataReportSettings {
+  clinicId   String             @id @db.Uuid
+  enabled    Boolean            @default(false)
+  // Send time, minutes after midnight on the clinic's clock (1320 = 22:00).
+  sendMinute Int                @default(1320)
+  coverage   DataReportCoverage @default(TODAY)
+  // The clinic-local day the report was last queued for — never twice a day.
+  lastRunOn  DateTime?          @db.Date
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@map("data_report_settings")
+}
+
+// One Excel file owed to one member over WhatsApp (scheduled report, or an
+// on-demand export the member asked the assistant for while their window was
+// closed). The file itself is never stored: it is rebuilt from `filters` at
+// send time.
+model DataReportDelivery {
+  id          String    @id @default(uuid()) @db.Uuid
+  clinicId    String    @db.Uuid
+  memberId    String    @db.Uuid
+  // ExportFilters (lib/exports/filters.ts), with the resolved from/to days.
+  filters     Json
+  // Idempotency per member, e.g. "daily:2026-11-24".
+  dedupeKey   String
+  createdAt   DateTime  @default(now())
+  // Official number, closed window: announced by the alert template; the file
+  // follows when the member writes in.
+  announcedAt DateTime?
+  sentAt      DateTime?
+  attempts    Int       @default(0)
+  lastError   String?
+
+  clinic Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  member ClinicMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, dedupeKey])
+  @@index([sentAt, createdAt])
+  @@index([clinicId])
+  @@map("data_report_deliveries")
 }

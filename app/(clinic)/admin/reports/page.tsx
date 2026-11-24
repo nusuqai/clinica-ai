@@ -10,6 +10,7 @@ import {
   UserX,
   Coins,
   Bot,
+  FileSpreadsheet,
 } from "lucide-react";
 import { getCatalogReport, getDashboardStats, getDoctorLoad } from "@/server/services/reports";
 import { formatFee } from "@/lib/currency";
@@ -19,6 +20,7 @@ import StatCard from "@/components/admin/stat-card";
 import BarList from "@/components/admin/bar-list";
 import PageHeader from "@/components/admin/page-header";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 const units = (n: number) => n.toLocaleString("ar-EG");
 const decimal = (n: number) =>
@@ -54,7 +56,17 @@ export default async function AdminReportsPage() {
 
   return (
     <div>
-      <PageHeader title="التقارير" subtitle="ملخص إحصائيات النظام" />
+      <PageHeader
+        title="التقارير"
+        subtitle="ملخص إحصائيات النظام"
+        action={
+          <Button asChild>
+            <Link href="/admin/reports/export">
+              <FileSpreadsheet className="h-4 w-4" /> تصدير بيانات المرضى
+            </Link>
+          </Button>
+        }
+      />
 
       {/* KPI overview */}
       <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
