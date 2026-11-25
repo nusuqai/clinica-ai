@@ -72,6 +72,45 @@ function serviceForAgent(s: Catalog.PublicService, opts: { withNotes: boolean })
 
 export function serviceTools(clinicId: string): DynamicStructuredTool[] {
   /**
+   * What the patient could get instead of paying the plain price for one
+   * service in one branch: its live offer and the packages for sale there that
+   * cover it (by its category or by the service itself). Attached to
+   * list_service_providers — the call the agent always makes once the patient
+   * has picked a service — so the agent sees them before booking.
+   */
+  async function savingsFor(serviceId: string, branchId: string) {
+    const [[service], packages] = await Promise.all([
+      Catalog.listPublicServices(clinicId, { ids: [serviceId], branchId }),
+      Packages.listPackages(clinicId, null),
+    ]);
+    if (!service) return null;
+    const covering = packages.filter(
+      (p) =>
+        p.isActive &&
+        (p.allBranches || p.branches.some((b) => b.branchId === branchId)) &&
+        p.items.some(
+          (i) => i.categoryId === service.categoryId || i.serviceIds.includes(serviceId)
+        )
+    );
+    const packagesForSale = [];
+    for (const p of covering) {
+      const quote = await Packages.quotePackage(clinicId, p.id, branchId);
+      packagesForSale.push({
+        packageId: p.id,
+        name: p.name,
+        price: formatFee(quote.ok ? quote.data.basePrice : p.price),
+        priceAfterOffer:
+          quote.ok && quote.data.offerLabel ? formatFee(quote.data.price) : null,
+        offer: quote.ok ? quote.data.offerLabel || null : null,
+        validityDays: p.validityDays,
+      });
+    }
+    const offer = serviceForAgent(service, { withNotes: false }).offer;
+    if (!offer && packagesForSale.length === 0) return null;
+    return { serviceOffer: offer, packagesForSale };
+  }
+
+  /**
    * Prices, offers and packages differ per branch, so nothing is quoted without
    * one. A given branch is checked; with none, a one-branch clinic uses it, and
    * a multi-branch clinic gets back the branches to ask the patient about.
@@ -183,7 +222,7 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
       {
         name: "list_service_providers",
         description:
-          "من يقدّم خدمة معيّنة من الفريق الطبي (أطباء، أخصائيون، فنيون، تمريض) وفي أي فروع، مع السعر الخاص بكل منهم إن اختلف. استخدمها بعد اختيار الخدمة لعرض الخيارات أو اقتراح «أول موعد متاح»، أو للتأكد أن طبيباً بعينه يقدّمها.",
+          "من يقدّم خدمة معيّنة من الفريق الطبي (أطباء، أخصائيون، فنيون، تمريض) وفي أي فروع، مع السعر الخاص بكل منهم إن اختلف. استخدمها بعد اختيار الخدمة لعرض الخيارات أو اقتراح «أول موعد متاح»، أو للتأكد أن طبيباً بعينه يقدّمها. مرّر branchId: تُعيد أيضاً savings = عرض الخدمة الساري والباقات المعروضة للبيع في الفرع التي تشمل هذه الخدمة (إن وُجدت).",
         schema: z.object({
           serviceId: z.string(),
           branchId: z.string().nullable().describe("فقط من يعمل في هذا الفرع (اختياري)"),
@@ -192,8 +231,10 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
       async ({ serviceId, branchId }) => {
         const providers = await Catalog.listServiceProviders(clinicId, serviceId, branchId);
         if (!providers) return { error: "الخدمة غير موجودة" };
+        const savings = branchId ? await savingsFor(serviceId, branchId).catch(() => null) : null;
         return {
           serviceId,
+          ...(savings && { savings }),
           providers: providers.map((p) => ({
             doctorId: p.doctorId,
             name: practitionerName(p.fullName, p.title),
