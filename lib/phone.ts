@@ -24,3 +24,14 @@ export function normalizePhone(raw: string): string {
 export function isValidPhone(phone: string): boolean {
   return /^[1-9]\d{9,14}$/.test(phone);
 }
+
+/**
+ * Normalizes a number a patient typed in chat, also accepting the local Egyptian
+ * mobile form (01XXXXXXXXX → 201XXXXXXXXX). Returns null when it still isn't a
+ * valid international number.
+ */
+export function phoneFromChat(raw: string): string | null {
+  let phone = normalizePhone(raw.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d))));
+  if (/^01[0125]\d{8}$/.test(phone)) phone = `2${phone}`;
+  return isValidPhone(phone) ? phone : null;
+}

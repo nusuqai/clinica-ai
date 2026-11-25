@@ -285,6 +285,15 @@ async function resolveProfileAndLink(
       })
     : null;
 
+  // Hidden-phone contact that already registered in-chat with a typed number:
+  // register_in_clinic stored the account on the conversation itself.
+  if (!profile && !phone && conv.userId) {
+    profile = await prisma.profile.findUnique({
+      where: { id: conv.userId },
+      select: { id: true, fullName: true },
+    });
+  }
+
   const name = conv.whatsappName?.trim() ?? "";
   const usableName = name && name !== phone && name !== userId ? name : "";
   if (!profile && usableName && phone) {
