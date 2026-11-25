@@ -27,7 +27,7 @@ import { ok, err, type Result } from "./_result";
 //     never replies until the platform team adds an agent.
 
 export const MAX_AI_AGENTS = 10;
-const MAX_PERSONA_LENGTH = 2000;
+const MAX_PERSONA_LENGTH = 4000;
 const MAX_UNIT_CAP = 100_000;
 // Usage caps are counted over a rolling window, not a calendar day: a night
 // shift crossing midnight would otherwise get a fresh allowance mid-shift.
