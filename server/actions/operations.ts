@@ -22,7 +22,13 @@ export type OperationActionResult =
 async function auth() {
   const ctx = await getPermittedContext("operations");
   if (!ctx) return null;
-  return { clinicId: ctx.clinic.id, scope: ctx.branchIds, actorId: ctx.user.id };
+  return {
+    clinicId: ctx.clinic.id,
+    scope: ctx.branchIds,
+    actorId: ctx.user.id,
+    // A platform admin acts here without being a member of the clinic's team.
+    isMember: !ctx.viaPlatformAdmin,
+  };
 }
 
 const UNAUTHORIZED: OperationActionResult = { ok: false, error: "غير مصرح" };
@@ -87,7 +93,9 @@ export async function createOperationAction(
   if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
   const res = await Operations.createOperation(a.clinicId, a.scope, a.actorId, {
     ...parsed.data,
-    coordinatorId: parsed.data.coordinatorId ?? a.actorId,
+    // Default the person in charge to the creator — only if they're on the
+    // clinic's team (a platform admin isn't, and would fail validation).
+    coordinatorId: parsed.data.coordinatorId ?? (a.isMember ? a.actorId : null),
   });
   if (!res.ok) return { ok: false, error: res.error };
   refresh();
