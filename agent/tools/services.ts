@@ -71,43 +71,34 @@ function serviceForAgent(s: Catalog.PublicService, opts: { withNotes: boolean })
 }
 
 export function serviceTools(clinicId: string): DynamicStructuredTool[] {
-  /**
-   * What the patient could get instead of paying the plain price for one
-   * service in one branch: its live offer and the packages for sale there that
-   * cover it (by its category or by the service itself). Attached to
-   * list_service_providers — the call the agent always makes once the patient
-   * has picked a service — so the agent sees them before booking.
-   */
-  async function savingsFor(serviceId: string, branchId: string) {
-    const [[service], packages] = await Promise.all([
-      Catalog.listPublicServices(clinicId, { ids: [serviceId], branchId }),
-      Packages.listPackages(clinicId, null),
-    ]);
-    if (!service) return null;
-    const covering = packages.filter(
+  /** Active packages for sale in `branchId` that cover `service` (by its category or the service itself). */
+  function packagesCovering(
+    packages: Packages.PackageView[],
+    service: { id: string; categoryId: string },
+    branchId: string
+  ) {
+    return packages.filter(
       (p) =>
         p.isActive &&
         (p.allBranches || p.branches.some((b) => b.branchId === branchId)) &&
-        p.items.some(
-          (i) => i.categoryId === service.categoryId || i.serviceIds.includes(serviceId)
-        )
+        p.items.some((i) => i.categoryId === service.categoryId || i.serviceIds.includes(service.id))
     );
-    const packagesForSale = [];
-    for (const p of covering) {
-      const quote = await Packages.quotePackage(clinicId, p.id, branchId);
-      packagesForSale.push({
-        packageId: p.id,
-        name: p.name,
-        price: formatFee(quote.ok ? quote.data.basePrice : p.price),
-        priceAfterOffer:
-          quote.ok && quote.data.offerLabel ? formatFee(quote.data.price) : null,
-        offer: quote.ok ? quote.data.offerLabel || null : null,
-        validityDays: p.validityDays,
-      });
-    }
-    const offer = serviceForAgent(service, { withNotes: false }).offer;
-    if (!offer && packagesForSale.length === 0) return null;
-    return { serviceOffer: offer, packagesForSale };
+  }
+
+  /**
+   * The light marker put on every service the agent sees: only whether a live
+   * offer and/or packages for sale exist for it in this branch — no details.
+   * The agent mentions them and calls get_service_savings only if the patient
+   * wants to hear more. Omitted (undefined) when there is nothing.
+   */
+  function savingsFlag(
+    service: Catalog.PublicService,
+    packages: Packages.PackageView[],
+    branchId: string
+  ) {
+    const hasOffer = !!service.offer;
+    const hasPackages = packagesCovering(packages, service, branchId).length > 0;
+    return hasOffer || hasPackages ? { hasOffer, hasPackages } : undefined;
   }
 
   /**
@@ -183,12 +174,14 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
               }))
           );
         }
+        const packages = await Packages.listPackages(clinicId, null);
         return {
           branchId: branch.branchId,
           total: services.length,
-          services: services
-            .slice(0, SERVICES_LIMIT)
-            .map((s) => serviceForAgent(s, { withNotes: false })),
+          services: services.slice(0, SERVICES_LIMIT).map((s) => ({
+            ...serviceForAgent(s, { withNotes: false }),
+            savingsAvailable: savingsFlag(s, packages, branch.branchId),
+          })),
           ...(services.length > SERVICES_LIMIT && {
             note: "النتائج كثيرة — اطلب من المستخدم تحديد الخدمة أو التصنيف.",
           }),
@@ -215,14 +208,18 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
         const branchId = branch.branchId;
         const [s] = await Catalog.listPublicServices(clinicId, { ids: [serviceId], branchId });
         if (!s) return { error: "الخدمة غير موجودة أو غير متاحة في هذا الفرع" };
-        return serviceForAgent(s, { withNotes: true });
+        const packages = await Packages.listPackages(clinicId, null);
+        return {
+          ...serviceForAgent(s, { withNotes: true }),
+          savingsAvailable: savingsFlag(s, packages, branchId),
+        };
       }
     ),
     jsonTool(
       {
         name: "list_service_providers",
         description:
-          "من يقدّم خدمة معيّنة من الفريق الطبي (أطباء، أخصائيون، فنيون، تمريض) وفي أي فروع، مع السعر الخاص بكل منهم إن اختلف. استخدمها بعد اختيار الخدمة لعرض الخيارات أو اقتراح «أول موعد متاح»، أو للتأكد أن طبيباً بعينه يقدّمها. مرّر branchId: تُعيد أيضاً savings = عرض الخدمة الساري والباقات المعروضة للبيع في الفرع التي تشمل هذه الخدمة (إن وُجدت).",
+          "من يقدّم خدمة معيّنة من الفريق الطبي (أطباء، أخصائيون، فنيون، تمريض) وفي أي فروع، مع السعر الخاص بكل منهم إن اختلف. استخدمها بعد اختيار الخدمة لعرض الخيارات أو اقتراح «أول موعد متاح»، أو للتأكد أن طبيباً بعينه يقدّمها. مرّر branchId لتعرف أيضاً savingsAvailable (هل يوجد عرض أو باقات لهذه الخدمة في الفرع).",
         schema: z.object({
           serviceId: z.string(),
           branchId: z.string().nullable().describe("فقط من يعمل في هذا الفرع (اختياري)"),
@@ -231,10 +228,17 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
       async ({ serviceId, branchId }) => {
         const providers = await Catalog.listServiceProviders(clinicId, serviceId, branchId);
         if (!providers) return { error: "الخدمة غير موجودة" };
-        const savings = branchId ? await savingsFor(serviceId, branchId).catch(() => null) : null;
+        let savingsAvailable: ReturnType<typeof savingsFlag>;
+        if (branchId) {
+          const [[service], packages] = await Promise.all([
+            Catalog.listPublicServices(clinicId, { ids: [serviceId], branchId }),
+            Packages.listPackages(clinicId, null),
+          ]);
+          if (service) savingsAvailable = savingsFlag(service, packages, branchId);
+        }
         return {
           serviceId,
-          ...(savings && { savings }),
+          savingsAvailable,
           providers: providers.map((p) => ({
             doctorId: p.doctorId,
             name: practitionerName(p.fullName, p.title),
@@ -246,6 +250,55 @@ export function serviceTools(clinicId: string): DynamicStructuredTool[] {
             duration: durationText(p.durationMin),
             branches: p.branches.map((b) => ({ branchId: b.id, branch: b.name })),
           })),
+        };
+      }
+    ),
+    jsonTool(
+      {
+        name: "get_service_savings",
+        description:
+          "تفاصيل العرض الساري والباقات المعروضة للبيع التي تشمل خدمة معيّنة في فرع: الاسم والسعر والسعر بعد العرض والصلاحية والشروط. استدعها فقط عندما يريد المريض معرفة العروض أو الباقات لخدمة اختارها (أي خدمة لديها savingsAvailable).",
+        schema: z.object({
+          serviceId: z.string(),
+          branchId: z.string().nullable().describe("الفرع: العروض والباقات تختلف من فرع لآخر"),
+        }),
+      },
+      async ({ serviceId, branchId: given }) => {
+        const branch = await resolveBranch(given);
+        if ("ask" in branch) return branch.ask;
+        if ("error" in branch) return branch;
+        const branchId = branch.branchId;
+        const [[service], packages] = await Promise.all([
+          Catalog.listPublicServices(clinicId, { ids: [serviceId], branchId }),
+          Packages.listPackages(clinicId, null),
+        ]);
+        if (!service) return { error: "الخدمة غير موجودة أو غير متاحة في هذا الفرع" };
+        const out = [];
+        for (const p of packagesCovering(packages, service, branchId)) {
+          const quote = await Packages.quotePackage(clinicId, p.id, branchId);
+          out.push({
+            packageId: p.id,
+            name: p.name,
+            price: formatFee(quote.ok ? quote.data.basePrice : p.price),
+            offer:
+              quote.ok && quote.data.offerLabel
+                ? {
+                    label: quote.data.offerLabel,
+                    priceAfterOffer: formatFee(quote.data.price),
+                    bonusUnits: quote.data.bonusUnits || undefined,
+                  }
+                : null,
+            validityDays: p.validityDays,
+            description: p.description,
+            terms: p.terms,
+            agentNotes: p.agentNotes,
+          });
+        }
+        return {
+          service: service.name,
+          branchId,
+          serviceOffer: serviceForAgent(service, { withNotes: false }).offer,
+          packages: out,
         };
       }
     ),
