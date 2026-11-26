@@ -11,6 +11,7 @@ import { ensureClinicAiCredit } from "@/server/services/aiCredit";
 import { seedDefaultClinicRoles } from "@/server/services/team";
 import { setClinicKind } from "@/server/services/clinic-kind";
 import { registerClinicDomain } from "@/lib/vercel/domains";
+import { createClinicLogoUploadUrl, CLINIC_LOGO_MAX_BYTES } from "@/lib/supabase/storage";
 import { sendClinicApprovedInvite, sendClinicCreatedInvite } from "@/lib/email/send-auth-email";
 import { sendRequestReceived, sendClinicRejected } from "@/lib/email/send-transactional";
 
@@ -430,6 +431,29 @@ export async function createClinic(formData: FormData) {
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "فشل إنشاء العيادة" };
+  }
+}
+
+/**
+ * A signed upload slot for a clinic logo (platform admin only). The browser
+ * uploads the file directly to Storage, then puts the returned `publicUrl` in
+ * the clinic form's logo field — saved with the rest of the form.
+ */
+export async function clinicLogoUploadAction(args: {
+  clinicId?: string | null;
+  mimeType: string;
+  size: number;
+}) {
+  await requirePlatform();
+  if (args.size > CLINIC_LOGO_MAX_BYTES) {
+    return { error: "حجم الشعار كبير، الحد الأقصى 2 ميجابايت." };
+  }
+  try {
+    const scope = args.clinicId && /^[0-9a-f-]{36}$/i.test(args.clinicId) ? args.clinicId : "new";
+    const data = await createClinicLogoUploadUrl({ scope, mimeType: args.mimeType });
+    return { data };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "تعذّر رفع الشعار" };
   }
 }
 

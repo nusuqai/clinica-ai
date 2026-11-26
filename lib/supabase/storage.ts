@@ -236,3 +236,82 @@ export async function createAppointmentAttachmentUploadUrl(args: {
   }
   return { path, token: data.token, bucket: PATIENT_MEDIA_BUCKET };
 }
+
+// ─── Clinic branding assets (logos) ────────────────────────────────────────────
+
+/** PUBLIC bucket for clinic branding (logos). Unlike patient media these are
+ *  meant to be seen by anyone — favicons, link previews, the landing page — so
+ *  they're served from a stable public URL that is stored on `Clinic.logoUrl`. */
+export const CLINIC_ASSETS_BUCKET = process.env.CLINIC_ASSETS_BUCKET ?? "clinic-assets";
+
+/** Image types accepted as a clinic logo. */
+export const CLINIC_LOGO_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/svg+xml",
+  "image/x-icon",
+  "image/vnd.microsoft.icon",
+] as const;
+
+/** Upper bound for one logo file. */
+export const CLINIC_LOGO_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+
+const LOGO_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+  "image/x-icon": "ico",
+  "image/vnd.microsoft.icon": "ico",
+};
+
+let clinicAssetsBucketReady = false;
+
+/** Creates the public clinic-assets bucket on first use, so no manual setup is
+ *  needed per environment. "Already exists" is the normal case and is ignored. */
+async function ensureClinicAssetsBucket() {
+  if (clinicAssetsBucketReady) return;
+  const supabase = createAdminClient();
+  const { data } = await supabase.storage.getBucket(CLINIC_ASSETS_BUCKET);
+  if (!data) {
+    const { error } = await supabase.storage.createBucket(CLINIC_ASSETS_BUCKET, {
+      public: true,
+      fileSizeLimit: CLINIC_LOGO_MAX_BYTES,
+      allowedMimeTypes: [...CLINIC_LOGO_MIME_TYPES],
+    });
+    if (error && !/already exists/i.test(error.message)) {
+      throw new Error(`failed to create ${CLINIC_ASSETS_BUCKET} bucket: ${error.message}`);
+    }
+  }
+  clinicAssetsBucketReady = true;
+}
+
+/**
+ * Mints a one-time signed upload URL for a clinic logo, so the platform admin's
+ * browser uploads straight to Storage. Returns the object's PUBLIC url too —
+ * that's what gets saved on the clinic once the upload lands.
+ *
+ * Layout: `logos/<scope>/<uuid>.<ext>` — scope is the clinic id when editing an
+ * existing clinic, or "new" while the clinic is still being created.
+ */
+export async function createClinicLogoUploadUrl(args: {
+  scope: string;
+  mimeType: string;
+}): Promise<UploadTarget & { publicUrl: string }> {
+  const ext = LOGO_EXT[baseMime(args.mimeType)];
+  if (!ext) throw new Error("نوع الملف غير مدعوم. استخدم PNG أو JPG أو WEBP أو SVG أو ICO.");
+  await ensureClinicAssetsBucket();
+  const supabase = createAdminClient();
+  const path = `logos/${args.scope}/${crypto.randomUUID()}.${ext}`;
+  const { data, error } = await supabase.storage
+    .from(CLINIC_ASSETS_BUCKET)
+    .createSignedUploadUrl(path);
+  if (error || !data?.token) {
+    throw new Error(`failed to create logo upload url: ${error?.message ?? "unknown"}`);
+  }
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(CLINIC_ASSETS_BUCKET).getPublicUrl(path);
+  return { path, token: data.token, bucket: CLINIC_ASSETS_BUCKET, publicUrl };
+}

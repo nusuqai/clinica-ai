@@ -12,6 +12,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Card } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toFormData } from "@/lib/form-data";
+import { LogoUploadField } from "./logo-upload-field";
 import {
   createClinicSchema,
   updateClinicSchema,
@@ -125,7 +126,14 @@ export function CreateClinicForm() {
         dir="ltr"
       />
 
-      <FormField control={control} name="logoUrl" placeholder="رابط الشعار (اختياري)" dir="ltr" />
+      <div className="sm:col-span-2">
+        <LogoUploadField
+          value={form.watch("logoUrl")}
+          onChange={(url) => form.setValue("logoUrl", url, { shouldDirty: true })}
+          name={form.watch("name")}
+          disabled={pending}
+        />
+      </div>
       <div className="flex items-start gap-3">
         <FormField
           control={control}
@@ -263,7 +271,13 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
         noValidate
       >
         <FormField control={control} name="name" placeholder="اسم العيادة" />
-        <FormField control={control} name="logoUrl" dir="ltr" placeholder="رابط الشعار" />
+        <LogoUploadField
+          value={form.watch("logoUrl")}
+          onChange={(url) => form.setValue("logoUrl", url, { shouldDirty: true })}
+          clinicId={clinic.id}
+          name={clinic.name}
+          disabled={pending}
+        />
         <div className="flex items-start gap-2">
           <FormField
             control={control}
