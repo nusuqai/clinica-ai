@@ -193,6 +193,12 @@ enum QueueCapType {
 }
 
 // A package credit line counts units (pulses, Botox units…) or sessions.
+enum PreCheckStatus {
+  PENDING
+  APPROVED
+  DECLINED
+}
+
 enum CreditType {
   UNITS
   SESSIONS
@@ -1120,33 +1126,41 @@ model Category {
 }
 
 model Service {
-  id                 String      @id @default(uuid()) @db.Uuid
-  clinicId           String      @db.Uuid
-  categoryId         String      @db.Uuid
-  name               String
-  description        String? // public
-  prepInstructions   String? // public: before/after the visit
-  agentNotes         String? // AI agent only — never shown to patients
-  kind               ServiceKind
-  pricingType        PricingType
+  id                   String      @id @default(uuid()) @db.Uuid
+  clinicId             String      @db.Uuid
+  categoryId           String      @db.Uuid
+  name                 String
+  description          String? // public
+  prepInstructions     String? // public: before/after the visit
+  agentNotes           String? // AI agent only — never shown to patients
+  kind                 ServiceKind
+  pricingType          PricingType
   // FIXED / STARTING_FROM: the price. PER_UNIT: the unit price. Null when the
   // price only comes from doctor/branch overrides or is decided later.
-  price              Decimal?    @db.Decimal(10, 2)
-  unitLabel          String? // PER_UNIT / TIERED: "نبضة", "وحدة", "سن", "مل"
-  durationMin        Int? // null → the rule's slot / estimated duration
-  bookable           Boolean     @default(true)
-  isActive           Boolean     @default(true)
+  price                Decimal?    @db.Decimal(10, 2)
+  unitLabel            String? // PER_UNIT / TIERED: "نبضة", "وحدة", "سن", "مل"
+  durationMin          Int? // null → the rule's slot / estimated duration
+  bookable             Boolean     @default(true)
+  isActive             Boolean     @default(true)
   // OPERATION services only: the pre-op checklist copied into every new case of
   // this operation (labs, imaging, consent…), and the after-care text.
   // prepInstructions above is the pre-op instructions text.
-  operationChecklist String[]    @default([])
-  postOpInstructions String?
+  operationChecklist   String[]    @default([])
+  postOpInstructions   String?
+  // Pre-check: another service (e.g. a كشف) that must be done first; the
+  // practitioner then approves or declines this one at the visit. Declined →
+  // only the pre-check is charged. An approval stays valid for
+  // preCheckValidityDays (null = a pre-check every visit). preCheckFeeDeducted
+  // = when approved, the pre-check itself is not charged.
+  preCheckServiceId    String?     @db.Uuid
+  preCheckValidityDays Int?
+  preCheckFeeDeducted  Boolean     @default(false)
   // true = offered in every branch (ServiceBranch rows only override price);
   // false = offered only in branches that have a ServiceBranch row.
-  allBranches        Boolean     @default(true)
-  sortOrder          Int         @default(0)
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  allBranches          Boolean     @default(true)
+  sortOrder            Int         @default(0)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
 
   clinic           Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   category         Category             @relation(fields: [categoryId], references: [id], onDelete: Restrict)
@@ -1158,6 +1172,8 @@ model Service {
   offerTargets     OfferTarget[]
   appointmentItems AppointmentItem[]
   operations       Operation[]
+  preCheckService  Service?             @relation("ServicePreCheck", fields: [preCheckServiceId], references: [id], onDelete: SetNull)
+  preCheckFor      Service[]            @relation("ServicePreCheck")
 
   @@unique([clinicId, name])
   @@index([clinicId])
@@ -1438,29 +1454,37 @@ model OfferTarget {
 // One service line of an appointment. Prices, offer and duration are snapshots
 // taken at booking; final* are filled by the completion modal.
 model AppointmentItem {
-  id                String   @id @default(uuid()) @db.Uuid
-  clinicId          String   @db.Uuid
-  appointmentId     String   @db.Uuid
-  serviceId         String   @db.Uuid
-  serviceName       String // snapshot
-  doctorId          String?  @db.Uuid // v1: always the appointment's doctor
-  quantity          Int      @default(1)
-  basePrice         Decimal? @db.Decimal(10, 2)
-  offerId           String?  @db.Uuid
-  discount          Decimal? @db.Decimal(10, 2)
-  unitPrice         Decimal? @db.Decimal(10, 2)
-  total             Decimal? @db.Decimal(10, 2) // estimated (null = decided at the visit)
-  durationMin       Int
+  id                  String          @id @default(uuid()) @db.Uuid
+  clinicId            String          @db.Uuid
+  appointmentId       String          @db.Uuid
+  serviceId           String          @db.Uuid
+  serviceName         String // snapshot
+  doctorId            String?         @db.Uuid // v1: always the appointment's doctor
+  quantity            Int             @default(1)
+  basePrice           Decimal?        @db.Decimal(10, 2)
+  offerId             String?         @db.Uuid
+  discount            Decimal?        @db.Decimal(10, 2)
+  unitPrice           Decimal?        @db.Decimal(10, 2)
+  total               Decimal?        @db.Decimal(10, 2) // estimated (null = decided at the visit)
+  durationMin         Int
   // Paid from a package (null = paid normally).
-  patientPackageId  String?  @db.Uuid
-  balanceId         String?  @db.Uuid
+  patientPackageId    String?         @db.Uuid
+  balanceId           String?         @db.Uuid
   // Completion.
-  finalQuantity     Int?
-  finalTotal        Decimal? @db.Decimal(10, 2)
-  uncoveredQuantity Int? // used beyond the package balance (not charged for now)
-  sortOrder         Int      @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  finalQuantity       Int?
+  finalTotal          Decimal?        @db.Decimal(10, 2)
+  uncoveredQuantity   Int? // used beyond the package balance (not charged for now)
+  // Pre-check (Service.preCheckServiceId): the pre-check line itself is
+  // isPreCheck; the line that needs it carries preCheckStatus (PENDING until
+  // the practitioner decides at the visit). null = no decision needed.
+  isPreCheck          Boolean         @default(false)
+  preCheckStatus      PreCheckStatus?
+  preCheckNote        String?
+  preCheckDecidedAt   DateTime?
+  preCheckDecidedById String?         @db.Uuid
+  sortOrder           Int             @default(0)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   clinic         Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   appointment    Appointment            @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
@@ -1473,6 +1497,7 @@ model AppointmentItem {
 
   @@index([appointmentId])
   @@index([serviceId])
+  @@index([serviceId, preCheckStatus])
   @@index([patientPackageId])
   @@index([clinicId])
   @@map("appointment_items")

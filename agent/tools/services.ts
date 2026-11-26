@@ -73,6 +73,15 @@ function serviceForAgent(s: Catalog.PublicService, opts: { withNotes: boolean })
         }
       : { branches: s.branches.map((b) => b.name) }),
     providers: s.providerCount,
+    // Needs an exam first; the practitioner decides at the visit. Booking adds
+    // the exam automatically unless the patient still holds a valid approval.
+    requiresPreCheck: s.preCheck
+      ? {
+          preCheckService: s.preCheck.serviceName,
+          approvalValidDays: s.preCheck.validityDays,
+          preCheckFreeIfDone: s.preCheck.feeDeducted,
+        }
+      : undefined,
   };
 }
 

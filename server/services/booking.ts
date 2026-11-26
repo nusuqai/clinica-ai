@@ -62,6 +62,10 @@ export interface ResolvedLine {
   durationMin: number;
   patientPackageId: string | null;
   balanceId: string | null;
+  /** The pre-check (e.g. كشف) another line on this visit needs first. */
+  isPreCheck: boolean;
+  /** PENDING = the practitioner approves/declines this line at the visit. */
+  preCheckStatus: "PENDING" | null;
 }
 
 export interface ResolvedBooking {
@@ -113,6 +117,71 @@ async function defaultItems(rule: RuleContext): Promise<Result<BookingItemReques
   return ok([{ serviceId: pick.serviceId }]);
 }
 
+// ─── Pre-check ────────────────────────────────────────────────────────────────
+
+/**
+ * Whether `patientId` has a still-valid approval for `serviceId` on `visitDay`:
+ * a completed visit where the practitioner approved it within `validityDays`.
+ * validityDays null = an approval never carries over (pre-check every visit).
+ */
+export async function hasPreCheckClearance(
+  patientId: string,
+  serviceId: string,
+  validityDays: number | null,
+  visitDay: string
+): Promise<boolean> {
+  if (validityDays == null) return false;
+  const since = new Date(`${visitDay}T00:00:00.000Z`);
+  since.setUTCDate(since.getUTCDate() - validityDays);
+  const n = await prisma.appointmentItem.count({
+    where: {
+      serviceId,
+      preCheckStatus: "APPROVED",
+      preCheckDecidedAt: { gte: since },
+      appointment: { patientId, status: AppointmentStatus.COMPLETED },
+    },
+  });
+  return n > 0;
+}
+
+/**
+ * Lines that need a pre-check get it added to the same visit (first), unless
+ * the patient still holds a valid approval for them. Returns the expanded
+ * request plus which services are pre-checks / need a decision.
+ */
+async function planPreChecks(
+  clinicId: string,
+  items: BookingItemRequest[],
+  patientId: string | undefined,
+  visitDay: string
+): Promise<{ items: BookingItemRequest[]; preCheckIds: Set<string>; gatedIds: Set<string> }> {
+  const gatedServices = await prisma.service.findMany({
+    where: {
+      clinicId,
+      id: { in: items.map((i) => i.serviceId) },
+      preCheckServiceId: { not: null },
+    },
+    select: { id: true, preCheckServiceId: true, preCheckValidityDays: true },
+  });
+  const preCheckIds = new Set<string>();
+  const gatedIds = new Set<string>();
+  for (const g of gatedServices) {
+    if (
+      patientId &&
+      (await hasPreCheckClearance(patientId, g.id, g.preCheckValidityDays, visitDay))
+    )
+      continue;
+    gatedIds.add(g.id);
+    preCheckIds.add(g.preCheckServiceId!);
+  }
+  const missing = [...preCheckIds].filter((id) => !items.some((i) => i.serviceId === id));
+  return {
+    items: [...missing.map((serviceId) => ({ serviceId })), ...items],
+    preCheckIds,
+    gatedIds,
+  };
+}
+
 /**
  * Validate and price the requested lines for a visit with `rule`'s doctor at
  * `rule`'s branch on `visitDay` ("YYYY-MM-DD").
@@ -121,7 +190,13 @@ export async function resolveBookingItems(
   rule: RuleContext,
   visitDay: string,
   requested: BookingItemRequest[] | null | undefined,
-  opts?: { offers?: LiveOffer[]; patientId?: string; replacingAppointmentId?: string }
+  opts?: {
+    offers?: LiveOffer[];
+    patientId?: string;
+    replacingAppointmentId?: string;
+    /** On-the-spot additions at the visit: the practitioner decides there. */
+    skipPreCheck?: boolean;
+  }
 ): Promise<Result<ResolvedBooking>> {
   let items = requested ?? [];
   if (items.length === 0) {
@@ -144,6 +219,17 @@ export async function resolveBookingItems(
   if (new Set(items.map((i) => i.serviceId)).size !== items.length)
     return err("تم اختيار نفس الخدمة أكثر من مرة");
 
+  // Services that need a pre-check bring it along (not counted in the cap).
+  const requestedIds = new Set(items.map((i) => i.serviceId));
+  let preCheckIds = new Set<string>();
+  let gatedIds = new Set<string>();
+  if (!opts?.skipPreCheck) {
+    const plan = await planPreChecks(rule.clinicId, items, opts?.patientId, visitDay);
+    items = plan.items;
+    preCheckIds = plan.preCheckIds;
+    gatedIds = plan.gatedIds;
+  }
+
   const services = await prisma.service.findMany({
     where: { clinicId: rule.clinicId, id: { in: items.map((i) => i.serviceId) } },
     include: {
@@ -160,13 +246,26 @@ export async function resolveBookingItems(
   for (const item of items) {
     const s = byId.get(item.serviceId);
     if (!s) return err("الخدمة غير موجودة");
-    if (!s.isActive || !s.bookable) return err(`الخدمة «${s.name}» غير متاحة للحجز`);
+    // A pre-check added for the patient is required, so it isn't held to
+    // "bookable" or to the day's service restriction.
+    const autoPreCheck = preCheckIds.has(s.id) && !requestedIds.has(s.id);
+    if (!s.isActive || (!s.bookable && !autoPreCheck))
+      return err(`الخدمة «${s.name}» غير متاحة للحجز`);
     const branchRow = rule.branchId ? s.branches.find((b) => b.branchId === rule.branchId) : null;
     if (!s.allBranches && !branchRow) return err(`الخدمة «${s.name}» غير متاحة في هذا الفرع`);
     const doctorRow = s.doctors[0];
-    if (!doctorRow) return err(`هذا الطبيب لا يقدّم خدمة «${s.name}»`);
-    if (allowed.size > 0 && !allowed.has(s.id))
+    if (!doctorRow)
+      return err(
+        preCheckIds.has(s.id)
+          ? `الخدمة المطلوبة تحتاج «${s.name}» أولاً، وهذا الطبيب لا يقدّم «${s.name}» — اختر طبيباً آخر`
+          : `هذا الطبيب لا يقدّم خدمة «${s.name}»`
+      );
+    if (allowed.size > 0 && !allowed.has(s.id) && !autoPreCheck)
       return err(`خدمة «${s.name}» غير متاحة مع هذا الطبيب في هذا اليوم`);
+    const preCheckFields = {
+      isPreCheck: preCheckIds.has(s.id),
+      preCheckStatus: gatedIds.has(s.id) ? ("PENDING" as const) : null,
+    };
 
     const units = pricingUsesUnits(s.pricingType);
     const quantity = units ? Math.max(1, Math.floor(item.quantity ?? 1)) : 1;
@@ -230,6 +329,7 @@ export async function resolveBookingItems(
           rule.slotDurationMin,
         patientPackageId: item.patientPackageId,
         balanceId: pkg.data.balanceId,
+        ...preCheckFields,
       });
       continue;
     }
@@ -258,6 +358,7 @@ export async function resolveBookingItems(
         doctorRow.durationMin ?? s.durationMin ?? rule.estimatedDurationMin ?? rule.slotDurationMin,
       patientPackageId: item.patientPackageId ?? null,
       balanceId: null,
+      ...preCheckFields,
     });
   }
 
@@ -284,6 +385,8 @@ function itemRows(clinicId: string, doctorId: string, lines: ResolvedLine[]) {
     durationMin: l.durationMin,
     patientPackageId: l.patientPackageId,
     balanceId: l.balanceId,
+    isPreCheck: l.isPreCheck,
+    preCheckStatus: l.preCheckStatus,
     sortOrder: i,
   }));
 }

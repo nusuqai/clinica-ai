@@ -46,6 +46,10 @@ export interface ServiceView {
   sortOrder: number;
   operationChecklist: string[];
   postOpInstructions: string | null;
+  /** Must be done first (and approved by the practitioner) — null = none. */
+  preCheckServiceId: string | null;
+  preCheckValidityDays: number | null;
+  preCheckFeeDeducted: boolean;
   branches: { branchId: string; price: number | null }[];
   tiers: { minQty: number; maxQty: number | null; price: number }[];
   doctors: { doctorId: string; price: number | null; durationMin: number | null }[];
@@ -223,6 +227,9 @@ function toView(s: ServiceRow, scope: BranchScope): ServiceView {
     sortOrder: s.sortOrder,
     operationChecklist: s.operationChecklist,
     postOpInstructions: s.postOpInstructions,
+    preCheckServiceId: s.preCheckServiceId,
+    preCheckValidityDays: s.preCheckValidityDays,
+    preCheckFeeDeducted: s.preCheckFeeDeducted,
     branches: s.branches.map((b) => ({ branchId: b.branchId, price: dec(b.price) })),
     tiers: s.tiers.map((t) => ({ minQty: t.minQty, maxQty: t.maxQty, price: Number(t.price) })),
     doctors: s.doctors.map((d) => ({
@@ -288,6 +295,34 @@ async function serviceNameTaken(clinicId: string, name: string, exceptId?: strin
 }
 
 /** Checks the ids in an input belong to this clinic (and the caller's scope). */
+/**
+ * The pre-check must be another active service of this clinic that does not
+ * itself need a pre-check (no chains), and must not point back at this one.
+ */
+async function validatePreCheck(
+  clinicId: string,
+  serviceId: string | null,
+  input: Pick<ServiceInput, "preCheckServiceId">
+): Promise<string | null> {
+  if (!input.preCheckServiceId) return null;
+  if (input.preCheckServiceId === serviceId) return "لا يمكن أن تكون الخدمة فحصاً مسبقاً لنفسها";
+  const pre = await prisma.service.findFirst({
+    where: { id: input.preCheckServiceId, clinicId },
+    select: { isActive: true, preCheckServiceId: true },
+  });
+  if (!pre) return "خدمة الفحص المسبق غير موجودة";
+  if (!pre.isActive) return "خدمة الفحص المسبق غير مفعّلة";
+  if (pre.preCheckServiceId) return "خدمة الفحص المسبق نفسها تحتاج فحصاً مسبقاً — اختر خدمة أخرى";
+  if (serviceId) {
+    const dependents = await prisma.service.count({
+      where: { clinicId, preCheckServiceId: serviceId },
+    });
+    if (dependents > 0)
+      return "هذه الخدمة مستخدمة كفحص مسبق لخدمات أخرى، فلا يمكن أن تحتاج هي فحصاً مسبقاً";
+  }
+  return null;
+}
+
 async function validateRefs(
   clinicId: string,
   scope: BranchScope,
@@ -328,6 +363,9 @@ const coreData = (input: ServiceInput) => ({
   bookable: input.kind === "OPERATION" ? false : input.bookable,
   operationChecklist: input.operationChecklist,
   postOpInstructions: input.postOpInstructions,
+  preCheckServiceId: input.preCheckServiceId,
+  preCheckValidityDays: input.preCheckValidityDays,
+  preCheckFeeDeducted: input.preCheckFeeDeducted,
 });
 
 export async function createService(
@@ -343,7 +381,8 @@ export async function createService(
       return err("لا يمكنك إضافة الخدمة لفرع خارج فروعك");
   }
   if (!input.allBranches && input.branches.length === 0) return err(NO_BRANCH);
-  const refError = await validateRefs(clinicId, scope, input);
+  const refError =
+    (await validateRefs(clinicId, scope, input)) ?? (await validatePreCheck(clinicId, null, input));
   if (refError) return err(refError);
   if (await serviceNameTaken(clinicId, input.name)) return err("توجد خدمة بهذا الاسم بالفعل.");
 
@@ -378,7 +417,9 @@ export async function updateService(
   if (!existing) return err(SERVICE_NOT_FOUND);
   const access = accessFor(existing, scope);
 
-  const refError = await validateRefs(clinicId, scope, input);
+  const refError =
+    (await validateRefs(clinicId, scope, input)) ??
+    (access === "partial" ? null : await validatePreCheck(clinicId, serviceId, input));
   if (refError) return err(refError);
 
   // Practitioners: the caller replaces the assignments of the practitioners
@@ -575,6 +616,13 @@ export interface PublicService {
   /** Where it is offered, each with its own price. */
   branches: { id: string; name: string; price: number | null }[];
   providerCount: number;
+  /** Must be done first and approved by the practitioner; null = none. */
+  preCheck: {
+    serviceId: string;
+    serviceName: string;
+    validityDays: number | null;
+    feeDeducted: boolean;
+  } | null;
 }
 
 /**
@@ -620,6 +668,7 @@ export async function listPublicServices(
         category: { select: { name: true, sortOrder: true } },
         branches: true,
         tiers: { orderBy: { minQty: "asc" } },
+        preCheckService: { select: { id: true, name: true } },
         _count: { select: { doctors: { where: { doctor: { isActive: true } } } } },
       },
       orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
@@ -677,6 +726,14 @@ export async function listPublicServices(
         price: dec(s.branches.find((r) => r.branchId === b.id)?.price ?? null) ?? dec(s.price),
       })),
       providerCount: s._count.doctors,
+      preCheck: s.preCheckService
+        ? {
+            serviceId: s.preCheckService.id,
+            serviceName: s.preCheckService.name,
+            validityDays: s.preCheckValidityDays,
+            feeDeducted: s.preCheckFeeDeducted,
+          }
+        : null,
     };
   });
 }

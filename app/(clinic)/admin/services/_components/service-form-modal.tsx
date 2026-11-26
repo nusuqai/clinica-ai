@@ -60,6 +60,9 @@ function formFromService(
     bookable: service?.bookable ?? true,
     operationChecklist: (service?.operationChecklist ?? []).join("\n"),
     postOpInstructions: service?.postOpInstructions ?? "",
+    preCheckServiceId: service?.preCheckServiceId ?? "",
+    preCheckValidityDays: str(service?.preCheckValidityDays),
+    preCheckFeeDeducted: service?.preCheckFeeDeducted ?? false,
     // A branch-limited member can only create for their own branches.
     allBranches: service?.allBranches ?? !limited,
     partial: service?.access === "partial",
@@ -94,6 +97,7 @@ export default function ServiceFormModal({
   practitioners,
   limited,
   defaultCategoryId,
+  allServices,
 }: {
   open: boolean;
   onClose: () => void;
@@ -106,6 +110,8 @@ export default function ServiceFormModal({
   /** The editor is limited to some branches. */
   limited: boolean;
   defaultCategoryId: string;
+  /** Candidates for the pre-check (every service of the clinic). */
+  allServices: ServiceView[];
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +135,12 @@ export default function ServiceFormModal({
   const pricingType = useWatch({ control: form.control, name: "pricingType" });
   const kind = useWatch({ control: form.control, name: "kind" });
   const isOperation = kind === "OPERATION";
+  const preCheckServiceId = useWatch({ control: form.control, name: "preCheckServiceId" });
+  // A pre-check must not itself need one, and can't be this service.
+  const preCheckOptions = allServices
+    .filter((s) => s.isActive && s.id !== service?.id && !s.preCheckServiceId)
+    .map((s) => ({ value: s.id, label: s.name }));
+  const usedAsPreCheck = !!service && allServices.some((s) => s.preCheckServiceId === service.id);
   const allBranches = useWatch({ control: form.control, name: "allBranches" });
   const partial = service?.access === "partial";
   const branchError =
@@ -390,6 +402,50 @@ export default function ServiceFormModal({
             </div>
           )}
         </div>
+
+        {/* Pre-check */}
+        {!isOperation && !usedAsPreCheck && (
+          <div className="space-y-3 rounded-xl border border-border p-4">
+            <Label className="font-sans text-sm font-medium text-foreground">
+              يحتاج فحصاً مسبقاً
+            </Label>
+            <p className="font-sans text-xs text-muted-foreground">
+              للخدمات التي يقرر الطبيب بعد الكشف هل تُعمل أم لا. عند الحجز يُضاف الفحص للموعد
+              تلقائياً، وعند إتمام الزيارة يحدد الطبيب: وافق (يُحاسب على الاثنين) أو رفض (يُحاسب على
+              الفحص فقط).
+            </p>
+            <FormField
+              control={form.control}
+              name="preCheckServiceId"
+              type="select"
+              label="خدمة الفحص المسبق"
+              placeholder="لا يحتاج فحصاً مسبقاً"
+              options={[{ value: "_none", label: "لا يحتاج فحصاً مسبقاً" }, ...preCheckOptions]}
+              disabled={partial}
+            />
+            {preCheckServiceId && preCheckServiceId !== "_none" && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="preCheckValidityDays"
+                  type="number"
+                  min={1}
+                  label="صلاحية الموافقة (أيام)"
+                  hint="بعد موافقة الطبيب لا يُطلب الفحص مرة أخرى خلال هذه المدة (مثال: 90 لجلسات الليزر). اتركه فارغاً لطلب الفحص في كل زيارة."
+                  disabled={partial}
+                />
+                <FormField
+                  control={form.control}
+                  name="preCheckFeeDeducted"
+                  type="switch"
+                  label="الفحص مجاني إذا تمت الخدمة"
+                  hint="عند موافقة الطبيب لا يُحاسب المريض على الفحص."
+                  disabled={partial}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Texts */}
         <div className="grid grid-cols-1 gap-4">

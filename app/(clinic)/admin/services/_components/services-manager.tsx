@@ -325,6 +325,7 @@ export default function ServicesManager({
         practitioners={practitioners}
         limited={limited}
         defaultCategoryId={newCategoryId}
+        allServices={services}
       />
     </div>
   );

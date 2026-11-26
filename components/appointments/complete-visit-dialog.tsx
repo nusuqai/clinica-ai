@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Plus, Trash2, Undo2 } from "lucide-react";
+import { Check, Plus, Trash2, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 import Modal from "@/components/admin/modal";
 import { Alert } from "@/components/ui/alert";
@@ -17,6 +17,9 @@ interface LineState {
   remove: boolean;
   quantity: string;
   price: string;
+  /** Pre-check decision for a line that needs one ("" = not chosen yet). */
+  decision: "" | "APPROVED" | "DECLINED";
+  note: string;
 }
 
 interface AddedState {
@@ -75,6 +78,8 @@ export default function CompleteVisitDialog({
                 remove: false,
                 quantity: l.input === "quantity" ? String(l.quantity) : "",
                 price: l.input === "price" && l.total != null ? String(l.total) : "",
+                decision: "",
+                note: "",
               },
             ])
           )
@@ -112,6 +117,10 @@ export default function CompleteVisitDialog({
           remove: lines[l.itemId]?.remove || undefined,
           finalQuantity: n(lines[l.itemId]?.quantity ?? ""),
           finalPrice: n(lines[l.itemId]?.price ?? ""),
+          ...(l.needsDecision && {
+            preCheckDecision: lines[l.itemId]?.decision || null,
+            preCheckNote: lines[l.itemId]?.note || null,
+          }),
         })),
         add: added
           .filter((a) => a.serviceId)
@@ -300,6 +309,8 @@ function LineRow({
   onChange: (patch: Partial<LineState>) => void;
 }) {
   const removed = state?.remove ?? false;
+  const declined = line.needsDecision && state?.decision === "DECLINED";
+  const showInputs = !removed && !declined;
   const qty = Number(state?.quantity || 0);
   const pkg = line.package;
   const over = pkg && line.input === "units" && qty > pkg.available ? qty - pkg.available : 0;
@@ -320,6 +331,8 @@ function LineRow({
           line.input !== "price" && <Badge variant="muted">{formatFee(line.total)}</Badge>
         )}
         {line.offerLabel && <Badge variant="accent">{line.offerLabel}</Badge>}
+        {line.isPreCheck && <Badge variant="info">فحص مسبق</Badge>}
+        {line.needsDecision && <Badge variant="warning">تحتاج موافقة الطبيب</Badge>}
         <span className="flex-1" />
         <Button
           type="button"
@@ -333,7 +346,40 @@ function LineRow({
         </Button>
       </div>
 
-      {!removed && (line.input === "quantity" || line.input === "units") && (
+      {!removed && line.needsDecision && (
+        <div className="mt-2 space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={state?.decision === "APPROVED" ? "success" : "outline"}
+              onClick={() => onChange({ decision: "APPROVED" })}
+            >
+              <Check />
+              وافق الطبيب — تمت الخدمة
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={state?.decision === "DECLINED" ? "destructive" : "outline"}
+              onClick={() => onChange({ decision: "DECLINED" })}
+            >
+              <X />
+              رفض الطبيب — يُحاسب على الفحص فقط
+            </Button>
+          </div>
+          {declined && (
+            <FormField
+              type="text"
+              label="سبب الرفض (اختياري)"
+              value={state?.note ?? ""}
+              onValueChange={(v) => onChange({ note: v })}
+            />
+          )}
+        </div>
+      )}
+
+      {showInputs && (line.input === "quantity" || line.input === "units") && (
         <div className="mt-2 flex flex-wrap items-end gap-3">
           <FormField
             type="number"
@@ -361,7 +407,7 @@ function LineRow({
           )}
         </div>
       )}
-      {!removed && line.input === "price" && (
+      {showInputs && line.input === "price" && (
         <FormField
           type="number"
           min={0}

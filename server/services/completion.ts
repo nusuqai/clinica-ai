@@ -4,6 +4,7 @@ import {
   CreditType,
   OfferType,
   PackagePaymentStatus,
+  PreCheckStatus,
   type PricingType,
   type Prisma,
 } from "@prisma/client";
@@ -34,6 +35,12 @@ import { ok, err, type Result } from "./_result";
 // Lines can be removed (not done) or added (decided on the spot), unpaid
 // packages can be marked paid, and BUY_X_GET_Y offers grant their free
 // sessions. Design: docs/services-and-packages.md §3.8.
+//
+// Pre-check (Service.preCheckServiceId): a line booked with its pre-check
+// (e.g. كشف) waits for the practitioner's decision here. APPROVED → charged as
+// usual (and the pre-check is free when the service says preCheckFeeDeducted);
+// DECLINED → kept on record at 0, its package credit given back, so only the
+// pre-check is charged. Lines added on the spot count as approved.
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +57,10 @@ export interface CompletionLine {
   total: number | null;
   offerLabel: string | null;
   input: LineInput;
+  /** This line is the pre-check (e.g. كشف) for another line. */
+  isPreCheck: boolean;
+  /** Needs the practitioner's approve/decline decision. */
+  needsDecision: boolean;
   package: {
     id: string;
     name: string;
@@ -86,6 +97,9 @@ export interface CompleteVisitInput {
     remove?: boolean;
     finalQuantity?: number | null;
     finalPrice?: number | null;
+    /** Required for a line waiting on its pre-check decision. */
+    preCheckDecision?: "APPROVED" | "DECLINED" | null;
+    preCheckNote?: string | null;
   }[];
   add: (BookingItemRequest & { finalQuantity?: number | null; finalPrice?: number | null })[];
   confirmPaymentFor: string[];
@@ -115,7 +129,15 @@ async function visitContext(appointmentId: string) {
       items: {
         orderBy: { sortOrder: "asc" },
         include: {
-          service: { select: { pricingType: true, unitLabel: true, categoryId: true } },
+          service: {
+            select: {
+              pricingType: true,
+              unitLabel: true,
+              categoryId: true,
+              preCheckServiceId: true,
+              preCheckFeeDeducted: true,
+            },
+          },
           offer: { select: { label: true } },
           balance: true,
           patientPackage: {
@@ -152,6 +174,8 @@ export async function getCompletionDraft(
       total: dec(i.total),
       offerLabel: i.offer?.label ?? null,
       input: inputFor(i.service.pricingType, b?.creditType ?? null),
+      isPreCheck: i.isPreCheck,
+      needsDecision: i.preCheckStatus === PreCheckStatus.PENDING,
       package:
         b && i.patientPackage
           ? {
@@ -253,6 +277,15 @@ export async function completeVisit(
 
   const byItem = new Map(input.lines.map((l) => [l.itemId, l]));
   const kept = a.items.filter((i) => !byItem.get(i.id)?.remove);
+  for (const i of kept)
+    if (i.preCheckStatus === PreCheckStatus.PENDING && !byItem.get(i.id)?.preCheckDecision)
+      return err(`حدّد هل وافق الطبيب على خدمة «${i.serviceName}» بعد الفحص أم لا`);
+  const declined = new Set(
+    kept.filter((i) => byItem.get(i.id)?.preCheckDecision === "DECLINED").map((i) => i.id)
+  );
+  const decided = kept.filter(
+    (i) => i.preCheckStatus === PreCheckStatus.PENDING && byItem.get(i.id)?.preCheckDecision
+  );
   if (kept.length + input.add.length === 0)
     return err("يجب أن تبقى خدمة واحدة على الأقل في الزيارة");
 
@@ -276,16 +309,32 @@ export async function completeVisit(
       },
       dayKey(a.slot?.date ?? a.bookingDate ?? new Date()),
       input.add,
-      { patientId: a.patientId }
+      { patientId: a.patientId, skipPreCheck: true }
     );
     if (!added.ok) return added;
     const existing = new Set(kept.map((i) => i.serviceId));
     if (added.data.lines.some((l) => existing.has(l.serviceId)))
       return err("الخدمة المضافة موجودة بالفعل في الزيارة");
   }
+  // Added services that normally need a pre-check: the practitioner adding
+  // them at the visit is the approval.
+  const gatedAdded = new Set(
+    added?.ok
+      ? (
+          await prisma.service.findMany({
+            where: {
+              id: { in: added.data.lines.map((l) => l.serviceId) },
+              preCheckServiceId: { not: null },
+            },
+            select: { id: true },
+          })
+        ).map((x) => x.id)
+      : []
+  );
 
-  // Every kept line must have what its type needs.
+  // Every kept line must have what its type needs (a declined one: nothing).
   for (const i of kept) {
+    if (declined.has(i.id)) continue;
     const need = inputFor(i.service.pricingType, i.balance?.creditType ?? null);
     const v = byItem.get(i.id);
     if ((need === "quantity" || need === "units") && !(v?.finalQuantity && v.finalQuantity >= 0))
@@ -340,6 +389,42 @@ export async function completeVisit(
         await tx.appointmentItem.delete({ where: { id: i.id } });
       }
 
+      // Pre-check decisions. Declined: give back any reserved package session,
+      // detach the package and keep the line on record at 0.
+      const now = new Date();
+      for (const i of decided) {
+        const v = byItem.get(i.id)!;
+        const isDeclined = v.preCheckDecision === "DECLINED";
+        if (isDeclined && i.balanceId && i.balance?.creditType === CreditType.SESSIONS) {
+          await tx.$executeRaw`UPDATE "patient_package_balances" SET "reserved" = GREATEST("reserved" - 1, 0) WHERE "id" = ${i.balanceId}::uuid`;
+          await tx.packageLedger.create({
+            data: {
+              clinicId,
+              balanceId: i.balanceId,
+              type: "RELEASE",
+              quantity: 1,
+              note: "رفض الطبيب الخدمة بعد الفحص",
+              createdById: actorId,
+            },
+          });
+        }
+        await tx.appointmentItem.update({
+          where: { id: i.id },
+          data: {
+            preCheckStatus: isDeclined ? PreCheckStatus.DECLINED : PreCheckStatus.APPROVED,
+            preCheckNote: v.preCheckNote?.trim() || null,
+            preCheckDecidedAt: now,
+            preCheckDecidedById: actorId,
+            ...(isDeclined && {
+              finalQuantity: 0,
+              finalTotal: 0,
+              patientPackageId: null,
+              balanceId: null,
+            }),
+          },
+        });
+      }
+
       // Added lines.
       const addedRows: { id: string; idx: number }[] = [];
       if (added?.ok) {
@@ -361,6 +446,12 @@ export async function completeVisit(
               patientPackageId: l.patientPackageId,
               balanceId: l.balanceId,
               sortOrder: a.items.length + idx,
+              // Added by the practitioner at the visit = approved there.
+              ...(gatedAdded.has(l.serviceId) && {
+                preCheckStatus: PreCheckStatus.APPROVED,
+                preCheckDecidedAt: now,
+                preCheckDecidedById: actorId,
+              }),
             },
           });
           addedRows.push({ id: row.id, idx });
@@ -369,11 +460,13 @@ export async function completeVisit(
 
       // Final quantity / price per line.
       const finals: { id: string; finalQuantity: number | null; finalPrice: number | null }[] = [
-        ...kept.map((i) => ({
-          id: i.id,
-          finalQuantity: byItem.get(i.id)?.finalQuantity ?? null,
-          finalPrice: byItem.get(i.id)?.finalPrice ?? null,
-        })),
+        ...kept
+          .filter((i) => !declined.has(i.id))
+          .map((i) => ({
+            id: i.id,
+            finalQuantity: byItem.get(i.id)?.finalQuantity ?? null,
+            finalPrice: byItem.get(i.id)?.finalPrice ?? null,
+          })),
         ...addedRows.map((r) => ({
           id: r.id,
           finalQuantity: input.add[r.idx].finalQuantity ?? null,
@@ -478,6 +571,26 @@ export async function completeVisit(
           rewards++;
         }
       }
+
+      // Approved services whose pre-check fee is deducted: the pre-check line
+      // (when paid normally) costs nothing.
+      const approvedNow = await tx.appointmentItem.findMany({
+        where: { appointmentId: a.id, preCheckStatus: PreCheckStatus.APPROVED },
+        select: { service: { select: { preCheckServiceId: true, preCheckFeeDeducted: true } } },
+      });
+      const freePreChecks = approvedNow
+        .filter((x) => x.service.preCheckFeeDeducted && x.service.preCheckServiceId)
+        .map((x) => x.service.preCheckServiceId!);
+      if (freePreChecks.length)
+        await tx.appointmentItem.updateMany({
+          where: {
+            appointmentId: a.id,
+            isPreCheck: true,
+            balanceId: null,
+            serviceId: { in: freePreChecks },
+          },
+          data: { finalTotal: 0 },
+        });
 
       // Sessions reserved at booking are used now.
       await settleSessionLines(tx, a.id, "COMPLETED", actorId);

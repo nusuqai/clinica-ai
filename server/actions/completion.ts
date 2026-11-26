@@ -21,6 +21,8 @@ const completeSchema = z.object({
         remove: z.boolean().optional(),
         finalQuantity: z.number().int().min(0).max(10_000_000).nullable().optional(),
         finalPrice: z.number().min(0).max(99_999_999).nullable().optional(),
+        preCheckDecision: z.enum(["APPROVED", "DECLINED"]).nullable().optional(),
+        preCheckNote: z.string().trim().max(500).nullable().optional(),
       })
     )
     .max(50),

@@ -77,6 +77,17 @@ async function appointmentCard(appointmentId: string) {
           ? formatFee(Number(i.total))
           : "يُحدَّد في الزيارة",
       offer: i.offer?.label ?? undefined,
+      // Pre-check: this line is the exam, or the service waiting on the
+      // practitioner's decision after it (see the booking guide).
+      ...(i.isPreCheck && { preCheck: "فحص مسبق — يُحاسب عليه في كل الأحوال" }),
+      ...(i.preCheckStatus && {
+        approval:
+          i.preCheckStatus === "PENDING"
+            ? "تُعمل بعد موافقة الطبيب في الفحص"
+            : i.preCheckStatus === "APPROVED"
+              ? "وافق الطبيب"
+              : "لم يوافق الطبيب",
+      }),
     })),
     estimatedTotal: a.estimatedTotal != null ? formatFee(Number(a.estimatedTotal)) : null,
     durationMin: a.totalDurationMin,
@@ -340,6 +351,16 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
         }),
       },
       async ({ packageId, branchId }) => {
+        // A package only for services that need the practitioner's approval
+        // after a pre-check waits until the patient has such an approval — so
+        // nobody pays for sessions the doctor may then decline. (The team can
+        // still sell it from the dashboard.)
+        const blocked = await preCheckBlocksPackage(ctx.clinicId, patientId, packageId);
+        if (blocked)
+          return {
+            needsPreCheck: true,
+            error: `خدمات هذه الباقة تحتاج «${blocked}» أولاً وموافقة الطبيب. احجز للمريض الخدمة أو الفحص أولاً، وبعد موافقة الطبيب يمكنه شراء الباقة.`,
+          };
         const res = await Packages.purchasePackage({
           clinicId: ctx.clinicId,
           patientId,
@@ -652,4 +673,39 @@ export function patientTools(ctx: AgentContext): DynamicStructuredTool[] {
       },
     ),
   ];
+}
+
+/**
+ * The pre-check name when every service `packageId` covers needs a pre-check
+ * and the patient was never approved for any of them; otherwise null.
+ */
+async function preCheckBlocksPackage(
+  clinicId: string,
+  patientId: string,
+  packageId: string
+): Promise<string | null> {
+  const items = await prisma.packageItem.findMany({
+    where: { packageId, package: { clinicId } },
+    select: { categoryId: true, services: { select: { serviceId: true } } },
+  });
+  const categoryIds = items.flatMap((i) => (i.categoryId ? [i.categoryId] : []));
+  const serviceIds = items.flatMap((i) => i.services.map((x) => x.serviceId));
+  if (!categoryIds.length && !serviceIds.length) return null;
+  const covered = await prisma.service.findMany({
+    where: {
+      clinicId,
+      isActive: true,
+      OR: [{ categoryId: { in: categoryIds } }, { id: { in: serviceIds } }],
+    },
+    select: { id: true, preCheckService: { select: { name: true } } },
+  });
+  if (!covered.length || covered.some((c) => !c.preCheckService)) return null;
+  const approved = await prisma.appointmentItem.count({
+    where: {
+      serviceId: { in: covered.map((c) => c.id) },
+      preCheckStatus: "APPROVED",
+      appointment: { patientId, status: AppointmentStatus.COMPLETED },
+    },
+  });
+  return approved > 0 ? null : covered[0].preCheckService!.name;
 }
