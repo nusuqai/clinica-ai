@@ -25,6 +25,7 @@ import type { ConversationSummary } from "@/server/services/messages";
 import type { InboxLabelItem, InboxTeammate } from "@/server/services/inbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { LabelChip } from "./labels-dialog";
+import { LocalTime } from "./shared";
 import { ConversationMenuContent, type ConversationMenuDialog } from "./conversation-menu";
 
 const QUICK_FILTERS: { value: string; label: string }[] = [
@@ -287,7 +288,7 @@ export function ConversationList({
                           conv.unreadCount > 0 ? "text-accent" : "text-muted-foreground/70"
                         )}
                       >
-                        {shortTime(conv.lastMessageAt)}
+                        <LocalTime value={conv.lastMessageAt} format={shortTime} />
                       </span>
                     )}
                   </div>

@@ -1,7 +1,37 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { Lock, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const noopSubscribe = () => () => {};
+/** false during SSR and the hydration pass, true afterwards (and on every
+ *  client-side mount). */
+export function useHydrated(): boolean {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false
+  );
+}
+
+/**
+ * A time rendered in the VIEWER's timezone/clock. The server (UTC) and the
+ * browser (e.g. Cairo) format the same instant differently, and "x minutes ago"
+ * drifts between render and hydration — a text mismatch (React #418) that makes
+ * React throw away and re-render the inbox. So the text is only produced once
+ * hydrated; the server HTML carries an empty slot.
+ */
+export function LocalTime({
+  value,
+  format,
+}: {
+  value: Date | string;
+  format: (d: Date) => string;
+}) {
+  const hydrated = useHydrated();
+  return <span suppressHydrationWarning>{hydrated ? format(new Date(value)) : ""}</span>;
+}
 
 /** A row in a popover menu (we have no dropdown primitive — Popover + these). */
 export function MenuItem({

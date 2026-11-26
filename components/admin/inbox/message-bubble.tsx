@@ -27,7 +27,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Hint } from "@/components/ui/tooltip";
 import { escalationReasonLabel } from "@/lib/escalation-reasons";
 import { cn } from "@/lib/utils";
-import { MenuItem, formatDuration } from "./shared";
+import { LocalTime, MenuItem, formatDuration } from "./shared";
+
+const clockTime = (d: Date) =>
+  d.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
 import { quoteAuthor, type RenderedMessage, type RenderedInternalNote } from "./types";
 
 export function MessageBubble({
@@ -371,10 +374,7 @@ export function MessageBubble({
               )}
               dir="ltr"
             >
-              {new Date(msg.createdAt).toLocaleTimeString("ar-EG", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+              <LocalTime value={msg.createdAt} format={clockTime} />
             </p>
           )}
           {msg.reaction && (
@@ -450,10 +450,7 @@ export function InternalNoteBubble({
         <p className="whitespace-pre-wrap break-words">{note.content}</p>
         <div className="mt-1 flex items-center justify-between">
           <span className="text-[10px] text-amber-700/70" dir="ltr">
-            {new Date(note.createdAt).toLocaleTimeString("ar-EG", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            <LocalTime value={note.createdAt} format={clockTime} />
           </span>
           {mine && !note.pending && (
             <button

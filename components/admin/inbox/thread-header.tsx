@@ -37,7 +37,7 @@ import {
 import type { ConversationDetail } from "@/server/services/messages";
 import type { InboxLabelItem, InboxTeammate } from "@/server/services/inbox";
 import { LabelChip } from "./labels-dialog";
-import { formatDateTime } from "./shared";
+import { LocalTime, formatDateTime, useHydrated } from "./shared";
 import { ConversationMenuContent, type ConversationMenuDialog } from "./conversation-menu";
 
 export type ThreadDialog = ConversationMenuDialog | null;
@@ -111,7 +111,12 @@ export function ThreadHeader({
   const otherAlerts = detail.staffAlerts.filter(
     (a) => a.recipientId !== currentUserId && a.kind === "ESCALATION"
   );
-  const dueReminders = detail.reminders.filter((r) => new Date(r.dueAt).getTime() <= Date.now());
+  // "Due" depends on the clock — decide it only in the browser, or the server
+  // and client render different markup (hydration mismatch).
+  const hydrated = useHydrated();
+  const dueReminders = hydrated
+    ? detail.reminders.filter((r) => new Date(r.dueAt).getTime() <= Date.now())
+    : [];
 
   return (
     <div className="flex-shrink-0 border-b border-border">
@@ -355,7 +360,7 @@ export function ThreadHeader({
               <BellRing className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
               <div className="min-w-0 flex-1 font-sans text-xs text-sky-900 dark:text-sky-100">
                 <p className="font-medium">
-                  تذكير مستحق · {formatDateTime(r.dueAt)}
+                  تذكير مستحق · <LocalTime value={r.dueAt} format={formatDateTime} />
                   {r.createdById !== currentUserId && ` · ${r.createdByName}`}
                 </p>
                 {r.note && <p className="mt-0.5 whitespace-pre-wrap">{r.note}</p>}

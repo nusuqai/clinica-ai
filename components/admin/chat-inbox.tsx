@@ -88,6 +88,10 @@ import { EscalateDialog } from "@/components/admin/inbox/escalate-dialog";
 import { MessageNoteDialog } from "@/components/admin/inbox/message-note-dialog";
 import { QuickRepliesPanel, quickReplyFile } from "@/components/admin/inbox/quick-replies";
 import { VoiceRecorder } from "@/components/admin/inbox/voice-recorder";
+import { LocalTime } from "@/components/admin/inbox/shared";
+
+const sessionStamp = (d: Date) =>
+  d.toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" });
 import {
   clientMediaKind,
   toReplyPreview,
@@ -483,7 +487,11 @@ export default function ChatInbox({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [timeline]);
 
+  // Several refreshes can be in flight (realtime bursts); only the newest may
+  // write, so a slow, older response can't overwrite a fresher list.
+  const listRequestSeq = useRef(0);
   const refreshConversations = useCallback(() => {
+    const seq = ++listRequestSeq.current;
     startListTransition(async () => {
       try {
         const fresh = await fetchConversations({
@@ -492,6 +500,9 @@ export default function ChatInbox({
           show: filterShow,
           label: filterLabel,
         });
+        // null = the server couldn't confirm the session on that request —
+        // keep the list on screen instead of blanking it.
+        if (fresh === null || seq !== listRequestSeq.current) return;
         setConversations(fresh);
       } catch (err) {
         console.error("Failed to refresh conversations:", err);
@@ -510,7 +521,7 @@ export default function ChatInbox({
         ]);
         if (detail)
           setSelectedConversation((cur) => (cur?.id === detail.id || !cur ? detail : cur));
-        if (msgs) setMessages(msgs);
+        if (msgs && activeIdRef.current === activeId) setMessages(msgs);
       } catch (err) {
         console.error("Failed to reload conversation:", err);
       }
@@ -717,7 +728,7 @@ export default function ChatInbox({
         if (row.senderType === SenderType.USER) {
           fetchMessages(row.conversationId)
             .then((fresh) => {
-              if (fresh.length) setMessages(fresh);
+              if (fresh?.length && activeIdRef.current === row.conversationId) setMessages(fresh);
             })
             .catch((err) => console.error("Failed to refresh messages:", err));
         }
@@ -875,6 +886,19 @@ export default function ChatInbox({
     void reloadThread();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventTick]);
+
+  // Self-heal: when the tab comes back into view (laptop wake, switching tabs —
+  // exactly when realtime may have dropped events or the session was being
+  // refreshed), re-read the list and the open thread.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      refreshConversations();
+      void reloadThread({ messages: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshConversations, reloadThread]);
 
   const handleSelectConversation = (id: string) => {
     // Opening it reads it — zero the badge immediately (the page render
@@ -1472,11 +1496,7 @@ export default function ChatInbox({
                       <div className="flex items-center gap-2 py-1" dir="rtl">
                         <Separator className="flex-1" />
                         <span className="whitespace-nowrap font-sans text-[10px] text-muted-foreground">
-                          جلسة جديدة ·{" "}
-                          {new Date(item.createdAt).toLocaleString("ar-EG", {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })}
+                          جلسة جديدة · <LocalTime value={item.createdAt} format={sessionStamp} />
                         </span>
                         <Separator className="flex-1" />
                       </div>
