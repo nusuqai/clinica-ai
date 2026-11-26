@@ -68,14 +68,6 @@ export const serviceInputSchema = z
     /** Pre-check: a service that must be done first (e.g. a كشف) — the
      *  practitioner then approves or declines this one at the visit. */
     preCheckServiceId: uuid.nullable().default(null),
-    /** Days an approval stays valid (null = a pre-check every visit). */
-    preCheckValidityDays: z
-      .number()
-      .int("أدخل عدد أيام صحيحاً.")
-      .min(1, "أدخل عدد أيام صحيحاً.")
-      .max(3650, "المدة طويلة جداً.")
-      .nullable()
-      .default(null),
     /** Approved → the pre-check's fee is not charged (deducted). */
     preCheckFeeDeducted: z.boolean().default(false),
     branches: z.array(z.object({ branchId: uuid, price: money.nullable() })).max(200),
@@ -142,7 +134,6 @@ export const serviceInputSchema = z
     bookable: v.kind === "OPERATION" ? false : v.bookable,
     operationChecklist: v.kind === "OPERATION" ? v.operationChecklist : [],
     postOpInstructions: v.kind === "OPERATION" ? v.postOpInstructions : null,
-    preCheckValidityDays: v.preCheckServiceId ? v.preCheckValidityDays : null,
     preCheckFeeDeducted: v.preCheckServiceId ? v.preCheckFeeDeducted : false,
   }));
 export type ServiceInput = z.output<typeof serviceInputSchema>;
@@ -186,7 +177,6 @@ export const serviceFormSchema = z
     postOpInstructions: z.string(),
     /** "" = no pre-check needed. */
     preCheckServiceId: z.string(),
-    preCheckValidityDays: intText,
     preCheckFeeDeducted: z.boolean(),
     /** The editor only manages their own branches' part of a shared service. */
     partial: z.boolean(),
@@ -247,7 +237,6 @@ export function serviceFormToInput(v: ServiceFormValues): z.input<typeof service
     postOpInstructions: v.postOpInstructions,
     preCheckServiceId:
       v.preCheckServiceId && v.preCheckServiceId !== "_none" ? v.preCheckServiceId : null,
-    preCheckValidityDays: num(v.preCheckValidityDays),
     preCheckFeeDeducted: v.preCheckFeeDeducted,
     // All-branches: only rows that override the price. Specific: the ticked ones.
     branches: v.branches

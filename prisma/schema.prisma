@@ -1149,11 +1149,10 @@ model Service {
   postOpInstructions   String?
   // Pre-check: another service (e.g. a كشف) that must be done first; the
   // practitioner then approves or declines this one at the visit. Declined →
-  // only the pre-check is charged. An approval stays valid for
-  // preCheckValidityDays (null = a pre-check every visit). preCheckFeeDeducted
-  // = when approved, the pre-check itself is not charged.
+  // only the pre-check is charged. Once approved, the patient never needs the
+  // pre-check for this service again. preCheckFeeDeducted = when approved, the
+  // pre-check itself is not charged.
   preCheckServiceId    String?     @db.Uuid
-  preCheckValidityDays Int?
   preCheckFeeDeducted  Boolean     @default(false)
   // true = offered in every branch (ServiceBranch rows only override price);
   // false = offered only in branches that have a ServiceBranch row.

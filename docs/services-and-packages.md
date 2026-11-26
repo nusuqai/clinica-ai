@@ -616,7 +616,7 @@ visit and stays on cancelled appointments as history.
 
 Some services are only done if the practitioner approves after an exam (e.g. Botox, body filler).
 
-- **Setup (service form):** `preCheckServiceId` = the exam service (e.g. كشف); `preCheckValidityDays` = how long an approval lasts (empty = exam every visit); `preCheckFeeDeducted` = the exam is free when the service is done. A pre-check can't itself need a pre-check.
-- **Booking:** the engine adds the exam line to the same visit (`isPreCheck`) and marks the service line `preCheckStatus = PENDING`, unless the patient holds an approval still within the validity. The auto-added exam is exempt from the day's service restriction and from `bookable`.
+- **Setup (service form):** `preCheckServiceId` = the exam service (e.g. كشف); `preCheckFeeDeducted` = the exam is free when the service is done. A pre-check can't itself need a pre-check.
+- **Booking:** the engine adds the exam line to the same visit (`isPreCheck`) and marks the service line `preCheckStatus = PENDING`, unless the doctor already approved this service for the patient (an approval never expires). The auto-added exam is exempt from the day's service restriction and from `bookable`.
 - **Visit completion:** a PENDING line needs a decision. APPROVED → charged normally (exam at 0 if fee-deducted). DECLINED → the line stays on record at 0 with an optional reason, its reserved package session is released, so only the exam is charged. Lines added on the spot count as approved.
 - **Agent:** services carry `requiresPreCheck`; the agent explains "exam first; approved → both, declined → exam only" and never promises approval. `request_package` refuses a package whose every covered service needs a pre-check until the patient has an approval (the team can still sell it from the dashboard).

@@ -120,24 +120,15 @@ async function defaultItems(rule: RuleContext): Promise<Result<BookingItemReques
 // ─── Pre-check ────────────────────────────────────────────────────────────────
 
 /**
- * Whether `patientId` has a still-valid approval for `serviceId` on `visitDay`:
- * a completed visit where the practitioner approved it within `validityDays`.
- * validityDays null = an approval never carries over (pre-check every visit).
+ * Whether the practitioner has ever approved `serviceId` for `patientId` (on a
+ * completed visit). An approval doesn't expire: once approved, later bookings
+ * of the service need no pre-check.
  */
-export async function hasPreCheckClearance(
-  patientId: string,
-  serviceId: string,
-  validityDays: number | null,
-  visitDay: string
-): Promise<boolean> {
-  if (validityDays == null) return false;
-  const since = new Date(`${visitDay}T00:00:00.000Z`);
-  since.setUTCDate(since.getUTCDate() - validityDays);
+export async function hasPreCheckClearance(patientId: string, serviceId: string): Promise<boolean> {
   const n = await prisma.appointmentItem.count({
     where: {
       serviceId,
       preCheckStatus: "APPROVED",
-      preCheckDecidedAt: { gte: since },
       appointment: { patientId, status: AppointmentStatus.COMPLETED },
     },
   });
@@ -146,7 +137,7 @@ export async function hasPreCheckClearance(
 
 /**
  * Lines that need a pre-check get it added to the same visit (first), unless
- * the patient still holds a valid approval for them. Returns the expanded
+ * the patient was already approved for them. Returns the expanded
  * request plus which services are pre-checks / need a decision.
  */
 async function planPreChecks(
@@ -161,16 +152,12 @@ async function planPreChecks(
       id: { in: items.map((i) => i.serviceId) },
       preCheckServiceId: { not: null },
     },
-    select: { id: true, preCheckServiceId: true, preCheckValidityDays: true },
+    select: { id: true, preCheckServiceId: true },
   });
   const preCheckIds = new Set<string>();
   const gatedIds = new Set<string>();
   for (const g of gatedServices) {
-    if (
-      patientId &&
-      (await hasPreCheckClearance(patientId, g.id, g.preCheckValidityDays, visitDay))
-    )
-      continue;
+    if (patientId && (await hasPreCheckClearance(patientId, g.id))) continue;
     gatedIds.add(g.id);
     preCheckIds.add(g.preCheckServiceId!);
   }

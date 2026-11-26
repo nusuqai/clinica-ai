@@ -78,7 +78,6 @@ function serviceForAgent(s: Catalog.PublicService, opts: { withNotes: boolean })
     requiresPreCheck: s.preCheck
       ? {
           preCheckService: s.preCheck.serviceName,
-          approvalValidDays: s.preCheck.validityDays,
           preCheckFreeIfDone: s.preCheck.feeDeducted,
         }
       : undefined,

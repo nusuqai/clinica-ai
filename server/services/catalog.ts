@@ -48,7 +48,6 @@ export interface ServiceView {
   postOpInstructions: string | null;
   /** Must be done first (and approved by the practitioner) — null = none. */
   preCheckServiceId: string | null;
-  preCheckValidityDays: number | null;
   preCheckFeeDeducted: boolean;
   branches: { branchId: string; price: number | null }[];
   tiers: { minQty: number; maxQty: number | null; price: number }[];
@@ -228,7 +227,6 @@ function toView(s: ServiceRow, scope: BranchScope): ServiceView {
     operationChecklist: s.operationChecklist,
     postOpInstructions: s.postOpInstructions,
     preCheckServiceId: s.preCheckServiceId,
-    preCheckValidityDays: s.preCheckValidityDays,
     preCheckFeeDeducted: s.preCheckFeeDeducted,
     branches: s.branches.map((b) => ({ branchId: b.branchId, price: dec(b.price) })),
     tiers: s.tiers.map((t) => ({ minQty: t.minQty, maxQty: t.maxQty, price: Number(t.price) })),
@@ -364,7 +362,6 @@ const coreData = (input: ServiceInput) => ({
   operationChecklist: input.operationChecklist,
   postOpInstructions: input.postOpInstructions,
   preCheckServiceId: input.preCheckServiceId,
-  preCheckValidityDays: input.preCheckValidityDays,
   preCheckFeeDeducted: input.preCheckFeeDeducted,
 });
 
@@ -620,7 +617,6 @@ export interface PublicService {
   preCheck: {
     serviceId: string;
     serviceName: string;
-    validityDays: number | null;
     feeDeducted: boolean;
   } | null;
 }
@@ -730,7 +726,6 @@ export async function listPublicServices(
         ? {
             serviceId: s.preCheckService.id,
             serviceName: s.preCheckService.name,
-            validityDays: s.preCheckValidityDays,
             feeDeducted: s.preCheckFeeDeducted,
           }
         : null,

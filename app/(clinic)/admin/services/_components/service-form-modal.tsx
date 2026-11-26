@@ -61,7 +61,6 @@ function formFromService(
     operationChecklist: (service?.operationChecklist ?? []).join("\n"),
     postOpInstructions: service?.postOpInstructions ?? "",
     preCheckServiceId: service?.preCheckServiceId ?? "",
-    preCheckValidityDays: str(service?.preCheckValidityDays),
     preCheckFeeDeducted: service?.preCheckFeeDeducted ?? false,
     // A branch-limited member can only create for their own branches.
     allBranches: service?.allBranches ?? !limited,
@@ -412,7 +411,7 @@ export default function ServiceFormModal({
             <p className="font-sans text-xs text-muted-foreground">
               للخدمات التي يقرر الطبيب بعد الكشف هل تُعمل أم لا. عند الحجز يُضاف الفحص للموعد
               تلقائياً، وعند إتمام الزيارة يحدد الطبيب: وافق (يُحاسب على الاثنين) أو رفض (يُحاسب على
-              الفحص فقط).
+              الفحص فقط). بعد موافقة الطبيب مرة لا يُطلب الفحص لهذه الخدمة مرة أخرى.
             </p>
             <FormField
               control={form.control}
@@ -424,25 +423,14 @@ export default function ServiceFormModal({
               disabled={partial}
             />
             {preCheckServiceId && preCheckServiceId !== "_none" && (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="preCheckValidityDays"
-                  type="number"
-                  min={1}
-                  label="صلاحية الموافقة (أيام)"
-                  hint="بعد موافقة الطبيب لا يُطلب الفحص مرة أخرى خلال هذه المدة (مثال: 90 لجلسات الليزر). اتركه فارغاً لطلب الفحص في كل زيارة."
-                  disabled={partial}
-                />
-                <FormField
-                  control={form.control}
-                  name="preCheckFeeDeducted"
-                  type="switch"
-                  label="الفحص مجاني إذا تمت الخدمة"
-                  hint="عند موافقة الطبيب لا يُحاسب المريض على الفحص."
-                  disabled={partial}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="preCheckFeeDeducted"
+                type="switch"
+                label="الفحص مجاني إذا تمت الخدمة"
+                hint="عند موافقة الطبيب لا يُحاسب المريض على الفحص."
+                disabled={partial}
+              />
             )}
           </div>
         )}
