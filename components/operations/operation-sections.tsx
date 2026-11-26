@@ -21,7 +21,7 @@ import { Card } from "@/components/ui/card";
 import { FormField } from "@/components/ui/form-field";
 import { Progress } from "@/components/ui/progress";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { formatFee } from "@/lib/currency";
+import { formatFee, moneyInputHint } from "@/lib/currency";
 import { parseChecklistText } from "@/lib/operations";
 import {
   addChecklistItemsAction,
@@ -281,6 +281,7 @@ export function OperationPayments({ op, editable }: { op: OperationDetail; edita
               label="المبلغ *"
               value={amount}
               onValueChange={setAmount}
+              hint={moneyInputHint(amount)}
             />
             <FormField
               type="select"

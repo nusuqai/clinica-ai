@@ -6,6 +6,7 @@ import { CalendarClock, Pencil, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import type { OperationStatus } from "@prisma/client";
 import Modal from "@/components/admin/modal";
+import { moneyInputHint } from "@/lib/currency";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -527,6 +528,7 @@ export function EditOperationButton({
               label="التكلفة المتفق عليها"
               value={v.price}
               onValueChange={(x) => set("price", x)}
+              hint={moneyInputHint(v.price)}
             />
             <FormField
               type="select"

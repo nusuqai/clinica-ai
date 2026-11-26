@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, Search, X } from "lucide-react";
 import Modal from "@/components/admin/modal";
+import { moneyInputHint } from "@/lib/currency";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -262,7 +263,7 @@ export default function NewOperationButton({
                   ? String(options.services.find((s) => s.id === serviceId)?.price ?? "")
                   : ""
               }
-              hint="اختياري — يمكن تحديدها لاحقاً."
+              hint={moneyInputHint(price) ?? "اختياري — يمكن تحديدها لاحقاً."}
             />
           </div>
           <FormField
