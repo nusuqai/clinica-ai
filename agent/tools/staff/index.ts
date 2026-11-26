@@ -8,6 +8,11 @@ import { staffReadTools } from "./reads";
 import { STAFF_WRITE_ACTIONS } from "./writes";
 import { DOCTOR_WRITE_ACTIONS, doctorReadTools } from "./doctor";
 import { exportTools } from "./export";
+import {
+  OPERATION_WRITE_ACTIONS,
+  doctorOperationTools,
+  operationReadTools,
+} from "./operations";
 
 // Patient-facing info tools the team still needs (dates, doctors, schedules,
 // availability for booking, services for the booked items).
@@ -33,10 +38,12 @@ export function getStaffTools(ctx: AgentContext): DynamicStructuredTool[] {
   const actor = sctx.staff;
 
   const isDoctor = actor.role === "DOCTOR";
-  const reads = isDoctor ? doctorReadTools(sctx) : staffReadTools(sctx);
-  const writes = (isDoctor ? DOCTOR_WRITE_ACTIONS : STAFF_WRITE_ACTIONS).filter((a) =>
-    a.allowed(actor)
-  );
+  const reads = isDoctor
+    ? [...doctorReadTools(sctx), ...doctorOperationTools(sctx)]
+    : [...staffReadTools(sctx), ...operationReadTools(sctx)];
+  const writes = (
+    isDoctor ? DOCTOR_WRITE_ACTIONS : [...STAFF_WRITE_ACTIONS, ...OPERATION_WRITE_ACTIONS]
+  ).filter((a) => a.allowed(actor));
   const info = commonTools(ctx.clinicId).filter((t) => TEAM_INFO_TOOLS.has(t.name));
   const canBook = writes.some((w) => w.name === "book_appointment_for_patient");
 

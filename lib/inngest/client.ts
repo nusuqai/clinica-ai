@@ -12,9 +12,16 @@ import { Inngest } from "inngest";
  */
 export interface AppointmentNotifyData {
   clinicId: string;
-  purpose: "CONFIRM_REMINDER" | "FEEDBACK_REQUEST" | "FOLLOWUP_REMINDER";
+  purpose:
+    | "CONFIRM_REMINDER"
+    | "FEEDBACK_REQUEST"
+    | "FOLLOWUP_REMINDER"
+    | "OPERATION_REMINDER"
+    | "OPERATION_FOLLOWUP";
   appointmentId?: string;
   recordId?: string;
+  /** OPERATION_* purposes: the operation case. */
+  operationId?: string;
 }
 
 /**

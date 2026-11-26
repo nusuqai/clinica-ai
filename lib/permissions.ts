@@ -13,6 +13,7 @@ export const PERMISSIONS = [
   "messages",
   "quick_replies",
   "appointments",
+  "operations",
   "doctors",
   "services",
   "offers",
@@ -53,6 +54,12 @@ export const PERMISSION_META: Record<
   appointments: {
     label: "إدارة المواعيد",
     description: "عرض المواعيد وتغيير حالتها، تسجيل الحضور وإدارة قائمة الانتظار",
+    scope: "branch",
+  },
+  operations: {
+    label: "إدارة العمليات",
+    description:
+      "طلبات العمليات وتجهيزها: تحديد الجرّاح والموعد والمكان، قائمة التجهيزات، الدفعات، وإرسال التفاصيل والتعليمات للمريض",
     scope: "branch",
   },
   doctors: {
@@ -143,6 +150,7 @@ export const PERMISSION_HOME: { permission: Permission; href: string }[] = [
   { permission: "reports", href: "/admin" },
   { permission: "messages", href: "/admin/messages" },
   { permission: "appointments", href: "/admin/appointments" },
+  { permission: "operations", href: "/admin/operations" },
   { permission: "patients", href: "/admin/patients" },
   { permission: "doctors", href: "/admin/doctors" },
   { permission: "services", href: "/admin/services" },

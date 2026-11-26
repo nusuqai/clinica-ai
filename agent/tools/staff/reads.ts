@@ -143,7 +143,7 @@ export function staffReadTools(ctx: StaffToolContext): DynamicStructuredTool[] {
 
   // Finding a patient is allowed to anyone who books or manages them — a
   // permission opens a section, it doesn't block the lookups it needs.
-  if (can(staff, "patients", "appointments", "medical_records", "messages")) {
+  if (can(staff, "patients", "appointments", "operations", "medical_records", "messages")) {
     tools.push(
       jsonTool(
         {

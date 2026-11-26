@@ -18,6 +18,7 @@ import {
   HeartPulse,
   Sparkles,
   Bot,
+  Syringe,
 } from "lucide-react";
 import type { NavItem } from "./sidebar";
 import type { Permission } from "@/lib/permissions";
@@ -30,6 +31,7 @@ export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
     { href: "/doctor", label: "الرئيسية", icon: LayoutDashboard },
     { href: "/doctor/appointments", label: "المواعيد", icon: CalendarDays },
     { href: "/doctor/patients", label: "المرضى", icon: Users },
+    { href: "/doctor/operations", label: "العمليات", icon: Syringe },
     { href: "/doctor/schedule", label: "جدول العمل", icon: Clock },
     { href: "/doctor/profile", label: "الملف الشخصي", icon: UserCircle },
     { href: "/doctor/my-whatsapp", label: "واتساب الخاص بي", icon: Smartphone },
@@ -63,6 +65,12 @@ export const navConfig: Record<"doctor" | "admin", NavItem[]> = {
       label: "المواعيد",
       icon: CalendarDays,
       permission: "appointments",
+    },
+    {
+      href: "/admin/operations",
+      label: "العمليات",
+      icon: Syringe,
+      permission: "operations",
     },
     { href: "/admin/messages", label: "الرسائل", icon: MessageSquare, permission: "messages" },
     {

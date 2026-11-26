@@ -29,6 +29,9 @@ import PatientPackagesSection from "@/components/packages/patient-packages-secti
 import { listPatientPackages, listPackages } from "@/server/services/packages";
 import { listCategories, listServices } from "@/server/services/catalog";
 import { branchesInScope, listBranches } from "@/server/services/branches";
+import { listOperations, operationFormOptions } from "@/server/services/operations";
+import OperationsTable from "@/components/operations/operations-table";
+import NewOperationButton from "@/components/operations/new-operation-button";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -76,6 +79,14 @@ export default async function UserDetailPage({ params }: PageProps) {
         listBranches(clinic.id, { activeOnly: true }),
         listCategories(clinic.id),
         listServices(clinic.id, null),
+      ])
+    : null;
+
+  // Operations: their own permission (the surgical cases this patient has here).
+  const operationsData = can(ctx, "operations")
+    ? await Promise.all([
+        listOperations(clinic.id, ctx.branchIds, { patientId: id }),
+        operationFormOptions(clinic.id, ctx.branchIds),
       ])
     : null;
 
@@ -185,6 +196,25 @@ export default async function UserDetailPage({ params }: PageProps) {
             services: Object.fromEntries(packagesData[4].map((s) => [s.id, s.name])),
           }}
         />
+      )}
+
+      {operationsData && (
+        <section className="mt-8">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-heading text-lg font-bold text-foreground">العمليات</h2>
+            <NewOperationButton
+              size="sm"
+              options={operationsData[1]}
+              patient={{ id: user.id, fullName: user.fullName, phone: user.phone }}
+            />
+          </div>
+          <OperationsTable
+            items={operationsData[0].items}
+            basePath="/admin/operations"
+            showPatient={false}
+            emptyMessage="لا توجد عمليات لهذا المريض"
+          />
+        </section>
       )}
 
       {/* Health profile + clinical history — only for members who may manage

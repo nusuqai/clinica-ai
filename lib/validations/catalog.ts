@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CreditType, OfferType, PricingType, ServiceKind } from "@prisma/client";
 import { pricingUsesPrice, pricingUsesUnits } from "@/lib/catalog";
+import { parseChecklistText } from "@/lib/operations";
 
 // Schemas for the service catalog (docs/services-and-packages.md).
 //
@@ -61,6 +62,9 @@ export const serviceInputSchema = z
     durationMin: duration.nullable(),
     bookable: z.boolean(),
     allBranches: z.boolean(),
+    /** OPERATION only: pre-op checklist template + after-care text. */
+    operationChecklist: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+    postOpInstructions: optionalText.default(null),
     branches: z.array(z.object({ branchId: uuid, price: money.nullable() })).max(200),
     tiers: z
       .array(
@@ -121,6 +125,10 @@ export const serviceInputSchema = z
     price: pricingUsesPrice(v.pricingType) ? v.price : null,
     unitLabel: pricingUsesUnits(v.pricingType) ? v.unitLabel : null,
     tiers: v.pricingType === "TIERED" ? [...v.tiers].sort((a, b) => a.minQty - b.minQty) : [],
+    // An operation is never booked by a patient — the team arranges it.
+    bookable: v.kind === "OPERATION" ? false : v.bookable,
+    operationChecklist: v.kind === "OPERATION" ? v.operationChecklist : [],
+    postOpInstructions: v.kind === "OPERATION" ? v.postOpInstructions : null,
   }));
 export type ServiceInput = z.output<typeof serviceInputSchema>;
 
@@ -158,6 +166,9 @@ export const serviceFormSchema = z
     durationMin: intText,
     bookable: z.boolean(),
     allBranches: z.boolean(),
+    /** OPERATION only: one checklist line per row of text. */
+    operationChecklist: z.string(),
+    postOpInstructions: z.string(),
     /** The editor only manages their own branches' part of a shared service. */
     partial: z.boolean(),
     /** Every branch the editor can see; `on` only matters when not allBranches. */
@@ -213,6 +224,8 @@ export function serviceFormToInput(v: ServiceFormValues): z.input<typeof service
     durationMin: num(v.durationMin),
     bookable: v.bookable,
     allBranches: v.allBranches,
+    operationChecklist: parseChecklistText(v.operationChecklist),
+    postOpInstructions: v.postOpInstructions,
     // All-branches: only rows that override the price. Specific: the ticked ones.
     branches: v.branches
       .filter((b) => (v.allBranches ? b.price.trim() !== "" : b.on))

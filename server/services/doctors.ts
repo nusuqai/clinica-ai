@@ -8,6 +8,7 @@ import { ok, err, type Result } from "./_result";
 import { fittingStartSlots, lengthWith, serviceFit, visitMinutes } from "./booking";
 import { paginate, type PageRequest, type Paginated } from "@/lib/pagination";
 import { getBranchDayWindow, doctorWorksAtBranch } from "./branches";
+import { blockNewSlotsForOperations } from "./operations";
 import {
   DAY_BOOKED_MODES,
   isDayBookedMode,
@@ -1143,6 +1144,8 @@ export async function generateSlotsForRule(
         data: slotsToCreate,
         skipDuplicates: true,
       });
+      // Operations already scheduled in this range hold the surgeon's time.
+      await blockNewSlotsForOperations(rule.doctorId, from, until);
     }
     await prisma.availabilityRule.update({
       where: { id: ruleId },
@@ -1386,6 +1389,8 @@ export async function toggleSlotBlocked(slotId: string, clinicId?: string): Prom
     // #38: when a clinic is given, the slot must belong to it.
     if (clinicId && slot.clinicId !== clinicId) return err("الموعد غير موجود");
     if (slot.appointment) return err("لا يمكن تعطيل موعد محجوز");
+    if (slot.blockedByOperationId)
+      return err("هذا الوقت محجوز لعملية جراحية — عدّل موعد العملية أو ألغِها لإتاحته");
     await prisma.slot.update({
       where: { id: slotId },
       data: { isBlocked: !slot.isBlocked },

@@ -24,6 +24,9 @@ export const APPOINTMENT_TOKENS = [
   "appointment_date",
   "appointment_time",
   "order_number",
+  // Operations (OPERATION_REMINDER / OPERATION_FOLLOWUP); empty elsewhere.
+  "operation_name",
+  "operation_location",
 ] as const;
 
 export type AppointmentToken = (typeof APPOINTMENT_TOKENS)[number];
@@ -40,6 +43,8 @@ export const APPOINTMENT_TOKEN_LABELS: Record<AppointmentToken, string> = {
   appointment_date: "تاريخ الموعد",
   appointment_time: "وقت الموعد / رقم الدور",
   order_number: "رقم الدور",
+  operation_name: "اسم العملية",
+  operation_location: "مكان العملية (الفرع أو المستشفى)",
 };
 
 const TITLE_LABELS: Record<string, string> = DOCTOR_TITLE_LABEL;
@@ -91,6 +96,8 @@ export function buildTokenContext(appt: TokenSourceAppointment): Record<Appointm
           ? "سيتواصل معك فريق العيادة لتحديد الوقت"
           : orderPhrase,
     order_number: appt.orderNumber != null ? String(appt.orderNumber) : "",
+    operation_name: "",
+    operation_location: "",
   };
 }
 
@@ -125,6 +132,45 @@ export function buildFollowUpTokenContext(
     appointment_date: record.followUpDate ? formatSlotDate(record.followUpDate) : "",
     appointment_time: "",
     order_number: "",
+    operation_name: "",
+    operation_location: "",
+  };
+}
+
+/** The operation shape the operation token resolver needs. */
+export interface TokenSourceOperation {
+  name: string;
+  scheduledDate: Date | null;
+  startTime: string | null;
+  hospitalName: string | null;
+  patient: { fullName: string };
+  doctor: { fullName: string; title: string | null; specialty: { name: string } | null } | null;
+  branch: { name: string; address: string | null } | null;
+  clinic: { name: string };
+}
+
+/**
+ * Resolves every token for an operation automation. `appointment_date` /
+ * `appointment_time` are the operation's own date and time, so a clinic can
+ * reuse a generic template; `branch_*` fall back to the outside hospital.
+ */
+export function buildOperationTokenContext(
+  op: TokenSourceOperation
+): Record<AppointmentToken, string> {
+  const location = op.branch?.name ?? op.hospitalName ?? "";
+  return {
+    patient_name: op.patient.fullName,
+    doctor_name: op.doctor?.fullName ?? "",
+    doctor_title: op.doctor?.title ? (TITLE_LABELS[op.doctor.title] ?? "") : "",
+    specialty: op.doctor?.specialty?.name ?? "",
+    clinic_name: op.clinic.name,
+    branch_name: location,
+    branch_address: op.branch?.address ?? "",
+    appointment_date: op.scheduledDate ? formatSlotDate(op.scheduledDate) : "",
+    appointment_time: op.startTime ? formatHHMM(op.startTime) : "",
+    order_number: "",
+    operation_name: op.name,
+    operation_location: location,
   };
 }
 

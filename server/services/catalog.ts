@@ -44,6 +44,8 @@ export interface ServiceView {
   isActive: boolean;
   allBranches: boolean;
   sortOrder: number;
+  operationChecklist: string[];
+  postOpInstructions: string | null;
   branches: { branchId: string; price: number | null }[];
   tiers: { minQty: number; maxQty: number | null; price: number }[];
   doctors: { doctorId: string; price: number | null; durationMin: number | null }[];
@@ -219,6 +221,8 @@ function toView(s: ServiceRow, scope: BranchScope): ServiceView {
     isActive: s.isActive,
     allBranches: s.allBranches,
     sortOrder: s.sortOrder,
+    operationChecklist: s.operationChecklist,
+    postOpInstructions: s.postOpInstructions,
     branches: s.branches.map((b) => ({ branchId: b.branchId, price: dec(b.price) })),
     tiers: s.tiers.map((t) => ({ minQty: t.minQty, maxQty: t.maxQty, price: Number(t.price) })),
     doctors: s.doctors.map((d) => ({
@@ -321,7 +325,9 @@ const coreData = (input: ServiceInput) => ({
   price: input.price,
   unitLabel: input.unitLabel,
   durationMin: input.durationMin,
-  bookable: input.bookable,
+  bookable: input.kind === "OPERATION" ? false : input.bookable,
+  operationChecklist: input.operationChecklist,
+  postOpInstructions: input.postOpInstructions,
 });
 
 export async function createService(

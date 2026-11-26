@@ -1,5 +1,5 @@
 import "server-only";
-import { AppointmentStatus, Channel, SenderType } from "@prisma/client";
+import { AppointmentStatus, OperationStatus, SenderType } from "@prisma/client";
 import { expirePackages, settleSessionLines } from "@/server/services/packages";
 import { prisma } from "@/lib/prisma";
 import { inngest, type AppointmentNotifyData } from "@/lib/inngest/client";
@@ -16,11 +16,13 @@ import {
   buildTemplateVariables,
   buildTokenContext,
   buildFollowUpTokenContext,
+  buildOperationTokenContext,
   fillCustomTemplate,
   isCustomTemplate,
   type AppointmentToken,
 } from "@/lib/appointment-templates";
 import { fillTemplate } from "@/lib/meta/template-render";
+import { conversationRecipient, getWhatsappThread } from "@/server/services/whatsappThread";
 
 /**
  * Appointment automation engine.
@@ -270,6 +272,95 @@ async function findDueFollowUps(now: Date): Promise<DueRow[]> {
     .map((r) => ({ id: r.id, clinicId: r.clinicId }));
 }
 
+// ─── Pass 5: operations ─────────────────────────────────────────────────────
+
+/**
+ * SCHEDULED operations within their clinic's OPERATION_REMINDER lead that have
+ * not been reminded. The date + "HH:MM" are wall-clock, converted per clinic
+ * timezone like day-only appointments.
+ */
+async function findDueOperationReminders(now: Date): Promise<DueRow[]> {
+  const coarseFrom = new Date(now.getTime() - COARSE_BUFFER_MS - DAY_MS);
+  const coarseTo = new Date(now.getTime() + MAX_LEAD_MS + COARSE_BUFFER_MS);
+  const candidates = await prisma.operation.findMany({
+    where: {
+      status: OperationStatus.SCHEDULED,
+      reminderSentAt: null,
+      startTime: { not: null },
+      scheduledDate: { gte: coarseFrom, lte: coarseTo },
+      clinic: {
+        appointmentTemplates: { some: { purpose: "OPERATION_REMINDER", enabled: true } },
+      },
+    },
+    select: {
+      id: true,
+      clinicId: true,
+      scheduledDate: true,
+      startTime: true,
+      clinic: {
+        select: {
+          timezone: true,
+          appointmentTemplates: {
+            where: { purpose: "OPERATION_REMINDER", enabled: true },
+            select: { leadMinutes: true },
+          },
+        },
+      },
+    },
+  });
+  return candidates
+    .filter((o) => {
+      const binding = o.clinic.appointmentTemplates[0];
+      if (!binding) return false;
+      const start = effectiveStartUtc(
+        { slot: null, bookingDate: o.scheduledDate, scheduledTime: o.startTime, rule: null },
+        o.clinic.timezone
+      );
+      if (!start) return false;
+      const leadStart = start.getTime() - binding.leadMinutes * 60_000;
+      return leadStart <= now.getTime() && now.getTime() < start.getTime();
+    })
+    .map((o) => ({ id: o.id, clinicId: o.clinicId }));
+}
+
+/** DONE operations past their clinic's OPERATION_FOLLOWUP delay, not yet checked on. */
+async function findDueOperationFollowUps(now: Date): Promise<DueRow[]> {
+  const candidates = await prisma.operation.findMany({
+    where: {
+      status: OperationStatus.DONE,
+      followUpSentAt: null,
+      // Older than a week = the moment has passed; don't message out of the blue.
+      doneAt: { not: null, gte: new Date(now.getTime() - 7 * DAY_MS), lte: now },
+      clinic: {
+        appointmentTemplates: { some: { purpose: "OPERATION_FOLLOWUP", enabled: true } },
+      },
+    },
+    select: {
+      id: true,
+      clinicId: true,
+      doneAt: true,
+      clinic: {
+        select: {
+          appointmentTemplates: {
+            where: { purpose: "OPERATION_FOLLOWUP", enabled: true },
+            select: { delayMinutes: true },
+          },
+        },
+      },
+    },
+  });
+  return candidates
+    .filter((o) => {
+      const binding = o.clinic.appointmentTemplates[0];
+      return (
+        !!binding &&
+        !!o.doneAt &&
+        o.doneAt.getTime() + binding.delayMinutes * 60_000 <= now.getTime()
+      );
+    })
+    .map((o) => ({ id: o.id, clinicId: o.clinicId }));
+}
+
 // ─── The cron ───────────────────────────────────────────────────────────────
 
 export const appointmentsSweep = inngest.createFunction(
@@ -325,61 +416,46 @@ export const appointmentsSweep = inngest.createFunction(
       );
     }
 
+    const opReminders = await step.run("find-due-operation-reminders", () =>
+      findDueOperationReminders(now)
+    );
+    const opFollowUps = await step.run("find-due-operation-followups", () =>
+      findDueOperationFollowUps(now)
+    );
+    const opEvents = [
+      ...opReminders.map((r) => ({
+        name: "appointment/notify" as const,
+        data: {
+          operationId: r.id,
+          clinicId: r.clinicId,
+          purpose: "OPERATION_REMINDER" as const,
+        },
+        id: `op-remind-${r.id}`,
+      })),
+      ...opFollowUps.map((r) => ({
+        name: "appointment/notify" as const,
+        data: {
+          operationId: r.id,
+          clinicId: r.clinicId,
+          purpose: "OPERATION_FOLLOWUP" as const,
+        },
+        id: `op-followup-${r.id}`,
+      })),
+    ];
+    if (opEvents.length > 0) await step.sendEvent("queue-operations", opEvents);
+
     return {
       noShows,
       reminders: reminders.length,
       feedback: feedback.length,
       followUps: followUps.length,
+      operationReminders: opReminders.length,
+      operationFollowUps: opFollowUps.length,
     };
   }
 );
 
 // ─── The throttled sender ───────────────────────────────────────────────────
-
-/** Builds a WhatsApp recipient from a conversation row (phone or BSUID). */
-function conversationRecipient(conv: {
-  whatsappPhone: string | null;
-  whatsappUserId: string | null;
-}): WhatsAppAddress | null {
-  if (!conv.whatsappPhone && !conv.whatsappUserId) return null;
-  return { phone: conv.whatsappPhone, userId: conv.whatsappUserId };
-}
-
-/**
- * Finds (or creates) the patient's WhatsApp conversation in a clinic so the
- * automation message threads with their history and their reply lands in a
- * conversation the agent already has context for. Returns null if there is no
- * way to reach them on WhatsApp (no existing thread and no phone on file).
- */
-async function getWhatsappThread(clinicId: string, patient: { id: string; phone: string | null }) {
-  const existing = await prisma.conversation.findFirst({
-    where: { clinicId, userId: patient.id, channel: Channel.WHATSAPP },
-    select: { id: true, whatsappPhone: true, whatsappUserId: true },
-  });
-  if (existing) return existing;
-
-  const phone = patient.phone?.replace(/\D/g, "") || null;
-  if (!phone) return null;
-
-  const byPhone = await prisma.conversation.findUnique({
-    where: { clinicId_whatsappPhone: { clinicId, whatsappPhone: phone } },
-    select: { id: true, whatsappPhone: true, whatsappUserId: true, userId: true },
-  });
-  if (byPhone) {
-    if (!byPhone.userId) {
-      await prisma.conversation.update({
-        where: { id: byPhone.id },
-        data: { userId: patient.id },
-      });
-    }
-    return byPhone;
-  }
-
-  return prisma.conversation.create({
-    data: { clinicId, userId: patient.id, whatsappPhone: phone, channel: Channel.WHATSAPP },
-    select: { id: true, whatsappPhone: true, whatsappUserId: true },
-  });
-}
 
 // Fallback labels for the inbox thread when a binding has no snapshotted text
 // (legacy rows saved before bodyText was captured).
@@ -387,6 +463,8 @@ const PURPOSE_LABEL = {
   CONFIRM_REMINDER: "تذكير بالموعد — برجاء تأكيد الحجز",
   FEEDBACK_REQUEST: "طلب تقييم بعد الزيارة",
   FOLLOWUP_REMINDER: "تذكير بموعد المتابعة — حان وقت الحجز",
+  OPERATION_REMINDER: "تذكير بموعد العملية",
+  OPERATION_FOLLOWUP: "اطمئنان بعد العملية",
 } as const;
 
 /**
@@ -514,6 +592,9 @@ export const appointmentNotify = inngest.createFunction(
     const result = await step.run("send", async () => {
       if (purpose === "FOLLOWUP_REMINDER") {
         return sendFollowUpReminder(data.recordId!, clinicId);
+      }
+      if (purpose === "OPERATION_REMINDER" || purpose === "OPERATION_FOLLOWUP") {
+        return sendOperationNotify(data.operationId!, clinicId, purpose);
       }
       return sendAppointmentNotify(data.appointmentId!, clinicId, purpose);
     });
@@ -772,4 +853,107 @@ async function markFollowUpHandled(recordId: string): Promise<void> {
     where: { id: recordId },
     data: { followUpReminderSentAt: new Date() },
   });
+}
+
+/**
+ * Sends an operation automation: the reminder before a SCHEDULED operation, or
+ * the post-op check-in after it was marked DONE. Same gates as the appointment
+ * automations (enabled binding, deliverable over this number), re-checked at
+ * send time, and threaded into the patient's inbox.
+ */
+async function sendOperationNotify(
+  operationId: string,
+  clinicId: string,
+  purpose: "OPERATION_REMINDER" | "OPERATION_FOLLOWUP"
+): Promise<string> {
+  const op = await prisma.operation.findUnique({
+    where: { id: operationId },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      branchId: true,
+      hospitalName: true,
+      scheduledDate: true,
+      startTime: true,
+      reminderSentAt: true,
+      followUpSentAt: true,
+      patient: { select: { id: true, fullName: true, phone: true } },
+      doctor: {
+        select: { fullName: true, title: true, specialty: { select: { name: true } } },
+      },
+      branch: { select: { name: true, address: true } },
+      clinic: { select: { name: true } },
+    },
+  });
+  if (!op) return "gone";
+  if (purpose === "OPERATION_REMINDER") {
+    if (op.status !== OperationStatus.SCHEDULED || op.reminderSentAt) return "stale";
+  } else if (op.status !== OperationStatus.DONE || op.followUpSentAt) {
+    return "stale";
+  }
+
+  const binding = await prisma.clinicAppointmentTemplate.findUnique({
+    where: { clinicId_purpose: { clinicId, purpose } },
+  });
+  if (!binding || !binding.enabled) return "no_binding";
+
+  const thread = await getWhatsappThread(clinicId, op.patient);
+  const transport = await automationTransport(clinicId, thread?.id ?? null, binding, op.branchId);
+  if (!transport) return "no_creds";
+  if (bindingUnsendable(transport, binding)) return "no_binding";
+  const recipient = thread ? conversationRecipient(thread) : null;
+  if (!recipient) return "no_recipient";
+
+  const context = buildOperationTokenContext(op);
+  const variables = buildTemplateVariables(binding.variableMap, context);
+  const text = renderAutomationText(binding, variables, context, PURPOSE_LABEL[purpose]);
+
+  const markHandled = () =>
+    prisma.operation.update({
+      where: { id: operationId },
+      data:
+        purpose === "OPERATION_REMINDER"
+          ? { reminderSentAt: new Date() }
+          : { followUpSentAt: new Date() },
+    });
+
+  let wamid: string | null = null;
+  try {
+    wamid = await sendAutomationMessage(transport, recipient, binding, variables, text);
+  } catch (err) {
+    if (isPermanentSendError(err)) {
+      await markHandled();
+      console.error(`operation notify permanent failure (${operationId}):`, err.message);
+      return "send_failed_permanent";
+    }
+    throw err;
+  }
+  await markHandled();
+
+  if (thread) {
+    await prisma.message.create({
+      data: {
+        clinicId,
+        conversationId: thread.id,
+        whatsappMessageId: wamid,
+        whatsappConfigId: transport.configId,
+        senderType: SenderType.AGENT,
+        content: text,
+        metadata: {
+          automation: purpose,
+          operationId,
+          template: binding.templateName,
+          language: binding.languageCode,
+          variables,
+        },
+        isRead: true,
+      },
+    });
+    await prisma.conversation.update({
+      where: { id: thread.id },
+      data: { updatedAt: new Date() },
+    });
+  }
+  return "sent";
 }

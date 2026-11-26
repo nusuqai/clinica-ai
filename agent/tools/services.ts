@@ -50,6 +50,12 @@ function serviceForAgent(s: Catalog.PublicService, opts: { withNotes: boolean })
     unit: s.unitLabel,
     duration: durationText(s.durationMin),
     bookable: s.bookable,
+    // Operations are never booked here: the patient asks, the team arranges it.
+    ...(s.kind === "OPERATION" && {
+      operation: true,
+      howToGetIt:
+        "عملية: لا تُحجز عبر المساعد. سجّل طلب المريض بـ request_operation وسيتواصل معه فريق العيادة لتجهيزها وتحديد موعدها.",
+    }),
     description: s.description,
     ...(opts.withNotes
       ? {

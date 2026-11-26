@@ -58,6 +58,8 @@ function formFromService(
     unitLabel: service?.unitLabel ?? "",
     durationMin: str(service?.durationMin),
     bookable: service?.bookable ?? true,
+    operationChecklist: (service?.operationChecklist ?? []).join("\n"),
+    postOpInstructions: service?.postOpInstructions ?? "",
     // A branch-limited member can only create for their own branches.
     allBranches: service?.allBranches ?? !limited,
     partial: service?.access === "partial",
@@ -125,6 +127,8 @@ export default function ServiceFormModal({
   }, [open, service?.id]);
 
   const pricingType = useWatch({ control: form.control, name: "pricingType" });
+  const kind = useWatch({ control: form.control, name: "kind" });
+  const isOperation = kind === "OPERATION";
   const allBranches = useWatch({ control: form.control, name: "allBranches" });
   const partial = service?.access === "partial";
   const branchError =
@@ -311,14 +315,21 @@ export default function ServiceFormModal({
             </div>
           )}
 
-          <FormField
-            control={form.control}
-            name="bookable"
-            type="switch"
-            label="يمكن حجزها مباشرة"
-            hint="أوقفها لخدمة تُعرض وتُسعَّر فقط ولا تُحجز بموعد (تُضاف أثناء الزيارة)."
-            disabled={partial}
-          />
+          {isOperation ? (
+            <p className="font-sans text-xs text-muted-foreground">
+              العمليات لا يحجزها المريض بنفسه: عند سؤاله يفتح المساعد الذكي «طلب عملية» ويتواصل معه
+              الفريق لتجهيزها وتحديد موعدها من صفحة العمليات.
+            </p>
+          ) : (
+            <FormField
+              control={form.control}
+              name="bookable"
+              type="switch"
+              label="يمكن حجزها مباشرة"
+              hint="أوقفها لخدمة تُعرض وتُسعَّر فقط ولا تُحجز بموعد (تُضاف أثناء الزيارة)."
+              disabled={partial}
+            />
+          )}
         </div>
 
         {/* Branches */}
@@ -395,11 +406,37 @@ export default function ServiceFormModal({
             control={form.control}
             name="prepInstructions"
             type="textarea"
-            rows={2}
-            label="تعليمات قبل / بعد الزيارة"
-            hint="تُعرض للمريض عند الحجز."
+            rows={isOperation ? 4 : 2}
+            label={isOperation ? "تعليمات ما قبل العملية" : "تعليمات قبل / بعد الزيارة"}
+            hint={
+              isOperation
+                ? "تُنسخ في كل حالة جديدة من هذه العملية ويمكن إرسالها للمريض (مثال: الصيام 8 ساعات، إيقاف أدوية السيولة)."
+                : "تُعرض للمريض عند الحجز."
+            }
             disabled={partial}
           />
+          {isOperation && (
+            <>
+              <FormField
+                control={form.control}
+                name="operationChecklist"
+                type="textarea"
+                rows={4}
+                label="قائمة التجهيزات قبل العملية"
+                hint="بند في كل سطر (مثال: صورة دم كاملة، رسم قلب، توقيع الإقرار). تُنسخ في كل حالة جديدة ويتابعها الفريق."
+                disabled={partial}
+              />
+              <FormField
+                control={form.control}
+                name="postOpInstructions"
+                type="textarea"
+                rows={4}
+                label="تعليمات ما بعد العملية"
+                hint="تُرسل للمريض بعد العملية (العناية بالجرح، الأدوية، متى يعود للمتابعة)."
+                disabled={partial}
+              />
+            </>
+          )}
           <FormField
             control={form.control}
             name="agentNotes"

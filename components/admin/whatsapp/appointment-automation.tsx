@@ -4,7 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm, useWatch, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { BellRing, Loader2, MessageSquareHeart, CalendarClock, Save, Trash2 } from "lucide-react";
+import {
+  BellRing,
+  Loader2,
+  MessageSquareHeart,
+  CalendarClock,
+  Save,
+  Syringe,
+  HeartHandshake,
+  Trash2,
+} from "lucide-react";
 import type { AppointmentTemplatePurpose } from "@prisma/client";
 import { listTemplatesAction } from "@/server/actions/whatsapp";
 import {
@@ -63,6 +72,18 @@ const PURPOSES: PurposeMeta[] = [
     title: "تذكير بموعد المتابعة",
     hint: "يُرسَل قبل موعد المتابعة الذي حدّده الطبيب في السجل العلاجي، يدعو المريض لحجز زيارة متابعة. استخدم حقل «تاريخ الموعد» ليعرض تاريخ المتابعة المقترح.",
     icon: <CalendarClock className="h-4 w-4 text-accent" />,
+  },
+  {
+    purpose: "OPERATION_REMINDER",
+    title: "تذكير بموعد العملية",
+    hint: "يُرسَل قبل موعد العملية المحدد. استخدم «اسم العملية» و«مكان العملية» و«تاريخ/وقت الموعد» (تاريخ ووقت العملية).",
+    icon: <Syringe className="h-4 w-4 text-accent" />,
+  },
+  {
+    purpose: "OPERATION_FOLLOWUP",
+    title: "الاطمئنان بعد العملية",
+    hint: "يُرسَل بعد تعليم العملية «تمت» للاطمئنان على المريض؛ ردّه يصل لصندوق الرسائل والمساعد الذكي.",
+    icon: <HeartHandshake className="h-4 w-4 text-accent" />,
   },
 ];
 
@@ -166,8 +187,11 @@ function initialTiming(
   if (purpose === "FOLLOWUP_REMINDER") {
     return initial ? Math.max(1, Math.round(initial.leadMinutes / 1440)) : 3;
   }
-  if (purpose === "CONFIRM_REMINDER") {
+  if (purpose === "CONFIRM_REMINDER" || purpose === "OPERATION_REMINDER") {
     return initial ? Math.round(initial.leadMinutes / 60) : 24;
+  }
+  if (purpose === "OPERATION_FOLLOWUP") {
+    return initial ? Math.max(1, Math.round(initial.delayMinutes / 60)) : 24;
   }
   return initial?.delayMinutes ?? 120;
 }
@@ -175,13 +199,17 @@ function initialTiming(
 /** The lead/delay fields to save for an edited timing value. */
 function timingToMinutes(purpose: AppointmentTemplatePurpose, timing: number) {
   if (purpose === "FOLLOWUP_REMINDER") return { leadMinutes: timing * 1440 };
-  if (purpose === "CONFIRM_REMINDER") return { leadMinutes: timing * 60 };
+  if (purpose === "CONFIRM_REMINDER" || purpose === "OPERATION_REMINDER")
+    return { leadMinutes: timing * 60 };
+  if (purpose === "OPERATION_FOLLOWUP") return { delayMinutes: timing * 60 };
   return { delayMinutes: timing };
 }
 
 function timingLabel(purpose: AppointmentTemplatePurpose): string {
   if (purpose === "FOLLOWUP_REMINDER") return "يُرسَل قبل موعد المتابعة بـ (أيام)";
   if (purpose === "CONFIRM_REMINDER") return "يُرسَل قبل الموعد بـ (ساعات)";
+  if (purpose === "OPERATION_REMINDER") return "يُرسَل قبل العملية بـ (ساعات)";
+  if (purpose === "OPERATION_FOLLOWUP") return "يُرسَل بعد تعليم العملية «تمت» بـ (ساعات)";
   return "يُرسَل بعد اكتمال الزيارة بـ (دقائق)";
 }
 
@@ -218,7 +246,8 @@ function BindingCard({
   onSaved: () => void;
 }) {
   const isReminder = meta.purpose === "CONFIRM_REMINDER";
-  const isFollowUp = meta.purpose === "FOLLOWUP_REMINDER";
+  // Everything but the feedback request needs a timing of at least 1.
+  const isFollowUp = meta.purpose !== "FEEDBACK_REQUEST" && !isReminder;
   const [deleting, setDeleting] = useState(false);
   const confirm = useConfirm();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -462,6 +491,10 @@ const CUSTOM_DEFAULTS: Record<AppointmentTemplatePurpose, string> = {
     "شكراً لزيارتك {{clinic_name}} يا {{patient_name}} 🌷\nيسعدنا معرفة رأيك في الخدمة — ما تقييمك من 1 إلى 5؟",
   FOLLOWUP_REMINDER:
     "مرحباً {{patient_name}} 👋\nحان موعد متابعتك مع د. {{doctor_name}} في {{clinic_name}} ({{appointment_date}}).\nرد على هذه الرسالة لحجز موعدك.",
+  OPERATION_REMINDER:
+    "مرحباً {{patient_name}} 👋\nنذكّرك بموعد عمليتك ({{operation_name}}) مع د. {{doctor_name}} يوم {{appointment_date}} الساعة {{appointment_time}} في {{operation_location}}.\nبرجاء الالتزام بتعليمات ما قبل العملية، ولأي استفسار رد على هذه الرسالة.",
+  OPERATION_FOLLOWUP:
+    "مرحباً {{patient_name}} 🌷\nنتمنى لك السلامة بعد عملية {{operation_name}}. كيف حالك اليوم؟\nإن شعرت بأي ألم شديد أو أعراض مقلقة رد على هذه الرسالة وسيتواصل معك فريق {{clinic_name}}.",
 };
 
 /**

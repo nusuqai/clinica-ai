@@ -6,6 +6,7 @@ import { commonTools } from "./common";
 import { knowledgeTools } from "./knowledge";
 import { serviceTools } from "./services";
 import { patientTools } from "./patient";
+import { patientOperationTools } from "./operations";
 import { escalationTool } from "./escalation";
 import { registerInClinicTool } from "./registration";
 import { claimWebLoginTool } from "./claim";
@@ -58,6 +59,7 @@ export async function getToolsForRole(ctx: AgentContext): Promise<DynamicStructu
   // and doctors work from their dashboards and have no assistant of their own —
   // if one of them writes in (e.g. from their own phone on WhatsApp) they get
   // the same info-only tools as an unknown contact, and nothing that acts.
-  if (ctx.role === "PATIENT") return [...base, ...patientTools(ctx), ...claim];
+  if (ctx.role === "PATIENT")
+    return [...base, ...patientTools(ctx), ...patientOperationTools(ctx), ...claim];
   return base;
 }

@@ -60,6 +60,14 @@ export const STAFF_EVENT_META: Record<
     personal: false,
     doctors: false,
   },
+  OPERATION_REQUEST: {
+    label: "طلبات العمليات",
+    description: "عندما يسأل مريض عن عملية ويطلبها عبر المساعد الذكي — يحتاج تواصلاً من الفريق",
+    heading: "طلبات عمليات تحتاج تواصلاً",
+    short: "طلب عملية",
+    personal: false,
+    doctors: false,
+  },
   COLLEAGUE_ESCALATION: {
     label: "تصعيد من زميل",
     description: "عندما يصعّد لك زميل محادثة (يصل لك أنت فقط)",
@@ -103,6 +111,7 @@ export const STAFF_EVENTS: StaffEvent[] = [
   StaffEvent.AI_ESCALATION,
   StaffEvent.NEW_BOOKING,
   StaffEvent.PATIENT_CANCELLED,
+  StaffEvent.OPERATION_REQUEST,
   StaffEvent.UNITS_LOW,
   StaffEvent.UNITS_OUT,
   StaffEvent.COLLEAGUE_ESCALATION,

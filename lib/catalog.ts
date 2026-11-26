@@ -11,6 +11,8 @@ export const SERVICE_KIND_LABEL: Record<ServiceKind, string> = {
   PROCEDURE: "إجراء",
   SESSION: "جلسة",
   TEST: "فحص / تحليل",
+  // Never booked by patients — arranged by the team as an operation case.
+  OPERATION: "عملية",
 };
 export const SERVICE_KINDS = Object.keys(SERVICE_KIND_LABEL) as ServiceKind[];
 

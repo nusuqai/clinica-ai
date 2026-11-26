@@ -144,6 +144,10 @@ enum AppointmentTemplatePurpose {
   CONFIRM_REMINDER
   FEEDBACK_REQUEST
   FOLLOWUP_REMINDER
+  // Operations: before a scheduled operation (leadMinutes), and a post-op
+  // check-in after it is marked done (delayMinutes).
+  OPERATION_REMINDER
+  OPERATION_FOLLOWUP
 }
 
 // What kind of practice a clinic is. CENTER: many doctors / specialties.
@@ -167,6 +171,9 @@ enum ServiceKind {
   PROCEDURE // إجراء
   SESSION // جلسة
   TEST // تحليل / أشعة / فحص
+  // عملية — never booked by a patient: the team arranges it as an Operation
+  // case (see the Operations section). Always saved with bookable=false.
+  OPERATION
 }
 
 enum PricingType {
@@ -313,6 +320,11 @@ model Clinic {
   staffEventRecipients      StaffEventRecipient[]
   staffNotifications        StaffNotification[]
   staffPendingActions       StaffPendingAction[]
+  operations                Operation[]
+  operationChecklistItems   OperationChecklistItem[]
+  operationPayments         OperationPayment[]
+  operationEvents           OperationEvent[]
+  operationAttachments      OperationAttachment[]
   dataReportSettings        DataReportSettings?
   dataReportDeliveries      DataReportDelivery[]
 
@@ -379,6 +391,7 @@ model Branch {
   packageBranches   PackageBranch[]
   offerBranches     OfferBranch[]
   patientPackages   PatientPackage[]
+  operations        Operation[]
 
   @@index([clinicId])
   @@map("branches")
@@ -767,6 +780,10 @@ model Profile {
   // Prepaid packages this profile owns as a patient.
   patientPackages       PatientPackage[]
   staffPendingActions   StaffPendingAction[]
+  operations            Operation[]                   @relation("PatientOperations")
+  coordinatedOperations Operation[]                   @relation("OperationCoordinator")
+  operationEvents       OperationEvent[]              @relation("OperationEventActor")
+  operationAttachments  OperationAttachment[]         @relation("OperationAttachmentUploader")
 
   @@map("profiles")
 }
@@ -815,6 +832,7 @@ model Doctor {
   treatmentRecords  TreatmentRecord[]
   services          DoctorService[]
   appointmentItems  AppointmentItem[]
+  operations        Operation[]
 
   @@index([clinicId])
   @@index([specialtyId])
@@ -950,25 +968,30 @@ model DoctorDayQueue {
 }
 
 model Slot {
-  id           String   @id @default(uuid()) @db.Uuid
-  doctorId     String   @db.Uuid
-  clinicId     String   @db.Uuid
-  branchId     String?  @db.Uuid // copied from the rule at generation time
-  ruleId       String?  @db.Uuid
-  date         DateTime @db.Date
-  startTime    DateTime
-  endTime      DateTime
-  isBlocked    Boolean  @default(false)
-  clinic       Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  id                   String   @id @default(uuid()) @db.Uuid
+  doctorId             String   @db.Uuid
+  clinicId             String   @db.Uuid
+  branchId             String?  @db.Uuid // copied from the rule at generation time
+  ruleId               String?  @db.Uuid
+  date                 DateTime @db.Date
+  startTime            DateTime
+  endTime              DateTime
+  isBlocked            Boolean  @default(false)
+  clinic               Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   // Snapshot of the rule's referralOnly flag at generation time; keeps
   // patient-facing booking queries fast without joining the rule.
-  referralOnly Boolean  @default(false)
+  referralOnly         Boolean  @default(false)
   // Occupancy: the appointment holding this slot. A long appointment holds
   // several consecutive slots (Appointment.slotId is only its first one).
   // null = free. Cleared when the appointment is cancelled or rescheduled.
-  heldById     String?  @db.Uuid
+  heldById             String?  @db.Uuid
+  // Set when isBlocked was turned on because the doctor has an operation at
+  // that time — so cancelling / moving the operation frees exactly these slots
+  // and never one the doctor blocked by hand.
+  blockedByOperationId String?  @db.Uuid
 
   appointment          Appointment?      @relation("AppointmentHeldSlots", fields: [heldById], references: [id], onDelete: SetNull)
+  blockedByOperation   Operation?        @relation(fields: [blockedByOperationId], references: [id], onDelete: SetNull)
   doctor               Doctor            @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   branch               Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
   rule                 AvailabilityRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
@@ -980,6 +1003,7 @@ model Slot {
   @@index([branchId])
   @@index([clinicId, date])
   @@index([heldById])
+  @@index([blockedByOperationId])
   @@map("slots")
 }
 
@@ -1096,28 +1120,33 @@ model Category {
 }
 
 model Service {
-  id               String      @id @default(uuid()) @db.Uuid
-  clinicId         String      @db.Uuid
-  categoryId       String      @db.Uuid
-  name             String
-  description      String? // public
-  prepInstructions String? // public: before/after the visit
-  agentNotes       String? // AI agent only — never shown to patients
-  kind             ServiceKind
-  pricingType      PricingType
+  id                 String      @id @default(uuid()) @db.Uuid
+  clinicId           String      @db.Uuid
+  categoryId         String      @db.Uuid
+  name               String
+  description        String? // public
+  prepInstructions   String? // public: before/after the visit
+  agentNotes         String? // AI agent only — never shown to patients
+  kind               ServiceKind
+  pricingType        PricingType
   // FIXED / STARTING_FROM: the price. PER_UNIT: the unit price. Null when the
   // price only comes from doctor/branch overrides or is decided later.
-  price            Decimal?    @db.Decimal(10, 2)
-  unitLabel        String? // PER_UNIT / TIERED: "نبضة", "وحدة", "سن", "مل"
-  durationMin      Int? // null → the rule's slot / estimated duration
-  bookable         Boolean     @default(true)
-  isActive         Boolean     @default(true)
+  price              Decimal?    @db.Decimal(10, 2)
+  unitLabel          String? // PER_UNIT / TIERED: "نبضة", "وحدة", "سن", "مل"
+  durationMin        Int? // null → the rule's slot / estimated duration
+  bookable           Boolean     @default(true)
+  isActive           Boolean     @default(true)
+  // OPERATION services only: the pre-op checklist copied into every new case of
+  // this operation (labs, imaging, consent…), and the after-care text.
+  // prepInstructions above is the pre-op instructions text.
+  operationChecklist String[]    @default([])
+  postOpInstructions String?
   // true = offered in every branch (ServiceBranch rows only override price);
   // false = offered only in branches that have a ServiceBranch row.
-  allBranches      Boolean     @default(true)
-  sortOrder        Int         @default(0)
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  allBranches        Boolean     @default(true)
+  sortOrder          Int         @default(0)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   clinic           Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   category         Category             @relation(fields: [categoryId], references: [id], onDelete: Restrict)
@@ -1128,6 +1157,7 @@ model Service {
   packageItems     PackageItemService[]
   offerTargets     OfferTarget[]
   appointmentItems AppointmentItem[]
+  operations       Operation[]
 
   @@unique([clinicId, name])
   @@index([clinicId])
@@ -2499,6 +2529,8 @@ enum StaffEvent {
   // The scheduled patient-data report (Excel). Recipients are routed like the
   // other events, but the file is sent by the report sweep, not as an alert.
   DAILY_REPORT
+  // A patient asked the AI about an operation — the team must contact them.
+  OPERATION_REQUEST
 }
 
 // Per-clinic settings of the team assistant. A missing row = defaults.
@@ -2684,4 +2716,181 @@ model DataReportDelivery {
   @@index([sentAt, createdAt])
   @@index([clinicId])
   @@map("data_report_deliveries")
+}
+
+// ─── Operations (العمليات) ─────────────────────────────────────────────────────
+// A surgery is a CASE the team runs over days or weeks, not a bookable slot: a
+// patient can never book one. The patient AI only opens a REQUESTED case (and
+// alerts the team); the team — from the dashboard or the team assistant —
+// prepares it, schedules it, sends the patient the details and follows up.
+// Design: docs/operations.md.
+
+enum OperationStatus {
+  REQUESTED // طلب جديد — opened from a patient's question; nobody has called yet
+  PREPARING // قيد التجهيز — the team is on it: consultation, tests, price
+  SCHEDULED // محددة — has a date and time
+  DONE // تمت — performed; post-op follow-up phase
+  CLOSED // مغلقة — follow-up finished
+  CANCELLED // ملغاة
+}
+
+enum OperationSource {
+  PATIENT_AI // the patient asked the AI assistant
+  STAFF // the team created it (dashboard or team assistant)
+}
+
+model Operation {
+  id                 String          @id @default(uuid()) @db.Uuid
+  clinicId           String          @db.Uuid
+  patientId          String          @db.Uuid
+  // The operation type from the catalog (ServiceKind.OPERATION), if any. `name`
+  // is the snapshot / free-text name shown everywhere.
+  serviceId          String?         @db.Uuid
+  name               String
+  status             OperationStatus @default(REQUESTED)
+  source             OperationSource @default(STAFF)
+  // The surgeon. Null while the case is still a request.
+  doctorId           String?         @db.Uuid
+  // Where: one of the clinic's branches, or an outside hospital (free text).
+  branchId           String?         @db.Uuid
+  hospitalName       String?
+  // When: clinic wall-clock, same convention as Appointment.bookingDate +
+  // scheduledTime (see lib/slot-time.ts). Both set once SCHEDULED.
+  scheduledDate      DateTime?       @db.Date
+  startTime          String? // "HH:MM"
+  durationMin        Int?
+  // Block the surgeon's appointment slots during the operation (default on).
+  blockSchedule      Boolean         @default(true)
+  anesthesia         String? // نوع التخدير — free text (كلي، موضعي، نصفي…)
+  // Agreed total. Payments are OperationPayment rows; remaining = price - paid.
+  price              Decimal?        @db.Decimal(10, 2)
+  consentSigned      Boolean         @default(false)
+  // Texts sent to the patient — seeded from the service, editable per case.
+  preOpInstructions  String?
+  postOpInstructions String?
+  // What the patient said when asking (PATIENT_AI), or the team's intake note.
+  requestNote        String?
+  // Internal notes — never shown or sent to the patient.
+  notes              String?
+  // The team member following this case.
+  coordinatorId      String?         @db.Uuid
+  // The conversation the request came from (PATIENT_AI).
+  conversationId     String?         @db.Uuid
+  cancelReason       String?
+  doneAt             DateTime?
+  // Automation dedupe flags (like Appointment.reminderSentAt).
+  reminderSentAt     DateTime?
+  followUpSentAt     DateTime?
+  createdById        String?         @db.Uuid
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  clinic       Clinic                   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient      Profile                  @relation("PatientOperations", fields: [patientId], references: [id], onDelete: Cascade)
+  service      Service?                 @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  doctor       Doctor?                  @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+  branch       Branch?                  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  coordinator  Profile?                 @relation("OperationCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
+  checklist    OperationChecklistItem[]
+  payments     OperationPayment[]
+  events       OperationEvent[]
+  attachments  OperationAttachment[]
+  blockedSlots Slot[]
+
+  @@index([clinicId, status])
+  @@index([clinicId, scheduledDate])
+  @@index([patientId])
+  @@index([doctorId, scheduledDate])
+  @@index([branchId])
+  @@index([serviceId])
+  @@index([coordinatorId])
+  // Automation sweeps: scheduled & not yet reminded; done & not yet followed up.
+  @@index([status, reminderSentAt])
+  @@index([status, followUpSentAt])
+  @@map("operations")
+}
+
+// One pre-op checklist line (تحاليل، أشعة، إيقاف دواء، توقيع الإقرار…).
+model OperationChecklistItem {
+  id          String    @id @default(uuid()) @db.Uuid
+  clinicId    String    @db.Uuid
+  operationId String    @db.Uuid
+  label       String
+  sortOrder   Int       @default(0)
+  doneAt      DateTime?
+  doneById    String?   @db.Uuid
+  createdAt   DateTime  @default(now())
+
+  clinic    Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@index([operationId])
+  @@index([clinicId])
+  @@map("operation_checklist_items")
+}
+
+// Money received for an operation (deposit / installment). Decimal, never float.
+model OperationPayment {
+  id          String   @id @default(uuid()) @db.Uuid
+  clinicId    String   @db.Uuid
+  operationId String   @db.Uuid
+  amount      Decimal  @db.Decimal(10, 2)
+  method      String? // كاش، فيزا، تحويل…
+  note        String?
+  paidAt      DateTime @default(now())
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+
+  clinic    Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@index([operationId])
+  @@index([clinicId])
+  @@map("operation_payments")
+}
+
+// The case history: who did what, when (status changes, scheduling, messages
+// sent to the patient, payments…). Append-only.
+model OperationEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  clinicId    String   @db.Uuid
+  operationId String   @db.Uuid
+  actorId     String?  @db.Uuid
+  // Short machine tag: created, status, scheduled, updated, payment, message…
+  type        String
+  text        String
+  createdAt   DateTime @default(now())
+
+  clinic    Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  actor     Profile?  @relation("OperationEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([operationId, createdAt])
+  @@index([clinicId])
+  @@index([actorId])
+  @@map("operation_events")
+}
+
+// Files on the case (lab results, imaging, signed consent). Same private bucket
+// as visit attachments, under `<clinicId>/operations/<operationId>/`.
+model OperationAttachment {
+  id           String   @id @default(uuid()) @db.Uuid
+  clinicId     String   @db.Uuid
+  operationId  String   @db.Uuid
+  uploadedById String   @db.Uuid
+  storagePath  String
+  fileName     String
+  contentType  String
+  size         Int
+  kind         String
+  createdAt    DateTime @default(now())
+
+  clinic     Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  operation  Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  uploadedBy Profile   @relation("OperationAttachmentUploader", fields: [uploadedById], references: [id])
+
+  @@index([operationId])
+  @@index([clinicId])
+  @@index([uploadedById])
+  @@map("operation_attachments")
 }

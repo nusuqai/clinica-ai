@@ -336,6 +336,36 @@ export async function notifyPatientCancelled(appointmentId: string): Promise<voi
   }
 }
 
+/** A patient asked the AI for an operation — the team must contact them. */
+export async function notifyOperationRequest(operationId: string): Promise<void> {
+  try {
+    const op = await prisma.operation.findUnique({
+      where: { id: operationId },
+      select: {
+        clinicId: true,
+        name: true,
+        requestNote: true,
+        conversationId: true,
+        patient: { select: { fullName: true, phone: true } },
+      },
+    });
+    if (!op) return;
+    const phone = op.patient.phone ? ` (${op.patient.phone})` : "";
+    const note = op.requestNote ? ` — ${op.requestNote.slice(0, 120)}` : "";
+    await queueStaffEvent({
+      clinicId: op.clinicId,
+      event: StaffEvent.OPERATION_REQUEST,
+      text: `${op.patient.fullName}${phone} يطلب: ${op.name}${note}`,
+      dedupeKey: `op:${operationId}`,
+      conversationId: op.conversationId,
+      // A request has no branch yet: every routed member hears about it.
+      branchId: undefined,
+    });
+  } catch (err) {
+    console.error("[staff-alerts] operation request alert failed", err);
+  }
+}
+
 /** The clinic's AI units crossed the low line / ran out. */
 export async function notifyUnits(
   clinicId: string,

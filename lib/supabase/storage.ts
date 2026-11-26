@@ -237,6 +237,25 @@ export async function createAppointmentAttachmentUploadUrl(args: {
   return { path, token: data.token, bucket: PATIENT_MEDIA_BUCKET };
 }
 
+/** Signed upload URL for a file on an operation case (same private bucket). */
+export async function createOperationAttachmentUploadUrl(args: {
+  clinicId: string;
+  operationId: string;
+  fileName: string;
+  mimeType: string;
+}): Promise<UploadTarget> {
+  const supabase = createAdminClient();
+  const ext = extForAttachment(args.fileName, args.mimeType);
+  const path = `${args.clinicId}/operations/${args.operationId}/${crypto.randomUUID()}.${ext}`;
+  const { data, error } = await supabase.storage
+    .from(PATIENT_MEDIA_BUCKET)
+    .createSignedUploadUrl(path);
+  if (error || !data?.token) {
+    throw new Error(`failed to create attachment upload url: ${error?.message ?? "unknown"}`);
+  }
+  return { path, token: data.token, bucket: PATIENT_MEDIA_BUCKET };
+}
+
 // ─── Clinic branding assets (logos) ────────────────────────────────────────────
 
 /** PUBLIC bucket for clinic branding (logos). Unlike patient media these are
